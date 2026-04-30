@@ -4,26 +4,10 @@ set -euo pipefail
 API_KEY="${SENDLENS_INSTANTLY_API_KEY:-}"
 DB_PATH="${SENDLENS_DB_PATH:-${HOME}/.sendlens/workspace-cache.duckdb}"
 PLUGIN_ROOT="${PLUGIN_ROOT:-$(pwd)}"
-ENV_ROOT="${SENDLENS_CONTEXT_ROOT:-${PWD}}"
 BUILD_ENTRY="${PLUGIN_ROOT}/build/plugin/server.js"
-CLIENTS_DIR="${SENDLENS_CLIENTS_DIR:-.env.clients}"
 
-load_env_file() {
-  local file_path="$1"
-  if [[ -f "${file_path}" ]]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "${file_path}"
-    set +a
-  fi
-}
-
-load_env_file "${ENV_ROOT}/.env"
-load_env_file "${ENV_ROOT}/.env.local"
-if [[ -n "${SENDLENS_CLIENT:-}" ]]; then
-  load_env_file "${ENV_ROOT}/${CLIENTS_DIR}/${SENDLENS_CLIENT}.env"
-  load_env_file "${ENV_ROOT}/${CLIENTS_DIR}/${SENDLENS_CLIENT}.local.env"
-fi
+# shellcheck disable=SC1091
+source "${PLUGIN_ROOT}/scripts/load-env.sh"
 
 API_KEY="${SENDLENS_INSTANTLY_API_KEY:-}"
 DB_PATH="${SENDLENS_DB_PATH:-${HOME}/.sendlens/workspace-cache.duckdb}"

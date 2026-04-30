@@ -12,10 +12,28 @@ export SENDLENS_CONTEXT_ROOT
 export SENDLENS_DB_PATH="${DB_PATH}"
 export SENDLENS_STATE_DIR="${STATE_DIR}"
 
-# Source the env/bootstrap checks into this shell so the detached child inherits
-# the loaded SENDLENS_* variables.
 # shellcheck disable=SC1091
-source "${PLUGIN_ROOT}/scripts/check-env.sh"
+source "${PLUGIN_ROOT}/scripts/load-env.sh"
+
+if [[ -z "${SENDLENS_INSTANTLY_API_KEY:-}" ]]; then
+  echo "[sendlens] Missing SendLens Instantly API key. Set SENDLENS_INSTANTLY_API_KEY through install config or .env." >&2
+  exit 1
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "[sendlens] Node.js is required to run the local MCP runtime." >&2
+  exit 1
+fi
+
+if ! bash "${PLUGIN_ROOT}/scripts/bootstrap-runtime.sh"; then
+  echo "[sendlens] Missing or incompatible runtime dependencies. SendLens could not bootstrap its local runtime." >&2
+  exit 1
+fi
+
+if [[ ! -f "${PLUGIN_ROOT}/build/plugin/refresh-cli.js" ]]; then
+  echo "[sendlens] Compiled refresh runtime not found at ${PLUGIN_ROOT}/build/plugin/refresh-cli.js." >&2
+  exit 1
+fi
 
 cd "${PLUGIN_ROOT}"
 if ! mkdir -p "${STATE_DIR}" 2>/dev/null; then
@@ -54,7 +72,11 @@ nohup bash -lc '
   echo "$BASHPID" > "${LOCK_DIR}/pid"
   trap '"'"'rm -rf "${LOCK_DIR}"'"'"' EXIT
   # shellcheck disable=SC1091
-  source "${PLUGIN_ROOT}/scripts/check-env.sh"
+  source "${PLUGIN_ROOT}/scripts/load-env.sh"
+  if ! bash "${PLUGIN_ROOT}/scripts/bootstrap-runtime.sh"; then
+    echo "[sendlens] Background session-start refresh failed during runtime bootstrap." >>"${LOG_PATH}" 2>&1
+    exit 1
+  fi
   if ! node "${PLUGIN_ROOT}/build/plugin/refresh-cli.js" >>"${LOG_PATH}" 2>&1; then
     echo "[sendlens] Background session-start refresh failed. The plugin remains available; run refresh_data() if you need an immediate retry." >>"${LOG_PATH}" 2>&1
   fi
