@@ -2,7 +2,7 @@ import { definePlugin } from "pluxx";
 
 export default definePlugin({
   name: "sendlens",
-  version: "0.1.3",
+  version: "0.1.4",
   description:
     "Agentic reasoning over Instantly data with a privacy-first local cache.",
   author: {
@@ -26,6 +26,8 @@ export default definePlugin({
       "Use SendLens to understand what is actually landing with prospects, which campaigns and segments are driving positive replies, and what to change next, all from a fast local cache on the user's machine.",
     category: "Analytics",
     color: "#0F766E",
+    icon: "./assets/sendlens-mark.svg",
+    screenshots: ["./assets/sendlens-cover.svg"],
     defaultPrompts: [
       "Use SendLens to tell me what is working and not working in this Instantly workspace.",
       "Use SendLens to show me which campaigns and sequences are landing best.",
