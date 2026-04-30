@@ -1,6 +1,6 @@
 {
   "name": "sendlens",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Agentic reasoning over Instantly data with a privacy-first local cache.",
   "scripts": {

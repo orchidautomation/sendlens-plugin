@@ -2,7 +2,7 @@ import { definePlugin } from "pluxx";
 
 export default definePlugin({
   name: "sendlens",
-  version: "0.1.0",
+  version: "0.1.1",
   description:
     "Agentic reasoning over Instantly data with a privacy-first local cache.",
   author: {
@@ -38,7 +38,11 @@ export default definePlugin({
   commands: "./commands/",
   instructions: "./INSTRUCTIONS.md",
   scripts: "./scripts/",
-  passthrough: ["./assets/", "./build/", "./node_modules/"],
+  passthrough: [
+    "./assets/",
+    "./build/",
+    "./scripts/",
+  ],
 
   userConfig: [
     {
@@ -86,8 +90,8 @@ export default definePlugin({
   mcp: {
     sendlens: {
       transport: "stdio",
-      command: "node",
-      args: ["./build/plugin/server.js"],
+      command: "bash",
+      args: ["./scripts/start-mcp.sh"],
       env: {
         SENDLENS_INSTANTLY_API_KEY: "${SENDLENS_INSTANTLY_API_KEY}",
       },

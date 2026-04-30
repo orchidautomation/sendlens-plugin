@@ -38,13 +38,8 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -d "${PLUGIN_ROOT}/node_modules" ]]; then
-  echo "[sendlens] Missing runtime dependencies in node_modules." >&2
-  exit 1
-fi
-
-if ! node -e "require.resolve('@duckdb/node-api'); require.resolve('@modelcontextprotocol/sdk/server/mcp.js')" >/dev/null 2>&1; then
-  echo "[sendlens] Missing runtime dependencies in node_modules." >&2
+if ! bash "${PLUGIN_ROOT}/scripts/bootstrap-runtime.sh"; then
+  echo "[sendlens] Missing or incompatible runtime dependencies. SendLens could not bootstrap its local runtime." >&2
   exit 1
 fi
 
