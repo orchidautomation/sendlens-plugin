@@ -1,0 +1,95 @@
+# Install SendLens
+
+SendLens ships as native host bundles for:
+
+- Claude Code
+- Cursor
+- Codex
+- OpenCode
+
+## Fastest Path
+
+Use the latest release installers:
+
+- [Universal installer](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-all.sh)
+- [Claude Code installer](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-claude-code.sh)
+- [Cursor installer](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-cursor.sh)
+- [Codex installer](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh)
+- [OpenCode installer](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-opencode.sh)
+
+## Bundle Downloads
+
+If you want the raw bundles:
+
+- [Claude Code bundle](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/sendlens-claude-code-latest.tar.gz)
+- [Cursor bundle](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/sendlens-cursor-latest.tar.gz)
+- [Codex bundle](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/sendlens-codex-latest.tar.gz)
+- [OpenCode bundle](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/sendlens-opencode-latest.tar.gz)
+
+## Local Development Install
+
+```bash
+git clone https://github.com/orchidautomation/sendlens-plugin.git
+cd sendlens-plugin
+npm install
+cp .env.example .env
+```
+
+Set at least:
+
+```bash
+SENDLENS_INSTANTLY_API_KEY=your_key
+```
+
+Then build and install:
+
+```bash
+npm run test:plugin
+pluxx validate
+pluxx build --target claude-code cursor codex opencode
+pluxx install --target claude-code cursor codex opencode --trust
+```
+
+## After Install
+
+Reload your host:
+
+- Claude Code: `/reload-plugins`
+- Cursor: reload the window
+- Codex: refresh plugins or restart
+- OpenCode: restart or reload
+
+Expected startup behavior:
+
+- every new session triggers a fresh background refresh
+- the local cache updates in a few seconds
+- `refresh_status` reports the current session-start refresh
+
+## Env Loading
+
+Supported order:
+
+1. `.env`
+2. `.env.local`
+3. `.env.clients/<client>.env`
+4. `.env.clients/<client>.local.env`
+
+Optional client selection:
+
+Use `SENDLENS_CLIENT` when you want to load a client-specific env overlay.
+
+Optional overrides:
+
+```bash
+export SENDLENS_CLIENTS_DIR=.env.clients
+export SENDLENS_DB_PATH=/absolute/path/to/workspace-cache.duckdb
+export SENDLENS_STATE_DIR=/absolute/path/to/sendlens-state
+```
+
+## What Gets Stored Locally
+
+- DuckDB cache: `~/.sendlens/workspace-cache.duckdb`
+- refresh status: `~/.sendlens/refresh-status.json`
+- session-start log: `~/.sendlens/session-start-refresh.log`
+
+SendLens is local-first and read-only against Instantly.

@@ -1,0 +1,49 @@
+<svg width="1600" height="980" viewBox="0 0 1600 980" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="980" fill="#07111B"/>
+  <rect x="40" y="42" width="1520" height="896" rx="30" fill="#0B1220" stroke="#1E293B"/>
+  <rect x="40" y="42" width="1520" height="64" rx="30" fill="#0F172A"/>
+  <circle cx="84" cy="74" r="8" fill="#F97316"/>
+  <circle cx="112" cy="74" r="8" fill="#FBBF24"/>
+  <circle cx="140" cy="74" r="8" fill="#22C55E"/>
+  <text x="184" y="82" fill="#93C5FD" font-size="24" font-family="IBM Plex Mono, Menlo, monospace">SendLens · tag-scoped campaign analysis</text>
+
+  <rect x="84" y="148" width="450" height="738" rx="24" fill="#F8FAFC"/>
+  <text x="118" y="208" fill="#0F172A" font-size="40" font-weight="700" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif">Custom tags</text>
+  <rect x="118" y="246" width="382" height="72" rx="18" fill="#E0F2FE"/>
+  <circle cx="154" cy="282" r="10" fill="#F59E0B"/>
+  <text x="180" y="291" fill="#0F172A" font-size="26" font-weight="700" font-family="IBM Plex Sans, Arial, sans-serif">Priority ICP</text>
+  <rect x="118" y="338" width="382" height="72" rx="18" fill="#E2E8F0"/>
+  <circle cx="154" cy="374" r="10" fill="#22C55E"/>
+  <text x="180" y="383" fill="#0F172A" font-size="26" font-family="IBM Plex Sans, Arial, sans-serif">Active pipeline</text>
+  <rect x="118" y="430" width="382" height="72" rx="18" fill="#E2E8F0"/>
+  <circle cx="154" cy="466" r="10" fill="#0EA5E9"/>
+  <text x="180" y="475" fill="#0F172A" font-size="26" font-family="IBM Plex Sans, Arial, sans-serif">Agency segment</text>
+
+  <text x="118" y="576" fill="#334155" font-size="24" font-family="IBM Plex Sans, Arial, sans-serif">Exact tables:</text>
+  <text x="118" y="614" fill="#0F172A" font-size="22" font-family="IBM Plex Mono, Menlo, monospace">sendlens.custom_tags</text>
+  <text x="118" y="648" fill="#0F172A" font-size="22" font-family="IBM Plex Mono, Menlo, monospace">sendlens.custom_tag_mappings</text>
+
+  <rect x="574" y="148" width="942" height="738" rx="24" fill="#0F172A" stroke="#0F766E"/>
+  <text x="608" y="208" fill="#F8FAFC" font-size="40" font-weight="700" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif">Sampled leads by tag</text>
+  <text x="608" y="248" fill="#67E8F9" font-size="24" font-family="IBM Plex Sans, Arial, sans-serif">Hybrid recipe: exact mappings joined to sampled lead evidence</text>
+
+  <rect x="608" y="286" width="874" height="184" rx="18" fill="#08111C"/>
+  <text x="638" y="334" fill="#CBD5E1" font-size="22" font-family="IBM Plex Mono, Menlo, monospace">SELECT COALESCE(t.label, t.name) AS tag_name, sl.campaign_id,</text>
+  <text x="638" y="370" fill="#CBD5E1" font-size="22" font-family="IBM Plex Mono, Menlo, monospace">  COUNT(*) AS sampled_lead_count,</text>
+  <text x="638" y="406" fill="#CBD5E1" font-size="22" font-family="IBM Plex Mono, Menlo, monospace">  ROUND(100.0 * SUM(CASE WHEN sl.email_reply_count &gt; 0 THEN 1 ELSE 0 END)</text>
+  <text x="638" y="442" fill="#CBD5E1" font-size="22" font-family="IBM Plex Mono, Menlo, monospace">    / NULLIF(COUNT(*), 0), 2) AS sampled_reply_share_pct ...</text>
+
+  <rect x="608" y="516" width="874" height="292" rx="18" fill="#08111C"/>
+  <rect x="636" y="550" width="818" height="58" rx="12" fill="#10213A"/>
+  <text x="664" y="586" fill="#F8FAFC" font-size="22" font-family="IBM Plex Sans, Arial, sans-serif">Priority ICP</text>
+  <text x="998" y="586" fill="#E2E8F0" font-size="20" font-family="IBM Plex Mono, Menlo, monospace">Founder Intro v3</text>
+  <text x="1248" y="586" fill="#7DD3FC" font-size="20" font-family="IBM Plex Mono, Menlo, monospace">14.8%</text>
+  <rect x="636" y="624" width="818" height="58" rx="12" fill="#0B1728"/>
+  <text x="664" y="660" fill="#F8FAFC" font-size="22" font-family="IBM Plex Sans, Arial, sans-serif">Priority ICP</text>
+  <text x="998" y="660" fill="#E2E8F0" font-size="20" font-family="IBM Plex Mono, Menlo, monospace">Ops Angle Test</text>
+  <text x="1248" y="660" fill="#7DD3FC" font-size="20" font-family="IBM Plex Mono, Menlo, monospace">9.6%</text>
+  <rect x="636" y="698" width="818" height="58" rx="12" fill="#0B1728"/>
+  <text x="664" y="734" fill="#F8FAFC" font-size="22" font-family="IBM Plex Sans, Arial, sans-serif">Agency segment</text>
+  <text x="998" y="734" fill="#E2E8F0" font-size="20" font-family="IBM Plex Mono, Menlo, monospace">Agency Test</text>
+  <text x="1248" y="734" fill="#7DD3FC" font-size="20" font-family="IBM Plex Mono, Menlo, monospace">7.4%</text>
+</svg>

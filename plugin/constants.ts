@@ -1,0 +1,75 @@
+export const LOCAL_PLUGIN_NAME = "sendlens";
+export const DEFAULT_DB_DIRECTORY = ".sendlens";
+export const DEFAULT_DB_FILENAME = "workspace-cache.duckdb";
+
+export const FULL_LEADS_THRESHOLD = 500;
+export const FULL_EMAILS_THRESHOLD = 1000;
+export const MAX_NONREPLY_LEAD_SAMPLE = 100;
+export const MAX_OUTBOUND_EMAIL_SAMPLE = 100;
+export const DEFAULT_PAGE_SIZE = 100;
+export const MAX_SAMPLE_PAGES = 4;
+export const MAX_REPLY_LEAD_PAGES = 12;
+export const MAX_FULL_EMAIL_PAGES = 20;
+export const MAX_REPLY_EMAIL_PAGES = 200;
+export const SESSION_START_EMAIL_LOOKBACK_DAYS = 21;
+export const SESSION_START_REPLY_EMAIL_PAGES = 8;
+export const SESSION_START_NONREPLY_LEAD_SAMPLE = 25;
+
+export const PUBLIC_TABLES = [
+  "campaigns",
+  "campaign_analytics",
+  "step_analytics",
+  "campaign_variants",
+  "accounts",
+  "account_daily_metrics",
+  "custom_tags",
+  "custom_tag_mappings",
+  "campaign_tags",
+  "account_tags",
+  "sampled_leads",
+  "sampled_outbound_emails",
+  "sampling_runs",
+  "campaign_overview",
+  "lead_evidence",
+  "reply_context",
+  "rendered_outbound_context",
+] as const;
+
+export type PublicTableName = (typeof PUBLIC_TABLES)[number];
+
+export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
+  campaigns:
+    "Exact campaign metadata from Instantly, including tracking and sequence counts.",
+  campaign_analytics:
+    "Exact per-campaign aggregate metrics such as sends, replies, bounces, and opportunities.",
+  step_analytics:
+    "Exact step and variant performance metrics from Instantly analytics.",
+  campaign_variants:
+    "Exact campaign templates extracted from campaign details: step, variant, subject, body, and delays.",
+  accounts:
+    "Exact sending-account snapshot with warmup metadata and recent performance rollups.",
+  account_daily_metrics:
+    "Exact per-account daily performance metrics for recent periods.",
+  custom_tags:
+    "Exact Instantly custom tag definitions available for filtering local analysis.",
+  custom_tag_mappings:
+    "Exact Instantly custom tag assignments across tagged resources such as campaigns or accounts.",
+  campaign_tags:
+    "Convenience view joining campaign tag mappings to campaign names for exact tag-based filtering.",
+  account_tags:
+    "Convenience view joining account tag mappings to account emails for exact sender filtering.",
+  sampled_leads:
+    "Campaign-scoped lead evidence with full replied leads and a bounded non-reply sample. Do not use for population totals.",
+  sampled_outbound_emails:
+    "Locally reconstructed outbound copy built from campaign templates plus lead variables. Do not treat it as exact delivered email text.",
+  sampling_runs:
+    "Per-campaign ingest coverage metadata, including exact-vs-sampled mode and sample sizes.",
+  campaign_overview:
+    "Semantic campaign health view: exact metrics, status, sample coverage, and reply/bounce rates in one place.",
+  lead_evidence:
+    "Semantic lead evidence view with stable Instantly lead fields, reply signals, and preserved campaign-scoped payload JSON.",
+  reply_context:
+    "Reply outcome view that joins replied leads to their originating templates and locally reconstructed copy.",
+  rendered_outbound_context:
+    "Rendered outbound analysis view that joins reconstructed lead-level copy to campaign names and intended templates.",
+};

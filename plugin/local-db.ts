@@ -1,0 +1,735 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { DuckDBInstance, type DuckDBConnection } from "@duckdb/node-api";
+import {
+  DEFAULT_DB_DIRECTORY,
+  DEFAULT_DB_FILENAME,
+  PUBLIC_TABLES,
+} from "./constants";
+
+export function resolveDbPath() {
+  const configured = process.env.SENDLENS_DB_PATH?.trim();
+  if (configured) {
+    return path.isAbsolute(configured)
+      ? configured
+      : path.resolve(process.cwd(), configured);
+  }
+  return path.join(os.homedir(), DEFAULT_DB_DIRECTORY, DEFAULT_DB_FILENAME);
+}
+
+async function initConnection() {
+  const dbPath = resolveDbPath();
+  await fs.mkdir(path.dirname(dbPath), { recursive: true });
+  const instance = await DuckDBInstance.create(dbPath);
+  const conn = await instance.connect();
+  await ensureSchema(conn);
+  return conn;
+}
+
+export async function getDb(): Promise<DuckDBConnection> {
+  return initConnection();
+}
+
+export async function resetDbConnectionForTests() {
+  return;
+}
+
+export function closeDb(conn: DuckDBConnection) {
+  conn.closeSync();
+}
+
+export async function query(
+  conn: DuckDBConnection,
+  sql: string,
+): Promise<Record<string, unknown>[]> {
+  const result = await conn.run(sql);
+  return (await result.getRowObjectsJson()) as Record<string, unknown>[];
+}
+
+export async function run(conn: DuckDBConnection, sql: string) {
+  await conn.run(sql);
+}
+
+async function ensureSchema(conn: DuckDBConnection) {
+  const statements = [
+    "CREATE SCHEMA IF NOT EXISTS sendlens",
+    `CREATE TABLE IF NOT EXISTS sendlens.plugin_state (
+      key VARCHAR PRIMARY KEY,
+      value VARCHAR,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.campaigns (
+      id VARCHAR,
+      workspace_id VARCHAR NOT NULL,
+      organization_id VARCHAR,
+      name VARCHAR,
+      status VARCHAR,
+      daily_limit INTEGER,
+      text_only BOOLEAN,
+      open_tracking BOOLEAN,
+      link_tracking BOOLEAN,
+      schedule_timezone VARCHAR,
+      sequence_count INTEGER,
+      step_count INTEGER,
+      timestamp_created TIMESTAMP,
+      timestamp_updated TIMESTAMP,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.campaign_analytics (
+      workspace_id VARCHAR NOT NULL,
+      campaign_id VARCHAR NOT NULL,
+      campaign_name VARCHAR,
+      leads_count INTEGER,
+      contacted_count INTEGER,
+      emails_sent_count INTEGER,
+      new_leads_contacted_count INTEGER,
+      open_count INTEGER,
+      open_count_unique INTEGER,
+      reply_count INTEGER,
+      reply_count_unique INTEGER,
+      reply_count_automatic INTEGER,
+      link_click_count INTEGER,
+      bounced_count INTEGER,
+      unsubscribed_count INTEGER,
+      completed_count INTEGER,
+      total_opportunities INTEGER,
+      total_opportunity_value DOUBLE,
+      total_interested INTEGER,
+      total_meeting_booked INTEGER,
+      total_meeting_completed INTEGER,
+      total_closed INTEGER,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, campaign_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.step_analytics (
+      workspace_id VARCHAR NOT NULL,
+      campaign_id VARCHAR NOT NULL,
+      step INTEGER,
+      variant INTEGER,
+      sent INTEGER,
+      opens INTEGER,
+      replies INTEGER,
+      replies_automatic INTEGER,
+      unique_replies INTEGER,
+      clicks INTEGER,
+      bounces INTEGER,
+      opportunities INTEGER,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, campaign_id, step, variant)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.campaign_variants (
+      workspace_id VARCHAR NOT NULL,
+      campaign_id VARCHAR NOT NULL,
+      sequence_index INTEGER,
+      step INTEGER,
+      variant INTEGER,
+      step_type VARCHAR,
+      delay_value INTEGER,
+      delay_unit VARCHAR,
+      subject VARCHAR,
+      body_text VARCHAR,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, campaign_id, sequence_index, step, variant)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.accounts (
+      workspace_id VARCHAR NOT NULL,
+      email VARCHAR NOT NULL,
+      organization_id VARCHAR,
+      status VARCHAR,
+      warmup_status VARCHAR,
+      warmup_score DOUBLE,
+      provider VARCHAR,
+      daily_limit INTEGER,
+      sending_gap INTEGER,
+      first_name VARCHAR,
+      last_name VARCHAR,
+      total_sent_30d INTEGER,
+      total_replies_30d INTEGER,
+      total_bounces_30d INTEGER,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, email)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.account_daily_metrics (
+      workspace_id VARCHAR NOT NULL,
+      email VARCHAR NOT NULL,
+      date DATE NOT NULL,
+      sent INTEGER,
+      bounced INTEGER,
+      contacted INTEGER,
+      new_leads_contacted INTEGER,
+      opened INTEGER,
+      unique_opened INTEGER,
+      replies INTEGER,
+      unique_replies INTEGER,
+      replies_automatic INTEGER,
+      unique_replies_automatic INTEGER,
+      clicks INTEGER,
+      unique_clicks INTEGER,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, email, date)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.custom_tags (
+      workspace_id VARCHAR NOT NULL,
+      id VARCHAR NOT NULL,
+      organization_id VARCHAR,
+      name VARCHAR,
+      label VARCHAR,
+      color VARCHAR,
+      description VARCHAR,
+      timestamp_created TIMESTAMP,
+      timestamp_updated TIMESTAMP,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.custom_tag_mappings (
+      workspace_id VARCHAR NOT NULL,
+      tag_id VARCHAR NOT NULL,
+      resource_type VARCHAR NOT NULL,
+      resource_id VARCHAR NOT NULL,
+      timestamp_created TIMESTAMP,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, tag_id, resource_type, resource_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.reply_emails (
+      workspace_id VARCHAR NOT NULL,
+      id VARCHAR NOT NULL,
+      campaign_id VARCHAR NOT NULL,
+      thread_id VARCHAR,
+      from_email VARCHAR,
+      to_email VARCHAR,
+      subject VARCHAR,
+      body_text VARCHAR,
+      sent_at TIMESTAMP,
+      is_auto_reply BOOLEAN,
+      ai_interest_value DOUBLE,
+      i_status INTEGER,
+      content_preview VARCHAR,
+      direction VARCHAR,
+      step_resolved VARCHAR,
+      variant_resolved VARCHAR,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.sampled_leads (
+      workspace_id VARCHAR NOT NULL,
+      campaign_id VARCHAR NOT NULL,
+      id VARCHAR,
+      email VARCHAR NOT NULL,
+      first_name VARCHAR,
+      last_name VARCHAR,
+      company_name VARCHAR,
+      company_domain VARCHAR,
+      status VARCHAR,
+      email_open_count INTEGER,
+      email_reply_count INTEGER,
+      email_click_count INTEGER,
+      lt_interest_status INTEGER,
+      email_opened_step INTEGER,
+      email_opened_variant INTEGER,
+      email_replied_step INTEGER,
+      email_replied_variant INTEGER,
+      email_clicked_step INTEGER,
+      email_clicked_variant INTEGER,
+      esp_code INTEGER,
+      verification_status INTEGER,
+      enrichment_status INTEGER,
+      timestamp_last_contact TIMESTAMP,
+      timestamp_last_reply TIMESTAMP,
+      job_title VARCHAR,
+      website VARCHAR,
+      phone VARCHAR,
+      personalization VARCHAR,
+      status_summary VARCHAR,
+      subsequence_id VARCHAR,
+      list_id VARCHAR,
+      custom_payload VARCHAR,
+      sample_source VARCHAR,
+      sampled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, campaign_id, email)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.sampled_outbound_emails (
+      workspace_id VARCHAR NOT NULL,
+      campaign_id VARCHAR NOT NULL,
+      id VARCHAR NOT NULL,
+      to_email VARCHAR,
+      from_email VARCHAR,
+      subject VARCHAR,
+      body_text VARCHAR,
+      sent_at TIMESTAMP,
+      step_resolved VARCHAR,
+      variant_resolved VARCHAR,
+      content_preview VARCHAR,
+      sample_source VARCHAR,
+      sampled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.sampling_runs (
+      workspace_id VARCHAR NOT NULL,
+      campaign_id VARCHAR NOT NULL,
+      ingest_mode VARCHAR,
+      total_leads INTEGER,
+      total_sent INTEGER,
+      reply_rows INTEGER,
+      reply_lead_rows INTEGER,
+      nonreply_sample_target INTEGER,
+      nonreply_rows_sampled INTEGER,
+      outbound_sample_target INTEGER,
+      outbound_rows_sampled INTEGER,
+      reply_outbound_rows INTEGER,
+      filtered_lead_rows INTEGER,
+      coverage_note VARCHAR,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, campaign_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.sync_log (
+      id VARCHAR PRIMARY KEY,
+      workspace_id VARCHAR,
+      source VARCHAR NOT NULL,
+      mode VARCHAR NOT NULL,
+      status VARCHAR NOT NULL,
+      scoped_campaign_ids VARCHAR,
+      campaigns_total INTEGER,
+      campaigns_processed INTEGER,
+      started_at TIMESTAMP,
+      ended_at TIMESTAMP,
+      duration_ms BIGINT,
+      message VARCHAR,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS email_opened_step INTEGER",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS email_opened_variant INTEGER",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS email_replied_step INTEGER",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS email_replied_variant INTEGER",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS email_clicked_step INTEGER",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS email_clicked_variant INTEGER",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS esp_code INTEGER",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS verification_status INTEGER",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS enrichment_status INTEGER",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS job_title VARCHAR",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS website VARCHAR",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS phone VARCHAR",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS personalization VARCHAR",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS status_summary VARCHAR",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS subsequence_id VARCHAR",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS list_id VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS reply_lead_rows INTEGER",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS reply_outbound_rows INTEGER",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS filtered_lead_rows INTEGER",
+    `CREATE OR REPLACE VIEW sendlens.campaign_tags AS
+      SELECT
+        m.workspace_id,
+        m.resource_id AS campaign_id,
+        c.name AS campaign_name,
+        m.tag_id,
+        COALESCE(t.label, t.name) AS tag_label,
+        t.color,
+        t.description
+      FROM sendlens.custom_tag_mappings m
+      JOIN sendlens.custom_tags t
+        ON m.workspace_id = t.workspace_id
+       AND m.tag_id = t.id
+      LEFT JOIN sendlens.campaigns c
+        ON m.workspace_id = c.workspace_id
+       AND m.resource_id = c.id
+      WHERE TRY_CAST(m.resource_type AS INTEGER) = 2`,
+    `CREATE OR REPLACE VIEW sendlens.account_tags AS
+      SELECT
+        m.workspace_id,
+        m.resource_id AS account_email,
+        m.tag_id,
+        COALESCE(t.label, t.name) AS tag_label,
+        t.color,
+        t.description
+      FROM sendlens.custom_tag_mappings m
+      JOIN sendlens.custom_tags t
+        ON m.workspace_id = t.workspace_id
+       AND m.tag_id = t.id
+      WHERE TRY_CAST(m.resource_type AS INTEGER) = 1`,
+    `CREATE OR REPLACE VIEW sendlens.campaign_overview AS
+      SELECT
+        c.workspace_id,
+        c.id AS campaign_id,
+        c.name AS campaign_name,
+        c.status,
+        c.daily_limit,
+        c.open_tracking,
+        c.link_tracking,
+        c.text_only,
+        COALESCE(ca.leads_count, 0) AS leads_count,
+        COALESCE(ca.new_leads_contacted_count, 0) AS contacted_count,
+        COALESCE(ca.emails_sent_count, 0) AS emails_sent_count,
+        COALESCE(ca.reply_count_unique, 0) AS reply_count_unique,
+        COALESCE(ca.reply_count_automatic, 0) AS reply_count_automatic,
+        COALESCE(ca.bounced_count, 0) AS bounced_count,
+        COALESCE(ca.total_opportunities, 0) AS total_opportunities,
+        COALESCE(sr.ingest_mode, 'missing') AS ingest_mode,
+        COALESCE(sr.reply_rows, 0) AS reply_rows,
+        COALESCE(sr.reply_lead_rows, 0) AS reply_lead_rows,
+        COALESCE(sr.nonreply_rows_sampled, 0) AS nonreply_rows_sampled,
+        COALESCE(sr.outbound_rows_sampled, 0) AS outbound_rows_sampled,
+        COALESCE(sr.reply_outbound_rows, 0) AS reply_outbound_rows,
+        COALESCE(sr.filtered_lead_rows, 0) AS filtered_lead_rows,
+        CASE
+          WHEN COALESCE(ca.emails_sent_count, 0) = 0 THEN 0
+          ELSE ROUND(100.0 * COALESCE(ca.reply_count_unique, 0) / ca.emails_sent_count, 2)
+        END AS unique_reply_rate_pct,
+        CASE
+          WHEN COALESCE(ca.emails_sent_count, 0) = 0 THEN 0
+          ELSE ROUND(100.0 * COALESCE(ca.bounced_count, 0) / ca.emails_sent_count, 2)
+        END AS bounce_rate_pct
+      FROM sendlens.campaigns c
+      LEFT JOIN sendlens.campaign_analytics ca
+        ON c.workspace_id = ca.workspace_id
+       AND c.id = ca.campaign_id
+      LEFT JOIN sendlens.sampling_runs sr
+        ON c.workspace_id = sr.workspace_id
+       AND c.id = sr.campaign_id`,
+    `CREATE OR REPLACE VIEW sendlens.lead_evidence AS
+      SELECT
+        sl.workspace_id,
+        sl.campaign_id,
+        c.name AS campaign_name,
+        sl.id,
+        sl.email,
+        sl.first_name,
+        sl.last_name,
+        sl.company_name,
+        sl.company_domain,
+        sl.status,
+        COALESCE(sl.email_open_count, 0) AS email_open_count,
+        COALESCE(sl.email_reply_count, 0) AS email_reply_count,
+        COALESCE(sl.email_click_count, 0) AS email_click_count,
+        sl.lt_interest_status,
+        CASE sl.lt_interest_status
+          WHEN 2 THEN 'meeting_booked'
+          WHEN 1 THEN 'interested'
+          WHEN 0 THEN 'neutral'
+          WHEN -1 THEN 'not_interested'
+          WHEN -2 THEN 'do_not_contact'
+          ELSE 'unclassified'
+        END AS lt_interest_label,
+        CASE
+          WHEN COALESCE(sl.email_reply_count, 0) <= 0 AND sl.timestamp_last_reply IS NULL THEN 'no_reply'
+          WHEN sl.lt_interest_status >= 1 THEN 'positive'
+          WHEN sl.lt_interest_status <= -1 THEN 'negative'
+          ELSE 'neutral'
+        END AS reply_outcome_label,
+        sl.email_replied_step,
+        sl.email_replied_variant,
+        sl.job_title,
+        sl.website,
+        sl.phone,
+        sl.personalization,
+        sl.status_summary,
+        sl.subsequence_id,
+        sl.list_id,
+        sl.esp_code,
+        sl.verification_status,
+        sl.enrichment_status,
+        sl.timestamp_last_contact,
+        sl.timestamp_last_reply,
+        sl.custom_payload,
+        sl.sample_source,
+        CASE
+          WHEN COALESCE(sl.email_reply_count, 0) > 0 OR sl.timestamp_last_reply IS NOT NULL THEN TRUE
+          ELSE FALSE
+        END AS has_reply_signal
+      FROM sendlens.sampled_leads sl
+      LEFT JOIN sendlens.campaigns c
+        ON sl.workspace_id = c.workspace_id
+       AND sl.campaign_id = c.id`,
+    `CREATE OR REPLACE VIEW sendlens.reply_context AS
+      SELECT
+        le.workspace_id,
+        le.campaign_id,
+        le.campaign_name,
+        le.email AS lead_email,
+        le.first_name,
+        le.last_name,
+        le.company_name,
+        le.company_domain,
+        le.job_title,
+        le.email_reply_count,
+        le.lt_interest_status,
+        le.lt_interest_label,
+        le.reply_outcome_label,
+        le.email_replied_step AS step_resolved,
+        le.email_replied_variant AS variant_resolved,
+        le.timestamp_last_reply AS reply_at,
+        so.subject AS rendered_subject,
+        so.body_text AS rendered_body_text,
+        so.sample_source,
+        cv.subject AS template_subject,
+        cv.body_text AS template_body_text
+      FROM sendlens.lead_evidence le
+      LEFT JOIN sendlens.sampled_outbound_emails so
+        ON le.workspace_id = so.workspace_id
+       AND le.campaign_id = so.campaign_id
+       AND le.email = so.to_email
+       AND CAST(le.email_replied_step AS VARCHAR) = so.step_resolved
+       AND CAST(COALESCE(le.email_replied_variant, 0) AS VARCHAR) = so.variant_resolved
+      LEFT JOIN sendlens.campaign_variants cv
+        ON le.workspace_id = cv.workspace_id
+       AND le.campaign_id = cv.campaign_id
+       AND le.email_replied_step = cv.step
+       AND COALESCE(le.email_replied_variant, 0) = cv.variant
+      WHERE le.has_reply_signal = TRUE`,
+    `CREATE OR REPLACE VIEW sendlens.rendered_outbound_context AS
+      SELECT
+        so.workspace_id,
+        so.campaign_id,
+        c.name AS campaign_name,
+        so.id,
+        so.to_email,
+        so.from_email,
+        so.subject AS rendered_subject,
+        so.body_text AS rendered_body_text,
+        so.sent_at,
+        so.step_resolved,
+        so.variant_resolved,
+        so.sample_source,
+        cv.subject AS template_subject,
+        cv.body_text AS template_body_text
+      FROM sendlens.sampled_outbound_emails so
+      LEFT JOIN sendlens.campaigns c
+        ON so.workspace_id = c.workspace_id
+       AND so.campaign_id = c.id
+      LEFT JOIN sendlens.campaign_variants cv
+        ON so.workspace_id = cv.workspace_id
+       AND so.campaign_id = cv.campaign_id
+       AND CAST(cv.step AS VARCHAR) = so.step_resolved
+       AND CAST(cv.variant AS VARCHAR) = so.variant_resolved`,
+  ];
+
+  for (const statement of statements) {
+    await run(conn, statement);
+  }
+}
+
+function esc(value: string) {
+  return value.replace(/'/g, "''");
+}
+
+export async function setPluginState(
+  conn: DuckDBConnection,
+  key: string,
+  value: string,
+) {
+  await run(
+    conn,
+    `INSERT OR REPLACE INTO sendlens.plugin_state (key, value, updated_at)
+     VALUES ('${esc(key)}', '${esc(value)}', CURRENT_TIMESTAMP)`,
+  );
+}
+
+export async function getPluginState(
+  conn: DuckDBConnection,
+  key: string,
+): Promise<string | null> {
+  const rows = await query(
+    conn,
+    `SELECT value FROM sendlens.plugin_state WHERE key = '${esc(key)}' LIMIT 1`,
+  );
+  const value = rows[0]?.value;
+  return typeof value === "string" ? value : null;
+}
+
+export async function clearWorkspaceData(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  campaignIds?: string[],
+) {
+  const workspace = esc(workspaceId);
+  const writableTables = [
+    "campaigns",
+    "campaign_analytics",
+    "step_analytics",
+    "campaign_variants",
+    "accounts",
+    "account_daily_metrics",
+    "custom_tags",
+    "custom_tag_mappings",
+    "reply_emails",
+    "sampled_leads",
+    "sampled_outbound_emails",
+    "sampling_runs",
+  ];
+  const scopedTables = [
+    "campaigns",
+    "campaign_analytics",
+    "step_analytics",
+    "campaign_variants",
+    "reply_emails",
+    "sampled_leads",
+    "sampled_outbound_emails",
+    "sampling_runs",
+  ];
+
+  if (!campaignIds || campaignIds.length === 0) {
+    for (const table of writableTables) {
+      await run(
+        conn,
+        `DELETE FROM sendlens.${table} WHERE workspace_id = '${workspace}'`,
+      );
+    }
+    return;
+  }
+
+  const ids = campaignIds.map((id) => `'${esc(id)}'`).join(", ");
+  for (const table of scopedTables) {
+    await run(
+      conn,
+      `DELETE FROM sendlens.${table}
+       WHERE workspace_id = '${workspace}' AND campaign_id IN (${ids})`,
+    ).catch(async () => {
+      await run(
+        conn,
+        `DELETE FROM sendlens.${table}
+         WHERE workspace_id = '${workspace}' AND id IN (${ids})`,
+      );
+    });
+  }
+}
+
+export async function clearWorkspaceMetadata(
+  conn: DuckDBConnection,
+  workspaceId: string,
+) {
+  const workspace = esc(workspaceId);
+  for (const table of [
+    "accounts",
+    "account_daily_metrics",
+    "custom_tags",
+    "custom_tag_mappings",
+  ]) {
+    await run(
+      conn,
+      `DELETE FROM sendlens.${table} WHERE workspace_id = '${workspace}'`,
+    );
+  }
+}
+
+export async function getActiveWorkspaceId(
+  conn: DuckDBConnection,
+): Promise<string | null> {
+  return getPluginState(conn, "active_workspace_id");
+}
+
+export async function setActiveWorkspaceId(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  mode?: "fast" | "full",
+) {
+  const refreshedAt = new Date().toISOString();
+  await setPluginState(conn, "active_workspace_id", workspaceId);
+  await setPluginState(conn, "last_refresh_at", refreshedAt);
+  await setPluginState(conn, `workspace:${workspaceId}:last_refresh_at`, refreshedAt);
+  if (mode) {
+    await setPluginState(conn, `workspace:${workspaceId}:last_${mode}_refresh_at`, refreshedAt);
+  }
+}
+
+export async function getWorkspaceLastRefreshAt(
+  conn: DuckDBConnection,
+  workspaceId: string,
+): Promise<string | null> {
+  const workspaceValue = await getPluginState(
+    conn,
+    `workspace:${workspaceId}:last_refresh_at`,
+  );
+  if (workspaceValue) return workspaceValue;
+  return getPluginState(conn, "last_refresh_at");
+}
+
+export type SyncLogRecord = {
+  id: string;
+  workspaceId?: string | null;
+  source: "session_start" | "manual";
+  mode: "fast" | "full";
+  status: "succeeded" | "failed" | "skipped";
+  scopedCampaignIds?: string[] | null;
+  campaignsTotal?: number | null;
+  campaignsProcessed?: number | null;
+  startedAt?: string | null;
+  endedAt?: string | null;
+  durationMs?: number | null;
+  message?: string | null;
+};
+
+export async function appendSyncLog(
+  conn: DuckDBConnection,
+  record: SyncLogRecord,
+) {
+  await run(
+    conn,
+    `INSERT OR REPLACE INTO sendlens.sync_log (
+      id,
+      workspace_id,
+      source,
+      mode,
+      status,
+      scoped_campaign_ids,
+      campaigns_total,
+      campaigns_processed,
+      started_at,
+      ended_at,
+      duration_ms,
+      message,
+      created_at
+    ) VALUES (
+      '${esc(record.id)}',
+      ${sqlString(record.workspaceId)},
+      '${esc(record.source)}',
+      '${esc(record.mode)}',
+      '${esc(record.status)}',
+      ${sqlString(record.scopedCampaignIds?.join(","))},
+      ${sqlNumber(record.campaignsTotal)},
+      ${sqlNumber(record.campaignsProcessed)},
+      ${sqlTimestamp(record.startedAt)},
+      ${sqlTimestamp(record.endedAt)},
+      ${sqlNumber(record.durationMs)},
+      ${sqlString(record.message)},
+      CURRENT_TIMESTAMP
+    )`,
+  );
+}
+
+export async function getLatestSuccessfulSync(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  source?: "session_start" | "manual",
+  mode?: "fast" | "full",
+): Promise<Record<string, unknown> | null> {
+  const filters = [
+    `workspace_id = '${esc(workspaceId)}'`,
+    `status = 'succeeded'`,
+  ];
+  if (source) filters.push(`source = '${esc(source)}'`);
+  if (mode) filters.push(`mode = '${esc(mode)}'`);
+  const rows = await query(
+    conn,
+    `SELECT *
+     FROM sendlens.sync_log
+     WHERE ${filters.join(" AND ")}
+     ORDER BY COALESCE(ended_at, created_at) DESC
+     LIMIT 1`,
+  );
+  return (rows[0] ?? null) as Record<string, unknown> | null;
+}
+
+function sqlString(value: string | null | undefined) {
+  if (value == null) return "NULL";
+  return `'${esc(value)}'`;
+}
+
+function sqlNumber(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return "NULL";
+  return String(Math.trunc(value));
+}
+
+function sqlTimestamp(value: string | null | undefined) {
+  if (!value) return "NULL";
+  return `${sqlString(value)}::TIMESTAMP`;
+}

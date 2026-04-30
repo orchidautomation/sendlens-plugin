@@ -1,0 +1,53 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="900" fill="#07131A"/>
+  <rect x="36" y="36" width="1528" height="828" rx="42" fill="url(#bg)" stroke="#173641" stroke-width="2"/>
+
+  <circle cx="1340" cy="176" r="180" fill="url(#orb)" opacity="0.22"/>
+  <circle cx="1340" cy="176" r="108" fill="url(#orb2)" opacity="0.24"/>
+
+  <g transform="translate(110 124)">
+    <rect width="164" height="164" rx="40" fill="#09161D"/>
+    <rect x="10" y="10" width="144" height="144" rx="32" fill="url(#markbg)"/>
+    <path d="M46 52C46 34 60 20 78 20H116" stroke="#39D4BA" stroke-width="14" stroke-linecap="round"/>
+    <path d="M46 52V95C46 126 71 151 102 151H128" stroke="#E8FFF9" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M128 151C159 151 184 126 184 95V73" stroke="#7DD3FC" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="134" cy="20" r="7" fill="#E8FFF9"/>
+    <rect x="126" y="89" width="58" height="14" rx="7" fill="#0F766E"/>
+  </g>
+
+  <text x="322" y="210" fill="#F8FFFD" font-size="112" font-weight="700" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif">SendLens</text>
+  <text x="324" y="290" fill="#A6F0E3" font-size="44" font-weight="600" font-family="IBM Plex Sans, Arial, sans-serif">Agentic reasoning over your Instantly data.</text>
+  <text x="324" y="352" fill="#D6E6E2" font-size="32" font-family="IBM Plex Sans, Arial, sans-serif">See what lands. Know who responds. Improve what happens next.</text>
+
+  <rect x="112" y="492" width="360" height="68" rx="18" fill="#0E2430"/>
+  <text x="144" y="536" fill="#F8FFFD" font-size="24" font-family="IBM Plex Sans, Arial, sans-serif">privacy-first local cache</text>
+
+  <rect x="492" y="492" width="382" height="68" rx="18" fill="#0E2430"/>
+  <text x="524" y="536" fill="#F8FFFD" font-size="24" font-family="IBM Plex Sans, Arial, sans-serif">campaign-scoped payload analysis</text>
+
+  <rect x="894" y="492" width="338" height="68" rx="18" fill="#0E2430"/>
+  <text x="926" y="536" fill="#F8FFFD" font-size="24" font-family="IBM Plex Sans, Arial, sans-serif">refreshes in seconds</text>
+
+  <rect x="112" y="594" width="1120" height="118" rx="28" fill="#09151F" stroke="#183844"/>
+  <text x="152" y="653" fill="#F8FFFD" font-size="30" font-family="IBM Plex Sans, Arial, sans-serif">What it enables:</text>
+  <text x="382" y="653" fill="#A8F4E5" font-size="30" font-family="IBM Plex Sans, Arial, sans-serif">find winning campaigns, isolate what positive responders have in common, and know what to test next.</text>
+
+  <defs>
+    <linearGradient id="bg" x1="64" y1="48" x2="1532" y2="858" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1D23"/>
+      <stop offset="1" stop-color="#102A34"/>
+    </linearGradient>
+    <linearGradient id="markbg" x1="18" y1="14" x2="144" y2="150" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0D242D"/>
+      <stop offset="1" stop-color="#143842"/>
+    </linearGradient>
+    <radialGradient id="orb" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1340 176) rotate(90) scale(180)">
+      <stop stop-color="#39D4BA"/>
+      <stop offset="1" stop-color="#39D4BA" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="orb2" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1340 176) rotate(90) scale(108)">
+      <stop stop-color="#7DD3FC"/>
+      <stop offset="1" stop-color="#7DD3FC" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>

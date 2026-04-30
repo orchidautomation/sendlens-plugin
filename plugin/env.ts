@@ -1,0 +1,94 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+type EnvMap = Record<string, string>;
+
+function parseEnvFile(filePath: string): EnvMap {
+  const content = fs.readFileSync(filePath, "utf8");
+  const values: EnvMap = {};
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const exportLine = line.startsWith("export ") ? line.slice(7).trim() : line;
+    const eq = exportLine.indexOf("=");
+    if (eq <= 0) continue;
+    const key = exportLine.slice(0, eq).trim();
+    let value = exportLine.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    value = value.replace(/\\n/g, "\n");
+    value = expandEnvValue(value);
+    values[key] = value;
+  }
+
+  return values;
+}
+
+function expandEnvValue(value: string) {
+  return value.replace(/\$(\w+)|\$\{([^}]+)\}/g, (_match, simpleName, bracedName) => {
+    const name = simpleName ?? bracedName;
+    if (!name) return "";
+    if (name === "HOME") {
+      return process.env.HOME ?? os.homedir();
+    }
+    return process.env[name] ?? "";
+  });
+}
+
+function applyEnv(values: EnvMap) {
+  for (const [key, value] of Object.entries(values)) {
+    process.env[key] = value;
+  }
+}
+
+export function getClientEnvPaths(rootDir = process.cwd()) {
+  const clientsDir = process.env.SENDLENS_CLIENTS_DIR?.trim()
+    ? path.resolve(rootDir, process.env.SENDLENS_CLIENTS_DIR)
+    : path.resolve(rootDir, ".env.clients");
+  const client = process.env.SENDLENS_CLIENT?.trim();
+
+  return {
+    client,
+    clientsDir,
+    basePaths: [
+      path.resolve(rootDir, ".env"),
+      path.resolve(rootDir, ".env.local"),
+    ],
+    clientPaths: client
+      ? [
+        path.join(clientsDir, `${client}.env`),
+        path.join(clientsDir, `${client}.local.env`),
+      ]
+      : [],
+  };
+}
+
+export function loadClientEnv(rootDir = process.cwd()) {
+  const initial = getClientEnvPaths(rootDir);
+  const loaded: string[] = [];
+
+  for (const filePath of initial.basePaths) {
+    if (!fs.existsSync(filePath)) continue;
+    applyEnv(parseEnvFile(filePath));
+    loaded.push(filePath);
+  }
+
+  const resolved = getClientEnvPaths(rootDir);
+  for (const filePath of resolved.clientPaths) {
+    if (!fs.existsSync(filePath)) continue;
+    applyEnv(parseEnvFile(filePath));
+    loaded.push(filePath);
+  }
+
+  return {
+    client: resolved.client,
+    clientsDir: resolved.clientsDir,
+    loaded,
+  };
+}

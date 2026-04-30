@@ -1,0 +1,29 @@
+{
+  "name": "sendlens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agentic reasoning over Instantly data with a privacy-first local cache.",
+  "scripts": {
+    "clean:plugin": "rm -rf build dist .sendlens .sendlens-local .sendlens-state .sendlens-local-state",
+    "build:plugin": "tsc -p tsconfig.plugin.json",
+    "build:hosts": "pluxx build --target claude-code cursor codex opencode",
+    "benchmark:fast-sync": "bash ./scripts/benchmark-fast-refresh.sh",
+    "validate:plugin": "pluxx validate",
+    "lint:plugin": "pluxx lint",
+    "ci:plugin": "npm run test:plugin && npm run validate:plugin && npm run lint:plugin && npm run build:hosts",
+    "release:check": "npm run ci:plugin",
+    "refresh:plugin": "npm run --silent build:plugin && node ./build/plugin/refresh-cli.js",
+    "start:plugin-mcp": "npm run --silent build:plugin && node ./build/plugin/server.js",
+    "test:plugin": "npm run --silent build:plugin && node scripts/test-local-plugin-sampling.mjs && node scripts/test-local-plugin-runtime.mjs"
+  },
+  "dependencies": {
+    "@duckdb/node-api": "^1.5.1-r.1",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "node-sql-parser": "^5.4.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "typescript": "^5.8.3"
+  }
+}

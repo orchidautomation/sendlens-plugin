@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  github-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_NAME="${GITHUB_REF_NAME}"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+
+          if [ "${TAG_NAME#v}" != "${PACKAGE_VERSION}" ]; then
+            echo "Tag ${TAG_NAME} does not match package.json version ${PACKAGE_VERSION}" >&2
+            exit 1
+          fi
+
+          echo "package_version=${PACKAGE_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Run release checks
+        run: npm run release:check
+
+      - name: Publish GitHub release assets with Pluxx
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: pluxx publish --github-release --version "${{ steps.version.outputs.package_version }}"
