@@ -19,8 +19,6 @@ It is designed to be fast, local, and safe by default:
 - raw `custom_payload` preserved per lead
 - fast startup refresh on every new session
 
-![SendLens cover](./assets/sendlens-cover.svg)
-
 ## Why SendLens Exists
 
 No other tool gives you agentic reasoning over your Instantly data in a way that is fast, private, and actually useful day to day.
@@ -66,14 +64,38 @@ It is intentionally not overfit to any single client. Stable Instantly fields ar
 Latest release:
 
 - [Latest release page](https://github.com/orchidautomation/sendlens-plugin/releases/latest)
-- [Universal installer](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-all.sh)
 
-Direct host installers:
+Copy-paste installers:
 
-- [Claude Code installer](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-claude-code.sh)
-- [Cursor installer](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-cursor.sh)
-- [Codex installer](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh)
-- [OpenCode installer](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-opencode.sh)
+Claude Code
+
+```bash
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-claude-code.sh | bash
+```
+
+Cursor
+
+```bash
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-cursor.sh | bash
+```
+
+Codex
+
+```bash
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | bash
+```
+
+OpenCode
+
+```bash
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-opencode.sh | bash
+```
+
+All supported hosts
+
+```bash
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-all.sh | bash
+```
 
 Direct bundle downloads:
 
@@ -250,11 +272,3 @@ This is the beginning of multi-client support. See [SEND-134](https://linear.app
 - [Install guide](./docs/INSTALL.md)
 - [Release guide](./docs/RELEASING.md)
 - [Brand assets](./assets/README.md)
-
-## Screenshots
-
-![Workspace overview](./assets/screenshot-overview.svg)
-
-![Curated query recipes](./assets/screenshot-recipes.svg)
-
-![Tag-based filtering](./assets/screenshot-tags.svg)

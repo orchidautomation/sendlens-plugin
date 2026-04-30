@@ -9,13 +9,37 @@ SendLens ships as native host bundles for:
 
 ## Fastest Path
 
-Use the latest release installers:
+Paste one of these:
 
-- [Universal installer](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-all.sh)
-- [Claude Code installer](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-claude-code.sh)
-- [Cursor installer](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-cursor.sh)
-- [Codex installer](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh)
-- [OpenCode installer](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-opencode.sh)
+Claude Code
+
+```bash
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-claude-code.sh | bash
+```
+
+Cursor
+
+```bash
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-cursor.sh | bash
+```
+
+Codex
+
+```bash
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | bash
+```
+
+OpenCode
+
+```bash
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-opencode.sh | bash
+```
+
+All supported hosts
+
+```bash
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-all.sh | bash
+```
 
 ## Bundle Downloads
 
