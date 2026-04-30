@@ -27,6 +27,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify Pluxx CLI is available
+        run: npx pluxx --version
+
       - name: Run CI checks
         run: npm run ci:plugin
 
