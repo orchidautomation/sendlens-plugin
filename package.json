@@ -1,12 +1,12 @@
 {
   "name": "sendlens",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "description": "Agentic reasoning over Instantly data with a privacy-first local cache.",
   "scripts": {
     "clean:plugin": "rm -rf build dist .sendlens .sendlens-local .sendlens-state .sendlens-local-state",
     "build:plugin": "tsc -p tsconfig.plugin.json",
-    "build:hosts": "pluxx build --target claude-code cursor codex opencode",
+    "build:hosts": "pluxx build --target claude-code cursor codex opencode && node ./scripts/patch-host-bundles.mjs",
     "benchmark:fast-sync": "bash ./scripts/benchmark-fast-refresh.sh",
     "validate:plugin": "pluxx validate",
     "lint:plugin": "pluxx lint",
