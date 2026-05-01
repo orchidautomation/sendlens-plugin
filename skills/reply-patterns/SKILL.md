@@ -17,6 +17,7 @@ Surface what prospects are saying, separate human replies from auto-noise, and s
 
 - If the user provides a campaign name or Instantly tag, use that scope first before grouping reply outcomes.
 - Pull `analysis_starters(topic="reply-patterns")` before custom analysis.
+- When SendLens MCP tools are available, stay inside the MCP tool surface. Do not inspect local files or query DuckDB through shell fallbacks.
 - Keep reply analysis scoped to one campaign at a time unless the user explicitly asks for a workspace-wide comparison.
 - If the user narrows to one campaign and wants stronger reply evidence, run `load_campaign_data` for that campaign first.
 - Query `reply_context` first.

@@ -403,17 +403,22 @@ async function ensureSchema(conn: DuckDBConnection) {
         COALESCE(sl.email_click_count, 0) AS email_click_count,
         sl.lt_interest_status,
         CASE sl.lt_interest_status
+          WHEN 4 THEN 'won'
+          WHEN 3 THEN 'meeting_completed'
           WHEN 2 THEN 'meeting_booked'
           WHEN 1 THEN 'interested'
-          WHEN 0 THEN 'neutral'
+          WHEN 0 THEN 'out_of_office'
           WHEN -1 THEN 'not_interested'
-          WHEN -2 THEN 'do_not_contact'
+          WHEN -2 THEN 'wrong_person'
+          WHEN -3 THEN 'lost'
+          WHEN -4 THEN 'no_show'
           ELSE 'unclassified'
         END AS lt_interest_label,
         CASE
           WHEN COALESCE(sl.email_reply_count, 0) <= 0 AND sl.timestamp_last_reply IS NULL THEN 'no_reply'
-          WHEN sl.lt_interest_status >= 1 THEN 'positive'
-          WHEN sl.lt_interest_status <= -1 THEN 'negative'
+          WHEN sl.lt_interest_status IN (1, 2, 3, 4) THEN 'positive'
+          WHEN sl.lt_interest_status IN (-1, -2, -3, -4) THEN 'negative'
+          WHEN sl.lt_interest_status = 0 THEN 'out_of_office'
           ELSE 'neutral'
         END AS reply_outcome_label,
         sl.email_replied_step,
@@ -433,7 +438,11 @@ async function ensureSchema(conn: DuckDBConnection) {
         sl.custom_payload,
         sl.sample_source,
         CASE
-          WHEN COALESCE(sl.email_reply_count, 0) > 0 OR sl.timestamp_last_reply IS NOT NULL THEN TRUE
+          WHEN (
+            COALESCE(sl.email_reply_count, 0) > 0
+            OR sl.timestamp_last_reply IS NOT NULL
+            OR sl.email_replied_step IS NOT NULL
+          ) AND sl.lt_interest_status IN (1, -1, -2) THEN TRUE
           ELSE FALSE
         END AS has_reply_signal
       FROM sendlens.sampled_leads sl

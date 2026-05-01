@@ -43,6 +43,7 @@ const QUERY_RECIPES: QueryRecipe[] = [
   nonreply_rows_sampled,
   reply_outbound_rows
 FROM sendlens.campaign_overview
+WHERE status = 'active'
 ORDER BY unique_reply_rate_pct DESC NULLS LAST, bounce_rate_pct ASC NULLS LAST, emails_sent_count DESC;`,
     notes: [
       "This is an exact aggregate query.",
@@ -91,10 +92,10 @@ ORDER BY bounce_rate_30d_pct DESC NULLS LAST, warmup_score ASC NULLS LAST, total
   nonreply_rows_sampled,
   filtered_lead_rows
 FROM sendlens.campaign_overview
-WHERE status IN ('active', 'running_subsequences', 'completed', 'paused')
+WHERE status = 'active'
 ORDER BY unique_reply_rate_pct DESC NULLS LAST, total_opportunities DESC NULLS LAST, emails_sent_count DESC;`,
     notes: [
-      "This should anchor campaign ranking discussions.",
+      "This defaults to active campaigns only.",
       "Use a minimum sent threshold in the conversation if the workspace has tiny campaigns.",
     ],
   },

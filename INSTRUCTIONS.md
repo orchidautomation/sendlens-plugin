@@ -22,6 +22,7 @@ SendLens is the reasoning layer over Instantly data. It runs read-only, stores d
 
 - If the user mentions `SendLens`, the plugin name, the Instantly workspace, campaign performance, replies, copy health, or asks to "pull my data", do not freeform first. Start with SendLens tools immediately.
 - Session start already triggers a fresh local refresh of actively sending campaigns. That startup path is intentionally lean: exact analytics, templates, and a sampled lead evidence layer with full replied leads plus bounded non-reply leads. Call `refresh_data` again only when the user explicitly asks for another fresh pull or switches clients.
+- When SendLens MCP tools are available, use those tools as the whole working surface. Do not inspect local files, `refresh-status.json`, DuckDB tables via shell, or repo source files as a substitute for tool calls.
 - `workspace_snapshot`: First read after refresh or for broad workspace questions. This is the default first call for "pull my data", "what's happening?", "what's working?", and "give me the snapshot".
 - `refresh_status`: Use when the user asks what startup refresh is doing, whether the cache is current, or why data looks incomplete or stale.
 - `load_campaign_data`: Use when the user narrows to one campaign and wants copy analysis, ICP analysis, reply outcome analysis, or reconstructed outbound for that campaign. Prefer this over a workspace-wide `refresh_data` call.
@@ -51,6 +52,7 @@ If the host does not expose native delegated agents, preserve the same one-campa
 ## Preferred Query Surfaces
 
 - Prefer `campaign_overview` for campaign ranking, health, sample coverage, and "what is working?" analysis. It is the main semantic rollup.
+- Broad workspace and tag-scoped reads should default to active campaigns only. Only include inactive, paused, completed, or purely historical campaigns when the user explicitly asks for them.
 - For deep analysis, prefer one campaign at a time. Use workspace-level views only to rank or choose campaigns, then move to `load_campaign_data(campaign_id=...)` before doing detailed copy, reply, or ICP analysis.
 - Prefer `reply_context` for positive/negative cohort analysis and "what copy got responses?" because it joins replied leads back to template context and locally reconstructed copy.
 - Prefer `rendered_outbound_context` when the user wants to inspect reconstructed lead-level copy or personalization QA. It is not exact delivered email text.

@@ -12,3 +12,5 @@ Use the `workspace-health` skill when the user wants a high-level diagnosis of c
 Arguments: $ARGUMENTS
 
 If arguments are provided, prefer scoping the triage to that campaign name or Instantly tag before expanding to the broader workspace.
+
+Default broad reads to active campaigns only unless the user explicitly asks for inactive or historical campaigns.

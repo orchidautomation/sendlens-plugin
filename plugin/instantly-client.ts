@@ -6,7 +6,7 @@
 import { appendTraceLog } from "./debug-log";
 
 const API_BASE = "https://api.instantly.ai/api/v2";
-const MAX_CONCURRENT = 5;
+const MAX_CONCURRENT = 8;
 const RETRY_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 1000;
 const EMAILS_MIN_INTERVAL_MS = 3000; // 20 req/min

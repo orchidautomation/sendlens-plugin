@@ -3,6 +3,8 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   allocateVariantEmailCaps,
+  calculateAdaptiveNonReplyLeadSampleSize,
+  calculateAdaptiveSignalReplyTarget,
   calculateNonReplyLeadSampleSize,
   inferSamplingMode,
   shouldUseFullRawIngest,
@@ -17,6 +19,12 @@ assert.equal(calculateNonReplyLeadSampleSize(10000, 10), 100);
 assert.equal(calculateNonReplyLeadSampleSize(20, 25), 0);
 assert.equal(calculateNonReplyLeadSampleSize(200, 20, 25), 25);
 assert.equal(calculateNonReplyLeadSampleSize(30, 10, 25), 20);
+assert.equal(calculateAdaptiveNonReplyLeadSampleSize(200, 20), 40);
+assert.equal(calculateAdaptiveNonReplyLeadSampleSize(10000, 10), 100);
+assert.equal(calculateAdaptiveNonReplyLeadSampleSize(30, 10), 20);
+assert.equal(calculateAdaptiveSignalReplyTarget(200), 12);
+assert.equal(calculateAdaptiveSignalReplyTarget(2500), 17);
+assert.equal(calculateAdaptiveSignalReplyTarget(40000), 40);
 
 assert.equal(inferSamplingMode(200, 4000), "full");
 assert.equal(inferSamplingMode(2000, 4000), "hybrid");

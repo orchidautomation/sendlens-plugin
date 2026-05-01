@@ -41,8 +41,9 @@ function expandEnvValue(value: string) {
   });
 }
 
-function applyEnv(values: EnvMap) {
+function applyEnv(values: EnvMap, lockedKeys: Set<string>) {
   for (const [key, value] of Object.entries(values)) {
+    if (lockedKeys.has(key)) continue;
     process.env[key] = value;
   }
 }
@@ -72,17 +73,22 @@ export function getClientEnvPaths(rootDir = process.cwd()) {
 export function loadClientEnv(rootDir = process.cwd()) {
   const initial = getClientEnvPaths(rootDir);
   const loaded: string[] = [];
+  const lockedKeys = new Set(
+    Object.entries(process.env)
+      .filter(([, value]) => value != null)
+      .map(([key]) => key),
+  );
 
   for (const filePath of initial.basePaths) {
     if (!fs.existsSync(filePath)) continue;
-    applyEnv(parseEnvFile(filePath));
+    applyEnv(parseEnvFile(filePath), lockedKeys);
     loaded.push(filePath);
   }
 
   const resolved = getClientEnvPaths(rootDir);
   for (const filePath of resolved.clientPaths) {
     if (!fs.existsSync(filePath)) continue;
-    applyEnv(parseEnvFile(filePath));
+    applyEnv(parseEnvFile(filePath), lockedKeys);
     loaded.push(filePath);
   }
 

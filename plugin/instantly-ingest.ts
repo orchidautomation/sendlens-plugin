@@ -4,10 +4,13 @@ import {
   DEFAULT_PAGE_SIZE,
   MAX_FULL_EMAIL_PAGES,
   MAX_OUTBOUND_EMAIL_SAMPLE,
+  MIN_SIGNAL_SCAN_PAGES,
   MAX_REPLY_LEAD_PAGES,
   MAX_REPLY_EMAIL_PAGES,
+  REFRESH_CAMPAIGN_CONCURRENCY,
   MAX_SAMPLE_PAGES,
-  SESSION_START_NONREPLY_LEAD_SAMPLE,
+  SESSION_START_MAX_REPLY_LEAD_PAGES,
+  SIGNAL_REPLY_INTEREST_STATUSES,
 } from "./constants";
 import {
   appendSyncLog,
@@ -20,6 +23,8 @@ import {
 } from "./local-db";
 import {
   allocateVariantEmailCaps,
+  calculateAdaptiveNonReplyLeadSampleSize,
+  calculateAdaptiveSignalReplyTarget,
   calculateNonReplyLeadSampleSize,
   inferSamplingMode,
   reservoirSample,
@@ -107,6 +112,26 @@ type NormalizedStepAnalyticsRow = {
   clicks: unknown;
   bounces: unknown;
   opportunities: unknown;
+};
+
+type CampaignRefreshBundle = {
+  campaign: Record<string, unknown>;
+  campaignId: string;
+  analyticsRow: Record<string, unknown> | undefined;
+  detail: Record<string, unknown>;
+  templates: CampaignVariantTemplate[];
+  rawStepAnalytics: Array<Record<string, unknown>>;
+  stepAnalytics: Array<Record<string, unknown>>;
+  skippedStepAnalytics: number;
+  leadSample: LeadSampleResult;
+  outboundSample: OutboundSampleResult;
+  totalUniqueReplies: number;
+  fullRaw: boolean;
+  detailElapsedMs: number;
+  stepElapsedMs: number;
+  leadSampleElapsedMs: number;
+  outboundElapsedMs: number;
+  totalElapsedMs: number;
 };
 
 function esc(value: string) {
@@ -385,12 +410,26 @@ function leadBelongsToCampaign(lead: LeadRecord, campaignId: string) {
   return campaignIds.has(campaignId);
 }
 
-function leadHasReplySignal(lead: LeadRecord, replyLeadEmails?: Set<string>) {
+function parseLeadInterestStatus(lead: LeadRecord) {
+  const parsed = Number(lead.lt_interest_status);
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+}
+
+function leadHasReplyMetadata(lead: LeadRecord, replyLeadEmails?: Set<string>) {
   if (replyLeadEmails?.has(normalizeEmail(lead.email))) return true;
   if ((Number(lead.email_reply_count ?? 0) || 0) > 0) return true;
   if (lead.timestamp_last_reply) return true;
   if (lead.email_replied_step != null) return true;
   return false;
+}
+
+function leadHasReplySignal(lead: LeadRecord, replyLeadEmails?: Set<string>) {
+  const interestStatus = parseLeadInterestStatus(lead);
+  if (interestStatus == null) return false;
+  if (!SIGNAL_REPLY_INTEREST_STATUSES.includes(interestStatus as (typeof SIGNAL_REPLY_INTEREST_STATUSES)[number])) {
+    return false;
+  }
+  return leadHasReplyMetadata(lead, replyLeadEmails);
 }
 
 function normalizeTemplateKey(key: string) {
@@ -944,7 +983,11 @@ async function fetchLeadSample(
   fullRaw: boolean,
   nonReplyLimit?: number,
 ) : Promise<LeadSampleResult> {
-  const target = calculateNonReplyLeadSampleSize(totalLeads, totalReplyLeads, nonReplyLimit);
+  const target =
+    nonReplyLimit != null
+      ? calculateNonReplyLeadSampleSize(totalLeads, totalReplyLeads, nonReplyLimit)
+      : calculateAdaptiveNonReplyLeadSampleSize(totalLeads, totalReplyLeads);
+  const signalReplyTarget = calculateAdaptiveSignalReplyTarget(totalLeads);
   const replyLeads = new Map<string, LeadRecord>();
   const nonReplyPool: LeadRecord[] = [];
   let filteredRows = 0;
@@ -982,7 +1025,12 @@ async function fetchLeadSample(
   }
 
   let cursor: string | null = null;
-  const maxPages = Math.max(MAX_SAMPLE_PAGES, MAX_REPLY_LEAD_PAGES);
+  const maxPages = Math.min(
+    Math.max(MAX_SAMPLE_PAGES, MIN_SIGNAL_SCAN_PAGES),
+    SESSION_START_MAX_REPLY_LEAD_PAGES,
+    MAX_REPLY_LEAD_PAGES,
+  );
+  const minimumSignalScanPages = Math.min(MIN_SIGNAL_SCAN_PAGES, maxPages);
 
   for (let page = 0; page < maxPages; page++) {
     const response = await instantly.listLeadsPage(apiKey, campaignId, cursor || undefined, {
@@ -995,8 +1043,14 @@ async function fetchLeadSample(
     }
 
     if (!cursor || response.items.length < DEFAULT_PAGE_SIZE) break;
-    const hasAllReplyLeads = totalReplyLeads === 0 || replyLeads.size >= totalReplyLeads;
-    if (nonReplyPool.length >= target && hasAllReplyLeads) {
+    const hasEnoughNonReplyCoverage = nonReplyPool.length >= target;
+    const hasEnoughSignalReplies = replyLeads.size >= signalReplyTarget;
+    const scannedEnoughPagesForSignalReplies = page + 1 >= minimumSignalScanPages;
+    if (
+      hasEnoughNonReplyCoverage
+      && hasEnoughSignalReplies
+      && scannedEnoughPagesForSignalReplies
+    ) {
       break;
     }
   }
@@ -1060,6 +1114,79 @@ function buildReconstructedOutboundSample(
     replyOutboundRows,
     nonReplyRowsSampled,
   });
+}
+
+async function hydrateCampaignRefreshBundle(
+  apiKey: string,
+  campaign: Record<string, unknown>,
+  analyticsRow: Record<string, unknown> | undefined,
+  options: RefreshOptions,
+): Promise<CampaignRefreshBundle> {
+  const campaignId = String(campaign.id ?? "");
+  const campaignStartedAt = Date.now();
+  const detailStartedAt = Date.now();
+  const stepStartedAt = Date.now();
+  const [detail, rawStepAnalytics] = await Promise.all([
+    instantly.getCampaignDetails(apiKey, campaignId),
+    instantly.getStepAnalytics(apiKey, campaignId, {
+      includeOpportunitiesCount: true,
+    }),
+  ]);
+  const templates = extractCampaignVariants(detail);
+  const detailElapsedMs = Date.now() - detailStartedAt;
+  const { validRows: stepAnalytics, skippedRows: skippedStepAnalytics } =
+    normalizeStepAnalyticsRows(rawStepAnalytics);
+  const stepElapsedMs = Date.now() - stepStartedAt;
+
+  if (skippedStepAnalytics > 0) {
+    console.warn(
+      `[sendlens] Skipped ${skippedStepAnalytics} malformed step analytics row(s) for campaign ${campaignId}.`,
+    );
+  }
+
+  const totalLeads = Number(analyticsRow?.leads_count ?? 0) || 0;
+  const totalSent = Number(analyticsRow?.emails_sent_count ?? 0) || 0;
+  const totalUniqueReplies = Number(analyticsRow?.reply_count_unique ?? 0) || 0;
+  const fullRaw = options.forceHybrid ? false : false;
+
+  const leadSampleStartedAt = Date.now();
+  const leadSample = await fetchLeadSample(
+    apiKey,
+    campaignId,
+    totalLeads,
+    totalUniqueReplies,
+    fullRaw,
+    options.nonReplyLeadLimit,
+  );
+  const leadSampleElapsedMs = Date.now() - leadSampleStartedAt;
+
+  const outboundStartedAt = Date.now();
+  const outboundSample = await buildReconstructedOutboundSample(
+    campaignId,
+    leadSample,
+    templates,
+  );
+  const outboundElapsedMs = Date.now() - outboundStartedAt;
+
+  return {
+    campaign,
+    campaignId,
+    analyticsRow,
+    detail,
+    templates,
+    rawStepAnalytics,
+    stepAnalytics,
+    skippedStepAnalytics,
+    leadSample,
+    outboundSample,
+    totalUniqueReplies,
+    fullRaw,
+    detailElapsedMs,
+    stepElapsedMs,
+    leadSampleElapsedMs,
+    outboundElapsedMs,
+    totalElapsedMs: Date.now() - campaignStartedAt,
+  };
 }
 
 async function storeCampaignData(
@@ -1584,106 +1711,79 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
       await storeCustomTags(db, workspaceId, customTags, customTagMappings);
     }
 
-    for (let index = 0; index < selectedCampaigns.length; index++) {
-      const campaign = selectedCampaigns[index];
-      const campaignId = String(campaign.id ?? "");
-      const campaignStartedAt = Date.now();
-      await writeRefreshStatus({
-        workspaceId,
-        campaignsTotal: selectedCampaigns.length,
-        campaignsProcessed: index,
-        currentCampaignId: campaignId,
-        currentCampaignName: String(campaign.name ?? campaignId),
-        message: `Refreshing campaign ${index + 1} of ${selectedCampaigns.length}.`,
-      });
-      const analyticsRow = analyticsByCampaign.get(campaignId);
-      const detailStartedAt = Date.now();
-      const detail = await instantly.getCampaignDetails(apiKey, campaignId);
-      const templates = extractCampaignVariants(detail);
-      const detailElapsedMs = Date.now() - detailStartedAt;
-      const stepStartedAt = Date.now();
-      const rawStepAnalytics = await instantly.getStepAnalytics(apiKey, campaignId, {
-        includeOpportunitiesCount: true,
-      });
-      const { validRows: stepAnalytics, skippedRows: skippedStepAnalytics } =
-        normalizeStepAnalyticsRows(rawStepAnalytics);
-      const stepElapsedMs = Date.now() - stepStartedAt;
-      if (skippedStepAnalytics > 0) {
-        console.warn(
-          `[sendlens] Skipped ${skippedStepAnalytics} malformed step analytics row(s) for campaign ${campaignId}.`,
+    let campaignsProcessed = 0;
+    await writeRefreshStatus({
+      workspaceId,
+      campaignsTotal: selectedCampaigns.length,
+      campaignsProcessed,
+      currentCampaignId: null,
+      currentCampaignName: null,
+      message: `Refreshing ${selectedCampaigns.length} campaigns with concurrency ${Math.min(REFRESH_CAMPAIGN_CONCURRENCY, selectedCampaigns.length)}.`,
+    });
+
+    for (let start = 0; start < selectedCampaigns.length; start += REFRESH_CAMPAIGN_CONCURRENCY) {
+      const batch = selectedCampaigns.slice(start, start + REFRESH_CAMPAIGN_CONCURRENCY);
+      const bundles = await Promise.all(
+        batch.map((campaign) =>
+          hydrateCampaignRefreshBundle(
+            apiKey,
+            campaign,
+            analyticsByCampaign.get(String(campaign.id ?? "")),
+            options,
+          ),
+        ),
+      );
+
+      for (const bundle of bundles) {
+        await storeCampaignData(
+          db,
+          workspaceId,
+          bundle.campaign,
+          bundle.analyticsRow,
+          bundle.detail,
+          bundle.stepAnalytics,
+          [],
+          bundle.leadSample,
+          bundle.outboundSample,
+          bundle.templates,
         );
+        campaignsProcessed += 1;
+        await appendTraceLog("refresh.campaign", {
+          campaignId: bundle.campaignId,
+          campaignName: String(bundle.campaign.name ?? bundle.campaignId),
+          index: campaignsProcessed,
+          total: selectedCampaigns.length,
+          fullRaw: bundle.fullRaw,
+          templates: bundle.templates.length,
+          rawStepAnalyticsRows: bundle.rawStepAnalytics.length,
+          stepAnalyticsRows: bundle.stepAnalytics.length,
+          skippedStepAnalytics: bundle.skippedStepAnalytics,
+          exactUniqueReplies: bundle.totalUniqueReplies,
+          leadSampleRows: bundle.leadSample.leads.length,
+          leadSampleSource: bundle.leadSample.source,
+          replyLeadRows: bundle.leadSample.replyLeadRows,
+          nonReplyRowsSampled: bundle.leadSample.nonReplyRowsSampled,
+          filteredLeadRows: bundle.leadSample.filteredRows,
+          outboundRows: bundle.outboundSample.emails.length,
+          outboundSource: bundle.outboundSample.source,
+          replyOutboundRows: bundle.outboundSample.replyOutboundRows,
+          nonReplyOutboundRows: bundle.outboundSample.nonReplyRowsSampled,
+          detailElapsedMs: bundle.detailElapsedMs,
+          stepElapsedMs: bundle.stepElapsedMs,
+          leadSampleElapsedMs: bundle.leadSampleElapsedMs,
+          outboundElapsedMs: bundle.outboundElapsedMs,
+          totalElapsedMs: bundle.totalElapsedMs,
+        });
+
+        await writeRefreshStatus({
+          workspaceId,
+          campaignsTotal: selectedCampaigns.length,
+          campaignsProcessed,
+          currentCampaignId: bundle.campaignId,
+          currentCampaignName: String(bundle.campaign.name ?? bundle.campaignId),
+          message: `Stored campaign ${campaignsProcessed} of ${selectedCampaigns.length}.`,
+        });
       }
-      const totalLeads = Number(analyticsRow?.leads_count ?? 0) || 0;
-      const totalSent = Number(analyticsRow?.emails_sent_count ?? 0) || 0;
-      const totalUniqueReplies = Number(analyticsRow?.reply_count_unique ?? 0) || 0;
-      const fullRaw = options.forceHybrid
-        ? false
-        : false;
-      const leadSampleStartedAt = Date.now();
-      const leadSample = await fetchLeadSample(
-        apiKey,
-        campaignId,
-        totalLeads,
-        totalUniqueReplies,
-        fullRaw,
-        options.nonReplyLeadLimit ?? SESSION_START_NONREPLY_LEAD_SAMPLE,
-      );
-      const leadSampleElapsedMs = Date.now() - leadSampleStartedAt;
-      const outboundStartedAt = Date.now();
-      const outboundSample = await buildReconstructedOutboundSample(
-        campaignId,
-        leadSample,
-        templates,
-      );
-      const outboundElapsedMs = Date.now() - outboundStartedAt;
-
-      await storeCampaignData(
-        db,
-        workspaceId,
-        campaign,
-        analyticsRow,
-        detail,
-        stepAnalytics,
-        [],
-        leadSample,
-        outboundSample,
-        templates,
-      );
-      await appendTraceLog("refresh.campaign", {
-        campaignId,
-        campaignName: String(campaign.name ?? campaignId),
-        index: index + 1,
-        total: selectedCampaigns.length,
-        fullRaw,
-        templates: templates.length,
-        rawStepAnalyticsRows: rawStepAnalytics.length,
-        stepAnalyticsRows: stepAnalytics.length,
-        skippedStepAnalytics,
-        exactUniqueReplies: totalUniqueReplies,
-        leadSampleRows: leadSample.leads.length,
-        leadSampleSource: leadSample.source,
-        replyLeadRows: leadSample.replyLeadRows,
-        nonReplyRowsSampled: leadSample.nonReplyRowsSampled,
-        filteredLeadRows: leadSample.filteredRows,
-        outboundRows: outboundSample.emails.length,
-        outboundSource: outboundSample.source,
-        replyOutboundRows: outboundSample.replyOutboundRows,
-        nonReplyOutboundRows: outboundSample.nonReplyRowsSampled,
-        detailElapsedMs,
-        stepElapsedMs,
-        leadSampleElapsedMs,
-        outboundElapsedMs,
-        totalElapsedMs: Date.now() - campaignStartedAt,
-      });
-
-      await writeRefreshStatus({
-        workspaceId,
-        campaignsTotal: selectedCampaigns.length,
-        campaignsProcessed: index + 1,
-        currentCampaignId: campaignId,
-        currentCampaignName: String(campaign.name ?? campaignId),
-        message: `Stored campaign ${index + 1} of ${selectedCampaigns.length}.`,
-      });
     }
 
     await setActiveWorkspaceId(db, workspaceId, "fast");

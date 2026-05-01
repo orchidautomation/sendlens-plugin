@@ -5,15 +5,22 @@ export const DEFAULT_DB_FILENAME = "workspace-cache.duckdb";
 export const FULL_LEADS_THRESHOLD = 500;
 export const FULL_EMAILS_THRESHOLD = 1000;
 export const MAX_NONREPLY_LEAD_SAMPLE = 100;
+export const MIN_NONREPLY_LEAD_SAMPLE = 40;
 export const MAX_OUTBOUND_EMAIL_SAMPLE = 100;
 export const DEFAULT_PAGE_SIZE = 100;
 export const MAX_SAMPLE_PAGES = 4;
 export const MAX_REPLY_LEAD_PAGES = 12;
+export const SESSION_START_MAX_REPLY_LEAD_PAGES = 4;
+export const MIN_SIGNAL_REPLY_LEADS = 12;
+export const MAX_SIGNAL_REPLY_LEADS = 40;
+export const MIN_SIGNAL_SCAN_PAGES = 2;
 export const MAX_FULL_EMAIL_PAGES = 20;
 export const MAX_REPLY_EMAIL_PAGES = 200;
 export const SESSION_START_EMAIL_LOOKBACK_DAYS = 21;
 export const SESSION_START_REPLY_EMAIL_PAGES = 8;
 export const SESSION_START_NONREPLY_LEAD_SAMPLE = 25;
+export const REFRESH_CAMPAIGN_CONCURRENCY = 6;
+export const SIGNAL_REPLY_INTEREST_STATUSES = [1, -1, -2] as const;
 
 export const PUBLIC_TABLES = [
   "campaigns",

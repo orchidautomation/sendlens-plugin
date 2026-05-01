@@ -1,6 +1,10 @@
 import {
   FULL_EMAILS_THRESHOLD,
   FULL_LEADS_THRESHOLD,
+  MAX_SIGNAL_REPLY_LEADS,
+  MAX_REPLY_LEAD_PAGES,
+  MIN_NONREPLY_LEAD_SAMPLE,
+  MIN_SIGNAL_REPLY_LEADS,
   MAX_NONREPLY_LEAD_SAMPLE,
   MAX_OUTBOUND_EMAIL_SAMPLE,
 } from "./constants";
@@ -21,6 +25,27 @@ export function calculateNonReplyLeadSampleSize(
 ): number {
   const nonReplyPopulation = Math.max(0, totalLeads - repliedLeadCount);
   return Math.min(limit, nonReplyPopulation);
+}
+
+export function calculateAdaptiveNonReplyLeadSampleSize(
+  totalLeads: number,
+  repliedLeadCount = 0,
+  floor = MIN_NONREPLY_LEAD_SAMPLE,
+  limit = MAX_NONREPLY_LEAD_SAMPLE,
+): number {
+  const nonReplyPopulation = Math.max(0, totalLeads - repliedLeadCount);
+  if (nonReplyPopulation <= 0) return 0;
+  const target = Math.ceil(Math.sqrt(Math.max(totalLeads, 1)));
+  return Math.min(limit, nonReplyPopulation, Math.max(floor, target));
+}
+
+export function calculateAdaptiveSignalReplyTarget(
+  totalLeads: number,
+  floor = MIN_SIGNAL_REPLY_LEADS,
+  limit = MAX_SIGNAL_REPLY_LEADS,
+): number {
+  const target = Math.ceil(Math.sqrt(Math.max(totalLeads, 1)) / 3);
+  return Math.min(limit, Math.max(floor, target));
 }
 
 export function allocateVariantEmailCaps(

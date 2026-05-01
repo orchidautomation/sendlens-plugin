@@ -47,7 +47,8 @@ await run(
   `INSERT OR REPLACE INTO sendlens.sampled_leads
    (workspace_id, campaign_id, id, email, email_reply_count, lt_interest_status, email_replied_step, email_replied_variant, timestamp_last_reply, job_title, custom_payload, sample_source, sampled_at)
    VALUES ('ws_test', 'c1', 'l1', 'a@example.com', 1, 1, 0, 0, CURRENT_TIMESTAMP, 'VP Operations', '{"campaign":"c1","Country":"United States","Category":"Healthcare","firstName":"Alex"}', 'reply_full', CURRENT_TIMESTAMP),
-          ('ws_test', 'c1', 'l2', 'b@example.com', 0, NULL, NULL, NULL, NULL, 'Director', '{"campaign":"c1","Country":"Canada","Category":"Healthcare"}', 'nonreply_sample', CURRENT_TIMESTAMP)`,
+          ('ws_test', 'c1', 'l2', 'b@example.com', 0, NULL, NULL, NULL, NULL, 'Director', '{"campaign":"c1","Country":"Canada","Category":"Healthcare"}', 'nonreply_sample', CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', 'l3', 'ooo@example.com', 1, 0, 0, 0, CURRENT_TIMESTAMP, 'Manager', '{"campaign":"c1","Country":"United States"}', 'reply_full', CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
@@ -86,14 +87,14 @@ await setActiveWorkspaceId(db, "ws_test");
 
 const summary = await buildWorkspaceSummary(db);
 assert.equal(summary.workspaceId, "ws_test");
-assert.equal(summary.exact_metrics.campaign_count, 2);
+assert.equal(summary.exact_metrics.campaign_count, 1);
 assert.equal(summary.exact_metrics.active_campaign_count, 1);
-assert.equal(summary.exact_metrics.total_sent, 1000);
-assert.equal(summary.exact_metrics.total_unique_replies, 25);
+assert.equal(summary.exact_metrics.total_sent, 800);
+assert.equal(summary.exact_metrics.total_unique_replies, 24);
 assert.ok(summary.summary.includes("1 custom tags stored locally"));
 assert.ok(summary.summary.includes("Sampled raw tables are evidence support only"));
 assert.ok(summary.summary.includes("full reply leads"));
-assert.equal(summary.coverage.length, 2);
+assert.equal(summary.coverage.length, 1);
 
 const campaignOverview = await runQuery(
   db,
@@ -109,6 +110,14 @@ const leadEvidence = await runQuery(
 assert.equal(leadEvidence[0].campaign_name, "Alpha");
 assert.equal(String(leadEvidence[0].reply_outcome_label), "positive");
 assert.match(String(leadEvidence[0].custom_payload), /"campaign":"c1"/);
+
+const oooLeadEvidence = await runQuery(
+  db,
+  "SELECT has_reply_signal, reply_outcome_label, lt_interest_label FROM sendlens.lead_evidence WHERE email = 'ooo@example.com'",
+);
+assert.equal(Boolean(oooLeadEvidence[0].has_reply_signal), false);
+assert.equal(String(oooLeadEvidence[0].reply_outcome_label), "out_of_office");
+assert.equal(String(oooLeadEvidence[0].lt_interest_label), "out_of_office");
 
 const replyContext = await runQuery(
   db,
@@ -211,7 +220,7 @@ process.env.SENDLENS_INSTANTLY_API_KEY = "ambient-key";
 delete process.env.SENDLENS_DB_PATH;
 delete process.env.SENDLENS_CLIENT;
 loadClientEnv(envRoot);
-assert.equal(process.env.SENDLENS_INSTANTLY_API_KEY, "client-key");
+assert.equal(process.env.SENDLENS_INSTANTLY_API_KEY, "ambient-key");
 assert.equal(
   process.env.SENDLENS_DB_PATH,
   path.join(os.homedir(), ".sendlens", "workspace-cache.duckdb"),

@@ -14,8 +14,47 @@ loadClientEnv();
 
 const server = new McpServer({
   name: "sendlens",
-  version: "0.1.0",
+  version: "0.1.6",
 });
+
+const SESSION_REFRESH_WAIT_TIMEOUT_MS = 15_000;
+const SESSION_REFRESH_POLL_MS = 500;
+const PLUXX_READINESS_FOLLOWUP = [
+  "Temporary SendLens readiness gate in effect.",
+  "Proper cross-host readiness modeling is tracked in PLUXX-212 and PLUXX-213.",
+].join(" ");
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForSessionSnapshot() {
+  const startedAt = Date.now();
+  let status = await readRefreshStatus();
+  let waited = false;
+
+  while (
+    status.status === "running"
+    && status.source === "session_start"
+    && Date.now() - startedAt < SESSION_REFRESH_WAIT_TIMEOUT_MS
+  ) {
+    waited = true;
+    await sleep(SESSION_REFRESH_POLL_MS);
+    status = await readRefreshStatus();
+  }
+
+  const timedOut =
+    status.status === "running"
+    && status.source === "session_start"
+    && Date.now() - startedAt >= SESSION_REFRESH_WAIT_TIMEOUT_MS;
+
+  return {
+    status,
+    waited,
+    timedOut,
+    warning: timedOut ? PLUXX_READINESS_FOLLOWUP : null,
+  };
+}
 
 server.registerTool(
   "refresh_data",
@@ -78,6 +117,7 @@ server.registerTool(
     max_nonreply_leads = 350,
     reply_bucket_limit = 10,
   }) => {
+    const readiness = await waitForSessionSnapshot();
     const refreshed = await refreshWorkspace({
       campaignIds: [campaign_id],
       source: "manual",
@@ -137,11 +177,20 @@ server.registerTool(
           {
             type: "text",
             text: JSON.stringify(
-              {
-                refreshed,
-                campaign_overview: overviewRows[0] ?? null,
-                human_reply_sample: replySample,
-                rendered_outbound_sample: renderedRows,
+            {
+              refreshed,
+              readiness:
+                readiness.waited || readiness.timedOut
+                  ? {
+                    waited_for_session_snapshot: readiness.waited,
+                    timed_out: readiness.timedOut,
+                    current_status: readiness.status.status,
+                    message: readiness.warning,
+                  }
+                  : undefined,
+              campaign_overview: overviewRows[0] ?? null,
+              human_reply_sample: replySample,
+              rendered_outbound_sample: renderedRows,
               },
               null,
               2,
@@ -159,18 +208,46 @@ server.registerTool(
   "workspace_snapshot",
   {
     description:
-      "Get the current high-level SendLens snapshot for the local workspace.",
-    inputSchema: {},
+      "Get the current high-level SendLens snapshot for the local workspace, optionally scoped to a campaign name or Instantly tag using only the current local cache.",
+    inputSchema: {
+      instantly_tag: z
+        .string()
+        .optional()
+        .describe("Optional exact Instantly campaign tag label to filter by."),
+      campaign_name: z
+        .string()
+        .optional()
+        .describe("Optional case-insensitive campaign name fragment to filter by."),
+    },
   },
-  async () => {
+  async ({ instantly_tag, campaign_name }) => {
+    const readiness = await waitForSessionSnapshot();
     const db = await getDb();
     try {
-      const summary = await buildWorkspaceSummary(db);
+      const hasScope = Boolean(instantly_tag?.trim() || campaign_name?.trim());
+      const summary = hasScope
+        ? await buildScopedWorkspaceSnapshot(db, {
+          instantlyTag: instantly_tag?.trim() || undefined,
+          campaignName: campaign_name?.trim() || undefined,
+        })
+        : await buildWorkspaceSummary(db);
+      const payload = {
+        ...summary,
+        readiness:
+          readiness.waited || readiness.timedOut
+            ? {
+              waited_for_session_snapshot: readiness.waited,
+              timed_out: readiness.timedOut,
+              current_status: readiness.status.status,
+              message: readiness.warning,
+            }
+            : undefined,
+      };
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(summary, null, 2),
+            text: JSON.stringify(payload, null, 2),
           },
         ],
       };
@@ -327,6 +404,7 @@ server.registerTool(
     },
   },
   async ({ sql, rationale }) => {
+    const readiness = await waitForSessionSnapshot();
     const db = await getDb();
     let rewritten: string | null = null;
     try {
@@ -391,6 +469,15 @@ server.registerTool(
             text: JSON.stringify(
               {
                 rationale,
+                readiness:
+                  readiness.waited || readiness.timedOut
+                    ? {
+                      waited_for_session_snapshot: readiness.waited,
+                      timed_out: readiness.timedOut,
+                      current_status: readiness.status.status,
+                      message: readiness.warning,
+                    }
+                    : undefined,
                 row_count: rows.length,
                 rows,
               },
@@ -459,13 +546,180 @@ function stratifyHumanReplies(
 
 function classifyReply(row: Record<string, unknown>) {
   const label = String(row.reply_outcome_label ?? row.lt_interest_label ?? "").trim().toLowerCase();
-  if (label === "positive" || label === "interested" || label === "meeting_booked") {
+  if (
+    label === "positive"
+    || label === "interested"
+    || label === "meeting_booked"
+    || label === "meeting_completed"
+    || label === "won"
+  ) {
     return "positive";
   }
-  if (label === "negative" || label === "not_interested" || label === "do_not_contact") {
+  if (
+    label === "negative"
+    || label === "not_interested"
+    || label === "wrong_person"
+    || label === "lost"
+    || label === "no_show"
+  ) {
     return "negative";
   }
   return "neutral";
+}
+
+async function buildScopedWorkspaceSnapshot(
+  db: Awaited<ReturnType<typeof getDb>>,
+  scope: {
+    instantlyTag?: string;
+    campaignName?: string;
+  },
+) {
+  const workspaceId = await getActiveWorkspaceId(db);
+  if (!workspaceId) {
+    return {
+      workspaceId: null,
+      summary:
+        "No active workspace is loaded. Run refresh_data() before asking for analysis.",
+      exact_metrics: {},
+      coverage: [],
+      warnings: ["No workspace has been refreshed locally yet."],
+      last_refreshed_at: null,
+    };
+  }
+
+  const workspace = workspaceId.replace(/'/g, "''");
+  const whereClauses = [
+    `co.workspace_id = '${workspace}'`,
+    `co.status = 'active'`,
+  ];
+  const scopeNotes: string[] = [];
+
+  if (scope.instantlyTag) {
+    const safeTag = scope.instantlyTag.replace(/'/g, "''");
+    whereClauses.push(
+      `EXISTS (
+        SELECT 1
+        FROM sendlens.campaign_tags ct
+        WHERE ct.workspace_id = co.workspace_id
+          AND ct.campaign_id = co.campaign_id
+          AND lower(ct.tag_label) = lower('${safeTag}')
+      )`,
+    );
+    scopeNotes.push(`tag "${scope.instantlyTag}"`);
+  }
+
+  if (scope.campaignName) {
+    const safeName = scope.campaignName.replace(/'/g, "''");
+    whereClauses.push(`lower(co.campaign_name) LIKE lower('%${safeName}%')`);
+    scopeNotes.push(`campaign name containing "${scope.campaignName}"`);
+  }
+
+  const whereSql = whereClauses.join("\n  AND ");
+
+  const campaignRows = await query(
+    db,
+    `SELECT
+       co.campaign_id,
+       co.campaign_name,
+       co.status,
+       co.emails_sent_count,
+       co.reply_count_unique,
+       co.unique_reply_rate_pct,
+       co.bounced_count,
+       co.bounce_rate_pct,
+       co.total_opportunities,
+       co.total_opportunity_value,
+       co.reply_lead_rows,
+       co.nonreply_rows_sampled,
+       co.reply_outbound_rows
+     FROM sendlens.campaign_overview co
+     WHERE ${whereSql}
+     ORDER BY co.emails_sent_count DESC, co.unique_reply_rate_pct DESC NULLS LAST`,
+  );
+
+  if (campaignRows.length === 0) {
+    return {
+      workspaceId,
+      scope: scopeNotes,
+      summary: `No campaigns matched ${scopeNotes.join(" and ")} in the active cached workspace.`,
+      exact_metrics: {},
+      coverage: [],
+      warnings: ["No campaigns matched the requested scoped filter in the local cache."],
+      last_refreshed_at: await readRefreshStatus().then((s) => s.lastSuccessAt ?? null),
+      campaigns: [],
+    };
+  }
+
+  const metricsRows = await query(
+    db,
+    `SELECT
+       COUNT(*) AS campaign_count,
+       SUM(CASE WHEN co.status = 'active' THEN 1 ELSE 0 END) AS active_campaign_count,
+       COALESCE(SUM(co.emails_sent_count), 0) AS total_sent,
+       COALESCE(SUM(co.reply_count_unique), 0) AS total_unique_replies,
+       COALESCE(SUM(co.bounced_count), 0) AS total_bounces,
+       COALESCE(SUM(co.total_opportunities), 0) AS total_opportunities,
+       COALESCE(SUM(co.total_opportunity_value), 0) AS total_pipeline
+     FROM sendlens.campaign_overview co
+     WHERE ${whereSql}`,
+  );
+
+  const metrics = metricsRows[0] ?? {};
+  const totalSent = Number(metrics.total_sent ?? 0) || 0;
+  const totalUniqueReplies = Number(metrics.total_unique_replies ?? 0) || 0;
+  const totalBounces = Number(metrics.total_bounces ?? 0) || 0;
+  const totalOpportunities = Number(metrics.total_opportunities ?? 0) || 0;
+  const totalPipeline = Number(metrics.total_pipeline ?? 0) || 0;
+  const replyRate = totalSent ? (totalUniqueReplies / totalSent) * 100 : 0;
+  const bounceRate = totalSent ? (totalBounces / totalSent) * 100 : 0;
+  const leader = campaignRows[0];
+  const warnings: string[] = [];
+
+  if (bounceRate > 2) {
+    warnings.push("Scoped bounce rate is above 2%, which deserves list-quality review.");
+  }
+  if (replyRate < 1) {
+    warnings.push("Scoped unique reply rate is below 1%, so copy and targeting need attention.");
+  }
+
+  const status = await readRefreshStatus();
+
+  return {
+    workspaceId,
+    scope: scopeNotes,
+    summary: [
+      `Scoped cached snapshot for ${scopeNotes.join(" and ")}.`,
+      `${Number(metrics.campaign_count ?? 0)} active campaigns, ${totalSent} sends, ${totalUniqueReplies} unique human replies, ${totalBounces} bounces, ${totalOpportunities} opportunities, and $${totalPipeline} pipeline.`,
+      `Exact scoped headline rates: ${replyRate.toFixed(2)}% unique reply rate and ${bounceRate.toFixed(2)}% bounce rate.`,
+      leader
+        ? `Largest campaign in scope: ${String(leader.campaign_name)} with ${Number(leader.emails_sent_count ?? 0)} sends and ${Number(leader.unique_reply_rate_pct ?? 0).toFixed(2)}% unique reply rate.`
+        : "No leading campaign available.",
+      "This read comes from the current local cache and does not trigger another workspace refresh.",
+      "By default, scoped snapshots only include active campaigns. Ask explicitly for inactive or historical campaigns if you want them included.",
+    ].join("\n"),
+    exact_metrics: {
+      campaign_count: Number(metrics.campaign_count ?? 0) || 0,
+      active_campaign_count: Number(metrics.active_campaign_count ?? 0) || 0,
+      total_sent: totalSent,
+      total_unique_replies: totalUniqueReplies,
+      total_bounces: totalBounces,
+      total_opportunities: totalOpportunities,
+      total_pipeline: totalPipeline,
+      unique_reply_rate_pct: Number(replyRate.toFixed(2)),
+      bounce_rate_pct: Number(bounceRate.toFixed(2)),
+    },
+    coverage: campaignRows.map((row) => ({
+      campaign_id: row.campaign_id,
+      campaign_name: row.campaign_name,
+      reply_lead_rows: row.reply_lead_rows,
+      nonreply_rows_sampled: row.nonreply_rows_sampled,
+      reply_outbound_rows: row.reply_outbound_rows,
+    })),
+    campaigns: campaignRows,
+    warnings,
+    last_refreshed_at: status.lastSuccessAt ?? null,
+    refresh_status: status.status,
+  };
 }
 
 main().catch((error) => {

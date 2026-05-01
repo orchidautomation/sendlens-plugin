@@ -32,8 +32,7 @@ export async function buildWorkspaceSummary(
   const metricsRows = await query(
     conn,
     `SELECT
-       COUNT(*) AS campaign_count,
-       SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_campaign_count,
+       COUNT(*) AS active_campaign_count,
        COALESCE(SUM(ca.emails_sent_count), 0) AS total_sent,
        COALESCE(SUM(ca.reply_count_unique), 0) AS total_unique_replies,
        COALESCE(SUM(ca.reply_count_automatic), 0) AS total_auto_replies,
@@ -42,7 +41,8 @@ export async function buildWorkspaceSummary(
      FROM sendlens.campaigns c
      LEFT JOIN sendlens.campaign_analytics ca
        ON c.workspace_id = ca.workspace_id AND c.id = ca.campaign_id
-     WHERE c.workspace_id = '${workspace}'`,
+     WHERE c.workspace_id = '${workspace}'
+       AND c.status = 'active'`,
   );
   const metrics = metricsRows[0] ?? {};
 
@@ -59,6 +59,7 @@ export async function buildWorkspaceSummary(
        reply_outbound_rows
      FROM sendlens.campaign_overview
      WHERE workspace_id = '${workspace}'
+       AND status = 'active'
      ORDER BY unique_reply_rate_pct DESC NULLS LAST,
               emails_sent_count DESC
      LIMIT 1`,
@@ -78,6 +79,12 @@ export async function buildWorkspaceSummary(
        created_at
      FROM sendlens.sampling_runs
      WHERE workspace_id = '${workspace}'
+       AND campaign_id IN (
+         SELECT id
+         FROM sendlens.campaigns
+         WHERE workspace_id = '${workspace}'
+           AND status = 'active'
+       )
      ORDER BY campaign_id`,
   );
 
@@ -125,19 +132,20 @@ export async function buildWorkspaceSummary(
   return {
     workspaceId: activeWorkspaceId,
     summary: [
-      `Workspace ${activeWorkspaceId} has ${num(metrics.campaign_count)} campaigns (${num(metrics.active_campaign_count)} active).`,
+      `Workspace ${activeWorkspaceId} has ${num(metrics.active_campaign_count)} active campaigns in the current SendLens snapshot.`,
       `Exact totals: ${totalSent} sends, ${totalUniqueReplies} unique human replies, ${num(metrics.total_auto_replies)} auto-replies, ${num(metrics.total_opportunities)} opportunities.`,
       `Exact headline rates: ${replyRate.toFixed(2)}% unique reply rate and ${bounceRate.toFixed(2)}% bounce rate.`,
       `Best campaign: ${bestCampaignLine}`,
       bestCampaign
         ? `Coverage on the current leader: ${num(bestCampaign.reply_lead_rows)} full reply leads, ${num(bestCampaign.nonreply_rows_sampled)} sampled non-reply leads, ${num(bestCampaign.reply_outbound_rows)} locally reconstructed reply-copy rows.`
         : "Coverage on the current leader is not available yet.",
-      `Coverage: ${repliedLeadCount} replied leads, ${sampledLeadCount} sampled leads, and ${tagCount} custom tags stored locally.`,
+      `Coverage across active campaigns: ${repliedLeadCount} replied leads, ${sampledLeadCount} sampled leads, and ${tagCount} custom tags stored locally.`,
+      "Inactive or purely historical campaigns are excluded from this default workspace read unless you explicitly ask for them.",
       "Reply analysis uses lead reply outcomes plus locally reconstructed template copy. Sampled raw tables are evidence support only and should not be treated as population totals.",
     ].join("\n"),
     exact_metrics: {
-      campaign_count: num(metrics.campaign_count),
       active_campaign_count: num(metrics.active_campaign_count),
+      campaign_count: num(metrics.active_campaign_count),
       total_sent: totalSent,
       total_unique_replies: totalUniqueReplies,
       total_auto_replies: num(metrics.total_auto_replies),
