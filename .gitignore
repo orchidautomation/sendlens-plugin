@@ -15,5 +15,6 @@ dist/
 .codex/
 .claude/
 .pluxx/
+.private/
 dist.stale.*/
 *.swp
