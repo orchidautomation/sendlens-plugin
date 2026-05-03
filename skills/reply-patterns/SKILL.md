@@ -22,6 +22,7 @@ Surface what prospects are saying, separate human replies from auto-noise, and s
 - Keep reply analysis scoped to one campaign at a time unless the user explicitly asks for a workspace-wide comparison.
 - If the user narrows to one campaign and wants stronger reply evidence, run `load_campaign_data` for that campaign first.
 - Query `reply_context` first. If the user needs actual reply wording and `reply_body_text` is empty, run `hydrate_reply_text` for exactly one campaign, then query `reply_context` again.
+- If `hydrate_reply_text` returns a cache-unavailable or WAL/replay error, check `refresh_status` once and tell the user to reload or restart the plugin session if the refresh already succeeded. Do not use Bash, `ls`, `rm`, or local DuckDB inspection as a fallback.
 - Prefer the default `hydrate_reply_text` statuses `[1, -1, -2]` for interested, not interested, and wrong-person replies. Do not include out-of-office status `0` unless the user explicitly asks for OOO replies.
 - Use `hydrate_reply_text(mode="auto")` before analysis; use `mode="continue"` only when the user wants more rows beyond the cached page.
 - Separate positive, negative, and neutral outcomes from Instantly lead status before grouping by step or variant.

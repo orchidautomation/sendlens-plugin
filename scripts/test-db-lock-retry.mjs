@@ -26,6 +26,14 @@ assert.equal(
   ),
   true,
 );
+assert.equal(
+  isDuckDbLockError(
+    new Error(
+      "Failure while replaying WAL file /Users/example/.sendlens/workspace-cache.duckdb.wal",
+    ),
+  ),
+  true,
+);
 assert.equal(isDuckDbLockError(new Error("Parser Error: syntax error")), false);
 
 await resetDbConnectionForTests();
@@ -49,7 +57,7 @@ await assert.rejects(
   (error) =>
     error instanceof LocalDbUnavailableError &&
     error.code === "duckdb_unavailable" &&
-    /temporarily locked/.test(error.message),
+    /temporarily unavailable/.test(error.message),
 );
 await assertHolderExited(timeoutHolder);
 

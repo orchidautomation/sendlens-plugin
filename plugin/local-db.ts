@@ -17,6 +17,9 @@ const LOCK_ERROR_PATTERNS = [
   /lock.*held/i,
   /resource temporarily unavailable/i,
   /io error.*lock/i,
+  /failure while replaying WAL/i,
+  /replaying WAL file/i,
+  /WAL replay/i,
 ];
 const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
 
@@ -154,7 +157,7 @@ export async function getDb(
       const elapsedMs = Date.now() - startedAt;
       if (elapsedMs >= timeoutMs) {
         throw new LocalDbUnavailableError(
-          "The local SendLens DuckDB cache is temporarily locked, likely because a refresh is still finishing. Check refresh_status and retry once the refresh completes.",
+          "The local SendLens DuckDB cache is temporarily unavailable, likely because a refresh is still finishing or DuckDB is replaying a stale WAL. Check refresh_status and retry once the refresh completes.",
           lastError,
         );
       }
