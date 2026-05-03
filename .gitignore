@@ -14,7 +14,11 @@ dist/
 .playwright-mcp/
 .codex/
 .claude/
-.pluxx/
+.pluxx/*
+!.pluxx/behavioral-smoke.json
 .private/
+*10K_MRR*.md
+*10k*mrr*.md
+TODO.md
 dist.stale.*/
 *.swp

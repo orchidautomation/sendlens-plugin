@@ -105,30 +105,65 @@ ORDER BY unique_reply_rate_pct DESC NULLS LAST, total_opportunities DESC NULLS L
     title: "Variant winners by campaign",
     question: "Which step and variant combinations are winning?",
     exactness: "exact",
-    rationale: "Find exact step and variant performance before making copy changes.",
-    sql: `SELECT
+    rationale: "Find exact step and variant performance before making copy changes, falling back to opportunity metrics when step-level reply coverage is sparse.",
+    sql: `WITH step_coverage AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    COUNT(*) AS step_rows,
+    SUM(CASE WHEN unique_replies IS NOT NULL THEN 1 ELSE 0 END) AS step_rows_with_unique_replies
+  FROM sendlens.step_analytics
+  GROUP BY workspace_id, campaign_id
+)
+SELECT
   sa.campaign_id,
   c.name AS campaign_name,
   sa.step,
   sa.variant,
   sa.sent,
+  CASE
+    WHEN COALESCE(sc.step_rows_with_unique_replies, 0) * 1.0 / NULLIF(sc.step_rows, 0) >= 0.6
+      THEN 'unique_reply_rate'
+    ELSE 'opportunity_rate'
+  END AS ranking_basis,
+  ROUND(100.0 * COALESCE(sc.step_rows_with_unique_replies, 0) / NULLIF(sc.step_rows, 0), 2) AS unique_reply_coverage_pct,
   sa.unique_replies,
   ROUND(100.0 * sa.unique_replies / NULLIF(sa.sent, 0), 2) AS unique_reply_rate_pct,
+  sa.opportunities,
+  ROUND(100.0 * sa.opportunities / NULLIF(sa.sent, 0), 2) AS opportunity_rate_pct,
   sa.bounces,
   ROUND(100.0 * sa.bounces / NULLIF(sa.sent, 0), 2) AS bounce_rate_pct,
   cv.subject
 FROM sendlens.step_analytics sa
 JOIN sendlens.campaigns c
   ON sa.workspace_id = c.workspace_id AND sa.campaign_id = c.id
+LEFT JOIN step_coverage sc
+  ON sa.workspace_id = sc.workspace_id
+ AND sa.campaign_id = sc.campaign_id
 LEFT JOIN sendlens.campaign_variants cv
   ON sa.workspace_id = cv.workspace_id
  AND sa.campaign_id = cv.campaign_id
  AND sa.step = cv.step
  AND sa.variant = cv.variant
-ORDER BY unique_reply_rate_pct DESC NULLS LAST, sa.sent DESC;`,
+WHERE c.status = 'active'
+ORDER BY
+  CASE
+    WHEN COALESCE(sc.step_rows_with_unique_replies, 0) * 1.0 / NULLIF(sc.step_rows, 0) >= 0.6
+      THEN ROUND(100.0 * sa.unique_replies / NULLIF(sa.sent, 0), 2)
+  END DESC NULLS LAST,
+  CASE
+    WHEN COALESCE(sc.step_rows_with_unique_replies, 0) * 1.0 / NULLIF(sc.step_rows, 0) < 0.6
+      THEN ROUND(100.0 * sa.opportunities / NULLIF(sa.sent, 0), 2)
+  END DESC NULLS LAST,
+  sa.opportunities DESC NULLS LAST,
+  sa.sent DESC;`,
     notes: [
       "This is exact because step analytics come from Instantly aggregates.",
-      "For one campaign, add WHERE sa.campaign_id = '{{campaign_id}}'.",
+      "This defaults to active campaigns only.",
+      "When at least 60% of step rows in a campaign have step-level `unique_replies`, rank by exact unique reply rate.",
+      "When step-level `unique_replies` coverage is sparse or null, rank by `opportunity_rate_pct` and `opportunities` instead.",
+      "For one campaign, add `AND sa.campaign_id = '{{campaign_id}}'`.",
+      "Ask explicitly for inactive or historical campaigns if you want them included.",
     ],
   },
   {

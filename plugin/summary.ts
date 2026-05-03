@@ -1,6 +1,8 @@
 import type { DuckDBConnection } from "@duckdb/node-api";
 import { getActiveWorkspaceId, getPluginState, query } from "./local-db";
 
+const WORKSPACE_COVERAGE_LIMIT = 100;
+
 function pct(numerator: number, denominator: number) {
   if (!denominator) return 0;
   return (numerator / denominator) * 100;
@@ -85,7 +87,8 @@ export async function buildWorkspaceSummary(
          WHERE workspace_id = '${workspace}'
            AND status = 'active'
        )
-     ORDER BY campaign_id`,
+     ORDER BY campaign_id
+     LIMIT ${WORKSPACE_COVERAGE_LIMIT + 1}`,
   );
 
   const sampledLeadRows = await query(
@@ -121,6 +124,14 @@ export async function buildWorkspaceSummary(
     warnings.push("Workspace unique reply rate is below 1%, so copy and targeting need attention.");
   }
 
+  const coverageTruncated = coverage.length > WORKSPACE_COVERAGE_LIMIT;
+  const visibleCoverage = coverage.slice(0, WORKSPACE_COVERAGE_LIMIT);
+  if (coverageTruncated) {
+    warnings.push(
+      `Coverage rows were truncated to ${WORKSPACE_COVERAGE_LIMIT} active campaigns. Use a scoped workspace_snapshot or analyze_data query for a narrower slice.`,
+    );
+  }
+
   const sampledLeadCount = num(sampledLeadRows[0]?.count);
   const repliedLeadCount = num(repliedLeadRows[0]?.count);
   const tagCount = num(tagRows[0]?.count);
@@ -154,7 +165,10 @@ export async function buildWorkspaceSummary(
       unique_reply_rate_pct: Number(replyRate.toFixed(2)),
       bounce_rate_pct: Number(bounceRate.toFixed(2)),
     },
-    coverage,
+    output_limits: {
+      coverage_limit: WORKSPACE_COVERAGE_LIMIT,
+    },
+    coverage: visibleCoverage,
     warnings,
     last_refreshed_at: lastRefreshedAt,
   };

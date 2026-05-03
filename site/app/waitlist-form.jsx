@@ -94,7 +94,7 @@ export default function WaitlistForm() {
                 id="name"
                 value={form.name}
                 onChange={(event) => updateField("name", event.target.value)}
-                placeholder="Brandon Guerrero"
+                placeholder="ObiWan Keniboi"
               />
             </div>
             <div className="field">
@@ -105,7 +105,7 @@ export default function WaitlistForm() {
                 required
                 value={form.email}
                 onChange={(event) => updateField("email", event.target.value)}
-                placeholder="you@company.com"
+                placeholder="hello@banthaanalytics.com"
               />
             </div>
             <div className="field">
@@ -115,7 +115,7 @@ export default function WaitlistForm() {
                 required
                 value={form.company}
                 onChange={(event) => updateField("company", event.target.value)}
-                placeholder="Orchid Automation"
+                placeholder="Bantha Analytics"
               />
             </div>
             <div className="field">

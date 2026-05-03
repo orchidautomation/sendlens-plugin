@@ -3,7 +3,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { listColumns, listTables, searchCatalog } from "./catalog";
 import { loadClientEnv } from "./env";
-import { closeDb, getActiveWorkspaceId, getDb, query } from "./local-db";
+import {
+  closeDb,
+  getActiveWorkspaceId,
+  getDb,
+  LocalDbUnavailableError,
+  query,
+} from "./local-db";
 import { refreshWorkspace } from "./instantly-ingest";
 import { getQueryRecipes, QUERY_RECIPE_TOPICS } from "./query-recipes";
 import { readRefreshStatus } from "./refresh-status";
@@ -19,9 +25,14 @@ const server = new McpServer({
 
 const SESSION_REFRESH_WAIT_TIMEOUT_MS = 15_000;
 const SESSION_REFRESH_POLL_MS = 500;
+const MCP_TEXT_RESPONSE_MAX_CHARS = 120_000;
+const ANALYZE_DATA_ROW_LIMIT = 1_000;
+const REPLY_CONTEXT_SCAN_LIMIT = 500;
+const RENDERED_OUTBOUND_SAMPLE_LIMIT = 25;
+const SCOPED_SNAPSHOT_CAMPAIGN_LIMIT = 100;
 const PLUXX_READINESS_FOLLOWUP = [
   "Temporary SendLens readiness gate in effect.",
-  "Proper cross-host readiness modeling is tracked in PLUXX-212 and PLUXX-213.",
+  "If startup refresh is still running, this tool may wait briefly for the local snapshot before answering.",
 ].join(" ");
 
 function sleep(ms: number) {
@@ -56,6 +67,78 @@ async function waitForSessionSnapshot() {
   };
 }
 
+function jsonResponse(payload: unknown) {
+  const text = JSON.stringify(payload, null, 2);
+  if (text.length <= MCP_TEXT_RESPONSE_MAX_CHARS) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text,
+        },
+      ],
+    };
+  }
+
+  const preview = text.slice(0, Math.floor(MCP_TEXT_RESPONSE_MAX_CHARS / 3));
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify(
+          {
+            response_truncated: true,
+            warning:
+              "SendLens response exceeded the MCP text output cap before delivery.",
+            original_char_count: text.length,
+            max_char_count: MCP_TEXT_RESPONSE_MAX_CHARS,
+            hint:
+              "Narrow the question, query fewer columns, add a tighter LIMIT, or load one campaign before deep analysis.",
+            preview,
+          },
+          null,
+          2,
+        ),
+      },
+    ],
+  };
+}
+
+function stripTrailingSemicolon(sql: string) {
+  return sql.trim().replace(/;+\s*$/, "");
+}
+
+function readinessPayload(
+  readiness: Awaited<ReturnType<typeof waitForSessionSnapshot>>,
+) {
+  return readiness.waited || readiness.timedOut
+    ? {
+      waited_for_session_snapshot: readiness.waited,
+      timed_out: readiness.timedOut,
+      current_status: readiness.status.status,
+      message: readiness.warning,
+    }
+    : undefined;
+}
+
+function sessionRefreshBusyResponse(
+  readiness: Awaited<ReturnType<typeof waitForSessionSnapshot>>,
+) {
+  return jsonResponse({
+    error:
+      "A session-start refresh is still running. Check refresh_status and retry this tool once the refresh completes.",
+    readiness: readinessPayload(readiness),
+  });
+}
+
+function dbUnavailableResponse(error: LocalDbUnavailableError) {
+  return jsonResponse({
+    error: error.message,
+    hint:
+      "The local cache usually unlocks when the active refresh finishes. Use refresh_status to check progress, then retry the tool.",
+  });
+}
+
 server.registerTool(
   "refresh_data",
   {
@@ -69,18 +152,26 @@ server.registerTool(
     },
   },
   async ({ campaign_ids }) => {
-    const refreshed = await refreshWorkspace({
-      campaignIds: campaign_ids,
-      source: "manual",
-    });
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(refreshed, null, 2),
-        },
-      ],
-    };
+    const readiness = await waitForSessionSnapshot();
+    if (readiness.timedOut) {
+      return sessionRefreshBusyResponse(readiness);
+    }
+
+    try {
+      const refreshed = await refreshWorkspace({
+        campaignIds: campaign_ids,
+        source: "manual",
+      });
+      return jsonResponse({
+        ...refreshed,
+        readiness: readinessPayload(readiness),
+      });
+    } catch (error) {
+      if (error instanceof LocalDbUnavailableError) {
+        return dbUnavailableResponse(error);
+      }
+      throw error;
+    }
   },
 );
 
@@ -88,7 +179,7 @@ server.registerTool(
   "load_campaign_data",
   {
     description:
-      "Load one campaign with richer lead and copy context for deeper analysis. Use this when the user wants to understand what is landing, who is responding, and what to change next for a single campaign.",
+      "Load one campaign with bounded lead, reply, and reconstructed-copy context for deeper analysis. Use this when the user wants to understand what is landing, who is responding, and what to change next for a single campaign. Do not use this for broad workspace ranking; start with workspace_snapshot instead.",
     inputSchema: {
       campaign_id: z.string().describe("Instantly campaign ID to hydrate."),
       include_rendered_outbound: z
@@ -118,27 +209,25 @@ server.registerTool(
     reply_bucket_limit = 10,
   }) => {
     const readiness = await waitForSessionSnapshot();
-    const refreshed = await refreshWorkspace({
-      campaignIds: [campaign_id],
-      source: "manual",
-      forceHybrid: true,
-      nonReplyLeadLimit: max_nonreply_leads,
-    });
+    if (readiness.timedOut) {
+      return sessionRefreshBusyResponse(readiness);
+    }
 
-    const db = await getDb();
+    let db: Awaited<ReturnType<typeof getDb>> | null = null;
     try {
+      const refreshed = await refreshWorkspace({
+        campaignIds: [campaign_id],
+        source: "manual",
+        forceHybrid: true,
+        nonReplyLeadLimit: max_nonreply_leads,
+      });
+
+      db = await getDb();
       const workspaceId = refreshed.workspaceId ?? (await getActiveWorkspaceId(db));
       if (!workspaceId) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                error: "No active workspace is loaded after campaign hydration.",
-              }),
-            },
-          ],
-        };
+        return jsonResponse({
+          error: "No active workspace is loaded after campaign hydration.",
+        });
       }
 
       const campaignSafe = campaign_id.replace(/'/g, "''");
@@ -157,7 +246,8 @@ server.registerTool(
          FROM sendlens.reply_context
          WHERE workspace_id = '${workspaceSafe}'
            AND campaign_id = '${campaignSafe}'
-         ORDER BY reply_at DESC NULLS LAST, lead_email`,
+         ORDER BY reply_at DESC NULLS LAST, lead_email
+         LIMIT ${REPLY_CONTEXT_SCAN_LIMIT + 1}`,
       );
       const renderedRows = include_rendered_outbound
         ? await query(
@@ -167,39 +257,39 @@ server.registerTool(
            WHERE workspace_id = '${workspaceSafe}'
              AND campaign_id = '${campaignSafe}'
            ORDER BY sent_at DESC NULLS LAST
-           LIMIT 25`,
+           LIMIT ${RENDERED_OUTBOUND_SAMPLE_LIMIT}`,
         )
         : [];
 
-      const replySample = stratifyHumanReplies(replyRows, reply_bucket_limit);
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-            {
-              refreshed,
-              readiness:
-                readiness.waited || readiness.timedOut
-                  ? {
-                    waited_for_session_snapshot: readiness.waited,
-                    timed_out: readiness.timedOut,
-                    current_status: readiness.status.status,
-                    message: readiness.warning,
-                  }
-                  : undefined,
-              campaign_overview: overviewRows[0] ?? null,
-              human_reply_sample: replySample,
-              rendered_outbound_sample: renderedRows,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
+      const replyRowsTruncated = replyRows.length > REPLY_CONTEXT_SCAN_LIMIT;
+      const replySample = stratifyHumanReplies(
+        replyRows.slice(0, REPLY_CONTEXT_SCAN_LIMIT),
+        reply_bucket_limit,
+      );
+      return jsonResponse({
+        refreshed,
+        readiness: readinessPayload(readiness),
+        output_limits: {
+          reply_context_scan_limit: REPLY_CONTEXT_SCAN_LIMIT,
+          rendered_outbound_sample_limit: RENDERED_OUTBOUND_SAMPLE_LIMIT,
+          response_max_chars: MCP_TEXT_RESPONSE_MAX_CHARS,
+        },
+        warnings: replyRowsTruncated
+          ? [
+            `Reply context scan was truncated to the ${REPLY_CONTEXT_SCAN_LIMIT} most recent rows before stratified sampling. Narrow the campaign question or use analyze_data for a tighter slice.`,
+          ]
+          : undefined,
+        campaign_overview: overviewRows[0] ?? null,
+        human_reply_sample: replySample,
+        rendered_outbound_sample: renderedRows,
+      });
+    } catch (error) {
+      if (error instanceof LocalDbUnavailableError) {
+        return dbUnavailableResponse(error);
+      }
+      throw error;
     } finally {
-      closeDb(db);
+      if (db) closeDb(db);
     }
   },
 );
@@ -208,7 +298,7 @@ server.registerTool(
   "workspace_snapshot",
   {
     description:
-      "Get the current high-level SendLens snapshot for the local workspace, optionally scoped to a campaign name or Instantly tag using only the current local cache.",
+      "Get the current high-level SendLens snapshot for the local workspace, optionally scoped to a campaign name or Instantly tag using only the current local cache. Returns exact headline metrics plus bounded campaign/coverage rows; use analyze_data for narrower custom slices.",
     inputSchema: {
       instantly_tag: z
         .string()
@@ -222,8 +312,9 @@ server.registerTool(
   },
   async ({ instantly_tag, campaign_name }) => {
     const readiness = await waitForSessionSnapshot();
-    const db = await getDb();
+    let db: Awaited<ReturnType<typeof getDb>> | null = null;
     try {
+      db = await getDb();
       const hasScope = Boolean(instantly_tag?.trim() || campaign_name?.trim());
       const summary = hasScope
         ? await buildScopedWorkspaceSnapshot(db, {
@@ -233,26 +324,16 @@ server.registerTool(
         : await buildWorkspaceSummary(db);
       const payload = {
         ...summary,
-        readiness:
-          readiness.waited || readiness.timedOut
-            ? {
-              waited_for_session_snapshot: readiness.waited,
-              timed_out: readiness.timedOut,
-              current_status: readiness.status.status,
-              message: readiness.warning,
-            }
-            : undefined,
+        readiness: readinessPayload(readiness),
       };
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(payload, null, 2),
-          },
-        ],
-      };
+      return jsonResponse(payload);
+    } catch (error) {
+      if (error instanceof LocalDbUnavailableError) {
+        return dbUnavailableResponse(error);
+      }
+      throw error;
     } finally {
-      closeDb(db);
+      if (db) closeDb(db);
     }
   },
 );
@@ -265,20 +346,8 @@ server.registerTool(
     inputSchema: {},
   },
   async () => {
-    const db = await getDb();
-    try {
-      const tables = await listTables(db);
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({ tables }, null, 2),
-          },
-        ],
-      };
-    } finally {
-      closeDb(db);
-    }
+    const tables = await listTables();
+    return jsonResponse({ tables });
   },
 );
 
@@ -292,19 +361,23 @@ server.registerTool(
     },
   },
   async ({ table_name }) => {
-    const db = await getDb();
+    const readiness = await waitForSessionSnapshot();
+    let db: Awaited<ReturnType<typeof getDb>> | null = null;
     try {
+      db = await getDb();
       const columns = await listColumns(db, table_name);
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({ table: table_name, columns }, null, 2),
-          },
-        ],
-      };
+      return jsonResponse({
+        table: table_name,
+        readiness: readinessPayload(readiness),
+        columns,
+      });
+    } catch (error) {
+      if (error instanceof LocalDbUnavailableError) {
+        return dbUnavailableResponse(error);
+      }
+      throw error;
     } finally {
-      closeDb(db);
+      if (db) closeDb(db);
     }
   },
 );
@@ -313,25 +386,29 @@ server.registerTool(
   "search_catalog",
   {
     description:
-      "Search tables and columns when you know the concept but not the exact schema name.",
+      "Search tables and columns when you know the concept but not the exact schema name. Returns up to 25 schema matches and does not read campaign evidence.",
     inputSchema: {
       query: z.string().describe("Search string such as reply, bounce, variant, or opportunity."),
     },
   },
   async ({ query: search }) => {
-    const db = await getDb();
+    const readiness = await waitForSessionSnapshot();
+    let db: Awaited<ReturnType<typeof getDb>> | null = null;
     try {
+      db = await getDb();
       const matches = await searchCatalog(db, search);
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({ query: search, matches }, null, 2),
-          },
-        ],
-      };
+      return jsonResponse({
+        query: search,
+        readiness: readinessPayload(readiness),
+        matches,
+      });
+    } catch (error) {
+      if (error instanceof LocalDbUnavailableError) {
+        return dbUnavailableResponse(error);
+      }
+      throw error;
     } finally {
-      closeDb(db);
+      if (db) closeDb(db);
     }
   },
 );
@@ -393,7 +470,7 @@ server.registerTool(
   "analyze_data",
   {
     description:
-      "Run a custom analysis against the active local SendLens data once the question is clear.",
+      "Run a custom SELECT/WITH analysis against the active local SendLens data once the question is clear. Results are capped to a bounded row count and text size, so use focused columns, filters, and LIMITs for large questions.",
     inputSchema: {
       sql: z
         .string()
@@ -405,102 +482,73 @@ server.registerTool(
   },
   async ({ sql, rationale }) => {
     const readiness = await waitForSessionSnapshot();
-    const db = await getDb();
+    let db: Awaited<ReturnType<typeof getDb>> | null = null;
     let rewritten: string | null = null;
     try {
+      db = await getDb();
       const workspaceId = await getActiveWorkspaceId(db);
       if (!workspaceId) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                error: "No active workspace is loaded. Run refresh_data() first.",
-              }),
-            },
-          ],
-        };
+        return jsonResponse({
+          error: "No active workspace is loaded. Run refresh_data() first.",
+        });
       }
       try {
         rewritten = enforceLocalWorkspaceScope(sql, workspaceId);
       } catch (err) {
         if (err instanceof LocalSqlGuardError) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  error: err.message,
-                  hint:
-                    "Use only SELECT/WITH queries against sendlens.* tables. Workspace filters are injected automatically.",
-                }),
-              },
-            ],
-          };
+          return jsonResponse({
+            error: err.message,
+            hint:
+              "Use only SELECT/WITH queries against sendlens.* tables. Workspace filters are injected automatically.",
+          });
         }
         throw err;
       }
 
-      const limitedSql = /\blimit\s+\d+/i.test(rewritten)
-        ? rewritten
-        : `${rewritten} LIMIT 1000`;
-      const rows = await query(db, limitedSql);
+      const cappedSql = [
+        "SELECT *",
+        `FROM (${stripTrailingSemicolon(rewritten)}) AS sendlens_limited_query`,
+        `LIMIT ${ANALYZE_DATA_ROW_LIMIT + 1}`,
+      ].join("\n");
+      const rows = await query(db, cappedSql);
+      const resultTruncated = rows.length > ANALYZE_DATA_ROW_LIMIT;
+      const returnedRows = rows.slice(0, ANALYZE_DATA_ROW_LIMIT);
 
-      for (const row of rows) {
+      for (const row of returnedRows) {
         const rowWorkspace = row.workspace_id;
         if (rowWorkspace != null && rowWorkspace !== workspaceId) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  error: "Workspace isolation check failed for this query result.",
-                }),
-              },
-            ],
-          };
+          return jsonResponse({
+            error: "Workspace isolation check failed for this query result.",
+          });
         }
       }
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                rationale,
-                readiness:
-                  readiness.waited || readiness.timedOut
-                    ? {
-                      waited_for_session_snapshot: readiness.waited,
-                      timed_out: readiness.timedOut,
-                      current_status: readiness.status.status,
-                      message: readiness.warning,
-                    }
-                    : undefined,
-                row_count: rows.length,
-                rows,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
+      return jsonResponse({
+        rationale,
+        readiness: readinessPayload(readiness),
+        row_count: returnedRows.length,
+        result_truncated: resultTruncated,
+        output_limits: {
+          row_limit: ANALYZE_DATA_ROW_LIMIT,
+          response_max_chars: MCP_TEXT_RESPONSE_MAX_CHARS,
+        },
+        warnings: resultTruncated
+          ? [
+            `Result set was truncated to ${ANALYZE_DATA_ROW_LIMIT} rows. Add a tighter WHERE clause, aggregate, select fewer columns, or lower LIMIT for a sharper result.`,
+          ]
+          : undefined,
+        rows: returnedRows,
+      });
     } catch (err) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              error: (err as Error).message,
-              sql: rewritten ?? sql,
-            }),
-          },
-        ],
-      };
+      if (err instanceof LocalDbUnavailableError) {
+        return dbUnavailableResponse(err);
+      }
+      return jsonResponse({
+        error: (err as Error).message,
+        sql: rewritten ?? sql,
+      });
     } finally {
-      closeDb(db);
+      if (db) closeDb(db);
     }
   },
 );
@@ -634,7 +682,8 @@ async function buildScopedWorkspaceSnapshot(
        co.reply_outbound_rows
      FROM sendlens.campaign_overview co
      WHERE ${whereSql}
-     ORDER BY co.emails_sent_count DESC, co.unique_reply_rate_pct DESC NULLS LAST`,
+     ORDER BY co.emails_sent_count DESC, co.unique_reply_rate_pct DESC NULLS LAST
+     LIMIT ${SCOPED_SNAPSHOT_CAMPAIGN_LIMIT + 1}`,
   );
 
   if (campaignRows.length === 0) {
@@ -672,7 +721,9 @@ async function buildScopedWorkspaceSnapshot(
   const totalPipeline = Number(metrics.total_pipeline ?? 0) || 0;
   const replyRate = totalSent ? (totalUniqueReplies / totalSent) * 100 : 0;
   const bounceRate = totalSent ? (totalBounces / totalSent) * 100 : 0;
-  const leader = campaignRows[0];
+  const campaignRowsTruncated = campaignRows.length > SCOPED_SNAPSHOT_CAMPAIGN_LIMIT;
+  const visibleCampaignRows = campaignRows.slice(0, SCOPED_SNAPSHOT_CAMPAIGN_LIMIT);
+  const leader = visibleCampaignRows[0];
   const warnings: string[] = [];
 
   if (bounceRate > 2) {
@@ -680,6 +731,11 @@ async function buildScopedWorkspaceSnapshot(
   }
   if (replyRate < 1) {
     warnings.push("Scoped unique reply rate is below 1%, so copy and targeting need attention.");
+  }
+  if (campaignRowsTruncated) {
+    warnings.push(
+      `Scoped campaign list was truncated to ${SCOPED_SNAPSHOT_CAMPAIGN_LIMIT} campaigns. Add a narrower tag or campaign-name filter for more detail.`,
+    );
   }
 
   const status = await readRefreshStatus();
@@ -708,14 +764,18 @@ async function buildScopedWorkspaceSnapshot(
       unique_reply_rate_pct: Number(replyRate.toFixed(2)),
       bounce_rate_pct: Number(bounceRate.toFixed(2)),
     },
-    coverage: campaignRows.map((row) => ({
+    output_limits: {
+      campaign_limit: SCOPED_SNAPSHOT_CAMPAIGN_LIMIT,
+      response_max_chars: MCP_TEXT_RESPONSE_MAX_CHARS,
+    },
+    coverage: visibleCampaignRows.map((row) => ({
       campaign_id: row.campaign_id,
       campaign_name: row.campaign_name,
       reply_lead_rows: row.reply_lead_rows,
       nonreply_rows_sampled: row.nonreply_rows_sampled,
       reply_outbound_rows: row.reply_outbound_rows,
     })),
-    campaigns: campaignRows,
+    campaigns: visibleCampaignRows,
     warnings,
     last_refreshed_at: status.lastSuccessAt ?? null,
     refresh_status: status.status,

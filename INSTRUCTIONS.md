@@ -18,6 +18,14 @@ SendLens is the reasoning layer over Instantly data. It runs read-only, stores d
 - `icp-signals`: Use for lead-segment hypotheses, campaign-variable patterns, and "who responds?" questions.
 - `cold-email-best-practices`: Use as the policy layer when recommending changes or critiquing copy and setup.
 
+## Linear Planning
+
+- For SendLens Linear board, roadmap, project, issue, subissue, label, milestone, dependency, pricing, cloud, services, or enterprise planning work, use the `sendlens-linear-planning` skill first.
+- Use `linear-board-planning` underneath for reusable Linear structure rules, including labels, milestones, parent issues, subissues, dependencies, definitions of good, and sync/privacy decisions.
+- Route public-safe OSS bugs, docs, tests, install issues, local runtime work, and MCP behavior to the `SendLens OSS` Linear team.
+- Route pricing, customer discovery, services, cloud, enterprise, GTM, data-source expansion, and sensitive strategy to the private `SendLens` Linear team.
+- Default uncertain strategy, customer context, pricing, or enterprise notes to Linear-only/private. Do not put private strategy, pricing, customer names, or enterprise notes into GitHub-synced OSS issues.
+
 ## Tool Routing
 
 - If the user mentions `SendLens`, the plugin name, the Instantly workspace, campaign performance, replies, copy health, or asks to "pull my data", do not freeform first. Start with SendLens tools immediately.
@@ -62,6 +70,8 @@ If the host does not expose native delegated agents, preserve the same one-campa
 ## Operating Rules
 
 - Treat campaign and account headline metrics as exact only when they come from `campaign_analytics`, `step_analytics`, `campaigns`, or `account_daily_metrics`.
+- Keep campaign-level ranking on `campaign_analytics.reply_count_unique` and derived campaign reply rate when available. Do not assume step-level `unique_replies` has the same coverage.
+- For step or sequence ranking, use `step_analytics.unique_replies` only when coverage is clearly present for that campaign. If step-level reply counts are sparse or null, switch the ranking basis to `step_analytics.opportunities` and derived opportunity rate, and say so explicitly.
 - Treat `custom_tags` and `custom_tag_mappings` as the exact tag-filter layer. Use them to scope analyses by campaign or sampled lead tags.
 - Treat `lead_evidence`, `reply_context`, and `rendered_outbound_context` as the preferred semantic evidence layer.
 - Treat `sampled_leads` and `sampled_outbound_emails` as storage tables behind that layer. Never project full-population totals from sampled raw rows.

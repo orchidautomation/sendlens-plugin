@@ -1,0 +1,33 @@
+{
+  "cases": [
+    {
+      "name": "workspace-snapshot",
+      "targets": {
+        "claude-code": {
+          "prompt": "Use SendLens to summarize the active workspace in one short paragraph. Start the answer with 'Snapshot:'.",
+          "require": [
+            "Snapshot:"
+          ],
+          "forbid": [
+            "I do not currently see callable SendLens MCP tools",
+            "local DuckDB cache",
+            "reading the local database directly",
+            "fallback to local cache inspection"
+          ]
+        },
+        "codex": {
+          "prompt": "Use SendLens to summarize the active workspace in one short paragraph. Start the answer with 'Snapshot:'.",
+          "require": [
+            "Snapshot:"
+          ],
+          "forbid": [
+            "I do not currently see callable SendLens MCP tools",
+            "local DuckDB cache",
+            "reading the local database directly",
+            "fallback to local cache inspection"
+          ]
+        }
+      }
+    }
+  ]
+}

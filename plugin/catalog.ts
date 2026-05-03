@@ -12,7 +12,7 @@ export type ColumnInfo = {
   type: string;
 };
 
-export async function listTables(conn: DuckDBConnection): Promise<TableInfo[]> {
+export async function listTables(): Promise<TableInfo[]> {
   return PUBLIC_TABLES.map((name) => ({
     name,
     description: TABLE_DESCRIPTIONS[name],

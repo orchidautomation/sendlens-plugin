@@ -6,15 +6,20 @@
   "scripts": {
     "clean:plugin": "rm -rf build dist .sendlens .sendlens-local .sendlens-state .sendlens-local-state",
     "build:plugin": "tsc -p tsconfig.plugin.json",
-    "build:hosts": "pluxx build --target claude-code cursor codex opencode && node ./scripts/patch-host-bundles.mjs",
+    "build:hosts": "pluxx build --target claude-code cursor codex opencode",
     "benchmark:fast-sync": "bash ./scripts/benchmark-fast-refresh.sh",
+    "site:install": "npm --prefix site install",
+    "site:dev": "npm --prefix site run dev",
+    "site:build": "npm --prefix site run build",
     "validate:plugin": "pluxx validate",
     "lint:plugin": "pluxx lint",
     "ci:plugin": "npm run test:plugin && npm run validate:plugin && npm run lint:plugin && npm run build:hosts",
     "release:check": "npm run ci:plugin",
     "refresh:plugin": "npm run --silent build:plugin && node ./build/plugin/refresh-cli.js",
     "start:plugin-mcp": "npm run --silent build:plugin && node ./build/plugin/server.js",
-    "test:plugin": "npm run --silent build:plugin && node scripts/test-local-plugin-sampling.mjs && node scripts/test-local-plugin-runtime.mjs"
+    "test:sql-guard": "npm run --silent build:plugin && node scripts/test-sql-guard.mjs",
+    "test:db-lock": "npm run --silent build:plugin && node scripts/test-db-lock-retry.mjs",
+    "test:plugin": "npm run --silent build:plugin && node scripts/test-sql-guard.mjs && node scripts/test-db-lock-retry.mjs && node scripts/test-local-plugin-sampling.mjs && node scripts/test-local-plugin-runtime.mjs"
   },
   "dependencies": {
     "@duckdb/node-api": "^1.5.1-r.1",
@@ -23,7 +28,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@orchid-labs/pluxx": "^0.1.8",
+    "@orchid-labs/pluxx": "^0.1.11",
     "@types/node": "^22.15.3",
     "typescript": "^5.8.3"
   }

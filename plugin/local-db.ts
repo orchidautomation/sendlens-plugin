@@ -8,6 +8,34 @@ import {
   PUBLIC_TABLES,
 } from "./constants";
 
+const DEFAULT_DB_CONNECT_TIMEOUT_MS = 15_000;
+const DEFAULT_DB_CONNECT_RETRY_MS = 250;
+const LOCK_ERROR_PATTERNS = [
+  /database is locked/i,
+  /could not set lock/i,
+  /conflicting lock/i,
+  /lock.*held/i,
+  /resource temporarily unavailable/i,
+  /io error.*lock/i,
+];
+const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
+
+export type GetDbOptions = {
+  timeoutMs?: number;
+  retryMs?: number;
+};
+
+export class LocalDbUnavailableError extends Error {
+  code = "duckdb_unavailable" as const;
+  cause: unknown;
+
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.name = "LocalDbUnavailableError";
+    this.cause = cause;
+  }
+}
+
 export function resolveDbPath() {
   const configured = process.env.SENDLENS_DB_PATH?.trim();
   if (configured) {
@@ -18,17 +46,122 @@ export function resolveDbPath() {
   return path.join(os.homedir(), DEFAULT_DB_DIRECTORY, DEFAULT_DB_FILENAME);
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseNonNegativeInteger(value: string | undefined, fallback: number) {
+  if (value == null || value.trim() === "") return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function normalizeRetryMs(retryMs: number) {
+  if (!Number.isFinite(retryMs)) return DEFAULT_DB_CONNECT_RETRY_MS;
+  return Math.max(1, Math.floor(retryMs));
+}
+
+function errorMessages(error: unknown) {
+  const messages: string[] = [];
+  let current: unknown = error;
+
+  for (let depth = 0; current != null && depth < 5; depth += 1) {
+    if (current instanceof Error) {
+      messages.push(`${current.name}: ${current.message}`);
+      current = (current as Error & { cause?: unknown }).cause;
+      continue;
+    }
+
+    if (typeof current === "object" && "message" in current) {
+      messages.push(String((current as { message?: unknown }).message));
+      current = (current as { cause?: unknown }).cause;
+      continue;
+    }
+
+    messages.push(String(current));
+    break;
+  }
+
+  return messages;
+}
+
+export function isDuckDbLockError(error: unknown) {
+  const combined = errorMessages(error).join("\n");
+  return LOCK_ERROR_PATTERNS.some((pattern) => pattern.test(combined));
+}
+
 async function initConnection() {
   const dbPath = resolveDbPath();
   await fs.mkdir(path.dirname(dbPath), { recursive: true });
-  const instance = await DuckDBInstance.create(dbPath);
-  const conn = await instance.connect();
-  await ensureSchema(conn);
-  return conn;
+  let instance: DuckDBInstance | null = null;
+  let conn: DuckDBConnection | null = null;
+
+  try {
+    instance = await DuckDBInstance.create(dbPath);
+    conn = await instance.connect();
+    await ensureSchema(conn);
+    connectionInstances.set(conn, instance);
+    return conn;
+  } catch (error) {
+    if (conn) {
+      try {
+        conn.closeSync();
+      } catch {
+        // Best effort cleanup before retrying a transient DuckDB lock.
+      }
+    }
+    if (instance) {
+      try {
+        instance.closeSync();
+      } catch {
+        // Best effort cleanup before retrying a transient DuckDB lock.
+      }
+    }
+    throw error;
+  }
 }
 
-export async function getDb(): Promise<DuckDBConnection> {
-  return initConnection();
+export async function getDb(
+  options: GetDbOptions = {},
+): Promise<DuckDBConnection> {
+  const timeoutMs = Math.max(
+    0,
+    Math.floor(
+      options.timeoutMs ??
+        parseNonNegativeInteger(
+          process.env.SENDLENS_DB_CONNECT_TIMEOUT_MS,
+          DEFAULT_DB_CONNECT_TIMEOUT_MS,
+        ),
+    ),
+  );
+  const retryMs = normalizeRetryMs(
+    options.retryMs ??
+      parseNonNegativeInteger(
+        process.env.SENDLENS_DB_CONNECT_RETRY_MS,
+        DEFAULT_DB_CONNECT_RETRY_MS,
+      ),
+  );
+  const startedAt = Date.now();
+  let lastError: unknown;
+
+  for (;;) {
+    try {
+      return await initConnection();
+    } catch (error) {
+      if (!isDuckDbLockError(error)) throw error;
+      lastError = error;
+
+      const elapsedMs = Date.now() - startedAt;
+      if (elapsedMs >= timeoutMs) {
+        throw new LocalDbUnavailableError(
+          "The local SendLens DuckDB cache is temporarily locked, likely because a refresh is still finishing. Check refresh_status and retry once the refresh completes.",
+          lastError,
+        );
+      }
+
+      await sleep(Math.min(retryMs, Math.max(1, timeoutMs - elapsedMs)));
+    }
+  }
 }
 
 export async function resetDbConnectionForTests() {
@@ -36,7 +169,27 @@ export async function resetDbConnectionForTests() {
 }
 
 export function closeDb(conn: DuckDBConnection) {
-  conn.closeSync();
+  const instance = connectionInstances.get(conn);
+  connectionInstances.delete(conn);
+  let closeError: unknown;
+
+  try {
+    conn.closeSync();
+  } catch (error) {
+    closeError = error;
+  }
+
+  if (instance) {
+    try {
+      instance.closeSync();
+    } catch (error) {
+      closeError ??= error;
+    }
+  }
+
+  if (closeError) {
+    throw closeError;
+  }
 }
 
 export async function query(

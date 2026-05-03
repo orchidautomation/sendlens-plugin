@@ -19,6 +19,15 @@ It is designed to be fast, local, and safe by default:
 - raw `custom_payload` preserved per lead
 - fast startup refresh on every new session
 
+## Repo Layout
+
+This repo is the canonical open-source home for SendLens.
+
+- `plugin/` contains the MCP runtime, local DuckDB cache logic, and host-native plugin behavior
+- `site/` contains the public landing page, waitlist flow, and install-command funnel
+
+`json-render-lab` is legacy/internal history and is no longer the canonical home for SendLens.
+
 ## Why SendLens Exists
 
 No other tool gives you agentic reasoning over your Instantly data in a way that is fast, private, and actually useful day to day.
@@ -107,6 +116,7 @@ Direct bundle downloads:
 More detail:
 
 - [Install guide](./docs/INSTALL.md)
+- [Troubleshooting guide](./docs/TROUBLESHOOTING.md)
 - [Release guide](./docs/RELEASING.md)
 
 ## How It Works
@@ -242,6 +252,13 @@ pluxx build --target claude-code cursor codex opencode
 pluxx install --target claude-code cursor codex opencode --trust
 ```
 
+Landing page:
+
+```bash
+npm run site:install
+npm run site:dev
+```
+
 Useful commands:
 
 ```bash
@@ -270,5 +287,6 @@ This is the beginning of multi-client support. See [SEND-134](https://linear.app
 ## Documentation
 
 - [Install guide](./docs/INSTALL.md)
+- [Troubleshooting guide](./docs/TROUBLESHOOTING.md)
 - [Release guide](./docs/RELEASING.md)
 - [Brand assets](./assets/README.md)

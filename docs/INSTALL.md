@@ -89,6 +89,8 @@ Expected startup behavior:
 - the local cache updates in a few seconds
 - `refresh_status` reports the current session-start refresh
 
+If tools do not appear, the API key is missing, refresh is still running, or the cache is empty, see the [troubleshooting guide](./TROUBLESHOOTING.md).
+
 ## If You Previously Installed `sendlens-local`
 
 If Claude Code still has the older `sendlens-local` plugin enabled, disable or uninstall it before testing the release build. Otherwise you can get hook errors from the old plugin even if the new `sendlens` release installed correctly.

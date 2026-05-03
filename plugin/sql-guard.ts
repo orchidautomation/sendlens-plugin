@@ -35,10 +35,11 @@ type CteNode = {
 };
 
 type FromNode = {
+  type?: string | null;
   db?: string | null;
   table?: string | null;
   as?: string | null;
-  expr?: { ast?: SelectNode };
+  expr?: { ast?: SelectNode; type?: string | null };
 };
 
 type ExprNode = {
@@ -128,7 +129,12 @@ function rewriteSelect(
       }
 
       const table = entry?.table;
-      if (!table) continue;
+      if (!table) {
+        throw new LocalSqlGuardError(
+          "only sendlens.* tables, CTEs, and subqueries are allowed in FROM; table-valued functions and other expression sources are blocked",
+          "unsupported_shape",
+        );
+      }
       if (!entry.db && visibleCtes.has(table)) continue;
       if (!entry.db) {
         throw new LocalSqlGuardError(
@@ -176,16 +182,31 @@ function unwrapSelect(stmt: CteNode["stmt"] | null | undefined) {
 }
 
 function walkExprForSubqueries(
-  expr: ExprNode,
+  expr: unknown,
   workspaceId: string,
   cteNames: Set<string>,
+  seen = new Set<object>(),
 ) {
   if (!expr || typeof expr !== "object") return;
-  if (expr.ast && (expr.ast as SelectNode).type === "select") {
-    rewriteSelect(expr.ast as SelectNode, workspaceId, cteNames);
+  if (seen.has(expr)) return;
+  seen.add(expr);
+
+  const node = expr as Record<string, unknown>;
+  const ast = node.ast;
+  if (ast && typeof ast === "object" && (ast as SelectNode).type === "select") {
+    rewriteSelect(ast as SelectNode, workspaceId, cteNames);
   }
-  if (expr.left) walkExprForSubqueries(expr.left, workspaceId, cteNames);
-  if (expr.right) walkExprForSubqueries(expr.right, workspaceId, cteNames);
+
+  for (const [key, value] of Object.entries(node)) {
+    if (key === "ast") continue;
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        walkExprForSubqueries(item, workspaceId, cteNames, seen);
+      }
+      continue;
+    }
+    walkExprForSubqueries(value, workspaceId, cteNames, seen);
+  }
 }
 
 function buildWorkspaceFilter(qualifier: string, workspaceId: string): ExprNode {
