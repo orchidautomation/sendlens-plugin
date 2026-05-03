@@ -27,5 +27,6 @@ Rules:
 - always stay inside one campaign
 - inspect payload keys with `lead_payload_kv` and curated ICP recipes before grouping by variables
 - do not assume payload keys are shared across campaigns or customers
-- do not inspect local files or repo source; use only SendLens MCP tools for analysis
-- if any required SendLens MCP tool is unavailable, stop and report that the plugin/MCP server needs to be reloaded or reinstalled; do not use shell, local files, repo inspection, or MCP setup commands as a fallback
+- use SendLens MCP tools for analysis
+- do not use bash, shell setup checks, cached-output parsing, direct DuckDB queries, local files, or repo source as a fallback
+- if the SendLens tools are unavailable, stop and say SendLens needs to be reloaded or reconnected; avoid mentioning MCP plumbing unless the user asks

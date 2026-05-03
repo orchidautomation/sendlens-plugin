@@ -16,6 +16,7 @@ SendLens is the reasoning layer over Instantly data. It runs read-only, stores d
 - `copy-analysis`: Use for subject/body analysis, template review, and recommendations grounded in real replies.
 - `reply-patterns`: Use for positive vs negative reply cohort analysis, intent patterns, and outcome comparisons by step or variant.
 - `icp-signals`: Use for lead-segment hypotheses, campaign-variable patterns, and "who responds?" questions.
+- `targeting-diagnosis`: Use to turn campaign evidence, ICP signals, and business context into audience redefinition and next plays.
 - `cold-email-best-practices`: Use as the policy layer when recommending changes or critiquing copy and setup.
 
 ## Linear Planning
@@ -30,7 +31,7 @@ SendLens is the reasoning layer over Instantly data. It runs read-only, stores d
 
 - If the user mentions `SendLens`, the plugin name, the Instantly workspace, campaign performance, replies, copy health, or asks to "pull my data", do not freeform first. Start with SendLens tools immediately.
 - Session start already triggers a fresh local refresh of actively sending campaigns. That startup path is intentionally lean: exact analytics, templates, and a sampled lead evidence layer with full replied leads plus bounded non-reply leads. Call `refresh_data` again only when the user explicitly asks for another fresh pull or switches clients.
-- Use SendLens MCP tools as the whole working surface for SendLens analysis. If those tools are missing or unavailable in the host session, stop and tell the user to reload or reinstall the SendLens plugin so the MCP server mounts correctly. Do not inspect local files, run shell setup checks such as `claude mcp list`, parse cached tool outputs with `jq`, query DuckDB through shell, read `refresh-status.json`, wait with shell commands such as `sleep`, or inspect repo source as a substitute for SendLens tool calls.
+- Use SendLens MCP tools as the internal working surface for SendLens analysis. Do not use bash, shell setup checks such as `claude mcp list`, cached-output parsing with `jq`, direct DuckDB queries, `refresh-status.json`, shell waits such as `sleep`, local files, or repo source as a fallback. If the SendLens tools are unavailable, say SendLens needs to be reloaded or reconnected before analysis can continue; do not narrate MCP plumbing unless the user asks for implementation details.
 - `workspace_snapshot`: First read after refresh or for broad workspace questions. This is the default first call for "pull my data", "what's happening?", "what's working?", and "give me the snapshot".
 - `refresh_status`: Use when the user asks what startup refresh is doing, whether the cache is current, or why data looks incomplete or stale.
 - `load_campaign_data`: Use when the user narrows to one campaign and wants copy analysis, ICP analysis, reply outcome analysis, or reconstructed outbound for that campaign. Prefer this over a workspace-wide `refresh_data` call.
@@ -50,6 +51,8 @@ When the host supports native delegated agents, use these specialist reviewers:
   inspect templates and reconstructed copy for one campaign
 - `icp-auditor`
   inspect one campaign's lead payloads, segments, and enrichment fields
+- `targeting-strategist`
+  synthesize campaign evidence into an audience decision and next-play plan
 - `reply-auditor`
   inspect one campaign's positive, negative, and neutral reply outcomes
 - `synthesis-reviewer`
@@ -88,7 +91,7 @@ The expected flow is:
 
 1. use `workspace-triager` or `campaign_overview` to pick the campaign
 2. load one campaign with `load_campaign_data`
-3. use `campaign-analyst`, `copy-auditor`, `icp-auditor`, or `reply-auditor` as needed
+3. use `campaign-analyst`, `copy-auditor`, `icp-auditor`, `reply-auditor`, or `targeting-strategist` as needed
 4. use `synthesis-reviewer` to compress the result if the analysis is broad
 
 Do not fan out multiple campaign specialists until the workspace-level triage identifies which campaigns are worth the extra work.

@@ -23,5 +23,5 @@ Focus on:
 
 When segmenting by enrichment variables, query `lead_payload_kv` only after the campaign is fixed.
 
-Do not imply exact reply-body language unless a future SendLens MCP surface explicitly returns exact reply bodies. Use only SendLens MCP tools for analysis.
-If any required SendLens MCP tool is unavailable, stop and report that the plugin/MCP server needs to be reloaded or reinstalled. Do not use shell, local files, repo inspection, or MCP setup commands as a fallback.
+Do not imply exact reply-body language unless a future SendLens analysis surface explicitly returns exact reply bodies. Use SendLens MCP tools for analysis.
+Do not use bash, shell setup checks, cached-output parsing, direct DuckDB queries, local files, or repo source as a fallback. If the SendLens tools are unavailable, stop and say SendLens needs to be reloaded or reconnected. Avoid mentioning MCP plumbing unless the user asks.

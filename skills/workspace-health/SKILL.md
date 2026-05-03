@@ -20,7 +20,7 @@ Diagnose overall workspace health, reply-rate issues, bounce risk, and next acti
 - Session start should already have refreshed local data. Start from `workspace_snapshot` unless the user explicitly asks for another fresh pull.
 - Pull `analysis_starters(topic="workspace-health")` before writing custom analysis.
 - Keep broad workspace reads active-only by default. Include inactive or historical campaigns only when the user explicitly asks for them.
-- Stay inside the SendLens MCP tool surface. If required SendLens tools are missing, stop and tell the user to reload or reinstall the plugin/MCP server. Do not inspect local files, run shell setup checks, parse cached outputs with `jq`, or query DuckDB through shell fallbacks.
+- Use SendLens MCP tools for analysis. Do not use bash, shell setup checks, cached-output parsing, direct DuckDB queries, local files, or repo source as a fallback. If the SendLens tools are unavailable, say SendLens needs to be reloaded or reconnected before analysis can continue; avoid mentioning MCP plumbing unless the user asks.
 - When the host supports delegated agents, use `workspace-triager` for the initial pass and keep the main context focused on the highest-priority campaign.
 - Focus on reply rate, bounce rate, active campaign count, account health, and coverage warnings.
 - Treat headline metrics as exact only when they come from aggregate tables.

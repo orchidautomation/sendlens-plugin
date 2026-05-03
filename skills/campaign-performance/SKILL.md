@@ -21,7 +21,7 @@ Compare campaigns, rank variants, and explain campaign-level winners and losers.
 - Pull `analysis_starters(topic="campaign-performance")` before custom analysis.
 - Use `workspace_snapshot.campaigns` for the first campaign ranking pass. Fall through to `analyze_data` only when the user asks for a custom metric or the snapshot output is too narrow for the question.
 - Keep broad ranking reads active-only by default. Include inactive or historical campaigns only when the user explicitly asks for them.
-- Stay inside the SendLens MCP tool surface. If required SendLens tools are missing, stop and tell the user to reload or reinstall the plugin/MCP server. Do not inspect local files, run shell setup checks, parse cached outputs with `jq`, or query DuckDB through shell fallbacks.
+- Use SendLens MCP tools for analysis. Do not use bash, shell setup checks, cached-output parsing, direct DuckDB queries, local files, or repo source as a fallback. If the SendLens tools are unavailable, say SendLens needs to be reloaded or reconnected before analysis can continue; avoid mentioning MCP plumbing unless the user asks.
 - When the host supports delegated agents, use `campaign-analyst` after the workspace triage picks a campaign.
 - If the user narrows to one campaign and needs fresher evidence, run `load_campaign_data` before custom analysis instead of refreshing the whole workspace.
 - Use `campaign_analytics`, `step_analytics`, and `campaigns` for headline comparisons.

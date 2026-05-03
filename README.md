@@ -232,6 +232,7 @@ The plugin also ships specialist reviewers so the host can split campaign analys
 - `campaign-analyst`
 - `copy-auditor`
 - `icp-auditor`
+- `targeting-strategist`
 - `reply-auditor`
 - `synthesis-reviewer`
 
