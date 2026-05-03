@@ -21,7 +21,7 @@ loadClientEnv();
 
 const server = new McpServer({
   name: "sendlens",
-  version: "0.1.16",
+  version: "0.1.17",
 });
 
 const SESSION_REFRESH_WAIT_TIMEOUT_MS = 15_000;
@@ -127,7 +127,7 @@ function sessionRefreshBusyResponse(
 ) {
   return jsonResponse({
     error:
-      "A session-start refresh is still running. Check refresh_status and retry this tool once the refresh completes.",
+      "A session-start refresh is still running. Check refresh_status once and retry this SendLens tool only after the status is no longer running. Do not wait with shell commands.",
     readiness: readinessPayload(readiness),
   });
 }
@@ -136,7 +136,7 @@ function dbUnavailableResponse(error: LocalDbUnavailableError) {
   return jsonResponse({
     error: error.message,
     hint:
-      "The local cache usually unlocks when the active refresh finishes. Use refresh_status to check progress, then retry the SendLens tool. If refresh_status is succeeded and this persists, reload or restart the host/plugin session instead of inspecting local cache files through shell commands.",
+      "Use refresh_status once to check whether a refresh is still running. If refresh_status is succeeded and this persists, reload or restart the host/plugin session before retrying. Do not use Bash, sleep, local file inspection, or DuckDB shell access as a fallback.",
   });
 }
 
