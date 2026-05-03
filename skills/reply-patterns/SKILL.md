@@ -10,6 +10,7 @@ Surface what prospects are saying, separate human replies from auto-noise, and s
 ## Tools In This Skill
 
 - `workspace_snapshot`
+- `hydrate_reply_text`
 - `analysis_starters`
 - `analyze_data`
 
@@ -20,10 +21,12 @@ Surface what prospects are saying, separate human replies from auto-noise, and s
 - Stay inside the SendLens MCP tool surface. If required SendLens tools are missing, stop and tell the user to reload or reinstall the plugin/MCP server. Do not inspect local files, run shell setup checks, parse cached outputs with `jq`, or query DuckDB through shell fallbacks.
 - Keep reply analysis scoped to one campaign at a time unless the user explicitly asks for a workspace-wide comparison.
 - If the user narrows to one campaign and wants stronger reply evidence, run `load_campaign_data` for that campaign first.
-- Query `reply_context` first.
+- Query `reply_context` first. If the user needs actual reply wording and `reply_body_text` is empty, run `hydrate_reply_text` for exactly one campaign, then query `reply_context` again.
+- Prefer the default `hydrate_reply_text` statuses `[1, -1, -2]` for interested, not interested, and wrong-person replies. Do not include out-of-office status `0` unless the user explicitly asks for OOO replies.
+- Use `hydrate_reply_text(mode="auto")` before analysis; use `mode="continue"` only when the user wants more rows beyond the cached page.
 - Separate positive, negative, and neutral outcomes from Instantly lead status before grouping by step or variant.
 - When segmenting replies by enrichment variables, stay inside one campaign and read those variables from `lead_payload_kv`.
-- In V1, do not imply exact reply-body language; use Instantly reply outcomes unless a future SendLens MCP surface explicitly returns exact reply bodies.
+- Only quote or characterize exact reply-body language from hydrated `reply_body_text`; otherwise use Instantly reply outcomes and say reply bodies have not been hydrated yet.
 
 ## Example Requests
 

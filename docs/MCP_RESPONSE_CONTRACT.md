@@ -56,14 +56,24 @@ Where relevant, SendLens responses should include:
 - `row_count`, `result_truncated`, and output limits
 - warnings when caps are hit
 
+`hydrate_reply_text`
+
+- resolves exactly one campaign by `campaign_id` or unambiguous `campaign_name`
+- writes exact inbound reply rows into `reply_emails`
+- preserves pagination/cache state in `reply_email_hydration_state`
+- returns hydration counts by `i_status`, cursor/exhaustion state, readiness metadata, and a bounded hydrated reply sample
+- default statuses are `1`, `-1`, and `-2`; out-of-office status `0` is excluded unless explicitly requested
+
 ## Exactness Rules
 
 - `campaigns`, `campaign_analytics`, `step_analytics`, `campaign_variants`, `accounts`, `account_daily_metrics`, `custom_tags`, tag mapping views, `inbox_placement_tests`, and `inbox_placement_analytics` are exact local copies of Instantly-derived surfaces.
 - `campaign_overview` is the preferred exact campaign rollup plus sample coverage metadata.
 - `inbox_placement_test_overview` and `sender_deliverability_health` are exact semantic rollups over Instantly inbox placement analytics when those API surfaces are available.
+- `reply_emails` contains exact inbound email rows hydrated on demand from Instantly List email. It is intentionally not part of the session-start fast refresh.
+- `reply_email_hydration_state` is exact local pagination state for continuing reply hydration by campaign/status/thread mode.
 - `lead_evidence` contains full replied leads where available and bounded non-reply samples.
 - `lead_payload_kv` expands sampled lead `custom_payload` into campaign-scoped key/value rows so ICP analysis can stay inside SendLens tools without raw JSON table functions.
-- `reply_context` is lead outcome evidence joined to templates and reconstructed outbound context.
+- `reply_context` is lead outcome evidence joined to hydrated inbound reply text when available, templates, and reconstructed outbound context.
 - `rendered_outbound_context` is locally reconstructed copy, not byte-for-byte delivered email text.
 
 ## Structured Content Strategy

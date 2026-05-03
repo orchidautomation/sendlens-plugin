@@ -11,6 +11,7 @@ import {
   query,
 } from "./local-db";
 import { refreshWorkspace } from "./instantly-ingest";
+import { hydrateReplyText } from "./instantly-ingest";
 import { getQueryRecipes, QUERY_RECIPE_TOPICS } from "./query-recipes";
 import { readRefreshStatus } from "./refresh-status";
 import { enforceLocalWorkspaceScope, LocalSqlGuardError } from "./sql-guard";
@@ -291,6 +292,176 @@ server.registerTool(
         campaign_overview: overviewRows[0] ?? null,
         human_reply_sample: replySample,
         rendered_outbound_sample: renderedRows,
+      });
+    } catch (error) {
+      if (error instanceof LocalDbUnavailableError) {
+        return dbUnavailableResponse(error);
+      }
+      throw error;
+    } finally {
+      if (db) closeDb(db);
+    }
+  },
+);
+
+server.registerTool(
+  "hydrate_reply_text",
+  {
+    description:
+      [
+        "Hydrate actual inbound reply email text for exactly one campaign and write it into the local DuckDB cache.",
+        "Use this only when the user needs real reply bodies; do not run it during routine startup or broad workspace triage because Instantly List email is capped at 20 requests per minute.",
+        "Before fetching, the tool checks cached reply_emails for the selected campaign/statuses. Default auto mode skips statuses that already have cached rows; continue mode resumes pagination from reply_email_hydration_state; restart mode starts from the newest page again and upserts by email ID.",
+        "Default statuses are interested, not interested, and wrong person: 1, -1, -2. Out-of-office status 0 is excluded unless explicitly requested.",
+      ].join(" "),
+    inputSchema: {
+      campaign_id: z
+        .string()
+        .optional()
+        .describe("Exact Instantly campaign ID. Provide either campaign_id or campaign_name, not both."),
+      campaign_name: z
+        .string()
+        .optional()
+        .describe("Case-insensitive campaign name fragment. Must resolve to exactly one campaign."),
+      statuses: z
+        .array(z.number().int())
+        .optional()
+        .describe("Instantly i_status values to hydrate. Defaults to [1, -1, -2]. Status 0 is out-of-office and excluded by default."),
+      max_pages_per_status: z
+        .number()
+        .int()
+        .min(1)
+        .max(5)
+        .optional()
+        .describe("Maximum List email pages to fetch for each status. Each page can return up to 100 emails and costs about 3 seconds under Instantly's 20/min cap."),
+      latest_of_thread: z
+        .boolean()
+        .optional()
+        .describe("Whether to hydrate only the latest email in each thread. Defaults to true."),
+      mode: z
+        .enum(["auto", "continue", "restart"])
+        .optional()
+        .describe("auto skips already-cached statuses; continue fetches the next saved page; restart starts from newest and upserts by email ID."),
+      sample_limit: z
+        .number()
+        .int()
+        .min(0)
+        .max(50)
+        .optional()
+        .describe("Number of hydrated reply rows to return as a preview after writing to DuckDB."),
+    },
+  },
+  async ({
+    campaign_id,
+    campaign_name,
+    statuses = [1, -1, -2],
+    max_pages_per_status = 1,
+    latest_of_thread = true,
+    mode = "auto",
+    sample_limit = 10,
+  }) => {
+    const readiness = await waitForSessionSnapshot();
+    if (readiness.timedOut) {
+      return sessionRefreshBusyResponse(readiness);
+    }
+
+    let db: Awaited<ReturnType<typeof getDb>> | null = null;
+    try {
+      db = await getDb();
+      const workspaceId = await getActiveWorkspaceId(db);
+      if (!workspaceId) {
+        return jsonResponse({
+          error: "No active workspace is loaded. Run refresh_data() first.",
+        });
+      }
+
+      const hasCampaignId = Boolean(campaign_id?.trim());
+      const hasCampaignName = Boolean(campaign_name?.trim());
+      if (hasCampaignId === hasCampaignName) {
+        return jsonResponse({
+          error: "Provide exactly one campaign selector: campaign_id or campaign_name.",
+        });
+      }
+
+      const workspaceSafe = workspaceId.replace(/'/g, "''");
+      let campaignRows;
+      if (hasCampaignId) {
+        const campaignSafe = campaign_id!.trim().replace(/'/g, "''");
+        campaignRows = await query(
+          db,
+          `SELECT id, name
+           FROM sendlens.campaigns
+           WHERE workspace_id = '${workspaceSafe}'
+             AND id = '${campaignSafe}'
+           LIMIT 2`,
+        );
+      } else {
+        const nameSafe = campaign_name!.trim().replace(/'/g, "''");
+        campaignRows = await query(
+          db,
+          `SELECT id, name
+           FROM sendlens.campaigns
+           WHERE workspace_id = '${workspaceSafe}'
+             AND lower(name) LIKE lower('%${nameSafe}%')
+           ORDER BY
+             CASE WHEN lower(name) = lower('${nameSafe}') THEN 0 ELSE 1 END,
+             name
+           LIMIT 6`,
+        );
+      }
+
+      if (campaignRows.length === 0) {
+        return jsonResponse({
+          error: "No campaign matched the provided selector in the local cache.",
+          selector: campaign_id ? { campaign_id } : { campaign_name },
+        });
+      }
+      if (!hasCampaignId && campaignRows.length > 1) {
+        return jsonResponse({
+          error: "Campaign name matched multiple campaigns. Retry with campaign_id or a more exact campaign_name.",
+          matches: campaignRows.slice(0, 5),
+        });
+      }
+
+      const resolvedCampaignId = String(campaignRows[0].id);
+      const hydration = await hydrateReplyText({
+        workspaceId,
+        campaignId: resolvedCampaignId,
+        statuses,
+        maxPagesPerStatus: max_pages_per_status,
+        latestOfThread: latest_of_thread,
+        mode,
+      });
+
+      const campaignSafe = resolvedCampaignId.replace(/'/g, "''");
+      const hydratedRows = sample_limit > 0
+        ? await query(
+          db,
+          `SELECT
+             campaign_id,
+             campaign_name,
+             lead_email,
+             reply_email_id,
+             reply_thread_id,
+             reply_email_i_status,
+             reply_subject,
+             reply_from_email,
+             reply_received_at,
+             reply_body_text,
+             reply_content_preview
+           FROM sendlens.reply_context
+           WHERE workspace_id = '${workspaceSafe}'
+             AND campaign_id = '${campaignSafe}'
+             AND reply_email_id IS NOT NULL
+           ORDER BY reply_received_at DESC NULLS LAST, lead_email
+           LIMIT ${sample_limit}`,
+        )
+        : [];
+
+      return jsonResponse({
+        hydration,
+        readiness: readinessPayload(readiness),
+        hydrated_reply_sample: hydratedRows,
       });
     } catch (error) {
       if (error instanceof LocalDbUnavailableError) {

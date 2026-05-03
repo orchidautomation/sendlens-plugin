@@ -412,10 +412,14 @@ async function ensureSchema(conn: DuckDBConnection) {
       id VARCHAR NOT NULL,
       campaign_id VARCHAR NOT NULL,
       thread_id VARCHAR,
+      lead_email VARCHAR,
+      message_id VARCHAR,
+      eaccount VARCHAR,
       from_email VARCHAR,
       to_email VARCHAR,
       subject VARCHAR,
       body_text VARCHAR,
+      body_html VARCHAR,
       sent_at TIMESTAMP,
       is_auto_reply BOOLEAN,
       ai_interest_value DOUBLE,
@@ -424,8 +428,23 @@ async function ensureSchema(conn: DuckDBConnection) {
       direction VARCHAR,
       step_resolved VARCHAR,
       variant_resolved VARCHAR,
+      hydrated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (workspace_id, id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.reply_email_hydration_state (
+      workspace_id VARCHAR NOT NULL,
+      campaign_id VARCHAR NOT NULL,
+      i_status INTEGER NOT NULL,
+      latest_of_thread BOOLEAN NOT NULL,
+      email_type VARCHAR NOT NULL,
+      next_starting_after VARCHAR,
+      pages_hydrated INTEGER,
+      emails_hydrated INTEGER,
+      exhausted BOOLEAN,
+      last_hydrated_at TIMESTAMP,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, campaign_id, i_status, latest_of_thread, email_type)
     )`,
     `CREATE TABLE IF NOT EXISTS sendlens.sampled_leads (
       workspace_id VARCHAR NOT NULL,
@@ -529,6 +548,11 @@ async function ensureSchema(conn: DuckDBConnection) {
     "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS status_summary VARCHAR",
     "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS subsequence_id VARCHAR",
     "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS list_id VARCHAR",
+    "ALTER TABLE sendlens.reply_emails ADD COLUMN IF NOT EXISTS lead_email VARCHAR",
+    "ALTER TABLE sendlens.reply_emails ADD COLUMN IF NOT EXISTS message_id VARCHAR",
+    "ALTER TABLE sendlens.reply_emails ADD COLUMN IF NOT EXISTS eaccount VARCHAR",
+    "ALTER TABLE sendlens.reply_emails ADD COLUMN IF NOT EXISTS body_html VARCHAR",
+    "ALTER TABLE sendlens.reply_emails ADD COLUMN IF NOT EXISTS hydrated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS reply_lead_rows INTEGER",
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS reply_outbound_rows INTEGER",
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS filtered_lead_rows INTEGER",
@@ -828,12 +852,29 @@ async function ensureSchema(conn: DuckDBConnection) {
         le.email_replied_step AS step_resolved,
         le.email_replied_variant AS variant_resolved,
         le.timestamp_last_reply AS reply_at,
+        re.id AS reply_email_id,
+        re.thread_id AS reply_thread_id,
+        re.subject AS reply_subject,
+        re.body_text AS reply_body_text,
+        re.body_html AS reply_body_html,
+        re.from_email AS reply_from_email,
+        re.to_email AS reply_to_email,
+        re.sent_at AS reply_received_at,
+        re.i_status AS reply_email_i_status,
+        re.is_auto_reply AS reply_is_auto_reply,
+        re.content_preview AS reply_content_preview,
+        re.hydrated_at AS reply_hydrated_at,
         so.subject AS rendered_subject,
         so.body_text AS rendered_body_text,
         so.sample_source,
         cv.subject AS template_subject,
         cv.body_text AS template_body_text
       FROM sendlens.lead_evidence le
+      LEFT JOIN sendlens.reply_emails re
+        ON le.workspace_id = re.workspace_id
+       AND le.campaign_id = re.campaign_id
+       AND lower(le.email) = lower(COALESCE(re.lead_email, re.from_email))
+       AND re.direction = 'inbound'
       LEFT JOIN sendlens.sampled_outbound_emails so
         ON le.workspace_id = so.workspace_id
        AND le.campaign_id = so.campaign_id
@@ -925,6 +966,7 @@ export async function clearWorkspaceData(
     "inbox_placement_tests",
     "inbox_placement_analytics",
     "reply_emails",
+    "reply_email_hydration_state",
     "sampled_leads",
     "sampled_outbound_emails",
     "sampling_runs",
@@ -936,6 +978,7 @@ export async function clearWorkspaceData(
     "campaign_variants",
     "campaign_account_assignments",
     "reply_emails",
+    "reply_email_hydration_state",
     "sampled_leads",
     "sampled_outbound_emails",
     "sampling_runs",
