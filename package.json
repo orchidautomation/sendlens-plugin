@@ -19,7 +19,8 @@
     "start:plugin-mcp": "npm run --silent build:plugin && node ./build/plugin/server.js",
     "test:sql-guard": "npm run --silent build:plugin && node scripts/test-sql-guard.mjs",
     "test:db-lock": "npm run --silent build:plugin && node scripts/test-db-lock-retry.mjs",
-    "test:plugin": "npm run --silent build:plugin && node scripts/test-sql-guard.mjs && node scripts/test-db-lock-retry.mjs && node scripts/test-local-plugin-sampling.mjs && node scripts/test-local-plugin-runtime.mjs"
+    "test:templates": "npm run --silent build:plugin && node scripts/test-ingest-template-fixtures.mjs",
+    "test:plugin": "npm run --silent build:plugin && node scripts/test-sql-guard.mjs && node scripts/test-db-lock-retry.mjs && node scripts/test-ingest-template-fixtures.mjs && node scripts/test-local-plugin-sampling.mjs && node scripts/test-local-plugin-runtime.mjs"
   },
   "dependencies": {
     "@duckdb/node-api": "^1.5.1-r.1",

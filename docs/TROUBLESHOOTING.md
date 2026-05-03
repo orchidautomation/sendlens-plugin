@@ -111,6 +111,12 @@ For deep analysis, load one campaign first:
 load_campaign_data(campaign_id="...")
 ```
 
+## Rendered Copy Limits
+
+SendLens reconstructs outbound copy locally from campaign templates plus stored lead variables. Treat this as analysis evidence and personalization QA, not as a guaranteed byte-for-byte copy of the delivered email.
+
+Current local rendering supports basic `{{ key }}` replacements using stable lead fields and `custom_payload`. It may differ from Instantly-rendered output when a campaign uses provider-specific fallback syntax, pipes, conditional logic, or transformations.
+
 ## Data Looks Stale
 
 Run:

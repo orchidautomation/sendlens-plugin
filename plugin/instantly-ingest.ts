@@ -297,7 +297,7 @@ function deriveWorkspaceId(sources: Array<Record<string, unknown> | undefined>) 
   return "default";
 }
 
-function extractCampaignVariants(
+export function extractCampaignVariants(
   campaignDetails: Record<string, unknown>,
 ): CampaignVariantTemplate[] {
   const sequences = Array.isArray(campaignDetails.sequences)
@@ -380,7 +380,28 @@ function normalizeEmail(value: unknown) {
 }
 
 function extractPayload(lead: LeadRecord) {
-  return ((lead.payload ?? {}) as Record<string, unknown>);
+  const record = lead as Record<string, unknown>;
+  const directPayload = record.payload;
+  if (directPayload && typeof directPayload === "object" && !Array.isArray(directPayload)) {
+    return directPayload as Record<string, unknown>;
+  }
+
+  const customPayload = record.custom_payload ?? record.customPayload;
+  if (customPayload && typeof customPayload === "object" && !Array.isArray(customPayload)) {
+    return customPayload as Record<string, unknown>;
+  }
+  if (typeof customPayload === "string" && customPayload.trim()) {
+    try {
+      const parsed = JSON.parse(customPayload);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return {};
+    }
+  }
+
+  return {};
 }
 
 function extractLeadCampaignIds(lead: LeadRecord) {
@@ -469,7 +490,7 @@ function buildLeadTemplateVariables(lead: LeadRecord) {
   return vars;
 }
 
-function renderTemplateValue(template: string | null, lead: LeadRecord) {
+export function renderTemplateValue(template: string | null, lead: LeadRecord) {
   if (!template) return null;
   const vars = buildLeadTemplateVariables(lead);
   return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (token, rawKey) => {
@@ -480,7 +501,7 @@ function renderTemplateValue(template: string | null, lead: LeadRecord) {
   });
 }
 
-type ResolvedLeadTemplate = {
+export type ResolvedLeadTemplate = {
   template: CampaignVariantTemplate | null;
   stepResolved: string | null;
   variantResolved: string | null;
@@ -492,7 +513,7 @@ type ResolvedLeadTemplate = {
     | "missing_template";
 };
 
-function resolveLeadTemplate(
+export function resolveLeadTemplate(
   lead: LeadRecord,
   templates: CampaignVariantTemplate[],
 ): ResolvedLeadTemplate {
