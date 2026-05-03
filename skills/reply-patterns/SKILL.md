@@ -22,8 +22,8 @@ Surface what prospects are saying, separate human replies from auto-noise, and s
 - If the user narrows to one campaign and wants stronger reply evidence, run `load_campaign_data` for that campaign first.
 - Query `reply_context` first.
 - Separate positive, negative, and neutral outcomes from Instantly lead status before grouping by step or variant.
-- When segmenting replies by enrichment variables, stay inside one campaign and read those variables from `custom_payload`.
-- In V1, do not imply we have exact reply-body language unless the workflow explicitly fetched fallback email/thread data.
+- When segmenting replies by enrichment variables, stay inside one campaign and read those variables from `lead_payload_kv`.
+- In V1, do not imply exact reply-body language; use Instantly reply outcomes unless a future SendLens MCP surface explicitly returns exact reply bodies.
 
 ## Example Requests
 

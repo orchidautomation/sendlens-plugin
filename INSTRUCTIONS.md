@@ -64,7 +64,7 @@ If the host does not expose native delegated agents, preserve the same one-campa
 - For deep analysis, prefer one campaign at a time. Use workspace-level views only to rank or choose campaigns, then move to `load_campaign_data(campaign_id=...)` before doing detailed copy, reply, or ICP analysis.
 - Prefer `reply_context` for positive/negative cohort analysis and "what copy got responses?" because it joins replied leads back to template context and locally reconstructed copy.
 - Prefer `rendered_outbound_context` when the user wants to inspect reconstructed lead-level copy or personalization QA. It is not exact delivered email text.
-- Prefer `lead_evidence` for ICP analysis because it carries campaign-scoped lead payloads, stable Instantly lead fields, reply signals, and the preserved raw JSON payload.
+- Prefer `lead_evidence` for lead-level ICP context and `lead_payload_kv` for campaign payload key/value analysis.
 - Prefer `campaign_tags` and `account_tags` over raw tag joins when the user wants client/tag scoping.
 
 ## Operating Rules
@@ -73,13 +73,13 @@ If the host does not expose native delegated agents, preserve the same one-campa
 - Keep campaign-level ranking on `campaign_analytics.reply_count_unique` and derived campaign reply rate when available. Do not assume step-level `unique_replies` has the same coverage.
 - For step or sequence ranking, use `step_analytics.unique_replies` only when coverage is clearly present for that campaign. If step-level reply counts are sparse or null, switch the ranking basis to `step_analytics.opportunities` and derived opportunity rate, and say so explicitly.
 - Treat `custom_tags` and `custom_tag_mappings` as the exact tag-filter layer. Use them to scope analyses by campaign or sampled lead tags.
-- Treat `lead_evidence`, `reply_context`, and `rendered_outbound_context` as the preferred semantic evidence layer.
+- Treat `lead_evidence`, `lead_payload_kv`, `reply_context`, and `rendered_outbound_context` as the preferred semantic evidence layer.
 - Treat `sampled_leads` and `sampled_outbound_emails` as storage tables behind that layer. Never project full-population totals from sampled raw rows.
 - Reply outcome labels come from Instantly lead state, primarily `lt_interest_status` and related lead metadata. Do not invent sentiment labels from reply text in V1.
-- In V1, do not imply we have exact inbound reply text unless the user explicitly ran a fallback email/thread fetch. Default to Instantly reply outcomes and reconstructed copy.
+- In V1, do not imply we have exact inbound reply text. Default to Instantly reply outcomes and reconstructed outbound copy unless a future SendLens MCP surface explicitly returns exact reply bodies.
 - Use `campaign_variants` as the source of truth for intended copy templates and `rendered_outbound_context` to verify how those templates render against stored lead variables.
 - Replied leads are intentionally kept in full whenever they can be resolved from the campaign lead feed. Non-reply leads are bounded locally.
-- `custom_payload` is preserved per lead as raw JSON text. Do not assume payload keys are shared across campaigns or customers. For campaign-specific variable analysis, scope to one campaign first and then query `custom_payload` with DuckDB JSON functions.
+- `custom_payload` is preserved per lead as raw JSON text, but campaign-variable analysis should use `lead_payload_kv` and the ICP payload recipes. Do not assume payload keys are shared across campaigns or customers.
 - Call out coverage limitations explicitly when raw evidence was sampled.
 
 ## Delegation Shape

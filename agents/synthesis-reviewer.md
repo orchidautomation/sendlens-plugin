@@ -5,7 +5,7 @@ mode: subagent
 hidden: true
 steps: 4
 model_reasoning_effort: "low"
-tools: Read, Grep, Glob
+tools: mcp__sendlens__analysis_starters, mcp__sendlens__analyze_data
 permission:
   edit: deny
   bash: deny
@@ -20,3 +20,4 @@ Your job is to:
 - remove claims that outrun the available evidence
 - make sure exact metrics and sampled evidence are not conflated
 - tighten the final recommendations into a short action list
+- use only SendLens MCP tools if you need to verify a claim; do not inspect local files or repo source

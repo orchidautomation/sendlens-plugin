@@ -22,7 +22,7 @@ Infer who responds best from exact aggregates plus sampled lead evidence, while 
 - Keep ICP analysis scoped to one campaign at a time unless the user explicitly asks for a cross-campaign comparison.
 - If the user narrows to one campaign and wants better evidence, run `load_campaign_data` for that campaign first.
 - Use exact campaign aggregates for performance baselines.
-- Use `lead_evidence` and `sampled_leads` to generate segment hypotheses, not full-population claims.
+- Use `lead_evidence` and `lead_payload_kv` to generate segment hypotheses, not full-population claims.
 - Preserve campaign-specific payload context; use the `lead_payload_kv` view and curated payload recipes instead of raw JSON table functions.
 - Prefer `campaign-payload-key-inventory` before value-level analysis when the user has not named a payload key.
 - Use `campaign-payload-presence-signals` to compare whether a key being present versus absent looks directionally meaningful in sampled evidence.

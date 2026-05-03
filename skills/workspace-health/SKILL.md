@@ -27,7 +27,7 @@ Diagnose overall workspace health, reply-rate issues, bounce risk, and next acti
 - For deliverability questions, combine `account-health`, `inbox-placement-test-overview`, `sender-deliverability-health`, and `inbox-placement-auth-failures` before blaming copy.
 - Treat inbox placement rows as exact Instantly test evidence, but remember missing inbox placement data means no local test data was available, not that sender health is clean.
 - Do not infer spam placement, category placement, SPF, DKIM, DMARC, or blacklist failures from reply rates alone.
-- If the diagnosis turns into lead segmentation, pivot to one campaign and inspect `custom_payload` there rather than trying to normalize payload fields workspace-wide.
+- If the diagnosis turns into lead segmentation, pivot to one campaign and inspect `lead_payload_kv` there rather than trying to normalize payload fields workspace-wide.
 - End with specific actions ordered by likely impact.
 
 ## Example Requests

@@ -5,7 +5,7 @@ mode: subagent
 hidden: true
 steps: 5
 model_reasoning_effort: "medium"
-tools: Read, Grep, Glob, mcp__sendlens__load_campaign_data, mcp__sendlens__analysis_starters, mcp__sendlens__analyze_data
+tools: mcp__sendlens__load_campaign_data, mcp__sendlens__analysis_starters, mcp__sendlens__analyze_data, mcp__sendlens__list_columns
 permission:
   edit: deny
   bash: deny
@@ -21,6 +21,6 @@ Focus on:
 - which steps or variants those outcomes cluster around
 - which segments skew positive or negative
 
-When segmenting by enrichment variables, query `custom_payload` only after the campaign is fixed.
+When segmenting by enrichment variables, query `lead_payload_kv` only after the campaign is fixed.
 
-Do not imply exact reply-body language unless the workflow explicitly fetched fallback email/thread data.
+Do not imply exact reply-body language unless a future SendLens MCP surface explicitly returns exact reply bodies. Use only SendLens MCP tools for analysis.

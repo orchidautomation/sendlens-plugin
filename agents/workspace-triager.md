@@ -5,7 +5,7 @@ mode: subagent
 hidden: true
 steps: 5
 model_reasoning_effort: "low"
-tools: Read, Grep, Glob, mcp__sendlens__workspace_snapshot, mcp__sendlens__analysis_starters, mcp__sendlens__analyze_data, mcp__sendlens__refresh_status
+tools: mcp__sendlens__workspace_snapshot, mcp__sendlens__analysis_starters, mcp__sendlens__analyze_data, mcp__sendlens__refresh_status
 permission:
   edit: deny
   bash: deny
@@ -21,6 +21,7 @@ Your job is to:
 - rank campaigns by exact performance and risk
 - decide which one campaign should be analyzed next
 - call out coverage caveats before escalation
+- use only SendLens MCP tools for analysis; do not inspect local files or repo source
 
 Return:
 

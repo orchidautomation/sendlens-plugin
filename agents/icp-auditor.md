@@ -5,7 +5,7 @@ mode: subagent
 hidden: true
 steps: 6
 model_reasoning_effort: "medium"
-tools: Read, Grep, Glob, mcp__sendlens__load_campaign_data, mcp__sendlens__analysis_starters, mcp__sendlens__analyze_data, mcp__sendlens__list_columns, mcp__sendlens__search_catalog
+tools: mcp__sendlens__load_campaign_data, mcp__sendlens__analysis_starters, mcp__sendlens__analyze_data, mcp__sendlens__list_columns, mcp__sendlens__search_catalog
 permission:
   edit: deny
   bash: deny
@@ -25,5 +25,6 @@ Focus on:
 Rules:
 
 - always stay inside one campaign
-- inspect `custom_payload` for that campaign before grouping by variables
+- inspect payload keys with `lead_payload_kv` and curated ICP recipes before grouping by variables
 - do not assume payload keys are shared across campaigns or customers
+- do not inspect local files or repo source; use only SendLens MCP tools for analysis

@@ -5,7 +5,7 @@ mode: subagent
 hidden: true
 steps: 6
 model_reasoning_effort: "medium"
-tools: Read, Grep, Glob, mcp__sendlens__load_campaign_data, mcp__sendlens__analysis_starters, mcp__sendlens__analyze_data, mcp__sendlens__list_columns
+tools: mcp__sendlens__load_campaign_data, mcp__sendlens__analysis_starters, mcp__sendlens__analyze_data, mcp__sendlens__list_columns, mcp__sendlens__search_catalog
 permission:
   edit: deny
   bash: deny
@@ -20,7 +20,8 @@ Rules:
 - always work on one campaign at a time
 - hydrate that campaign first before custom SQL
 - separate exact aggregate facts from sampled evidence
-- treat campaign-specific variables as `custom_payload` fields unless Instantly exposes them as stable lead columns
+- treat campaign-specific variables through `lead_payload_kv` unless Instantly exposes them as stable lead columns
+- do not inspect local files or repo source; use only SendLens MCP tools for analysis
 - prefer campaign-level recommendations over workspace-general advice
 
 Return:
