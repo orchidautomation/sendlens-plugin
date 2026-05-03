@@ -514,6 +514,11 @@ LIMIT 50;`,
   job_title,
   reply_outcome_label,
   lt_interest_label,
+  reply_email_i_status,
+  reply_subject,
+  reply_body_text,
+  reply_from_email,
+  reply_received_at,
   rendered_subject,
   rendered_body_text,
   template_subject,
@@ -524,8 +529,38 @@ WHERE campaign_id = '{{campaign_id}}'
 ORDER BY reply_at DESC
 LIMIT 100;`,
     notes: [
-      "This does not contain exact inbound reply text.",
-      "Use it for positive/negative cohort analysis and copy reconstruction in V1.",
+      "If `reply_body_text` is null, run hydrate_reply_text for this campaign and rerun the query.",
+      "Hydrated inbound reply text is exact when available; rendered outbound copy remains reconstructed evidence.",
+      "Use it for positive/negative cohort analysis and copy reconstruction.",
+    ],
+  },
+  {
+    id: "hydrated-reply-text-by-campaign",
+    topic: "reply-patterns",
+    title: "Hydrated reply text by campaign",
+    question: "What are prospects actually saying in hydrated positive and negative replies?",
+    exactness: "exact",
+    rationale: "Use hydrated inbound reply bodies after running hydrate_reply_text for one campaign.",
+    sql: `SELECT
+  campaign_id,
+  campaign_name,
+  lead_email,
+  reply_email_i_status,
+  reply_outcome_label,
+  reply_subject,
+  reply_from_email,
+  reply_received_at,
+  reply_body_text
+FROM sendlens.reply_context
+WHERE campaign_id = '{{campaign_id}}'
+  AND reply_email_id IS NOT NULL
+  AND reply_email_i_status IN (1, -1, -2)
+ORDER BY reply_received_at DESC NULLS LAST
+LIMIT 100;`,
+    notes: [
+      "Run hydrate_reply_text for this campaign first if no rows are returned.",
+      "This is exact for hydrated inbound email rows stored in reply_emails.",
+      "Status 0 out-of-office is intentionally excluded.",
     ],
   },
   {

@@ -41,6 +41,8 @@ export const PUBLIC_TABLES = [
   "inbox_placement_analytics",
   "inbox_placement_test_overview",
   "sender_deliverability_health",
+  "reply_emails",
+  "reply_email_hydration_state",
   "sampled_leads",
   "sampled_outbound_emails",
   "sampling_runs",
@@ -86,6 +88,10 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Semantic inbox placement test rollup with primary inbox, category, spam, and authentication failure rates by test.",
   sender_deliverability_health:
     "Semantic sender-level deliverability health view built from inbox placement analytics across tests.",
+  reply_emails:
+    "Exact hydrated inbound reply email rows fetched on demand from Instantly email search, including body text, body HTML, thread IDs, and interest status.",
+  reply_email_hydration_state:
+    "Pagination and cache state for on-demand reply text hydration by campaign, interest status, and thread mode.",
   sampled_leads:
     "Campaign-scoped lead evidence with full replied leads and a bounded non-reply sample. Do not use for population totals.",
   sampled_outbound_emails:
@@ -99,7 +105,7 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
   lead_payload_kv:
     "Campaign-scoped sampled lead payload key/value view for ICP analysis without using raw JSON table functions in agent-authored SQL.",
   reply_context:
-    "Reply outcome view that joins replied leads to their originating templates and locally reconstructed copy.",
+    "Reply outcome view that joins replied leads to hydrated inbound reply text when available plus originating templates and locally reconstructed copy.",
   rendered_outbound_context:
     "Rendered outbound analysis view that joins reconstructed lead-level copy to campaign names and intended templates.",
 };

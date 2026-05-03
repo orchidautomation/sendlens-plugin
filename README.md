@@ -186,6 +186,7 @@ Main MCP tools:
 - `refresh_status`
 - `refresh_data`
 - `load_campaign_data`
+- `hydrate_reply_text`
 
 Preferred warehouse surfaces:
 
@@ -193,6 +194,8 @@ Preferred warehouse surfaces:
 - `lead_evidence`
 - `lead_payload_kv`
 - `reply_context`
+- `reply_emails`
+- `reply_email_hydration_state`
 - `rendered_outbound_context`
 - `campaign_tags`
 - `account_tags`

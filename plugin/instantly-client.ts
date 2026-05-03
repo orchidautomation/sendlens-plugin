@@ -414,6 +414,7 @@ export async function listSentEmails(
 type EmailPageOptions = {
   emailType?: "received" | "sent" | "manual";
   mode?: "emode_focused" | "emode_others" | "emode_all";
+  iStatus?: number;
   isUnread?: boolean;
   lead?: string;
   search?: string;
@@ -422,6 +423,7 @@ type EmailPageOptions = {
   maxTimestampCreated?: string;
   previewOnly?: boolean;
   latestOfThread?: boolean;
+  sortOrder?: "asc" | "desc";
   limit?: number;
 };
 
@@ -437,6 +439,7 @@ export async function listEmails(
   if (cursor) params.set("starting_after", cursor);
   if (opts.emailType) params.set("email_type", opts.emailType);
   if (opts.mode) params.set("mode", opts.mode);
+  if (opts.iStatus != null) params.set("i_status", String(opts.iStatus));
   if (opts.isUnread != null) params.set("is_unread", opts.isUnread ? "true" : "false");
   if (opts.lead) params.set("lead", opts.lead);
   if (opts.search) params.set("search", opts.search);
@@ -445,6 +448,7 @@ export async function listEmails(
   if (opts.maxTimestampCreated) params.set("max_timestamp_created", opts.maxTimestampCreated);
   if (opts.previewOnly != null) params.set("preview_only", opts.previewOnly ? "true" : "false");
   if (opts.latestOfThread != null) params.set("latest_of_thread", opts.latestOfThread ? "true" : "false");
+  if (opts.sortOrder) params.set("sort_order", opts.sortOrder);
   const res = await fetchWithRetry(
     `${API_BASE}/emails?${params.toString()}`,
     { headers: headers(apiKey) },

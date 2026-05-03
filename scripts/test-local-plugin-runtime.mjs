@@ -81,6 +81,18 @@ await run(
 );
 await run(
   db,
+  `INSERT OR REPLACE INTO sendlens.reply_emails
+   (workspace_id, id, campaign_id, thread_id, lead_email, message_id, eaccount, from_email, to_email, subject, body_text, body_html, sent_at, is_auto_reply, ai_interest_value, i_status, content_preview, direction, step_resolved, variant_resolved, hydrated_at, synced_at)
+   VALUES ('ws_test', 're1', 'c1', 'thread1', 'a@example.com', '<m1@example.com>', 'sender@example.com', 'a@example.com', 'sender@example.com', 'Re: Alpha intro', 'Actual positive reply text', '<p>Actual positive reply text</p>', CURRENT_TIMESTAMP, false, 0.9, 1, 'Actual positive reply text', 'inbound', '0', '0', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.reply_email_hydration_state
+   (workspace_id, campaign_id, i_status, latest_of_thread, email_type, next_starting_after, pages_hydrated, emails_hydrated, exhausted, last_hydrated_at, synced_at)
+   VALUES ('ws_test', 'c1', 1, true, 'received', 'cursor1', 1, 1, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
   `INSERT OR REPLACE INTO sendlens.custom_tags
    (workspace_id, id, label, color, synced_at)
    VALUES ('ws_test', 't1', 'Priority', '#ff0000', CURRENT_TIMESTAMP),
@@ -225,11 +237,14 @@ assert.equal(String(oooLeadEvidence[0].lt_interest_label), "out_of_office");
 
 const replyContext = await runQuery(
   db,
-  "SELECT lead_email, reply_outcome_label, template_subject, rendered_subject FROM sendlens.reply_context WHERE campaign_id = 'c1' ORDER BY lead_email",
+  "SELECT lead_email, reply_outcome_label, reply_email_id, reply_body_text, reply_email_i_status, template_subject, rendered_subject FROM sendlens.reply_context WHERE campaign_id = 'c1' ORDER BY lead_email",
 );
 assert.equal(replyContext.length, 9);
 assert.equal(replyContext.some((row) => row.lead_email === "ooo@example.com"), false);
 const alphaReplyContext = replyContext.find((row) => row.lead_email === "a@example.com");
+assert.equal(alphaReplyContext.reply_email_id, "re1");
+assert.equal(alphaReplyContext.reply_body_text, "Actual positive reply text");
+assert.equal(Number(alphaReplyContext.reply_email_i_status), 1);
 assert.equal(alphaReplyContext.template_subject, "Alpha intro");
 assert.equal(alphaReplyContext.rendered_subject, "Alpha intro");
 
@@ -310,6 +325,11 @@ assert.equal(tagRecipes.length >= 2, true);
 assert.equal(tagRecipes[0].topic, "tags");
 assert.equal(
   tagRecipes.some((recipe) => recipe.id === "sampled-leads-by-tag" && recipe.sql.includes("sendlens.campaign_tags")),
+  true,
+);
+const replyRecipes = getQueryRecipes("reply-patterns");
+assert.equal(
+  replyRecipes.some((recipe) => recipe.id === "hydrated-reply-text-by-campaign" && recipe.sql.includes("reply_body_text")),
   true,
 );
 const icpRecipes = getQueryRecipes("icp-signals");

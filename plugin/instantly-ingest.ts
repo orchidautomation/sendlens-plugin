@@ -20,6 +20,7 @@ import {
   clearWorkspaceData,
   clearWorkspaceMetadata,
   getDb,
+  query,
   run,
   setActiveWorkspaceId,
 } from "./local-db";
@@ -50,10 +51,14 @@ type ReplyEmailRecord = {
   id: string;
   campaignId: string;
   threadId: string;
+  leadEmail: string;
+  messageId: string | null;
+  eaccount: string | null;
   fromEmail: string;
   toEmail: string;
   subject: string;
   bodyText: string;
+  bodyHtml: string | null;
   sentAt: unknown;
   isAutoReply: unknown;
   aiInterestValue: unknown;
@@ -62,6 +67,7 @@ type ReplyEmailRecord = {
   direction: "inbound";
   stepResolved: string | null;
   variantResolved: string | null;
+  hydratedAt?: string;
 };
 
 type RefreshOptions = {
@@ -78,6 +84,7 @@ type RefreshOptions = {
 };
 type RefreshSource = "session_start" | "manual";
 type RefreshMode = "fast" | "full";
+export type ReplyTextHydrationMode = "auto" | "continue" | "restart";
 type EmailFetchPlan = {
   minTimestampCreated?: string;
   latestOfThread: boolean;
@@ -1258,12 +1265,18 @@ async function fetchReplyEmails(
       id: String(email.id ?? ""),
       campaignId,
       threadId: String(email.thread_id ?? ""),
+      leadEmail: String(email.lead ?? email.lead_email ?? ""),
+      messageId: typeof email.message_id === "string" ? email.message_id : null,
+      eaccount: typeof email.eaccount === "string" ? email.eaccount : null,
       fromEmail: String(email.from_address_email ?? ""),
       toEmail: Array.isArray(email.to_address_email_list)
         ? String(email.to_address_email_list[0] ?? "")
         : String(email.lead ?? ""),
       subject: String(email.subject ?? ""),
       bodyText: toPlainText(email.body) || toPlainText(email.content_preview),
+      bodyHtml: typeof (email.body as Record<string, unknown> | undefined)?.html === "string"
+        ? String((email.body as Record<string, unknown>).html)
+        : null,
       sentAt: email.timestamp_email ?? email.timestamp_created ?? null,
       isAutoReply: email.is_auto_reply ?? null,
       aiInterestValue: email.ai_interest_value ?? null,
@@ -1281,6 +1294,317 @@ async function fetchReplyEmails(
       ),
     }))
     .filter((email) => email.id);
+}
+
+function emailRecordFromInstantly(
+  campaignId: string,
+  email: Record<string, unknown>,
+): ReplyEmailRecord | null {
+  const id = String(email.id ?? "").trim();
+  if (!id) return null;
+  const body = email.body as Record<string, unknown> | undefined;
+  const toEmail = Array.isArray(email.to_address_email_list)
+    ? String(email.to_address_email_list[0] ?? "")
+    : String(email.lead ?? "");
+  return {
+    id,
+    campaignId,
+    threadId: String(email.thread_id ?? ""),
+    leadEmail: String(email.lead ?? email.lead_email ?? ""),
+    messageId: typeof email.message_id === "string" ? email.message_id : null,
+    eaccount: typeof email.eaccount === "string" ? email.eaccount : null,
+    fromEmail: String(email.from_address_email ?? ""),
+    toEmail,
+    subject: String(email.subject ?? ""),
+    bodyText: toPlainText(body) || toPlainText(email.content_preview),
+    bodyHtml: typeof body?.html === "string" ? body.html : null,
+    sentAt: email.timestamp_email ?? email.timestamp_created ?? null,
+    isAutoReply: email.is_auto_reply ?? null,
+    aiInterestValue: email.ai_interest_value ?? null,
+    iStatus: email.i_status ?? null,
+    contentPreview: email.content_preview ?? null,
+    direction: "inbound",
+    stepResolved:
+      email.step != null && String(email.step).trim() !== ""
+        ? String(email.step).trim()
+        : null,
+    variantResolved: null,
+    hydratedAt: new Date().toISOString(),
+  };
+}
+
+async function storeReplyEmails(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  emails: ReplyEmailRecord[],
+) {
+  await insertRows(
+    conn,
+    "reply_emails",
+    [
+      "workspace_id",
+      "id",
+      "campaign_id",
+      "thread_id",
+      "lead_email",
+      "message_id",
+      "eaccount",
+      "from_email",
+      "to_email",
+      "subject",
+      "body_text",
+      "body_html",
+      "sent_at",
+      "is_auto_reply",
+      "ai_interest_value",
+      "i_status",
+      "content_preview",
+      "direction",
+      "step_resolved",
+      "variant_resolved",
+      "hydrated_at",
+      "synced_at",
+    ],
+    emails.map(
+      (email) => `(
+        '${esc(workspaceId)}',
+        '${esc(email.id)}',
+        '${esc(email.campaignId)}',
+        ${sqlString(email.threadId)},
+        ${sqlString(email.leadEmail)},
+        ${sqlString(email.messageId)},
+        ${sqlString(email.eaccount)},
+        ${sqlString(email.fromEmail)},
+        ${sqlString(email.toEmail)},
+        ${sqlString(email.subject)},
+        ${sqlString(email.bodyText)},
+        ${sqlString(email.bodyHtml)},
+        ${sqlTimestamp(email.sentAt)},
+        ${sqlBool(email.isAutoReply)},
+        ${sqlFloat(email.aiInterestValue)},
+        ${sqlInt(email.iStatus)},
+        ${sqlString(email.contentPreview)},
+        ${sqlString(email.direction)},
+        ${sqlString(email.stepResolved)},
+        ${sqlString(email.variantResolved)},
+        ${sqlTimestamp(email.hydratedAt ?? new Date().toISOString())},
+        CURRENT_TIMESTAMP
+      )`,
+    ),
+  );
+}
+
+type HydrateReplyTextOptions = {
+  workspaceId: string;
+  campaignId: string;
+  statuses: number[];
+  maxPagesPerStatus: number;
+  latestOfThread: boolean;
+  mode: ReplyTextHydrationMode;
+};
+
+export async function hydrateReplyText(options: HydrateReplyTextOptions) {
+  const apiKey = process.env.SENDLENS_INSTANTLY_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error("Missing SENDLENS_INSTANTLY_API_KEY.");
+  }
+
+  const db = await getDb();
+  const workspaceSafe = esc(options.workspaceId);
+  const campaignSafe = esc(options.campaignId);
+  const campaignRows = await query(
+    db,
+    `SELECT id, name
+     FROM sendlens.campaigns
+     WHERE workspace_id = '${workspaceSafe}'
+       AND id = '${campaignSafe}'
+     LIMIT 1`,
+  );
+  const campaignName = typeof campaignRows[0]?.name === "string"
+    ? campaignRows[0].name
+    : options.campaignId;
+  const emailType = "received";
+  const statuses = [...new Set(options.statuses)].filter((status) =>
+    Number.isInteger(status)
+  );
+
+  const startedAt = new Date().toISOString();
+  const statusResults: Array<Record<string, unknown>> = [];
+  let totalFetched = 0;
+  let totalStored = 0;
+  let totalSkippedAutoReplies = 0;
+
+  for (const status of statuses) {
+    const existingRows = await query(
+      db,
+      `SELECT COUNT(*) AS count
+       FROM sendlens.reply_emails
+       WHERE workspace_id = '${workspaceSafe}'
+         AND campaign_id = '${campaignSafe}'
+         AND i_status = ${sqlInt(status)}
+         AND direction = 'inbound'`,
+    );
+    const existingCount = Number(existingRows[0]?.count ?? 0) || 0;
+    const stateRows = await query(
+      db,
+      `SELECT next_starting_after, pages_hydrated, emails_hydrated, exhausted
+       FROM sendlens.reply_email_hydration_state
+       WHERE workspace_id = '${workspaceSafe}'
+         AND campaign_id = '${campaignSafe}'
+         AND i_status = ${sqlInt(status)}
+         AND latest_of_thread = ${options.latestOfThread ? "TRUE" : "FALSE"}
+         AND email_type = '${emailType}'
+       LIMIT 1`,
+    );
+    const previousState = stateRows[0] ?? null;
+    const wasExhausted = previousState?.exhausted === true;
+
+    if (options.mode === "auto" && existingCount > 0) {
+      statusResults.push({
+        i_status: status,
+        skipped: true,
+        reason: "cached_rows_exist",
+        existing_rows: existingCount,
+      });
+      continue;
+    }
+    if (options.mode === "continue" && wasExhausted) {
+      statusResults.push({
+        i_status: status,
+        skipped: true,
+        reason: "pagination_exhausted",
+        existing_rows: existingCount,
+      });
+      continue;
+    }
+
+    let cursor = options.mode === "continue"
+      ? (typeof previousState?.next_starting_after === "string"
+        ? previousState.next_starting_after
+        : null)
+      : null;
+    let pagesFetched = 0;
+    let rowsFetched = 0;
+    let rowsStored = 0;
+    let skippedAutoReplies = 0;
+    let exhausted = false;
+
+    for (let page = 0; page < options.maxPagesPerStatus; page++) {
+      const response = await instantly.listEmails(
+        apiKey,
+        options.campaignId,
+        cursor || undefined,
+        {
+          emailType: "received",
+          iStatus: status,
+          latestOfThread: options.latestOfThread,
+          limit: DEFAULT_PAGE_SIZE,
+          sortOrder: "desc",
+        },
+      );
+      pagesFetched += 1;
+      rowsFetched += response.items.length;
+      cursor = response.nextCursor;
+
+      const emails = response.items
+        .filter((email) => {
+          const isAutoReply = Number(email.is_auto_reply ?? 0) === 1 ||
+            email.is_auto_reply === true;
+          if (isAutoReply) skippedAutoReplies += 1;
+          return !isAutoReply;
+        })
+        .map((email) => emailRecordFromInstantly(options.campaignId, email))
+        .filter((email): email is ReplyEmailRecord => email != null);
+
+      await storeReplyEmails(db, options.workspaceId, emails);
+      rowsStored += emails.length;
+
+      if (!cursor || response.items.length < DEFAULT_PAGE_SIZE) {
+        exhausted = true;
+        break;
+      }
+    }
+
+    const priorPages = options.mode === "continue"
+      ? Number(previousState?.pages_hydrated ?? 0) || 0
+      : 0;
+    const priorEmails = options.mode === "continue"
+      ? Number(previousState?.emails_hydrated ?? 0) || 0
+      : 0;
+    await insertRows(
+      db,
+      "reply_email_hydration_state",
+      [
+        "workspace_id",
+        "campaign_id",
+        "i_status",
+        "latest_of_thread",
+        "email_type",
+        "next_starting_after",
+        "pages_hydrated",
+        "emails_hydrated",
+        "exhausted",
+        "last_hydrated_at",
+        "synced_at",
+      ],
+      [`(
+        '${workspaceSafe}',
+        '${campaignSafe}',
+        ${sqlInt(status)},
+        ${options.latestOfThread ? "TRUE" : "FALSE"},
+        '${emailType}',
+        ${sqlString(cursor)},
+        ${sqlInt(priorPages + pagesFetched)},
+        ${sqlInt(priorEmails + rowsStored)},
+        ${exhausted ? "TRUE" : "FALSE"},
+        ${sqlTimestamp(new Date().toISOString())},
+        CURRENT_TIMESTAMP
+      )`],
+    );
+
+    totalFetched += rowsFetched;
+    totalStored += rowsStored;
+    totalSkippedAutoReplies += skippedAutoReplies;
+    statusResults.push({
+      i_status: status,
+      existing_rows_before: existingCount,
+      pages_fetched: pagesFetched,
+      rows_fetched: rowsFetched,
+      rows_stored: rowsStored,
+      skipped_auto_replies: skippedAutoReplies,
+      next_starting_after: cursor,
+      exhausted,
+    });
+  }
+
+  await appendTraceLog("reply_text.hydrate", {
+    workspaceId: options.workspaceId,
+    campaignId: options.campaignId,
+    statuses,
+    mode: options.mode,
+    maxPagesPerStatus: options.maxPagesPerStatus,
+    latestOfThread: options.latestOfThread,
+    totalFetched,
+    totalStored,
+    totalSkippedAutoReplies,
+  });
+
+  return {
+    schema_version: "reply_text_hydration.v1",
+    workspace_id: options.workspaceId,
+    campaign_id: options.campaignId,
+    campaign_name: campaignName,
+    mode: options.mode,
+    statuses,
+    latest_of_thread: options.latestOfThread,
+    max_pages_per_status: options.maxPagesPerStatus,
+    total_fetched: totalFetched,
+    total_stored: totalStored,
+    total_skipped_auto_replies: totalSkippedAutoReplies,
+    started_at: startedAt,
+    completed_at: new Date().toISOString(),
+    status_results: statusResults,
+  };
 }
 
 async function fetchLeadSample(
@@ -1701,10 +2025,14 @@ async function storeCampaignData(
       "id",
       "campaign_id",
       "thread_id",
+      "lead_email",
+      "message_id",
+      "eaccount",
       "from_email",
       "to_email",
       "subject",
       "body_text",
+      "body_html",
       "sent_at",
       "is_auto_reply",
       "ai_interest_value",
@@ -1713,6 +2041,7 @@ async function storeCampaignData(
       "direction",
       "step_resolved",
       "variant_resolved",
+      "hydrated_at",
       "synced_at",
     ],
     replyEmails.map(
@@ -1721,10 +2050,14 @@ async function storeCampaignData(
         '${esc(email.id)}',
         '${esc(campaignId)}',
         ${sqlString(email.threadId)},
+        ${sqlString(email.leadEmail)},
+        ${sqlString(email.messageId)},
+        ${sqlString(email.eaccount)},
         ${sqlString(email.fromEmail)},
         ${sqlString(email.toEmail)},
         ${sqlString(email.subject)},
         ${sqlString(email.bodyText)},
+        ${sqlString(email.bodyHtml)},
         ${sqlTimestamp(email.sentAt)},
         ${sqlBool(email.isAutoReply)},
         ${sqlFloat(email.aiInterestValue)},
@@ -1733,6 +2066,7 @@ async function storeCampaignData(
         ${sqlString(email.direction)},
         ${sqlString(email.stepResolved)},
         ${sqlString(email.variantResolved)},
+        ${sqlTimestamp(email.hydratedAt ?? new Date().toISOString())},
         CURRENT_TIMESTAMP
       )`,
     ),
