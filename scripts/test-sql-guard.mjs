@@ -74,6 +74,13 @@ const simpleSelect = enforceLocalWorkspaceScope(
 assert.match(simpleSelect, /workspace_id = 'ws_test'/);
 assert.equal(countWorkspaceFilters(simpleSelect), 1);
 
+const payloadKvSelect = enforceLocalWorkspaceScope(
+  "SELECT payload_key, payload_value FROM sendlens.lead_payload_kv WHERE campaign_id = 'c1'",
+  WORKSPACE_ID,
+);
+assert.match(payloadKvSelect, /workspace_id = 'ws_test'/);
+assert.equal(countWorkspaceFilters(payloadKvSelect), 1);
+
 const joinedSelect = enforceLocalWorkspaceScope(
   [
     "SELECT c.name, ca.reply_count_unique",
@@ -177,6 +184,11 @@ assertGuardError(
   "SELECT * FROM sendlens.campaigns UNION SELECT * FROM sendlens.accounts",
   "unsupported_shape",
   /set operations/,
+);
+assertGuardError(
+  "SELECT kv.key FROM sendlens.lead_evidence le, json_each(le.custom_payload) AS kv",
+  "unsupported_shape",
+  /table-valued functions/,
 );
 
 console.log("sql guard tests passed");

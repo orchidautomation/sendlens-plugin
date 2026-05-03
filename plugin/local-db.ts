@@ -721,6 +721,27 @@ async function ensureSchema(conn: DuckDBConnection) {
       LEFT JOIN sendlens.campaigns c
         ON sl.workspace_id = c.workspace_id
        AND sl.campaign_id = c.id`,
+    `CREATE OR REPLACE VIEW sendlens.lead_payload_kv AS
+      SELECT
+        le.workspace_id,
+        le.campaign_id,
+        le.campaign_name,
+        le.email,
+        le.job_title,
+        le.company_name,
+        le.company_domain,
+        le.lt_interest_status,
+        le.lt_interest_label,
+        le.reply_outcome_label,
+        le.has_reply_signal,
+        kv.key AS payload_key,
+        json_extract_string(kv.value, '$') AS payload_value,
+        CAST(kv.value AS VARCHAR) AS payload_value_json
+      FROM sendlens.lead_evidence le,
+           json_each(le.custom_payload) AS kv
+      WHERE le.custom_payload IS NOT NULL
+        AND le.custom_payload <> ''
+        AND json_valid(le.custom_payload)`,
     `CREATE OR REPLACE VIEW sendlens.reply_context AS
       SELECT
         le.workspace_id,

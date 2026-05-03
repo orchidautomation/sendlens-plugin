@@ -527,33 +527,7 @@ ORDER BY positive_replies DESC, replied_leads DESC;`,
     question: "Which custom payload keys exist in this campaign's sampled lead evidence?",
     exactness: "sampled",
     rationale: "Inventory campaign-specific payload keys before choosing variables for reply or opportunity analysis.",
-    sql: `WITH campaign_leads AS (
-  SELECT
-    campaign_id,
-    campaign_name,
-    email,
-    has_reply_signal,
-    lt_interest_status,
-    custom_payload
-  FROM sendlens.lead_evidence
-  WHERE campaign_id = '{{campaign_id}}'
-),
-payload_rows AS (
-  SELECT
-    cl.campaign_id,
-    cl.campaign_name,
-    cl.email,
-    cl.has_reply_signal,
-    cl.lt_interest_status,
-    kv.key AS payload_key,
-    json_extract_string(kv.value, '$') AS payload_value
-  FROM campaign_leads cl,
-       json_each(cl.custom_payload) AS kv
-  WHERE cl.custom_payload IS NOT NULL
-    AND cl.custom_payload <> ''
-    AND json_valid(cl.custom_payload)
-)
-SELECT
+    sql: `SELECT
   campaign_id,
   campaign_name,
   payload_key,
@@ -563,7 +537,8 @@ SELECT
   SUM(CASE WHEN lt_interest_status >= 1 THEN 1 ELSE 0 END) AS sampled_positive_leads_with_key,
   ROUND(100.0 * SUM(CASE WHEN has_reply_signal THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT email), 0), 2) AS sampled_reply_share_pct,
   ROUND(100.0 * SUM(CASE WHEN lt_interest_status >= 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT email), 0), 2) AS sampled_positive_share_pct
-FROM payload_rows
+FROM sendlens.lead_payload_kv
+WHERE campaign_id = '{{campaign_id}}'
 GROUP BY 1, 2, 3
 ORDER BY sampled_leads_with_key DESC, sampled_reply_share_pct DESC NULLS LAST, payload_key;`,
     notes: [
@@ -579,65 +554,56 @@ ORDER BY sampled_leads_with_key DESC, sampled_reply_share_pct DESC NULLS LAST, p
     question: "Which payload keys appear more often in replying or positive sampled leads?",
     exactness: "sampled",
     rationale: "Compare sampled lead outcomes when a campaign-specific payload key is present versus absent.",
-    sql: `WITH campaign_leads AS (
+    sql: `WITH campaign_totals AS (
   SELECT
+    workspace_id,
     campaign_id,
     campaign_name,
-    email,
-    has_reply_signal,
-    lt_interest_status,
-    custom_payload
+    COUNT(DISTINCT email) AS sampled_leads,
+    SUM(CASE WHEN has_reply_signal THEN 1 ELSE 0 END) AS replying_leads,
+    SUM(CASE WHEN lt_interest_status >= 1 THEN 1 ELSE 0 END) AS positive_leads
   FROM sendlens.lead_evidence
   WHERE campaign_id = '{{campaign_id}}'
-),
-payload_keys AS (
-  SELECT DISTINCT
-    kv.key AS payload_key
-  FROM campaign_leads cl,
-       json_each(cl.custom_payload) AS kv
-  WHERE cl.custom_payload IS NOT NULL
-    AND cl.custom_payload <> ''
-    AND json_valid(cl.custom_payload)
-),
-presence AS (
-  SELECT
-    cl.campaign_id,
-    cl.campaign_name,
-    pk.payload_key,
-    COUNT(*) AS sampled_leads,
-    SUM(CASE WHEN json_extract(cl.custom_payload, '$.' || pk.payload_key) IS NOT NULL THEN 1 ELSE 0 END) AS leads_with_key,
-    SUM(CASE WHEN json_extract(cl.custom_payload, '$.' || pk.payload_key) IS NULL THEN 1 ELSE 0 END) AS leads_without_key,
-    SUM(CASE WHEN json_extract(cl.custom_payload, '$.' || pk.payload_key) IS NOT NULL AND cl.has_reply_signal THEN 1 ELSE 0 END) AS replying_leads_with_key,
-    SUM(CASE WHEN json_extract(cl.custom_payload, '$.' || pk.payload_key) IS NULL AND cl.has_reply_signal THEN 1 ELSE 0 END) AS replying_leads_without_key,
-    SUM(CASE WHEN json_extract(cl.custom_payload, '$.' || pk.payload_key) IS NOT NULL AND cl.lt_interest_status >= 1 THEN 1 ELSE 0 END) AS positive_leads_with_key,
-    SUM(CASE WHEN json_extract(cl.custom_payload, '$.' || pk.payload_key) IS NULL AND cl.lt_interest_status >= 1 THEN 1 ELSE 0 END) AS positive_leads_without_key
-  FROM campaign_leads cl
-  CROSS JOIN payload_keys pk
   GROUP BY 1, 2, 3
+),
+key_presence AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    campaign_name,
+    payload_key,
+    COUNT(DISTINCT email) AS leads_with_key,
+    SUM(CASE WHEN has_reply_signal THEN 1 ELSE 0 END) AS replying_leads_with_key,
+    SUM(CASE WHEN lt_interest_status >= 1 THEN 1 ELSE 0 END) AS positive_leads_with_key
+  FROM sendlens.lead_payload_kv
+  WHERE campaign_id = '{{campaign_id}}'
+  GROUP BY 1, 2, 3, 4
 )
 SELECT
-  campaign_id,
-  campaign_name,
-  payload_key,
-  sampled_leads,
-  leads_with_key,
-  leads_without_key,
-  ROUND(100.0 * leads_with_key / NULLIF(sampled_leads, 0), 2) AS key_presence_pct,
-  replying_leads_with_key,
-  replying_leads_without_key,
-  ROUND(100.0 * replying_leads_with_key / NULLIF(leads_with_key, 0), 2) AS reply_share_with_key_pct,
-  ROUND(100.0 * replying_leads_without_key / NULLIF(leads_without_key, 0), 2) AS reply_share_without_key_pct,
-  positive_leads_with_key,
-  positive_leads_without_key,
-  ROUND(100.0 * positive_leads_with_key / NULLIF(leads_with_key, 0), 2) AS positive_share_with_key_pct,
-  ROUND(100.0 * positive_leads_without_key / NULLIF(leads_without_key, 0), 2) AS positive_share_without_key_pct
-FROM presence
-WHERE leads_with_key > 0
+  kp.campaign_id,
+  kp.campaign_name,
+  kp.payload_key,
+  ct.sampled_leads,
+  kp.leads_with_key,
+  ct.sampled_leads - kp.leads_with_key AS leads_without_key,
+  ROUND(100.0 * kp.leads_with_key / NULLIF(ct.sampled_leads, 0), 2) AS key_presence_pct,
+  kp.replying_leads_with_key,
+  ct.replying_leads - kp.replying_leads_with_key AS replying_leads_without_key,
+  ROUND(100.0 * kp.replying_leads_with_key / NULLIF(kp.leads_with_key, 0), 2) AS reply_share_with_key_pct,
+  ROUND(100.0 * (ct.replying_leads - kp.replying_leads_with_key) / NULLIF(ct.sampled_leads - kp.leads_with_key, 0), 2) AS reply_share_without_key_pct,
+  kp.positive_leads_with_key,
+  ct.positive_leads - kp.positive_leads_with_key AS positive_leads_without_key,
+  ROUND(100.0 * kp.positive_leads_with_key / NULLIF(kp.leads_with_key, 0), 2) AS positive_share_with_key_pct,
+  ROUND(100.0 * (ct.positive_leads - kp.positive_leads_with_key) / NULLIF(ct.sampled_leads - kp.leads_with_key, 0), 2) AS positive_share_without_key_pct
+FROM key_presence kp
+JOIN campaign_totals ct
+  ON kp.workspace_id = ct.workspace_id
+ AND kp.campaign_id = ct.campaign_id
 ORDER BY reply_share_with_key_pct DESC NULLS LAST, leads_with_key DESC, payload_key;`,
     notes: [
       "This is sampled evidence only and should produce hypotheses, not full-population claims.",
       "Use it to decide which payload keys deserve value-level analysis with `campaign-payload-key-signals`.",
-      "JSON-path matching is safest for simple key names. For keys with dots or special characters, inspect samples and write a custom query.",
+      "`lead_payload_kv` avoids JSON-path edge cases, so keys with spaces, dots, or punctuation can still be analyzed by exact key value.",
     ],
   },
   {
@@ -650,17 +616,17 @@ ORDER BY reply_share_with_key_pct DESC NULLS LAST, leads_with_key DESC, payload_
     sql: `SELECT
   campaign_id,
   campaign_name,
-  json_extract_string(custom_payload, '$.{{payload_key}}') AS payload_value,
-  COUNT(*) AS sampled_lead_count,
+  payload_value,
+  COUNT(DISTINCT email) AS sampled_lead_count,
   SUM(CASE WHEN has_reply_signal THEN 1 ELSE 0 END) AS sampled_replying_leads,
   SUM(CASE WHEN lt_interest_status >= 1 THEN 1 ELSE 0 END) AS positive_signal_leads,
-  ROUND(100.0 * SUM(CASE WHEN has_reply_signal THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) AS sampled_reply_share_pct,
-  ROUND(100.0 * SUM(CASE WHEN lt_interest_status >= 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) AS sampled_positive_share_pct
-FROM sendlens.lead_evidence
+  ROUND(100.0 * SUM(CASE WHEN has_reply_signal THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT email), 0), 2) AS sampled_reply_share_pct,
+  ROUND(100.0 * SUM(CASE WHEN lt_interest_status >= 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT email), 0), 2) AS sampled_positive_share_pct
+FROM sendlens.lead_payload_kv
 WHERE campaign_id = '{{campaign_id}}'
-  AND json_extract(custom_payload, '$.{{payload_key}}') IS NOT NULL
+  AND payload_key = '{{payload_key}}'
 GROUP BY 1, 2, 3
-HAVING COUNT(*) >= 5
+HAVING COUNT(DISTINCT email) >= 5
 ORDER BY sampled_reply_share_pct DESC NULLS LAST, sampled_lead_count DESC;`,
     notes: [
       "This is sampled evidence only and should stay scoped to one campaign.",

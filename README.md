@@ -191,6 +191,7 @@ Preferred warehouse surfaces:
 
 - `campaign_overview`
 - `lead_evidence`
+- `lead_payload_kv`
 - `reply_context`
 - `rendered_outbound_context`
 - `campaign_tags`
@@ -215,6 +216,8 @@ That means Campaign A and Campaign B can use completely different variables with
 1. pick a campaign
 2. inspect which payload keys exist in that campaign
 3. group or compare within that campaign
+
+Use `lead_payload_kv` for key inventory and value-level ICP analysis. It exposes campaign payload JSON as SendLens-owned key/value rows so agents do not need shell access or raw JSON table functions to discover payload keys.
 
 This keeps the warehouse portable across many customers instead of overfitting to today's campaigns.
 

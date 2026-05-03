@@ -60,6 +60,7 @@ Where relevant, SendLens responses should include:
 - `campaign_overview` is the preferred exact campaign rollup plus sample coverage metadata.
 - `inbox_placement_test_overview` and `sender_deliverability_health` are exact semantic rollups over Instantly inbox placement analytics when those API surfaces are available.
 - `lead_evidence` contains full replied leads where available and bounded non-reply samples.
+- `lead_payload_kv` expands sampled lead `custom_payload` into campaign-scoped key/value rows so ICP analysis can stay inside SendLens tools without raw JSON table functions.
 - `reply_context` is lead outcome evidence joined to templates and reconstructed outbound context.
 - `rendered_outbound_context` is locally reconstructed copy, not byte-for-byte delivered email text.
 

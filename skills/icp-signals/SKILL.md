@@ -23,7 +23,7 @@ Infer who responds best from exact aggregates plus sampled lead evidence, while 
 - If the user narrows to one campaign and wants better evidence, run `load_campaign_data` for that campaign first.
 - Use exact campaign aggregates for performance baselines.
 - Use `lead_evidence` and `sampled_leads` to generate segment hypotheses, not full-population claims.
-- Preserve campaign-specific payload context; inspect `custom_payload` for that campaign first, then query the exact payload keys with DuckDB JSON functions.
+- Preserve campaign-specific payload context; use the `lead_payload_kv` view and curated payload recipes instead of raw JSON table functions.
 - Prefer `campaign-payload-key-inventory` before value-level analysis when the user has not named a payload key.
 - Use `campaign-payload-presence-signals` to compare whether a key being present versus absent looks directionally meaningful in sampled evidence.
 - Use `campaign-payload-key-signals` only after choosing one concrete key, and keep the answer framed as sampled/campaign-scoped.

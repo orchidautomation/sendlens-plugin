@@ -20,7 +20,7 @@ loadClientEnv();
 
 const server = new McpServer({
   name: "sendlens",
-  version: "0.1.8",
+  version: "0.1.9",
 });
 
 const SESSION_REFRESH_WAIT_TIMEOUT_MS = 15_000;

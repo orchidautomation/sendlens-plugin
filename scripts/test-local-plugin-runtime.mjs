@@ -223,6 +223,13 @@ const campaignTags = await runQuery(
 );
 assert.equal(campaignTags[0].tag_label, "Priority");
 
+const leadPayloadKv = await runQuery(
+  db,
+  "SELECT payload_key, payload_value FROM sendlens.lead_payload_kv WHERE campaign_id = 'c1' AND email = 'a@example.com' ORDER BY payload_key",
+);
+assert.equal(leadPayloadKv.some((row) => row.payload_key === "Country" && row.payload_value === "United States"), true);
+assert.equal(leadPayloadKv.some((row) => row.payload_key === "firstName" && row.payload_value === "Alex"), true);
+
 const inboxPlacementOverview = await runQuery(
   db,
   "SELECT test_name, campaign_name, analytics_rows, sent_records, received_records, spam_records, category_records, primary_inbox_records, primary_inbox_rate_pct, spam_rate_pct, dkim_failures, dmarc_failures FROM sendlens.inbox_placement_test_overview WHERE test_id = 'ipt1'",
@@ -267,16 +274,17 @@ assert.equal(
   true,
 );
 const icpRecipes = getQueryRecipes("icp-signals");
-assert.equal(
-  icpRecipes.some((recipe) => recipe.id === "campaign-payload-key-signals" && recipe.sql.includes("json_extract_string(custom_payload")),
-  true,
-);
+const payloadKeySignalsRecipe = icpRecipes.find((recipe) => recipe.id === "campaign-payload-key-signals");
+assert.ok(payloadKeySignalsRecipe);
+assert.match(payloadKeySignalsRecipe.sql, /sendlens\.lead_payload_kv/);
+assert.doesNotMatch(payloadKeySignalsRecipe.sql, /json_extract_string/);
 const payloadInventoryRecipe = icpRecipes.find((recipe) => recipe.id === "campaign-payload-key-inventory");
 assert.ok(payloadInventoryRecipe);
-assert.match(payloadInventoryRecipe.sql, /json_each/);
+assert.match(payloadInventoryRecipe.sql, /sendlens\.lead_payload_kv/);
+assert.doesNotMatch(payloadInventoryRecipe.sql, /json_each/);
 const payloadInventoryRows = await runQuery(
   db,
-  payloadInventoryRecipe.sql.replaceAll("{{campaign_id}}", "c1"),
+  enforceLocalWorkspaceScope(payloadInventoryRecipe.sql.replaceAll("{{campaign_id}}", "c1"), "ws_test"),
 );
 const countryInventory = payloadInventoryRows.find((row) => row.payload_key === "Country");
 assert.ok(countryInventory);
@@ -289,7 +297,7 @@ const payloadPresenceRecipe = icpRecipes.find((recipe) => recipe.id === "campaig
 assert.ok(payloadPresenceRecipe);
 const payloadPresenceRows = await runQuery(
   db,
-  payloadPresenceRecipe.sql.replaceAll("{{campaign_id}}", "c1"),
+  enforceLocalWorkspaceScope(payloadPresenceRecipe.sql.replaceAll("{{campaign_id}}", "c1"), "ws_test"),
 );
 const countryPresence = payloadPresenceRows.find((row) => row.payload_key === "Country");
 assert.ok(countryPresence);
@@ -298,6 +306,15 @@ assert.equal(Number(countryPresence.leads_with_key), 3);
 assert.equal(Number(countryPresence.leads_without_key), 8);
 assert.equal(Number(countryPresence.replying_leads_with_key), 1);
 assert.equal(Number(countryPresence.positive_leads_with_key), 1);
+await runQuery(
+  db,
+  enforceLocalWorkspaceScope(
+    payloadKeySignalsRecipe.sql
+      .replaceAll("{{campaign_id}}", "c1")
+      .replaceAll("{{payload_key}}", "Country"),
+    "ws_test",
+  ),
+);
 
 const campaignRecipes = getQueryRecipes("campaign-performance");
 const workspaceHealthRecipes = getQueryRecipes("workspace-health");

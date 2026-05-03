@@ -44,6 +44,7 @@ export const PUBLIC_TABLES = [
   "sampling_runs",
   "campaign_overview",
   "lead_evidence",
+  "lead_payload_kv",
   "reply_context",
   "rendered_outbound_context",
 ] as const;
@@ -89,6 +90,8 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Semantic campaign health view: exact metrics, status, sample coverage, and reply/bounce rates in one place.",
   lead_evidence:
     "Semantic lead evidence view with stable Instantly lead fields, reply signals, and preserved campaign-scoped payload JSON.",
+  lead_payload_kv:
+    "Campaign-scoped sampled lead payload key/value view for ICP analysis without using raw JSON table functions in agent-authored SQL.",
   reply_context:
     "Reply outcome view that joins replied leads to their originating templates and locally reconstructed copy.",
   rendered_outbound_context:
