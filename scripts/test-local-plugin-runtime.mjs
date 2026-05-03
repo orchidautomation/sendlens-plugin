@@ -45,10 +45,18 @@ await run(
 await run(
   db,
   `INSERT OR REPLACE INTO sendlens.sampled_leads
-   (workspace_id, campaign_id, id, email, email_reply_count, lt_interest_status, email_replied_step, email_replied_variant, timestamp_last_reply, job_title, custom_payload, sample_source, sampled_at)
-   VALUES ('ws_test', 'c1', 'l1', 'a@example.com', 1, 1, 0, 0, CURRENT_TIMESTAMP, 'VP Operations', '{"campaign":"c1","Country":"United States","Category":"Healthcare","firstName":"Alex"}', 'reply_full', CURRENT_TIMESTAMP),
-          ('ws_test', 'c1', 'l2', 'b@example.com', 0, NULL, NULL, NULL, NULL, 'Director', '{"campaign":"c1","Country":"Canada","Category":"Healthcare"}', 'nonreply_sample', CURRENT_TIMESTAMP),
-          ('ws_test', 'c1', 'l3', 'ooo@example.com', 1, 0, 0, 0, CURRENT_TIMESTAMP, 'Manager', '{"campaign":"c1","Country":"United States"}', 'reply_full', CURRENT_TIMESTAMP)`,
+   (workspace_id, campaign_id, id, email, first_name, last_name, company_name, company_domain, status, email_reply_count, lt_interest_status, email_replied_step, email_replied_variant, timestamp_last_reply, job_title, custom_payload, sample_source, sampled_at)
+   VALUES ('ws_test', 'c1', 'l1', 'a@example.com', 'Alex', 'Avery', 'Acme Health', 'acme.test', 'active', 1, 1, 0, 0, CURRENT_TIMESTAMP, 'VP Operations', '{"campaign":"c1","Country":"United States","Category":"Healthcare","firstName":"Alex"}', 'reply_full', CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', 'l2', 'b@example.com', 'Blake', 'Baker', 'Beta Health', 'beta.test', 'active', 0, NULL, NULL, NULL, NULL, 'Director', '{"campaign":"c1","Country":"Canada","Category":"Healthcare"}', 'nonreply_sample', CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', 'l3', 'ooo@example.com', 'Olive', 'Out', 'OOO Co', 'ooo.test', 'active', 1, 0, 0, 0, CURRENT_TIMESTAMP, 'Manager', '{"campaign":"c1","Country":"United States"}', 'reply_full', CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', 'l4', 'won@example.com', 'Wynn', 'Won', 'Won Co', 'won.test', 'active', 1, 4, 0, 0, CURRENT_TIMESTAMP, 'CRO', '{"campaign":"c1","stage":"won"}', 'reply_full', CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', 'l5', 'completed@example.com', 'Casey', 'Complete', 'Complete Co', 'complete.test', 'active', 1, 3, 0, 0, CURRENT_TIMESTAMP, 'VP Sales', '{"campaign":"c1","stage":"meeting_completed"}', 'reply_full', CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', 'l6', 'booked@example.com', 'Brook', 'Booked', 'Booked Co', 'booked.test', 'active', 1, 2, 0, 0, CURRENT_TIMESTAMP, 'RevOps Lead', '{"campaign":"c1","stage":"meeting_booked"}', 'reply_full', CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', 'l7', 'not@example.com', 'Nico', 'No', 'No Co', 'no.test', 'active', 1, -1, 0, 0, CURRENT_TIMESTAMP, 'VP Finance', '{"campaign":"c1","stage":"not_interested"}', 'reply_full', CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', 'l8', 'wrong@example.com', 'Riley', 'Wrong', 'Wrong Co', 'wrong.test', 'active', 1, -2, 0, 0, CURRENT_TIMESTAMP, 'Founder', '{"campaign":"c1","stage":"wrong_person"}', 'reply_full', CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', 'l9', 'lost@example.com', 'Logan', 'Lost', 'Lost Co', 'lost.test', 'active', 1, -3, 0, 0, CURRENT_TIMESTAMP, 'COO', '{"campaign":"c1","stage":"lost"}', 'reply_full', CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', 'l10', 'noshow@example.com', 'Nova', 'NoShow', 'No Show Co', 'noshow.test', 'active', 1, -4, 0, 0, CURRENT_TIMESTAMP, 'VP Growth', '{"campaign":"c1","stage":"no_show"}', 'reply_full', CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', 'l11', 'neutral@example.com', 'Noel', 'Neutral', 'Neutral Co', 'neutral.test', 'active', 1, NULL, 0, 0, CURRENT_TIMESTAMP, 'Director Ops', '{"campaign":"c1","stage":"neutral"}', 'reply_full', CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
@@ -79,7 +87,7 @@ await run(
   `INSERT OR REPLACE INTO sendlens.sampling_runs
    (workspace_id, campaign_id, ingest_mode, total_leads, total_sent, reply_rows, reply_lead_rows, nonreply_sample_target, nonreply_rows_sampled, outbound_sample_target, outbound_rows_sampled, reply_outbound_rows, filtered_lead_rows, coverage_note, created_at)
    VALUES
-   ('ws_test', 'c1', 'full', 400, 800, 1, 1, 100, 1, 100, 1, 1, 0, 'full raw ingest', CURRENT_TIMESTAMP),
+   ('ws_test', 'c1', 'full', 400, 800, 10, 10, 100, 1, 100, 1, 1, 0, 'full raw ingest', CURRENT_TIMESTAMP),
    ('ws_test', 'c2', 'hybrid', 300, 200, 0, 0, 100, 0, 100, 0, 0, 0, 'hybrid sample', CURRENT_TIMESTAMP)`,
 );
 
@@ -98,18 +106,60 @@ assert.equal(summary.coverage.length, 1);
 
 const campaignOverview = await runQuery(
   db,
-  "SELECT campaign_name, reply_lead_rows, nonreply_rows_sampled FROM sendlens.campaign_overview WHERE campaign_id = 'c1'",
+  "SELECT campaign_name, emails_sent_count, reply_count_unique, bounced_count, total_opportunities, reply_lead_rows, nonreply_rows_sampled, unique_reply_rate_pct, bounce_rate_pct FROM sendlens.campaign_overview WHERE campaign_id = 'c1'",
 );
 assert.equal(campaignOverview[0].campaign_name, "Alpha");
-assert.equal(Number(campaignOverview[0].reply_lead_rows), 1);
+assert.equal(Number(campaignOverview[0].emails_sent_count), 800);
+assert.equal(Number(campaignOverview[0].reply_count_unique), 24);
+assert.equal(Number(campaignOverview[0].bounced_count), 8);
+assert.equal(Number(campaignOverview[0].total_opportunities), 2);
+assert.equal(Number(campaignOverview[0].reply_lead_rows), 10);
+assert.equal(Number(campaignOverview[0].nonreply_rows_sampled), 1);
+assert.equal(Number(campaignOverview[0].unique_reply_rate_pct), 3);
+assert.equal(Number(campaignOverview[0].bounce_rate_pct), 1);
 
 const leadEvidence = await runQuery(
   db,
-  "SELECT campaign_name, has_reply_signal, reply_outcome_label, custom_payload FROM sendlens.lead_evidence WHERE email = 'a@example.com'",
+  "SELECT campaign_name, first_name, company_name, company_domain, has_reply_signal, lt_interest_label, reply_outcome_label, custom_payload FROM sendlens.lead_evidence WHERE email = 'a@example.com'",
 );
 assert.equal(leadEvidence[0].campaign_name, "Alpha");
+assert.equal(leadEvidence[0].first_name, "Alex");
+assert.equal(leadEvidence[0].company_name, "Acme Health");
+assert.equal(leadEvidence[0].company_domain, "acme.test");
+assert.equal(Boolean(leadEvidence[0].has_reply_signal), true);
+assert.equal(String(leadEvidence[0].lt_interest_label), "interested");
 assert.equal(String(leadEvidence[0].reply_outcome_label), "positive");
 assert.match(String(leadEvidence[0].custom_payload), /"campaign":"c1"/);
+
+const labelRows = await runQuery(
+  db,
+  `SELECT email, lt_interest_label, reply_outcome_label, has_reply_signal
+   FROM sendlens.lead_evidence
+   WHERE campaign_id = 'c1'
+   ORDER BY email`,
+);
+const labelsByEmail = new Map(labelRows.map((row) => [String(row.email), row]));
+const expectedReplyLabels = [
+  ["a@example.com", "interested", "positive", true],
+  ["booked@example.com", "meeting_booked", "positive", true],
+  ["completed@example.com", "meeting_completed", "positive", true],
+  ["lost@example.com", "lost", "negative", true],
+  ["neutral@example.com", "unclassified", "neutral", true],
+  ["noshow@example.com", "no_show", "negative", true],
+  ["not@example.com", "not_interested", "negative", true],
+  ["ooo@example.com", "out_of_office", "out_of_office", false],
+  ["won@example.com", "won", "positive", true],
+  ["wrong@example.com", "wrong_person", "negative", true],
+];
+for (const [email, ltInterestLabel, replyOutcomeLabel, hasReplySignal] of expectedReplyLabels) {
+  const row = labelsByEmail.get(email);
+  assert.ok(row, `missing lead_evidence row for ${email}`);
+  assert.equal(String(row.lt_interest_label), ltInterestLabel);
+  assert.equal(String(row.reply_outcome_label), replyOutcomeLabel);
+  assert.equal(Boolean(row.has_reply_signal), hasReplySignal);
+}
+assert.equal(String(labelsByEmail.get("b@example.com").reply_outcome_label), "no_reply");
+assert.equal(Boolean(labelsByEmail.get("b@example.com").has_reply_signal), false);
 
 const oooLeadEvidence = await runQuery(
   db,
@@ -121,10 +171,23 @@ assert.equal(String(oooLeadEvidence[0].lt_interest_label), "out_of_office");
 
 const replyContext = await runQuery(
   db,
-  "SELECT template_subject, rendered_subject FROM sendlens.reply_context WHERE campaign_id = 'c1' LIMIT 1",
+  "SELECT lead_email, reply_outcome_label, template_subject, rendered_subject FROM sendlens.reply_context WHERE campaign_id = 'c1' ORDER BY lead_email",
 );
-assert.equal(replyContext[0].template_subject, "Alpha intro");
-assert.equal(replyContext[0].rendered_subject, "Alpha intro");
+assert.equal(replyContext.length, 9);
+assert.equal(replyContext.some((row) => row.lead_email === "ooo@example.com"), false);
+const alphaReplyContext = replyContext.find((row) => row.lead_email === "a@example.com");
+assert.equal(alphaReplyContext.template_subject, "Alpha intro");
+assert.equal(alphaReplyContext.rendered_subject, "Alpha intro");
+
+const renderedOutboundContext = await runQuery(
+  db,
+  "SELECT campaign_name, rendered_subject, rendered_body_text, template_subject, template_body_text FROM sendlens.rendered_outbound_context WHERE id = 'o1' LIMIT 1",
+);
+assert.equal(renderedOutboundContext[0].campaign_name, "Alpha");
+assert.equal(renderedOutboundContext[0].rendered_subject, "Alpha intro");
+assert.equal(renderedOutboundContext[0].rendered_body_text, "Hi Alex");
+assert.equal(renderedOutboundContext[0].template_subject, "Alpha intro");
+assert.equal(renderedOutboundContext[0].template_body_text, "Hi {{firstName}}");
 
 const campaignTags = await runQuery(
   db,

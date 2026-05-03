@@ -595,7 +595,7 @@ async function ensureSchema(conn: DuckDBConnection) {
             COALESCE(sl.email_reply_count, 0) > 0
             OR sl.timestamp_last_reply IS NOT NULL
             OR sl.email_replied_step IS NOT NULL
-          ) AND sl.lt_interest_status IN (1, -1, -2) THEN TRUE
+          ) AND (sl.lt_interest_status IS NULL OR sl.lt_interest_status <> 0) THEN TRUE
           ELSE FALSE
         END AS has_reply_signal
       FROM sendlens.sampled_leads sl
