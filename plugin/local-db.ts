@@ -286,6 +286,16 @@ async function ensureSchema(conn: DuckDBConnection) {
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (workspace_id, campaign_id, sequence_index, step, variant)
     )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.campaign_account_assignments (
+      workspace_id VARCHAR NOT NULL,
+      campaign_id VARCHAR NOT NULL,
+      assignment_type VARCHAR NOT NULL,
+      assignment_key VARCHAR NOT NULL,
+      account_email VARCHAR,
+      tag_id VARCHAR,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, campaign_id, assignment_type, assignment_key)
+    )`,
     `CREATE TABLE IF NOT EXISTS sendlens.accounts (
       workspace_id VARCHAR NOT NULL,
       email VARCHAR NOT NULL,
@@ -552,6 +562,63 @@ async function ensureSchema(conn: DuckDBConnection) {
         ON m.workspace_id = t.workspace_id
        AND m.tag_id = t.id
       WHERE TRY_CAST(m.resource_type AS INTEGER) = 1`,
+    `CREATE OR REPLACE VIEW sendlens.campaign_accounts AS
+      SELECT
+        ca.workspace_id,
+        ca.campaign_id,
+        c.name AS campaign_name,
+        ca.account_email,
+        'direct' AS assignment_source,
+        NULL::VARCHAR AS tag_id,
+        NULL::VARCHAR AS tag_label,
+        a.status,
+        a.warmup_status,
+        a.warmup_score,
+        a.provider,
+        a.daily_limit,
+        a.total_sent_30d,
+        a.total_replies_30d,
+        a.total_bounces_30d,
+        ROUND(100.0 * a.total_bounces_30d / NULLIF(a.total_sent_30d, 0), 2) AS bounce_rate_30d_pct
+      FROM sendlens.campaign_account_assignments ca
+      LEFT JOIN sendlens.campaigns c
+        ON ca.workspace_id = c.workspace_id
+       AND ca.campaign_id = c.id
+      LEFT JOIN sendlens.accounts a
+        ON ca.workspace_id = a.workspace_id
+       AND lower(ca.account_email) = lower(a.email)
+      WHERE ca.assignment_type = 'email'
+        AND ca.account_email IS NOT NULL
+      UNION ALL
+      SELECT
+        ca.workspace_id,
+        ca.campaign_id,
+        c.name AS campaign_name,
+        acct_tag.account_email,
+        'tag' AS assignment_source,
+        ca.tag_id,
+        acct_tag.tag_label,
+        a.status,
+        a.warmup_status,
+        a.warmup_score,
+        a.provider,
+        a.daily_limit,
+        a.total_sent_30d,
+        a.total_replies_30d,
+        a.total_bounces_30d,
+        ROUND(100.0 * a.total_bounces_30d / NULLIF(a.total_sent_30d, 0), 2) AS bounce_rate_30d_pct
+      FROM sendlens.campaign_account_assignments ca
+      JOIN sendlens.account_tags acct_tag
+        ON ca.workspace_id = acct_tag.workspace_id
+       AND ca.tag_id = acct_tag.tag_id
+      LEFT JOIN sendlens.campaigns c
+        ON ca.workspace_id = c.workspace_id
+       AND ca.campaign_id = c.id
+      LEFT JOIN sendlens.accounts a
+        ON ca.workspace_id = a.workspace_id
+       AND lower(acct_tag.account_email) = lower(a.email)
+      WHERE ca.assignment_type = 'tag'
+        AND ca.tag_id IS NOT NULL`,
     `CREATE OR REPLACE VIEW sendlens.inbox_placement_test_overview AS
       SELECT
         t.workspace_id,
@@ -850,6 +917,7 @@ export async function clearWorkspaceData(
     "campaign_analytics",
     "step_analytics",
     "campaign_variants",
+    "campaign_account_assignments",
     "accounts",
     "account_daily_metrics",
     "custom_tags",
@@ -866,6 +934,7 @@ export async function clearWorkspaceData(
     "campaign_analytics",
     "step_analytics",
     "campaign_variants",
+    "campaign_account_assignments",
     "reply_emails",
     "sampled_leads",
     "sampled_outbound_emails",

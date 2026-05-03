@@ -74,6 +74,39 @@ ORDER BY bounce_rate_30d_pct DESC NULLS LAST, warmup_score ASC NULLS LAST, total
     ],
   },
   {
+    id: "campaign-sender-inventory-by-tag",
+    topic: "workspace-health",
+    title: "Campaign sender inventory by tag",
+    question: "Which inboxes are assigned to campaigns with a given Instantly tag?",
+    exactness: "exact",
+    rationale: "Use campaign sender assignments before making campaign-scoped domain or inbox-health claims.",
+    sql: `SELECT
+  ct.tag_label AS campaign_tag,
+  ca.campaign_id,
+  ca.campaign_name,
+  ca.account_email,
+  regexp_extract(ca.account_email, '@(.+)$', 1) AS domain,
+  ca.assignment_source,
+  ca.tag_label AS account_tag,
+  ca.status,
+  ca.warmup_status,
+  ca.warmup_score,
+  ca.total_sent_30d,
+  ca.total_bounces_30d,
+  ca.bounce_rate_30d_pct
+FROM sendlens.campaign_tags ct
+JOIN sendlens.campaign_accounts ca
+  ON ct.workspace_id = ca.workspace_id
+ AND ct.campaign_id = ca.campaign_id
+WHERE ct.tag_label = '{{tag_name}}'
+ORDER BY ca.bounce_rate_30d_pct DESC NULLS LAST, ca.total_sent_30d DESC NULLS LAST, ca.campaign_name, ca.account_email;`,
+    notes: [
+      "Replace '{{tag_name}}' with a real campaign tag such as 'The Kiln'.",
+      "This resolves both direct campaign account lists and tag-based account assignments when account tag mappings are cached.",
+      "If this returns no rows, SendLens has no resolved campaign sender inventory for that tag yet.",
+    ],
+  },
+  {
     id: "inbox-placement-test-overview",
     topic: "workspace-health",
     title: "Inbox placement test overview",

@@ -83,13 +83,29 @@ await run(
   db,
   `INSERT OR REPLACE INTO sendlens.custom_tags
    (workspace_id, id, label, color, synced_at)
-   VALUES ('ws_test', 't1', 'Priority', '#ff0000', CURRENT_TIMESTAMP)`,
+   VALUES ('ws_test', 't1', 'Priority', '#ff0000', CURRENT_TIMESTAMP),
+          ('ws_test', 't2', 'Sender Pool', '#00ff00', CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
   `INSERT OR REPLACE INTO sendlens.custom_tag_mappings
    (workspace_id, tag_id, resource_type, resource_id, synced_at)
-   VALUES ('ws_test', 't1', '2', 'c1', CURRENT_TIMESTAMP)`,
+   VALUES ('ws_test', 't1', '2', 'c1', CURRENT_TIMESTAMP),
+          ('ws_test', 't2', '1', 'tagged@example.com', CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.accounts
+   (workspace_id, email, status, warmup_status, warmup_score, total_sent_30d, total_replies_30d, total_bounces_30d, synced_at)
+   VALUES ('ws_test', 'direct@example.com', 'active', 'healthy', 99, 100, 5, 1, CURRENT_TIMESTAMP),
+          ('ws_test', 'tagged@example.com', 'active', 'healthy', 98, 200, 10, 4, CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.campaign_account_assignments
+   (workspace_id, campaign_id, assignment_type, assignment_key, account_email, tag_id, synced_at)
+   VALUES ('ws_test', 'c1', 'email', 'direct@example.com', 'direct@example.com', NULL, CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', 'tag', 't2', NULL, 't2', CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
@@ -125,7 +141,7 @@ assert.equal(summary.exact_metrics.campaign_count, 1);
 assert.equal(summary.exact_metrics.active_campaign_count, 1);
 assert.equal(summary.exact_metrics.total_sent, 800);
 assert.equal(summary.exact_metrics.total_unique_replies, 24);
-assert.ok(summary.summary.includes("1 custom tags stored locally"));
+assert.ok(summary.summary.includes("2 custom tags stored locally"));
 assert.ok(summary.summary.includes("1 inbox placement tests and 4 inbox placement analytics rows"));
 assert.ok(summary.summary.includes("Sampled raw tables are evidence support only"));
 assert.ok(summary.summary.includes("full reply leads"));
@@ -233,6 +249,19 @@ const campaignTags = await runQuery(
 );
 assert.equal(campaignTags[0].tag_label, "Priority");
 
+const campaignAccounts = await runQuery(
+  db,
+  "SELECT account_email, assignment_source, tag_label, total_sent_30d, bounce_rate_30d_pct FROM sendlens.campaign_accounts WHERE campaign_id = 'c1' ORDER BY account_email",
+);
+assert.equal(campaignAccounts.length, 2);
+assert.equal(campaignAccounts[0].account_email, "direct@example.com");
+assert.equal(campaignAccounts[0].assignment_source, "direct");
+assert.equal(Number(campaignAccounts[0].bounce_rate_30d_pct), 1);
+assert.equal(campaignAccounts[1].account_email, "tagged@example.com");
+assert.equal(campaignAccounts[1].assignment_source, "tag");
+assert.equal(campaignAccounts[1].tag_label, "Sender Pool");
+assert.equal(Number(campaignAccounts[1].total_sent_30d), 200);
+
 const leadPayloadKv = await runQuery(
   db,
   "SELECT payload_key, payload_value FROM sendlens.lead_payload_kv WHERE campaign_id = 'c1' AND email = 'a@example.com' ORDER BY payload_key",
@@ -328,6 +357,10 @@ await runQuery(
 
 const campaignRecipes = getQueryRecipes("campaign-performance");
 const workspaceHealthRecipes = getQueryRecipes("workspace-health");
+assert.equal(
+  workspaceHealthRecipes.some((recipe) => recipe.id === "campaign-sender-inventory-by-tag" && recipe.sql.includes("sendlens.campaign_accounts")),
+  true,
+);
 assert.equal(
   workspaceHealthRecipes.some((recipe) => recipe.id === "inbox-placement-test-overview" && recipe.sql.includes("sendlens.inbox_placement_test_overview")),
   true,

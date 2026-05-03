@@ -29,6 +29,8 @@ export const PUBLIC_TABLES = [
   "campaign_analytics",
   "step_analytics",
   "campaign_variants",
+  "campaign_account_assignments",
+  "campaign_accounts",
   "accounts",
   "account_daily_metrics",
   "custom_tags",
@@ -60,6 +62,10 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Exact step and variant performance metrics from Instantly analytics.",
   campaign_variants:
     "Exact campaign templates extracted from campaign details: step, variant, subject, body, and delays.",
+  campaign_account_assignments:
+    "Exact campaign sender assignment settings from campaign details, including direct account emails and account-tag IDs.",
+  campaign_accounts:
+    "Resolved campaign sender inventory that expands direct campaign accounts and tag-based account assignments, joined to account health when available.",
   accounts:
     "Exact sending-account snapshot with warmup metadata and recent performance rollups.",
   account_daily_metrics:
