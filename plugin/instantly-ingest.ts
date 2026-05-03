@@ -858,6 +858,63 @@ async function storeCustomTags(
   );
 }
 
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value
+        .map((item) => String(item ?? "").trim())
+        .filter(Boolean)
+    : [];
+}
+
+async function storeCampaignAccountAssignments(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  campaignId: string,
+  detail: Record<string, unknown>,
+) {
+  const directEmails = new Set(
+    stringArray(detail.email_list)
+      .map((email) => email.toLowerCase())
+      .filter(Boolean),
+  );
+  const tagIds = new Set(stringArray(detail.email_tag_list));
+
+  const directRows = [...directEmails].map((email) => `(
+    '${esc(workspaceId)}',
+    '${esc(campaignId)}',
+    'email',
+    '${esc(email)}',
+    '${esc(email)}',
+    NULL,
+    CURRENT_TIMESTAMP
+  )`);
+
+  const tagRows = [...tagIds].map((tagId) => `(
+    '${esc(workspaceId)}',
+    '${esc(campaignId)}',
+    'tag',
+    '${esc(tagId)}',
+    NULL,
+    '${esc(tagId)}',
+    CURRENT_TIMESTAMP
+  )`);
+
+  await insertRows(
+    conn,
+    "campaign_account_assignments",
+    [
+      "workspace_id",
+      "campaign_id",
+      "assignment_type",
+      "assignment_key",
+      "account_email",
+      "tag_id",
+      "synced_at",
+    ],
+    [...directRows, ...tagRows],
+  );
+}
+
 async function loadInboxPlacementData(apiKey: string): Promise<InboxPlacementLoadResult> {
   const result: InboxPlacementLoadResult = {
     tests: [],
@@ -1504,6 +1561,8 @@ async function storeCampaignData(
       )`,
     ],
   );
+
+  await storeCampaignAccountAssignments(conn, workspaceId, campaignId, detail);
 
   if (analytics) {
     await insertRows(
