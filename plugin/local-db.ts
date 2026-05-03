@@ -157,7 +157,7 @@ export async function getDb(
       const elapsedMs = Date.now() - startedAt;
       if (elapsedMs >= timeoutMs) {
         throw new LocalDbUnavailableError(
-          "The local SendLens DuckDB cache is temporarily unavailable, likely because a refresh is still finishing or DuckDB is replaying a stale WAL. Check refresh_status and retry once the refresh completes.",
+          "The local SendLens DuckDB cache is temporarily unavailable, likely because a refresh is still finishing or DuckDB is replaying a stale WAL. Check refresh_status once; if refresh_status is succeeded, reload or restart the host/plugin session before retrying.",
           lastError,
         );
       }
