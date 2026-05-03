@@ -12,7 +12,10 @@ RUNTIME_DEPS=(
 )
 
 runtime_ready() {
-  node -e "require('@duckdb/node-api'); require('@modelcontextprotocol/sdk/server/mcp.js')" >/dev/null 2>&1
+  (
+    cd "${PLUGIN_ROOT}"
+    node -e "require('@duckdb/node-api'); require('@modelcontextprotocol/sdk/server/mcp.js')" >/dev/null 2>&1
+  )
 }
 
 if runtime_ready; then
