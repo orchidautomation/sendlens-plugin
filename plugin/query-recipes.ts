@@ -74,6 +74,103 @@ ORDER BY bounce_rate_30d_pct DESC NULLS LAST, warmup_score ASC NULLS LAST, total
     ],
   },
   {
+    id: "inbox-placement-test-overview",
+    topic: "workspace-health",
+    title: "Inbox placement test overview",
+    question: "Which inbox placement tests show spam, category, or primary-inbox risk?",
+    exactness: "exact",
+    rationale: "Use exact Instantly inbox placement analytics before attributing low replies only to copy or targeting.",
+    sql: `SELECT
+  test_id,
+  test_name,
+  campaign_id,
+  campaign_name,
+  status,
+  received_records,
+  primary_inbox_records,
+  category_records,
+  spam_records,
+  primary_inbox_rate_pct,
+  category_rate_pct,
+  spam_rate_pct,
+  spf_failures,
+  dkim_failures,
+  dmarc_failures,
+  timestamp_created
+FROM sendlens.inbox_placement_test_overview
+ORDER BY spam_rate_pct DESC NULLS LAST, primary_inbox_rate_pct ASC NULLS LAST, received_records DESC;`,
+    notes: [
+      "This is exact for inbox placement tests returned by the Instantly API.",
+      "Use it when workspace reply rate is low, spam/category placement is suspected, or a campaign's performance changed suddenly.",
+      "A missing row means no inbox placement test data was available locally, not that deliverability is healthy.",
+    ],
+  },
+  {
+    id: "sender-deliverability-health",
+    topic: "workspace-health",
+    title: "Sender deliverability health",
+    question: "Which sender accounts are landing in spam or categories in inbox placement tests?",
+    exactness: "exact",
+    rationale: "Roll exact inbox placement analytics up by sender before deciding which accounts to pause or inspect.",
+    sql: `SELECT
+  sender_email,
+  inbox_placement_tests,
+  received_records,
+  primary_inbox_records,
+  category_records,
+  spam_records,
+  primary_inbox_rate_pct,
+  category_rate_pct,
+  spam_rate_pct,
+  spf_failures,
+  dkim_failures,
+  dmarc_failures,
+  first_seen_at,
+  last_seen_at
+FROM sendlens.sender_deliverability_health
+ORDER BY spam_rate_pct DESC NULLS LAST, primary_inbox_rate_pct ASC NULLS LAST, received_records DESC;`,
+    notes: [
+      "This is exact for received inbox placement analytics rows.",
+      "Pair it with `account-health` when deciding whether risk is warmup/account-level or inbox-placement specific.",
+      "Filter to a sender email when investigating one sending account.",
+    ],
+  },
+  {
+    id: "inbox-placement-auth-failures",
+    topic: "workspace-health",
+    title: "Inbox placement authentication failures",
+    question: "Which inbox placement rows show SPF, DKIM, DMARC, or blacklist problems?",
+    exactness: "exact",
+    rationale: "Surface concrete authentication and blacklist evidence from inbox placement analytics.",
+    sql: `SELECT
+  test_id,
+  sender_email,
+  recipient_email,
+  recipient_esp,
+  spf_pass,
+  dkim_pass,
+  dmarc_pass,
+  smtp_ip_blacklist_report_json,
+  authentication_failure_results_json,
+  timestamp_created
+FROM sendlens.inbox_placement_analytics
+WHERE record_type = 2
+  AND (
+    COALESCE(spf_pass, TRUE) = FALSE
+    OR COALESCE(dkim_pass, TRUE) = FALSE
+    OR COALESCE(dmarc_pass, TRUE) = FALSE
+    OR smtp_ip_blacklist_report_json IS NOT NULL
+    OR authentication_failure_results_json IS NOT NULL
+  )
+ORDER BY timestamp_created DESC NULLS LAST
+LIMIT 100;`,
+    notes: [
+      "This is exact evidence from inbox placement analytics rows.",
+      "Use these rows for deliverability debugging; do not infer authentication failures from reply rate alone.",
+      "Blacklist and authentication JSON fields preserve the raw Instantly payload for follow-up inspection.",
+    ],
+  },
+  {
     id: "campaign-winners",
     topic: "campaign-performance",
     title: "Winning campaigns",

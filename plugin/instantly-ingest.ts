@@ -11,6 +11,8 @@ import {
   MAX_SAMPLE_PAGES,
   SESSION_START_MAX_REPLY_LEAD_PAGES,
   SIGNAL_REPLY_INTEREST_STATUSES,
+  MAX_INBOX_PLACEMENT_TEST_PAGES,
+  MAX_INBOX_PLACEMENT_ANALYTICS_PAGES_PER_TEST,
 } from "./constants";
 import {
   appendSyncLog,
@@ -100,6 +102,13 @@ type OutboundSampleResult = {
   source: string;
   replyOutboundRows: number;
   nonReplyRowsSampled: number;
+};
+type InboxPlacementLoadResult = {
+  tests: Array<Record<string, unknown>>;
+  analytics: Array<Record<string, unknown> & { __sendlens_test_id?: string }>;
+  skipped: boolean;
+  skipReason: string | null;
+  failedAnalyticsTests: number;
 };
 type NormalizedStepAnalyticsRow = {
   step: number;
@@ -191,9 +200,38 @@ function sqlTimestamp(value: unknown) {
   return `'${esc(String(value))}'::TIMESTAMP`;
 }
 
+function sqlDate(value: unknown) {
+  if (!value) return "NULL";
+  const raw = String(value).trim();
+  if (!raw) return "NULL";
+  return `'${esc(raw.slice(0, 10))}'::DATE`;
+}
+
 function sqlJson(value: unknown) {
   if (value == null) return "NULL";
   return `'${esc(JSON.stringify(value))}'`;
+}
+
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+function isOptionalInboxPlacementError(error: unknown) {
+  const message = errorMessage(error);
+  if (!/Instantly API (400|401|402|403|404):/i.test(message)) {
+    return false;
+  }
+  return /inbox|placement|permission|scope|plan|subscription|forbidden|not found|invalid/i.test(message);
+}
+
+function pickString(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return null;
 }
 
 function mapCampaignStatus(value: unknown) {
@@ -816,7 +854,199 @@ async function storeCustomTags(
           ${sqlTimestamp(mapping.timestamp_created)},
           CURRENT_TIMESTAMP
         )`,
-      ),
+    ),
+  );
+}
+
+async function loadInboxPlacementData(apiKey: string): Promise<InboxPlacementLoadResult> {
+  const result: InboxPlacementLoadResult = {
+    tests: [],
+    analytics: [],
+    skipped: false,
+    skipReason: null,
+    failedAnalyticsTests: 0,
+  };
+
+  try {
+    result.tests = await instantly.listAllInboxPlacementTests(
+      apiKey,
+      MAX_INBOX_PLACEMENT_TEST_PAGES,
+    );
+  } catch (error) {
+    if (isOptionalInboxPlacementError(error)) {
+      result.skipped = true;
+      result.skipReason = errorMessage(error);
+      return result;
+    }
+    throw error;
+  }
+
+  const testsWithIds = result.tests
+    .map((test) => ({
+      test,
+      testId: pickString(test, ["id", "test_id", "uuid"]),
+    }))
+    .filter((entry): entry is { test: Record<string, unknown>; testId: string } => Boolean(entry.testId));
+
+  const batchSize = 4;
+  for (let start = 0; start < testsWithIds.length; start += batchSize) {
+    const batch = testsWithIds.slice(start, start + batchSize);
+    const batches = await Promise.all(
+      batch.map(async ({ testId }) => {
+        try {
+          const rows = await instantly.listAllInboxPlacementAnalyticsForTest(
+            apiKey,
+            testId,
+            MAX_INBOX_PLACEMENT_ANALYTICS_PAGES_PER_TEST,
+          );
+          return rows.map((row) => ({ ...row, __sendlens_test_id: testId }));
+        } catch (error) {
+          if (isOptionalInboxPlacementError(error)) {
+            result.failedAnalyticsTests += 1;
+            await appendTraceLog("refresh.inbox_placement.analytics_skipped", {
+              testId,
+              reason: errorMessage(error),
+            });
+            return [];
+          }
+          throw error;
+        }
+      }),
+    );
+    result.analytics.push(...batches.flat());
+  }
+
+  return result;
+}
+
+async function storeInboxPlacementData(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  tests: Array<Record<string, unknown>>,
+  analytics: Array<Record<string, unknown> & { __sendlens_test_id?: string }>,
+) {
+  await insertRows(
+    conn,
+    "inbox_placement_tests",
+    [
+      "workspace_id",
+      "id",
+      "organization_id",
+      "name",
+      "delivery_mode",
+      "description",
+      "type",
+      "sending_method",
+      "campaign_id",
+      "email_subject",
+      "email_body",
+      "emails_json",
+      "test_code",
+      "tags_json",
+      "text_only",
+      "recipients_json",
+      "recipients_labels_json",
+      "timestamp_created",
+      "timestamp_next_run",
+      "status",
+      "not_sending_status",
+      "metadata_json",
+      "raw_json",
+      "synced_at",
+    ],
+    tests
+      .filter((test) => pickString(test, ["id", "test_id", "uuid"]))
+      .map((test) => {
+        const testId = pickString(test, ["id", "test_id", "uuid"]) ?? "";
+        return `(
+          '${esc(workspaceId)}',
+          '${esc(testId)}',
+          ${sqlString(test.organization_id ?? test.organization)},
+          ${sqlString(test.name)},
+          ${sqlInt(test.delivery_mode)},
+          ${sqlString(test.description)},
+          ${sqlInt(test.type)},
+          ${sqlInt(test.sending_method)},
+          ${sqlString(test.campaign_id ?? test.campaign)},
+          ${sqlString(test.email_subject ?? test.subject)},
+          ${sqlString(test.email_body ?? test.body)},
+          ${sqlJson(test.emails)},
+          ${sqlString(test.test_code)},
+          ${sqlJson(test.tags)},
+          ${sqlBool(test.text_only)},
+          ${sqlJson(test.recipients)},
+          ${sqlJson(test.recipients_labels)},
+          ${sqlTimestamp(test.timestamp_created ?? test.created_at)},
+          ${sqlTimestamp(test.timestamp_next_run ?? test.next_run_at)},
+          ${sqlInt(test.status)},
+          ${sqlString(test.not_sending_status)},
+          ${sqlJson(test.metadata)},
+          ${sqlJson(test)},
+          CURRENT_TIMESTAMP
+        )`;
+      }),
+  );
+
+  await insertRows(
+    conn,
+    "inbox_placement_analytics",
+    [
+      "workspace_id",
+      "id",
+      "organization_id",
+      "test_id",
+      "timestamp_created",
+      "timestamp_created_date",
+      "is_spam",
+      "has_category",
+      "sender_email",
+      "sender_esp",
+      "recipient_email",
+      "recipient_esp",
+      "recipient_geo",
+      "recipient_type",
+      "spf_pass",
+      "dkim_pass",
+      "dmarc_pass",
+      "smtp_ip_blacklist_report_json",
+      "authentication_failure_results_json",
+      "record_type",
+      "raw_json",
+      "synced_at",
+    ],
+    analytics
+      .filter((row) => pickString(row, ["test_id", "test"]) ?? row.__sendlens_test_id)
+      .map((row, index) => {
+        const testId = pickString(row, ["test_id", "test"]) ?? row.__sendlens_test_id ?? "";
+        const timestamp = row.timestamp_created ?? row.created_at;
+        const rowId =
+          pickString(row, ["id", "uuid"]) ??
+          `${testId}:${timestamp ?? "no_ts"}:${row.sender_email ?? row.senderEmail ?? "unknown_sender"}:${row.recipient_email ?? row.recipientEmail ?? "unknown_recipient"}:${row.record_type ?? row.recordType ?? "record"}:${index}`;
+        return `(
+          '${esc(workspaceId)}',
+          '${esc(rowId)}',
+          ${sqlString(row.organization_id ?? row.organization)},
+          '${esc(testId)}',
+          ${sqlTimestamp(timestamp)},
+          ${sqlDate(timestamp)},
+          ${sqlBool(row.is_spam ?? row.isSpam)},
+          ${sqlBool(row.has_category ?? row.hasCategory)},
+          ${sqlString(row.sender_email ?? row.senderEmail)},
+          ${sqlInt(row.sender_esp ?? row.senderEsp)},
+          ${sqlString(row.recipient_email ?? row.recipientEmail)},
+          ${sqlInt(row.recipient_esp ?? row.recipientEsp)},
+          ${sqlInt(row.recipient_geo ?? row.recipientGeo)},
+          ${sqlInt(row.recipient_type ?? row.recipientType)},
+          ${sqlBool(row.spf_pass ?? row.spfPass)},
+          ${sqlBool(row.dkim_pass ?? row.dkimPass)},
+          ${sqlBool(row.dmarc_pass ?? row.dmarcPass)},
+          ${sqlJson(row.smtp_ip_blacklist_report ?? row.smtpIpBlacklistReport)},
+          ${sqlJson(row.authentication_failure_results ?? row.authenticationFailureResults)},
+          ${sqlInt(row.record_type ?? row.recordType)},
+          ${sqlJson(row)},
+          CURRENT_TIMESTAMP
+        )`;
+      }),
   );
 }
 
@@ -1716,20 +1946,38 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
     if (!options.campaignIds?.length) {
       await clearWorkspaceMetadata(db, workspaceId);
       const tagsStartedAt = Date.now();
-      const customTags = await instantly.listAllCustomTags(apiKey);
-      const customTagMappings = await instantly.listAllCustomTagMappings(apiKey, 200, {
-        resourceIds: [
-          ...selectedCampaigns.map((campaign) => String(campaign.id ?? "")).filter(Boolean),
-          ...accountEmails,
-        ],
-      });
+      const inboxPlacementStartedAt = Date.now();
+      const [customTags, customTagMappings, inboxPlacement] = await Promise.all([
+        instantly.listAllCustomTags(apiKey),
+        instantly.listAllCustomTagMappings(apiKey, 200, {
+          resourceIds: [
+            ...selectedCampaigns.map((campaign) => String(campaign.id ?? "")).filter(Boolean),
+            ...accountEmails,
+          ],
+        }),
+        loadInboxPlacementData(apiKey),
+      ]);
       await appendTraceLog("refresh.tags", {
         customTags: customTags.length,
         customTagMappings: customTagMappings.length,
         elapsedMs: Date.now() - tagsStartedAt,
       });
+      await appendTraceLog("refresh.inbox_placement", {
+        tests: inboxPlacement.tests.length,
+        analyticsRows: inboxPlacement.analytics.length,
+        skipped: inboxPlacement.skipped,
+        skipReason: inboxPlacement.skipReason,
+        failedAnalyticsTests: inboxPlacement.failedAnalyticsTests,
+        elapsedMs: Date.now() - inboxPlacementStartedAt,
+      });
       await storeWorkspaceAccounts(db, workspaceId, accounts, dailyAccountMetrics, warmup);
       await storeCustomTags(db, workspaceId, customTags, customTagMappings);
+      await storeInboxPlacementData(
+        db,
+        workspaceId,
+        inboxPlacement.tests,
+        inboxPlacement.analytics,
+      );
     }
 
     let campaignsProcessed = 0;

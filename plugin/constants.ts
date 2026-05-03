@@ -16,6 +16,8 @@ export const MAX_SIGNAL_REPLY_LEADS = 40;
 export const MIN_SIGNAL_SCAN_PAGES = 2;
 export const MAX_FULL_EMAIL_PAGES = 20;
 export const MAX_REPLY_EMAIL_PAGES = 200;
+export const MAX_INBOX_PLACEMENT_TEST_PAGES = 20;
+export const MAX_INBOX_PLACEMENT_ANALYTICS_PAGES_PER_TEST = 20;
 export const SESSION_START_EMAIL_LOOKBACK_DAYS = 21;
 export const SESSION_START_REPLY_EMAIL_PAGES = 8;
 export const SESSION_START_NONREPLY_LEAD_SAMPLE = 25;
@@ -33,6 +35,10 @@ export const PUBLIC_TABLES = [
   "custom_tag_mappings",
   "campaign_tags",
   "account_tags",
+  "inbox_placement_tests",
+  "inbox_placement_analytics",
+  "inbox_placement_test_overview",
+  "sender_deliverability_health",
   "sampled_leads",
   "sampled_outbound_emails",
   "sampling_runs",
@@ -65,6 +71,14 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Convenience view joining campaign tag mappings to campaign names for exact tag-based filtering.",
   account_tags:
     "Convenience view joining account tag mappings to account emails for exact sender filtering.",
+  inbox_placement_tests:
+    "Exact inbox placement test definitions from Instantly, including linked campaigns, sending accounts, recipients, schedules, and raw metadata.",
+  inbox_placement_analytics:
+    "Exact per-email inbox placement analytics from Instantly tests, including sender, recipient ESP/geo/type, spam/category flags, and SPF/DKIM/DMARC results.",
+  inbox_placement_test_overview:
+    "Semantic inbox placement test rollup with primary inbox, category, spam, and authentication failure rates by test.",
+  sender_deliverability_health:
+    "Semantic sender-level deliverability health view built from inbox placement analytics across tests.",
   sampled_leads:
     "Campaign-scoped lead evidence with full replied leads and a bounded non-reply sample. Do not use for population totals.",
   sampled_outbound_emails:

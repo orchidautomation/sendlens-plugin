@@ -20,7 +20,7 @@ loadClientEnv();
 
 const server = new McpServer({
   name: "sendlens",
-  version: "0.1.7",
+  version: "0.1.8",
 });
 
 const SESSION_REFRESH_WAIT_TIMEOUT_MS = 15_000;
@@ -146,7 +146,7 @@ server.registerTool(
       [
         "Refresh the local SendLens cache from Instantly when the user explicitly asks for fresh data, changes client/workspace context, or refresh_status shows stale/failed data.",
         "Do not use this as the default first read in a new session; session start already runs a lean background refresh and workspace_snapshot is usually the better first tool.",
-        "Returns refresh metadata, campaign coverage, and readiness information. Campaign/account aggregates are exact from Instantly; lead and outbound evidence remains bounded or sampled where noted by the ingest coverage fields.",
+        "Returns refresh metadata, campaign coverage, and readiness information. Campaign/account/inbox-placement aggregates are exact from Instantly when available; lead and outbound evidence remains bounded or sampled where noted by the ingest coverage fields.",
       ].join(" "),
     inputSchema: {
       campaign_ids: z
@@ -311,7 +311,7 @@ server.registerTool(
         "Get the first high-level read of the active local workspace, optionally scoped by exact Instantly tag or campaign-name fragment.",
         "Use this for broad questions like what is working, what is risky, or which campaign to inspect next.",
         "Do not use this for detailed copy, lead-variable, or reply cohort analysis; pick one campaign and call load_campaign_data or use analysis_starters plus analyze_data.",
-        "Returns exact headline campaign/account metrics, bounded campaign coverage rows, freshness/readiness metadata, and warnings when scoped output is capped.",
+        "Returns exact headline campaign/account/inbox-placement metrics, bounded campaign coverage rows, freshness/readiness metadata, and warnings when scoped output is capped.",
       ].join(" "),
     inputSchema: {
       instantly_tag: z
@@ -513,7 +513,7 @@ server.registerTool(
         "Use analysis_starters first for common questions and list_columns/search_catalog first when schema is uncertain.",
         "Do not use this for mutation, external file/network reads, unqualified tables, cross-workspace analysis, or broad unbounded row dumps; the SQL guard injects workspace filters and blocks unsafe shapes.",
         "Returns rationale, readiness metadata, row_count, truncation/output limits, warnings, and rows capped to the tool limit.",
-        "Exactness depends on the queried surface: campaign/account/step/template/tag aggregates are exact, while lead_evidence, reply_context, and rendered_outbound_context include sampled or reconstructed evidence where their view notes say so.",
+        "Exactness depends on the queried surface: campaign/account/step/template/tag/inbox-placement aggregates are exact, while lead_evidence, reply_context, and rendered_outbound_context include sampled or reconstructed evidence where their view notes say so.",
       ].join(" "),
     inputSchema: {
       sql: z

@@ -659,3 +659,96 @@ export async function getDailyAccountAnalytics(
     (Array.isArray(data) ? data : [])
   ) as Array<Record<string, unknown>>;
 }
+
+export async function listInboxPlacementTestsPage(
+  apiKey: string,
+  cursor?: string,
+) {
+  const params = new URLSearchParams();
+  params.set("limit", "100");
+  params.set("with_metadata", "true");
+  if (cursor) params.set("starting_after", cursor);
+
+  const res = await fetchWithRetry(
+    `${API_BASE}/inbox-placement-tests?${params.toString()}`,
+    { headers: headers(apiKey) },
+  );
+  const data = await res.json() as Record<string, unknown>;
+  const items = (data.items || (Array.isArray(data) ? data : [])) as Array<Record<string, unknown>>;
+  const nextCursor =
+    (data.next_starting_after as string | undefined)
+    ?? (data.next_cursor as string | undefined)
+    ?? (data.starting_after as string | undefined)
+    ?? null;
+  return { items, nextCursor };
+}
+
+export async function listAllInboxPlacementTests(
+  apiKey: string,
+  maxPages = 20,
+): Promise<Array<Record<string, unknown>>> {
+  const tests: Array<Record<string, unknown>> = [];
+  let cursor: string | null = null;
+
+  for (let page = 0; page < maxPages; page++) {
+    const { items, nextCursor } = await listInboxPlacementTestsPage(apiKey, cursor || undefined);
+    tests.push(...items);
+    cursor = nextCursor;
+    if (!cursor || items.length < 100) break;
+  }
+
+  return tests;
+}
+
+export async function listInboxPlacementAnalyticsPage(
+  apiKey: string,
+  opts: {
+    testId: string;
+    cursor?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    senderEmail?: string;
+  },
+) {
+  const params = new URLSearchParams();
+  params.set("limit", "100");
+  params.set("test_id", opts.testId);
+  if (opts.cursor) params.set("starting_after", opts.cursor);
+  if (opts.dateFrom) params.set("date_from", opts.dateFrom);
+  if (opts.dateTo) params.set("date_to", opts.dateTo);
+  if (opts.senderEmail) params.set("sender_email", opts.senderEmail);
+
+  const res = await fetchWithRetry(
+    `${API_BASE}/inbox-placement-analytics?${params.toString()}`,
+    { headers: headers(apiKey) },
+  );
+  const data = await res.json() as Record<string, unknown>;
+  const items = (data.items || (Array.isArray(data) ? data : [])) as Array<Record<string, unknown>>;
+  const nextCursor =
+    (data.next_starting_after as string | undefined)
+    ?? (data.next_cursor as string | undefined)
+    ?? (data.starting_after as string | undefined)
+    ?? null;
+  return { items, nextCursor };
+}
+
+export async function listAllInboxPlacementAnalyticsForTest(
+  apiKey: string,
+  testId: string,
+  maxPages = 20,
+): Promise<Array<Record<string, unknown>>> {
+  const analytics: Array<Record<string, unknown>> = [];
+  let cursor: string | null = null;
+
+  for (let page = 0; page < maxPages; page++) {
+    const { items, nextCursor } = await listInboxPlacementAnalyticsPage(apiKey, {
+      testId,
+      cursor: cursor || undefined,
+    });
+    analytics.push(...items);
+    cursor = nextCursor;
+    if (!cursor || items.length < 100) break;
+  }
+
+  return analytics;
+}

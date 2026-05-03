@@ -345,6 +345,58 @@ async function ensureSchema(conn: DuckDBConnection) {
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (workspace_id, tag_id, resource_type, resource_id)
     )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.inbox_placement_tests (
+      workspace_id VARCHAR NOT NULL,
+      id VARCHAR NOT NULL,
+      organization_id VARCHAR,
+      name VARCHAR,
+      delivery_mode INTEGER,
+      description VARCHAR,
+      type INTEGER,
+      sending_method INTEGER,
+      campaign_id VARCHAR,
+      email_subject VARCHAR,
+      email_body VARCHAR,
+      emails_json VARCHAR,
+      test_code VARCHAR,
+      tags_json VARCHAR,
+      text_only BOOLEAN,
+      recipients_json VARCHAR,
+      recipients_labels_json VARCHAR,
+      timestamp_created TIMESTAMP,
+      timestamp_next_run TIMESTAMP,
+      status INTEGER,
+      not_sending_status VARCHAR,
+      metadata_json VARCHAR,
+      raw_json VARCHAR,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.inbox_placement_analytics (
+      workspace_id VARCHAR NOT NULL,
+      id VARCHAR NOT NULL,
+      organization_id VARCHAR,
+      test_id VARCHAR NOT NULL,
+      timestamp_created TIMESTAMP,
+      timestamp_created_date DATE,
+      is_spam BOOLEAN,
+      has_category BOOLEAN,
+      sender_email VARCHAR,
+      sender_esp INTEGER,
+      recipient_email VARCHAR,
+      recipient_esp INTEGER,
+      recipient_geo INTEGER,
+      recipient_type INTEGER,
+      spf_pass BOOLEAN,
+      dkim_pass BOOLEAN,
+      dmarc_pass BOOLEAN,
+      smtp_ip_blacklist_report_json VARCHAR,
+      authentication_failure_results_json VARCHAR,
+      record_type INTEGER,
+      raw_json VARCHAR,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, id)
+    )`,
     `CREATE TABLE IF NOT EXISTS sendlens.reply_emails (
       workspace_id VARCHAR NOT NULL,
       id VARCHAR NOT NULL,
@@ -500,6 +552,73 @@ async function ensureSchema(conn: DuckDBConnection) {
         ON m.workspace_id = t.workspace_id
        AND m.tag_id = t.id
       WHERE TRY_CAST(m.resource_type AS INTEGER) = 1`,
+    `CREATE OR REPLACE VIEW sendlens.inbox_placement_test_overview AS
+      SELECT
+        t.workspace_id,
+        t.id AS test_id,
+        t.name AS test_name,
+        t.campaign_id,
+        c.name AS campaign_name,
+        t.status,
+        t.not_sending_status,
+        t.sending_method,
+        t.type AS test_type,
+        t.timestamp_created,
+        t.timestamp_next_run,
+        COUNT(a.id) AS analytics_rows,
+        SUM(CASE WHEN a.record_type = 1 THEN 1 ELSE 0 END) AS sent_records,
+        SUM(CASE WHEN a.record_type = 2 THEN 1 ELSE 0 END) AS received_records,
+        SUM(CASE WHEN a.record_type = 2 AND a.is_spam = TRUE THEN 1 ELSE 0 END) AS spam_records,
+        SUM(CASE WHEN a.record_type = 2 AND a.has_category = TRUE THEN 1 ELSE 0 END) AS category_records,
+        SUM(CASE WHEN a.record_type = 2 AND COALESCE(a.is_spam, FALSE) = FALSE AND COALESCE(a.has_category, FALSE) = FALSE THEN 1 ELSE 0 END) AS primary_inbox_records,
+        SUM(CASE WHEN a.record_type = 2 AND COALESCE(a.spf_pass, TRUE) = FALSE THEN 1 ELSE 0 END) AS spf_failures,
+        SUM(CASE WHEN a.record_type = 2 AND COALESCE(a.dkim_pass, TRUE) = FALSE THEN 1 ELSE 0 END) AS dkim_failures,
+        SUM(CASE WHEN a.record_type = 2 AND COALESCE(a.dmarc_pass, TRUE) = FALSE THEN 1 ELSE 0 END) AS dmarc_failures,
+        ROUND(100.0 * SUM(CASE WHEN a.record_type = 2 AND COALESCE(a.is_spam, FALSE) = FALSE THEN 1 ELSE 0 END) / NULLIF(SUM(CASE WHEN a.record_type = 2 THEN 1 ELSE 0 END), 0), 2) AS non_spam_rate_pct,
+        ROUND(100.0 * SUM(CASE WHEN a.record_type = 2 AND COALESCE(a.is_spam, FALSE) = FALSE AND COALESCE(a.has_category, FALSE) = FALSE THEN 1 ELSE 0 END) / NULLIF(SUM(CASE WHEN a.record_type = 2 THEN 1 ELSE 0 END), 0), 2) AS primary_inbox_rate_pct,
+        ROUND(100.0 * SUM(CASE WHEN a.record_type = 2 AND a.has_category = TRUE THEN 1 ELSE 0 END) / NULLIF(SUM(CASE WHEN a.record_type = 2 THEN 1 ELSE 0 END), 0), 2) AS category_rate_pct,
+        ROUND(100.0 * SUM(CASE WHEN a.record_type = 2 AND a.is_spam = TRUE THEN 1 ELSE 0 END) / NULLIF(SUM(CASE WHEN a.record_type = 2 THEN 1 ELSE 0 END), 0), 2) AS spam_rate_pct
+      FROM sendlens.inbox_placement_tests t
+      LEFT JOIN sendlens.inbox_placement_analytics a
+        ON t.workspace_id = a.workspace_id
+       AND t.id = a.test_id
+      LEFT JOIN sendlens.campaigns c
+        ON t.workspace_id = c.workspace_id
+       AND t.campaign_id = c.id
+      GROUP BY
+        t.workspace_id,
+        t.id,
+        t.name,
+        t.campaign_id,
+        c.name,
+        t.status,
+        t.not_sending_status,
+        t.sending_method,
+        t.type,
+        t.timestamp_created,
+        t.timestamp_next_run`,
+    `CREATE OR REPLACE VIEW sendlens.sender_deliverability_health AS
+      SELECT
+        a.workspace_id,
+        a.sender_email,
+        COUNT(DISTINCT a.test_id) AS inbox_placement_tests,
+        COUNT(*) AS received_records,
+        SUM(CASE WHEN a.is_spam = TRUE THEN 1 ELSE 0 END) AS spam_records,
+        SUM(CASE WHEN a.has_category = TRUE THEN 1 ELSE 0 END) AS category_records,
+        SUM(CASE WHEN COALESCE(a.is_spam, FALSE) = FALSE AND COALESCE(a.has_category, FALSE) = FALSE THEN 1 ELSE 0 END) AS primary_inbox_records,
+        SUM(CASE WHEN COALESCE(a.spf_pass, TRUE) = FALSE THEN 1 ELSE 0 END) AS spf_failures,
+        SUM(CASE WHEN COALESCE(a.dkim_pass, TRUE) = FALSE THEN 1 ELSE 0 END) AS dkim_failures,
+        SUM(CASE WHEN COALESCE(a.dmarc_pass, TRUE) = FALSE THEN 1 ELSE 0 END) AS dmarc_failures,
+        ROUND(100.0 * SUM(CASE WHEN COALESCE(a.is_spam, FALSE) = FALSE THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) AS non_spam_rate_pct,
+        ROUND(100.0 * SUM(CASE WHEN COALESCE(a.is_spam, FALSE) = FALSE AND COALESCE(a.has_category, FALSE) = FALSE THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) AS primary_inbox_rate_pct,
+        ROUND(100.0 * SUM(CASE WHEN a.has_category = TRUE THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) AS category_rate_pct,
+        ROUND(100.0 * SUM(CASE WHEN a.is_spam = TRUE THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) AS spam_rate_pct,
+        MIN(a.timestamp_created) AS first_seen_at,
+        MAX(a.timestamp_created) AS last_seen_at
+      FROM sendlens.inbox_placement_analytics a
+      WHERE a.record_type = 2
+        AND a.sender_email IS NOT NULL
+      GROUP BY a.workspace_id, a.sender_email`,
     `CREATE OR REPLACE VIEW sendlens.campaign_overview AS
       SELECT
         c.workspace_id,
@@ -713,6 +832,8 @@ export async function clearWorkspaceData(
     "account_daily_metrics",
     "custom_tags",
     "custom_tag_mappings",
+    "inbox_placement_tests",
+    "inbox_placement_analytics",
     "reply_emails",
     "sampled_leads",
     "sampled_outbound_emails",
@@ -765,6 +886,8 @@ export async function clearWorkspaceMetadata(
     "account_daily_metrics",
     "custom_tags",
     "custom_tag_mappings",
+    "inbox_placement_tests",
+    "inbox_placement_analytics",
   ]) {
     await run(
       conn,

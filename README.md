@@ -58,6 +58,8 @@ SendLens is optimized for questions like:
 - "Which variables are showing up in winning leads for this sequence?"
 - "Show me the reconstructed step copy that a replied lead saw."
 - "Compare two campaigns without conflating their payload schema."
+- "Are our senders landing in primary inbox, categories, or spam?"
+- "Which SPF, DKIM, DMARC, or blacklist issues show up in inbox placement tests?"
 
 In practice, that means:
 
@@ -139,6 +141,8 @@ local DuckDB cache
    |    campaign_variants
    |    accounts
    |    account_daily_metrics
+   |    inbox_placement_tests
+   |    inbox_placement_analytics
    |    custom_tags
    |    custom_tag_mappings
    |
@@ -151,6 +155,7 @@ local DuckDB cache
 The refresh path is optimized around speed and useful coverage:
 
 - exact campaign and step analytics are always pulled
+- account performance, warmup, and inbox placement test analytics are pulled when available
 - templates are always pulled
 - full reply-signal leads are kept
 - bounded non-reply samples are kept
@@ -190,6 +195,8 @@ Preferred warehouse surfaces:
 - `rendered_outbound_context`
 - `campaign_tags`
 - `account_tags`
+- `inbox_placement_test_overview`
+- `sender_deliverability_health`
 
 Key design rule:
 

@@ -56,8 +56,9 @@ Where relevant, SendLens responses should include:
 
 ## Exactness Rules
 
-- `campaigns`, `campaign_analytics`, `step_analytics`, `campaign_variants`, `accounts`, `account_daily_metrics`, `custom_tags`, and tag mapping views are exact local copies of Instantly-derived surfaces.
+- `campaigns`, `campaign_analytics`, `step_analytics`, `campaign_variants`, `accounts`, `account_daily_metrics`, `custom_tags`, tag mapping views, `inbox_placement_tests`, and `inbox_placement_analytics` are exact local copies of Instantly-derived surfaces.
 - `campaign_overview` is the preferred exact campaign rollup plus sample coverage metadata.
+- `inbox_placement_test_overview` and `sender_deliverability_health` are exact semantic rollups over Instantly inbox placement analytics when those API surfaces are available.
 - `lead_evidence` contains full replied leads where available and bounded non-reply samples.
 - `reply_context` is lead outcome evidence joined to templates and reconstructed outbound context.
 - `rendered_outbound_context` is locally reconstructed copy, not byte-for-byte delivered email text.
@@ -78,4 +79,3 @@ Compatibility rule:
 - Keep text JSON as the canonical fallback until all target hosts preserve structured MCP content reliably.
 - Add structured content only as an additive field.
 - Do not change key names casually; if a key changes, update this document and the runtime tests in the same PR.
-

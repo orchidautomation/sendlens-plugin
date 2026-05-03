@@ -93,6 +93,22 @@ await run(
 );
 await run(
   db,
+  `INSERT OR REPLACE INTO sendlens.inbox_placement_tests
+   (workspace_id, id, organization_id, name, delivery_mode, description, type, sending_method, campaign_id, email_subject, email_body, emails_json, test_code, tags_json, text_only, recipients_json, recipients_labels_json, timestamp_created, timestamp_next_run, status, not_sending_status, metadata_json, raw_json, synced_at)
+   VALUES ('ws_test', 'ipt1', 'ws_test', 'Alpha inbox test', 1, 'Alpha deliverability test', 1, 1, 'c1', 'Alpha intro', 'Hi there', '["sender@example.com"]', 'abc123', '["deliverability"]', true, '["seed@gmail.com","seed@outlook.com"]', '["Gmail","Outlook"]', '2026-05-01 10:00:00'::TIMESTAMP, '2026-05-08 10:00:00'::TIMESTAMP, 1, NULL, '{"source":"test"}', '{"id":"ipt1"}', CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.inbox_placement_analytics
+   (workspace_id, id, organization_id, test_id, timestamp_created, timestamp_created_date, is_spam, has_category, sender_email, sender_esp, recipient_email, recipient_esp, recipient_geo, recipient_type, spf_pass, dkim_pass, dmarc_pass, smtp_ip_blacklist_report_json, authentication_failure_results_json, record_type, raw_json, synced_at)
+   VALUES
+   ('ws_test', 'ipa0', 'ws_test', 'ipt1', '2026-05-01 10:00:00'::TIMESTAMP, '2026-05-01'::DATE, NULL, NULL, 'sender@example.com', 1, 'seed@gmail.com', 1, 1, 1, true, true, true, NULL, NULL, 1, '{"id":"ipa0"}', CURRENT_TIMESTAMP),
+   ('ws_test', 'ipa1', 'ws_test', 'ipt1', '2026-05-01 10:01:00'::TIMESTAMP, '2026-05-01'::DATE, false, false, 'sender@example.com', 1, 'seed@gmail.com', 1, 1, 1, true, true, true, NULL, NULL, 2, '{"id":"ipa1"}', CURRENT_TIMESTAMP),
+   ('ws_test', 'ipa2', 'ws_test', 'ipt1', '2026-05-01 10:02:00'::TIMESTAMP, '2026-05-01'::DATE, true, false, 'sender@example.com', 1, 'seed@outlook.com', 2, 1, 1, true, false, true, '{"listed":true}', '{"dkim":"failed"}', 2, '{"id":"ipa2"}', CURRENT_TIMESTAMP),
+   ('ws_test', 'ipa3', 'ws_test', 'ipt1', '2026-05-01 10:03:00'::TIMESTAMP, '2026-05-01'::DATE, false, true, 'sender@example.com', 1, 'seed@yahoo.com', 3, 1, 1, true, true, false, NULL, '{"dmarc":"failed"}', 2, '{"id":"ipa3"}', CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
   `INSERT OR REPLACE INTO sendlens.sampling_runs
    (workspace_id, campaign_id, ingest_mode, total_leads, total_sent, reply_rows, reply_lead_rows, nonreply_sample_target, nonreply_rows_sampled, outbound_sample_target, outbound_rows_sampled, reply_outbound_rows, filtered_lead_rows, coverage_note, created_at)
    VALUES
@@ -109,8 +125,11 @@ assert.equal(summary.exact_metrics.active_campaign_count, 1);
 assert.equal(summary.exact_metrics.total_sent, 800);
 assert.equal(summary.exact_metrics.total_unique_replies, 24);
 assert.ok(summary.summary.includes("1 custom tags stored locally"));
+assert.ok(summary.summary.includes("1 inbox placement tests and 4 inbox placement analytics rows"));
 assert.ok(summary.summary.includes("Sampled raw tables are evidence support only"));
 assert.ok(summary.summary.includes("full reply leads"));
+assert.equal(summary.exact_metrics.inbox_placement_test_count, 1);
+assert.equal(summary.exact_metrics.inbox_placement_analytics_rows, 4);
 assert.equal(summary.coverage.length, 1);
 
 const campaignOverview = await runQuery(
@@ -204,6 +223,36 @@ const campaignTags = await runQuery(
 );
 assert.equal(campaignTags[0].tag_label, "Priority");
 
+const inboxPlacementOverview = await runQuery(
+  db,
+  "SELECT test_name, campaign_name, analytics_rows, sent_records, received_records, spam_records, category_records, primary_inbox_records, primary_inbox_rate_pct, spam_rate_pct, dkim_failures, dmarc_failures FROM sendlens.inbox_placement_test_overview WHERE test_id = 'ipt1'",
+);
+assert.equal(inboxPlacementOverview[0].test_name, "Alpha inbox test");
+assert.equal(inboxPlacementOverview[0].campaign_name, "Alpha");
+assert.equal(Number(inboxPlacementOverview[0].analytics_rows), 4);
+assert.equal(Number(inboxPlacementOverview[0].sent_records), 1);
+assert.equal(Number(inboxPlacementOverview[0].received_records), 3);
+assert.equal(Number(inboxPlacementOverview[0].spam_records), 1);
+assert.equal(Number(inboxPlacementOverview[0].category_records), 1);
+assert.equal(Number(inboxPlacementOverview[0].primary_inbox_records), 1);
+assert.equal(Number(inboxPlacementOverview[0].primary_inbox_rate_pct), 33.33);
+assert.equal(Number(inboxPlacementOverview[0].spam_rate_pct), 33.33);
+assert.equal(Number(inboxPlacementOverview[0].dkim_failures), 1);
+assert.equal(Number(inboxPlacementOverview[0].dmarc_failures), 1);
+
+const senderDeliverability = await runQuery(
+  db,
+  "SELECT sender_email, inbox_placement_tests, received_records, primary_inbox_records, primary_inbox_rate_pct, spam_rate_pct, dkim_failures, dmarc_failures FROM sendlens.sender_deliverability_health WHERE sender_email = 'sender@example.com'",
+);
+assert.equal(senderDeliverability[0].sender_email, "sender@example.com");
+assert.equal(Number(senderDeliverability[0].inbox_placement_tests), 1);
+assert.equal(Number(senderDeliverability[0].received_records), 3);
+assert.equal(Number(senderDeliverability[0].primary_inbox_records), 1);
+assert.equal(Number(senderDeliverability[0].primary_inbox_rate_pct), 33.33);
+assert.equal(Number(senderDeliverability[0].spam_rate_pct), 33.33);
+assert.equal(Number(senderDeliverability[0].dkim_failures), 1);
+assert.equal(Number(senderDeliverability[0].dmarc_failures), 1);
+
 const rewritten = enforceLocalWorkspaceScope(
   "SELECT c.name, ca.reply_count_unique FROM sendlens.campaigns c JOIN sendlens.campaign_analytics ca ON c.id = ca.campaign_id",
   "ws_test",
@@ -251,6 +300,19 @@ assert.equal(Number(countryPresence.replying_leads_with_key), 1);
 assert.equal(Number(countryPresence.positive_leads_with_key), 1);
 
 const campaignRecipes = getQueryRecipes("campaign-performance");
+const workspaceHealthRecipes = getQueryRecipes("workspace-health");
+assert.equal(
+  workspaceHealthRecipes.some((recipe) => recipe.id === "inbox-placement-test-overview" && recipe.sql.includes("sendlens.inbox_placement_test_overview")),
+  true,
+);
+assert.equal(
+  workspaceHealthRecipes.some((recipe) => recipe.id === "sender-deliverability-health" && recipe.sql.includes("sendlens.sender_deliverability_health")),
+  true,
+);
+assert.equal(
+  workspaceHealthRecipes.some((recipe) => recipe.id === "inbox-placement-auth-failures" && recipe.sql.includes("sendlens.inbox_placement_analytics")),
+  true,
+);
 const stepFatigueRecipe = campaignRecipes.find((recipe) => recipe.id === "step-fatigue-by-campaign");
 assert.ok(stepFatigueRecipe);
 assert.match(stepFatigueRecipe.sql, /metric_basis/);

@@ -111,6 +111,19 @@ For deep analysis, load one campaign first:
 load_campaign_data(campaign_id="...")
 ```
 
+## Missing Inbox Placement Data
+
+SendLens ingests Instantly inbox placement tests and per-email inbox placement analytics when those API surfaces are available to the API key.
+
+If inbox placement tables are empty:
+
+- confirm the Instantly workspace has inbox placement tests
+- confirm the API key has access to inbox placement endpoints
+- run `refresh_data` once manually after creating or running a test
+- check `refresh_status` and the session-start log for `refresh.inbox_placement` entries
+
+Empty inbox placement tables mean no local inbox placement evidence was available. They do not prove senders are landing in primary inbox.
+
 ## Rendered Copy Limits
 
 SendLens reconstructs outbound copy locally from campaign templates plus stored lead variables. Treat this as analysis evidence and personalization QA, not as a guaranteed byte-for-byte copy of the delivered email.
