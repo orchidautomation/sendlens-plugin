@@ -44,6 +44,14 @@ await run(
 );
 await run(
   db,
+  `INSERT OR REPLACE INTO sendlens.step_analytics
+   (workspace_id, campaign_id, step, variant, sent, opens, replies, replies_automatic, unique_replies, clicks, bounces, opportunities, synced_at)
+   VALUES ('ws_test', 'c1', 0, 0, 200, 80, 8, 0, 8, 2, 2, 1, CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', 1, 0, 160, 50, 2, 0, 2, 1, 1, 0, CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', 2, 0, 120, 25, 0, 0, 0, 0, 0, 0, CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
   `INSERT OR REPLACE INTO sendlens.sampled_leads
    (workspace_id, campaign_id, id, email, first_name, last_name, company_name, company_domain, status, email_reply_count, lt_interest_status, email_replied_step, email_replied_variant, timestamp_last_reply, job_title, custom_payload, sample_source, sampled_at)
    VALUES ('ws_test', 'c1', 'l1', 'a@example.com', 'Alex', 'Avery', 'Acme Health', 'acme.test', 'active', 1, 1, 0, 0, CURRENT_TIMESTAMP, 'VP Operations', '{"campaign":"c1","Country":"United States","Category":"Healthcare","firstName":"Alex"}', 'reply_full', CURRENT_TIMESTAMP),
@@ -214,6 +222,49 @@ assert.equal(
   icpRecipes.some((recipe) => recipe.id === "campaign-payload-key-signals" && recipe.sql.includes("json_extract_string(custom_payload")),
   true,
 );
+const payloadInventoryRecipe = icpRecipes.find((recipe) => recipe.id === "campaign-payload-key-inventory");
+assert.ok(payloadInventoryRecipe);
+assert.match(payloadInventoryRecipe.sql, /json_each/);
+const payloadInventoryRows = await runQuery(
+  db,
+  payloadInventoryRecipe.sql.replaceAll("{{campaign_id}}", "c1"),
+);
+const countryInventory = payloadInventoryRows.find((row) => row.payload_key === "Country");
+assert.ok(countryInventory);
+assert.equal(Number(countryInventory.sampled_leads_with_key), 3);
+assert.equal(Number(countryInventory.distinct_sampled_values), 2);
+assert.equal(Number(countryInventory.sampled_replying_leads_with_key), 1);
+assert.equal(Number(countryInventory.sampled_positive_leads_with_key), 1);
+
+const payloadPresenceRecipe = icpRecipes.find((recipe) => recipe.id === "campaign-payload-presence-signals");
+assert.ok(payloadPresenceRecipe);
+const payloadPresenceRows = await runQuery(
+  db,
+  payloadPresenceRecipe.sql.replaceAll("{{campaign_id}}", "c1"),
+);
+const countryPresence = payloadPresenceRows.find((row) => row.payload_key === "Country");
+assert.ok(countryPresence);
+assert.equal(Number(countryPresence.sampled_leads), 11);
+assert.equal(Number(countryPresence.leads_with_key), 3);
+assert.equal(Number(countryPresence.leads_without_key), 8);
+assert.equal(Number(countryPresence.replying_leads_with_key), 1);
+assert.equal(Number(countryPresence.positive_leads_with_key), 1);
+
+const campaignRecipes = getQueryRecipes("campaign-performance");
+const stepFatigueRecipe = campaignRecipes.find((recipe) => recipe.id === "step-fatigue-by-campaign");
+assert.ok(stepFatigueRecipe);
+assert.match(stepFatigueRecipe.sql, /metric_basis/);
+const stepFatigueRows = await runQuery(
+  db,
+  stepFatigueRecipe.sql.replaceAll("{{campaign_id}}", "c1"),
+);
+assert.equal(stepFatigueRows.length, 3);
+assert.equal(Number(stepFatigueRows[0].step), 0);
+assert.equal(String(stepFatigueRows[0].metric_basis), "unique_reply_rate");
+assert.equal(Number(stepFatigueRows[0].unique_reply_coverage_pct), 100);
+assert.equal(Number(stepFatigueRows[0].metric_value_pct), 4);
+assert.equal(Number(stepFatigueRows[1].previous_step_metric_value_pct), 4);
+assert.equal(Number(stepFatigueRows[1].metric_delta_from_previous_step_pct_points), -2.75);
 const copyRecipes = getQueryRecipes("copy-analysis");
 const leakRecipe = copyRecipes.find((recipe) => recipe.id === "personalization-leak-audit");
 assert.ok(leakRecipe);

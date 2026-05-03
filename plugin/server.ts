@@ -143,7 +143,11 @@ server.registerTool(
   "refresh_data",
   {
     description:
-      "Pull the latest SendLens data from Instantly into the local cache.",
+      [
+        "Refresh the local SendLens cache from Instantly when the user explicitly asks for fresh data, changes client/workspace context, or refresh_status shows stale/failed data.",
+        "Do not use this as the default first read in a new session; session start already runs a lean background refresh and workspace_snapshot is usually the better first tool.",
+        "Returns refresh metadata, campaign coverage, and readiness information. Campaign/account aggregates are exact from Instantly; lead and outbound evidence remains bounded or sampled where noted by the ingest coverage fields.",
+      ].join(" "),
     inputSchema: {
       campaign_ids: z
         .array(z.string())
@@ -179,7 +183,12 @@ server.registerTool(
   "load_campaign_data",
   {
     description:
-      "Load one campaign with bounded lead, reply, and reconstructed-copy context for deeper analysis. Use this when the user wants to understand what is landing, who is responding, and what to change next for a single campaign. Do not use this for broad workspace ranking; start with workspace_snapshot instead.",
+      [
+        "Hydrate and return one campaign's analysis context when the user has chosen a campaign and wants copy, ICP, reply outcome, or next-test diagnosis.",
+        "Use this after workspace_snapshot or campaign ranking, not for broad workspace comparisons.",
+        "Returns campaign_overview, a stratified human_reply_sample, optional rendered_outbound_sample, output limits, warnings, and refresh/readiness metadata.",
+        "campaign_overview uses exact Instantly aggregates; human replies use lead-level reply outcome state; rendered outbound rows are locally reconstructed/sampled evidence, not exact delivered email bodies.",
+      ].join(" "),
     inputSchema: {
       campaign_id: z.string().describe("Instantly campaign ID to hydrate."),
       include_rendered_outbound: z
@@ -298,7 +307,12 @@ server.registerTool(
   "workspace_snapshot",
   {
     description:
-      "Get the current high-level SendLens snapshot for the local workspace, optionally scoped to a campaign name or Instantly tag using only the current local cache. Returns exact headline metrics plus bounded campaign/coverage rows; use analyze_data for narrower custom slices.",
+      [
+        "Get the first high-level read of the active local workspace, optionally scoped by exact Instantly tag or campaign-name fragment.",
+        "Use this for broad questions like what is working, what is risky, or which campaign to inspect next.",
+        "Do not use this for detailed copy, lead-variable, or reply cohort analysis; pick one campaign and call load_campaign_data or use analysis_starters plus analyze_data.",
+        "Returns exact headline campaign/account metrics, bounded campaign coverage rows, freshness/readiness metadata, and warnings when scoped output is capped.",
+      ].join(" "),
     inputSchema: {
       instantly_tag: z
         .string()
@@ -342,7 +356,12 @@ server.registerTool(
   "list_tables",
   {
     description:
-      "List the local analytical tables available to the plugin. These describe exact and sampled surfaces separately.",
+      [
+        "List the public sendlens tables/views available for local analysis without opening the DuckDB cache.",
+        "Use this for schema orientation before writing custom SQL.",
+        "Do not use it to answer business questions directly; follow with list_columns, search_catalog, analysis_starters, or analyze_data.",
+        "Returns table names and descriptions that distinguish exact aggregate surfaces from sampled evidence surfaces.",
+      ].join(" "),
     inputSchema: {},
   },
   async () => {
@@ -355,7 +374,12 @@ server.registerTool(
   "list_columns",
   {
     description:
-      "List columns for a specific sendlens table before writing SQL.",
+      [
+        "List columns and DuckDB types for one sendlens table or view before writing custom SQL.",
+        "Use this when a recipe or user question needs columns not already known.",
+        "Do not use this for broad discovery across many concepts; use search_catalog first.",
+        "Returns table name, readiness metadata, and column/type pairs only; it does not return campaign evidence.",
+      ].join(" "),
     inputSchema: {
       table_name: z.string().describe("Table name without or with the sendlens. prefix."),
     },
@@ -386,7 +410,12 @@ server.registerTool(
   "search_catalog",
   {
     description:
-      "Search tables and columns when you know the concept but not the exact schema name. Returns up to 25 schema matches and does not read campaign evidence.",
+      [
+        "Search public SendLens table and column names when the user gives a concept like reply, bounce, tag, variant, opportunity, or payload.",
+        "Use this before custom SQL when the exact schema surface is unclear.",
+        "Do not use it as a data read; it only returns schema matches.",
+        "Returns up to 25 table/column matches plus readiness metadata and does not read lead, reply, or campaign rows.",
+      ].join(" "),
     inputSchema: {
       query: z.string().describe("Search string such as reply, bounce, variant, or opportunity."),
     },
@@ -417,7 +446,12 @@ server.registerTool(
   "analysis_starters",
   {
     description:
-      "Return curated analysis starters for common SendLens questions before writing custom analysis.",
+      [
+        "Return curated SendLens SQL recipes for common workspace-health, campaign-performance, copy, reply-pattern, ICP-signal, and tag questions.",
+        "Use this before writing custom SQL when the user's question matches a known analysis path.",
+        "Do not run recipe SQL blindly; replace placeholders like campaign_id, tag_name, or payload_key and preserve the recipe exactness notes in the final answer.",
+        "Returns recipe metadata, exact/sample/hybrid classification, SQL, and usage notes; it does not query the database.",
+      ].join(" "),
     inputSchema: {
       topic: z
         .enum(QUERY_RECIPE_TOPICS)
@@ -450,7 +484,11 @@ server.registerTool(
   "refresh_status",
   {
     description:
-      "Check whether SendLens data is current, still refreshing, or failed to load.",
+      [
+        "Check the local SendLens refresh lifecycle when data may be stale, the session-start refresh is still running, or a cache-lock/readiness response asks you to retry later.",
+        "Use this for operational status, not analytics.",
+        "Returns the last refresh state, timestamps, source, and error context when available; it does not read campaign rows.",
+      ].join(" "),
     inputSchema: {},
   },
   async () => {
@@ -470,7 +508,13 @@ server.registerTool(
   "analyze_data",
   {
     description:
-      "Run a custom SELECT/WITH analysis against the active local SendLens data once the question is clear. Results are capped to a bounded row count and text size, so use focused columns, filters, and LIMITs for large questions.",
+      [
+        "Run focused read-only DuckDB SELECT/WITH analysis against the active local SendLens workspace once the question, table surface, and filters are clear.",
+        "Use analysis_starters first for common questions and list_columns/search_catalog first when schema is uncertain.",
+        "Do not use this for mutation, external file/network reads, unqualified tables, cross-workspace analysis, or broad unbounded row dumps; the SQL guard injects workspace filters and blocks unsafe shapes.",
+        "Returns rationale, readiness metadata, row_count, truncation/output limits, warnings, and rows capped to the tool limit.",
+        "Exactness depends on the queried surface: campaign/account/step/template/tag aggregates are exact, while lead_evidence, reply_context, and rendered_outbound_context include sampled or reconstructed evidence where their view notes say so.",
+      ].join(" "),
     inputSchema: {
       sql: z
         .string()

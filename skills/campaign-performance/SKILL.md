@@ -26,6 +26,7 @@ Compare campaigns, rank variants, and explain campaign-level winners and losers.
 - Use `campaign_analytics`, `step_analytics`, and `campaigns` for headline comparisons.
 - Keep campaign ranking on exact campaign-level unique reply metrics when they are present.
 - For step or variant ranking, check whether `step_analytics.unique_replies` has real coverage first. If it is sparse or mostly null for that campaign/workspace, switch to `opportunities` and `opportunity_rate_pct` instead of pretending step reply rate is exact.
+- Use `step-fatigue-by-campaign` when the user asks where a sequence stops producing value. Preserve the recipe's `metric_basis` field in the answer.
 - Use `campaign_variants` to connect step or variant performance back to actual copy templates.
 - For lead-variable breakdowns, switch to `lead_evidence` and query `custom_payload` only after the campaign is fixed.
 - Call out when a conclusion is based on exact aggregate metrics versus sampled evidence.
@@ -36,3 +37,4 @@ Compare campaigns, rank variants, and explain campaign-level winners and losers.
 - "Which campaign is winning?"
 - "Which step gets the most replies?"
 - "Which variant is outperforming the rest?"
+- "Where should this sequence be shortened?"

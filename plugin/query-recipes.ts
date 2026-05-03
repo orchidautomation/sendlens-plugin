@@ -167,6 +167,90 @@ ORDER BY
     ],
   },
   {
+    id: "step-fatigue-by-campaign",
+    topic: "campaign-performance",
+    title: "Step fatigue by campaign",
+    question: "Where does one campaign's sequence stop producing value?",
+    exactness: "exact",
+    rationale: "Roll exact step analytics up to step level and make the metric basis explicit before judging fatigue.",
+    sql: `WITH step_coverage AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    COUNT(*) AS step_variant_rows,
+    SUM(CASE WHEN unique_replies IS NOT NULL THEN 1 ELSE 0 END) AS rows_with_unique_replies
+  FROM sendlens.step_analytics
+  WHERE campaign_id = '{{campaign_id}}'
+  GROUP BY workspace_id, campaign_id
+),
+step_rollup AS (
+  SELECT
+    sa.workspace_id,
+    sa.campaign_id,
+    c.name AS campaign_name,
+    sa.step,
+    COUNT(*) AS variant_rows,
+    SUM(sa.sent) AS sent,
+    SUM(sa.unique_replies) AS unique_replies,
+    SUM(sa.opportunities) AS opportunities,
+    SUM(sa.bounces) AS bounces,
+    ROUND(100.0 * SUM(sa.unique_replies) / NULLIF(SUM(sa.sent), 0), 2) AS unique_reply_rate_pct,
+    ROUND(100.0 * SUM(sa.opportunities) / NULLIF(SUM(sa.sent), 0), 2) AS opportunity_rate_pct,
+    ROUND(100.0 * SUM(sa.bounces) / NULLIF(SUM(sa.sent), 0), 2) AS bounce_rate_pct
+  FROM sendlens.step_analytics sa
+  JOIN sendlens.campaigns c
+    ON sa.workspace_id = c.workspace_id
+   AND sa.campaign_id = c.id
+  WHERE sa.campaign_id = '{{campaign_id}}'
+  GROUP BY 1, 2, 3, 4
+),
+scored AS (
+  SELECT
+    sr.*,
+    ROUND(100.0 * COALESCE(sc.rows_with_unique_replies, 0) / NULLIF(sc.step_variant_rows, 0), 2) AS unique_reply_coverage_pct,
+    CASE
+      WHEN COALESCE(sc.rows_with_unique_replies, 0) * 1.0 / NULLIF(sc.step_variant_rows, 0) >= 0.6
+        THEN 'unique_reply_rate'
+      ELSE 'opportunity_rate'
+    END AS metric_basis,
+    CASE
+      WHEN COALESCE(sc.rows_with_unique_replies, 0) * 1.0 / NULLIF(sc.step_variant_rows, 0) >= 0.6
+        THEN sr.unique_reply_rate_pct
+      ELSE sr.opportunity_rate_pct
+    END AS metric_value_pct
+  FROM step_rollup sr
+  LEFT JOIN step_coverage sc
+    ON sr.workspace_id = sc.workspace_id
+   AND sr.campaign_id = sc.campaign_id
+)
+SELECT
+  campaign_id,
+  campaign_name,
+  step,
+  variant_rows,
+  sent,
+  unique_replies,
+  unique_reply_rate_pct,
+  opportunities,
+  opportunity_rate_pct,
+  bounces,
+  bounce_rate_pct,
+  unique_reply_coverage_pct,
+  metric_basis,
+  metric_value_pct,
+  LAG(metric_value_pct) OVER (PARTITION BY workspace_id, campaign_id ORDER BY step) AS previous_step_metric_value_pct,
+  metric_value_pct - LAG(metric_value_pct) OVER (PARTITION BY workspace_id, campaign_id ORDER BY step) AS metric_delta_from_previous_step_pct_points
+FROM scored
+ORDER BY step;`,
+    notes: [
+      "This is exact because it uses Instantly step analytics, not sampled lead evidence.",
+      "Replace '{{campaign_id}}' with one campaign ID.",
+      "If at least 60% of step/variant rows have `unique_replies`, the metric basis is `unique_reply_rate`.",
+      "If step reply coverage is sparse, the metric basis switches to `opportunity_rate` so the agent does not overclaim reply-rate precision.",
+      "Use the step-to-step delta as a directional fatigue signal, then inspect variants/copy before recommending cuts.",
+    ],
+  },
+  {
     id: "copy-template-review",
     topic: "copy-analysis",
     title: "Template review by step",
@@ -337,6 +421,126 @@ ORDER BY positive_replies DESC, replied_leads DESC;`,
     notes: [
       "Lead reply outcomes are exact at the aggregate level; copy is reconstructed from the stored template and lead variables.",
       "Use this before proposing a specific variant rewrite or segment test.",
+    ],
+  },
+  {
+    id: "campaign-payload-key-inventory",
+    topic: "icp-signals",
+    title: "Campaign payload-key inventory",
+    question: "Which custom payload keys exist in this campaign's sampled lead evidence?",
+    exactness: "sampled",
+    rationale: "Inventory campaign-specific payload keys before choosing variables for reply or opportunity analysis.",
+    sql: `WITH campaign_leads AS (
+  SELECT
+    campaign_id,
+    campaign_name,
+    email,
+    has_reply_signal,
+    lt_interest_status,
+    custom_payload
+  FROM sendlens.lead_evidence
+  WHERE campaign_id = '{{campaign_id}}'
+),
+payload_rows AS (
+  SELECT
+    cl.campaign_id,
+    cl.campaign_name,
+    cl.email,
+    cl.has_reply_signal,
+    cl.lt_interest_status,
+    kv.key AS payload_key,
+    json_extract_string(kv.value, '$') AS payload_value
+  FROM campaign_leads cl,
+       json_each(cl.custom_payload) AS kv
+  WHERE cl.custom_payload IS NOT NULL
+    AND cl.custom_payload <> ''
+    AND json_valid(cl.custom_payload)
+)
+SELECT
+  campaign_id,
+  campaign_name,
+  payload_key,
+  COUNT(DISTINCT email) AS sampled_leads_with_key,
+  COUNT(DISTINCT payload_value) AS distinct_sampled_values,
+  SUM(CASE WHEN has_reply_signal THEN 1 ELSE 0 END) AS sampled_replying_leads_with_key,
+  SUM(CASE WHEN lt_interest_status >= 1 THEN 1 ELSE 0 END) AS sampled_positive_leads_with_key,
+  ROUND(100.0 * SUM(CASE WHEN has_reply_signal THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT email), 0), 2) AS sampled_reply_share_pct,
+  ROUND(100.0 * SUM(CASE WHEN lt_interest_status >= 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT email), 0), 2) AS sampled_positive_share_pct
+FROM payload_rows
+GROUP BY 1, 2, 3
+ORDER BY sampled_leads_with_key DESC, sampled_reply_share_pct DESC NULLS LAST, payload_key;`,
+    notes: [
+      "This is sampled evidence only and must stay scoped to one campaign.",
+      "Use this before `campaign-payload-key-signals` when you do not know the available payload keys.",
+      "A key appearing in replied leads does not prove full-population lift; it identifies variables worth testing next.",
+    ],
+  },
+  {
+    id: "campaign-payload-presence-signals",
+    topic: "icp-signals",
+    title: "Campaign payload-key presence signals",
+    question: "Which payload keys appear more often in replying or positive sampled leads?",
+    exactness: "sampled",
+    rationale: "Compare sampled lead outcomes when a campaign-specific payload key is present versus absent.",
+    sql: `WITH campaign_leads AS (
+  SELECT
+    campaign_id,
+    campaign_name,
+    email,
+    has_reply_signal,
+    lt_interest_status,
+    custom_payload
+  FROM sendlens.lead_evidence
+  WHERE campaign_id = '{{campaign_id}}'
+),
+payload_keys AS (
+  SELECT DISTINCT
+    kv.key AS payload_key
+  FROM campaign_leads cl,
+       json_each(cl.custom_payload) AS kv
+  WHERE cl.custom_payload IS NOT NULL
+    AND cl.custom_payload <> ''
+    AND json_valid(cl.custom_payload)
+),
+presence AS (
+  SELECT
+    cl.campaign_id,
+    cl.campaign_name,
+    pk.payload_key,
+    COUNT(*) AS sampled_leads,
+    SUM(CASE WHEN json_extract(cl.custom_payload, '$.' || pk.payload_key) IS NOT NULL THEN 1 ELSE 0 END) AS leads_with_key,
+    SUM(CASE WHEN json_extract(cl.custom_payload, '$.' || pk.payload_key) IS NULL THEN 1 ELSE 0 END) AS leads_without_key,
+    SUM(CASE WHEN json_extract(cl.custom_payload, '$.' || pk.payload_key) IS NOT NULL AND cl.has_reply_signal THEN 1 ELSE 0 END) AS replying_leads_with_key,
+    SUM(CASE WHEN json_extract(cl.custom_payload, '$.' || pk.payload_key) IS NULL AND cl.has_reply_signal THEN 1 ELSE 0 END) AS replying_leads_without_key,
+    SUM(CASE WHEN json_extract(cl.custom_payload, '$.' || pk.payload_key) IS NOT NULL AND cl.lt_interest_status >= 1 THEN 1 ELSE 0 END) AS positive_leads_with_key,
+    SUM(CASE WHEN json_extract(cl.custom_payload, '$.' || pk.payload_key) IS NULL AND cl.lt_interest_status >= 1 THEN 1 ELSE 0 END) AS positive_leads_without_key
+  FROM campaign_leads cl
+  CROSS JOIN payload_keys pk
+  GROUP BY 1, 2, 3
+)
+SELECT
+  campaign_id,
+  campaign_name,
+  payload_key,
+  sampled_leads,
+  leads_with_key,
+  leads_without_key,
+  ROUND(100.0 * leads_with_key / NULLIF(sampled_leads, 0), 2) AS key_presence_pct,
+  replying_leads_with_key,
+  replying_leads_without_key,
+  ROUND(100.0 * replying_leads_with_key / NULLIF(leads_with_key, 0), 2) AS reply_share_with_key_pct,
+  ROUND(100.0 * replying_leads_without_key / NULLIF(leads_without_key, 0), 2) AS reply_share_without_key_pct,
+  positive_leads_with_key,
+  positive_leads_without_key,
+  ROUND(100.0 * positive_leads_with_key / NULLIF(leads_with_key, 0), 2) AS positive_share_with_key_pct,
+  ROUND(100.0 * positive_leads_without_key / NULLIF(leads_without_key, 0), 2) AS positive_share_without_key_pct
+FROM presence
+WHERE leads_with_key > 0
+ORDER BY reply_share_with_key_pct DESC NULLS LAST, leads_with_key DESC, payload_key;`,
+    notes: [
+      "This is sampled evidence only and should produce hypotheses, not full-population claims.",
+      "Use it to decide which payload keys deserve value-level analysis with `campaign-payload-key-signals`.",
+      "JSON-path matching is safest for simple key names. For keys with dots or special characters, inspect samples and write a custom query.",
     ],
   },
   {

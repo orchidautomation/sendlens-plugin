@@ -28,6 +28,62 @@
           ]
         }
       }
+    },
+    {
+      "name": "tag-scoped-analysis-starter",
+      "targets": {
+        "claude-code": {
+          "prompt": "Use SendLens to find the tag-scoped analysis path. Start the answer with 'Tag scope:' and mention the exact tool or recipe you used.",
+          "require": [
+            "Tag scope:",
+            "campaign"
+          ],
+          "forbid": [
+            "I do not currently see callable SendLens MCP tools",
+            "reading the local database directly",
+            "fallback to local cache inspection"
+          ]
+        },
+        "codex": {
+          "prompt": "Use SendLens to find the tag-scoped analysis path. Start the answer with 'Tag scope:' and mention the exact tool or recipe you used.",
+          "require": [
+            "Tag scope:",
+            "campaign"
+          ],
+          "forbid": [
+            "I do not currently see callable SendLens MCP tools",
+            "reading the local database directly",
+            "fallback to local cache inspection"
+          ]
+        }
+      }
+    },
+    {
+      "name": "single-campaign-flow",
+      "targets": {
+        "claude-code": {
+          "prompt": "Use SendLens to pick one active campaign from the workspace snapshot and load that campaign if a campaign_id is available. Start the answer with 'Campaign flow:'.",
+          "require": [
+            "Campaign flow:"
+          ],
+          "forbid": [
+            "I do not currently see callable SendLens MCP tools",
+            "reading the local database directly",
+            "fallback to local cache inspection"
+          ]
+        },
+        "codex": {
+          "prompt": "Use SendLens to pick one active campaign from the workspace snapshot and load that campaign if a campaign_id is available. Start the answer with 'Campaign flow:'.",
+          "require": [
+            "Campaign flow:"
+          ],
+          "forbid": [
+            "I do not currently see callable SendLens MCP tools",
+            "reading the local database directly",
+            "fallback to local cache inspection"
+          ]
+        }
+      }
     }
   ]
 }

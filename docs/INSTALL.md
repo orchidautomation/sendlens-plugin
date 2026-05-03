@@ -65,6 +65,8 @@ Set at least:
 SENDLENS_INSTANTLY_API_KEY=your_key
 ```
 
+If `SENDLENS_INSTANTLY_API_KEY` is already exported in your shell, current Pluxx installers reuse it and skip the secret prompt. Users without the env var are still prompted during install.
+
 Then build and install:
 
 ```bash
@@ -72,6 +74,23 @@ npm run test:plugin
 pluxx validate
 pluxx build --target claude-code cursor codex opencode
 pluxx install --target claude-code cursor codex opencode --trust
+```
+
+To preview host install paths without writing anything:
+
+```bash
+pluxx install --target codex claude-code --trust --dry-run
+```
+
+Current local path shape:
+
+- Claude Code: `claude plugin install sendlens@pluxx-local-sendlens`
+- Codex: `~/.codex/plugins/sendlens` via `~/.agents/plugins/marketplace.json`
+
+To verify already installed local bundles:
+
+```bash
+pluxx verify-install --target codex claude-code
 ```
 
 ## After Install
@@ -90,6 +109,32 @@ Expected startup behavior:
 - `refresh_status` reports the current session-start refresh
 
 If tools do not appear, the API key is missing, refresh is still running, or the cache is empty, see the [troubleshooting guide](./TROUBLESHOOTING.md).
+
+## First Useful Questions
+
+After tools appear, start with broad triage:
+
+```text
+Use SendLens to summarize what is working and not working in this Instantly workspace.
+```
+
+Then pick one campaign:
+
+```text
+Use SendLens to find the active campaign I should inspect first, then load that campaign.
+```
+
+For copy and personalization QA:
+
+```text
+Use SendLens to inspect the rendered outbound sample for this campaign and call out personalization issues.
+```
+
+For tag-scoped analysis:
+
+```text
+Use SendLens to list available campaign tags, then summarize campaigns tagged "{{tag_name}}".
+```
 
 ## If You Previously Installed `sendlens-local`
 

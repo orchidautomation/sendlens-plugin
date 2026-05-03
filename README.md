@@ -117,6 +117,8 @@ More detail:
 
 - [Install guide](./docs/INSTALL.md)
 - [Troubleshooting guide](./docs/TROUBLESHOOTING.md)
+- [MCP response contract](./docs/MCP_RESPONSE_CONTRACT.md)
+- [Local customization](./docs/LOCAL_CUSTOMIZATION.md)
 - [Release guide](./docs/RELEASING.md)
 
 ## How It Works
@@ -288,5 +290,7 @@ This is the beginning of multi-client support. See [SEND-134](https://linear.app
 
 - [Install guide](./docs/INSTALL.md)
 - [Troubleshooting guide](./docs/TROUBLESHOOTING.md)
+- [MCP response contract](./docs/MCP_RESPONSE_CONTRACT.md)
+- [Local customization](./docs/LOCAL_CUSTOMIZATION.md)
 - [Release guide](./docs/RELEASING.md)
 - [Brand assets](./assets/README.md)
