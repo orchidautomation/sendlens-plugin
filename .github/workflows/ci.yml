@@ -30,8 +30,23 @@ jobs:
       - name: Verify Pluxx CLI is available
         run: npx pluxx --version
 
+      - name: Run Pluxx source diagnostics
+        run: npx pluxx doctor
+
       - name: Run CI checks
         run: npm run ci:plugin
+
+      - name: Run Pluxx target smoke checks
+        run: npx pluxx test --target claude-code cursor codex opencode
+
+      - name: Diagnose built host bundles
+        env:
+          SENDLENS_INSTANTLY_API_KEY: ci-placeholder
+        run: |
+          npx pluxx doctor --consumer ./dist/claude-code
+          npx pluxx doctor --consumer ./dist/cursor
+          npx pluxx doctor --consumer ./dist/codex
+          npx pluxx doctor --consumer ./dist/opencode
 
       - name: Upload built bundles
         uses: actions/upload-artifact@v4

@@ -28,6 +28,9 @@ jobs:
       - name: Verify Pluxx CLI is available
         run: npx pluxx --version
 
+      - name: Run Pluxx source diagnostics
+        run: npx pluxx doctor
+
       - name: Resolve release version
         id: version
         shell: bash
@@ -45,6 +48,21 @@ jobs:
 
       - name: Run release checks
         run: npm run release:check
+
+      - name: Diagnose built host bundles
+        env:
+          SENDLENS_INSTANTLY_API_KEY: ci-placeholder
+        run: |
+          npx pluxx doctor --consumer ./dist/claude-code
+          npx pluxx doctor --consumer ./dist/cursor
+          npx pluxx doctor --consumer ./dist/codex
+          npx pluxx doctor --consumer ./dist/opencode
+
+      - name: Dry-run GitHub release assets with Pluxx
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npx pluxx publish --github-release --dry-run --version "${{ steps.version.outputs.package_version }}"
 
       - name: Publish GitHub release assets with Pluxx
         env:
