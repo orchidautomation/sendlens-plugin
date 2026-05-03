@@ -21,7 +21,7 @@ loadClientEnv();
 
 const server = new McpServer({
   name: "sendlens",
-  version: "0.1.15",
+  version: "0.1.16",
 });
 
 const SESSION_REFRESH_WAIT_TIMEOUT_MS = 15_000;
@@ -136,7 +136,7 @@ function dbUnavailableResponse(error: LocalDbUnavailableError) {
   return jsonResponse({
     error: error.message,
     hint:
-      "The local cache usually unlocks when the active refresh finishes. Use refresh_status to check progress, then retry the tool.",
+      "The local cache usually unlocks when the active refresh finishes. Use refresh_status to check progress, then retry the SendLens tool. If refresh_status is succeeded and this persists, reload or restart the host/plugin session instead of inspecting local cache files through shell commands.",
   });
 }
 
