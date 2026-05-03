@@ -68,7 +68,8 @@ await run(
   db,
   `INSERT OR REPLACE INTO sendlens.sampled_outbound_emails
    (workspace_id, campaign_id, id, to_email, subject, body_text, step_resolved, variant_resolved, sample_source, sampled_at)
-   VALUES ('ws_test', 'c1', 'o1', 'a@example.com', 'Alpha intro', 'Hi Alex', '0', '0', 'reconstructed_reply_template', CURRENT_TIMESTAMP)`,
+   VALUES ('ws_test', 'c1', 'o1', 'a@example.com', 'Alpha intro', 'Hi Alex', '0', '0', 'reconstructed_reply_template', CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', 'o2', 'b@example.com', 'Hi {{missing_first_name}}', 'Saw {{unknown_company_signal}}', '0', '0', 'reconstructed_nonreply_template', CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
@@ -213,6 +214,23 @@ assert.equal(
   icpRecipes.some((recipe) => recipe.id === "campaign-payload-key-signals" && recipe.sql.includes("json_extract_string(custom_payload")),
   true,
 );
+const copyRecipes = getQueryRecipes("copy-analysis");
+const leakRecipe = copyRecipes.find((recipe) => recipe.id === "personalization-leak-audit");
+assert.ok(leakRecipe);
+assert.match(leakRecipe.sql, /sendlens\.rendered_outbound_context/);
+assert.match(leakRecipe.sql, /unresolved_token/);
+const leakRows = await runQuery(
+  db,
+  leakRecipe.sql.replaceAll("{{campaign_id}}", "c1"),
+);
+assert.equal(leakRows.length, 1);
+assert.equal(Number(leakRows[0].affected_campaigns), 1);
+assert.equal(Number(leakRows[0].affected_step_variants), 1);
+assert.equal(Number(leakRows[0].affected_leads), 1);
+assert.equal(Number(leakRows[0].affected_rendered_rows), 1);
+assert.equal(leakRows[0].sample_email, "b@example.com");
+assert.equal(Boolean(leakRows[0].subject_has_unresolved_token), true);
+assert.equal(Boolean(leakRows[0].body_has_unresolved_token), true);
 
 const normalizedStepAnalytics = normalizeStepAnalyticsRows([
   { step: null, variant: 2, sent: 10 },

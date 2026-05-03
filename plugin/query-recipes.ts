@@ -220,6 +220,72 @@ LIMIT 50;`,
     ],
   },
   {
+    id: "personalization-leak-audit",
+    topic: "copy-analysis",
+    title: "Personalization leak audit",
+    question: "Did any reconstructed outbound copy still contain unresolved template tokens?",
+    exactness: "sampled",
+    rationale: "Find sampled reconstructed outbound rows where template variables appear to have leaked through unresolved.",
+    sql: `WITH leaked_rows AS (
+  SELECT
+    campaign_id,
+    campaign_name,
+    to_email,
+    step_resolved,
+    variant_resolved,
+    rendered_subject,
+    rendered_body_text,
+    template_subject,
+    template_body_text,
+    sample_source,
+    sent_at,
+    regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}') AS subject_has_unresolved_token,
+    regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}') AS body_has_unresolved_token
+  FROM sendlens.rendered_outbound_context
+  WHERE campaign_id = '{{campaign_id}}'
+    AND (
+      regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}')
+      OR regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}')
+    )
+),
+rollup AS (
+  SELECT
+    COUNT(DISTINCT campaign_id) AS affected_campaigns,
+    COUNT(DISTINCT COALESCE(step_resolved, 'unknown') || ':' || COALESCE(variant_resolved, 'unknown')) AS affected_step_variants,
+    COUNT(DISTINCT to_email) AS affected_leads,
+    COUNT(*) AS affected_rendered_rows
+  FROM leaked_rows
+)
+SELECT
+  lr.campaign_id,
+  lr.campaign_name,
+  r.affected_campaigns,
+  r.affected_step_variants,
+  r.affected_leads,
+  r.affected_rendered_rows,
+  lr.to_email AS sample_email,
+  lr.step_resolved,
+  lr.variant_resolved,
+  lr.subject_has_unresolved_token,
+  lr.body_has_unresolved_token,
+  lr.rendered_subject,
+  lr.rendered_body_text,
+  lr.template_subject,
+  lr.template_body_text,
+  lr.sample_source,
+  lr.sent_at
+FROM leaked_rows lr
+CROSS JOIN rollup r
+ORDER BY lr.sent_at DESC NULLS LAST, lr.to_email
+LIMIT 50;`,
+    notes: [
+      "This is sampled reconstructed-copy evidence, not exact delivered-email proof.",
+      "Replace '{{campaign_id}}' with one campaign ID; personalization variables are campaign-specific.",
+      "Rows indicate unresolved `{{...}}` patterns in locally reconstructed subject or body text.",
+      "Use the affected counts for triage and the sample rows for concrete QA examples.",
+    ],
+  },
+  {
     id: "reply-feed",
     topic: "reply-patterns",
     title: "Reply outcome feed",
