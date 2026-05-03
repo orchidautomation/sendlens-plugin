@@ -20,7 +20,7 @@ loadClientEnv();
 
 const server = new McpServer({
   name: "sendlens",
-  version: "0.1.10",
+  version: "0.1.11",
 });
 
 const SESSION_REFRESH_WAIT_TIMEOUT_MS = 15_000;
@@ -311,7 +311,7 @@ server.registerTool(
         "Get the first high-level read of the active local workspace, optionally scoped by exact Instantly tag or campaign-name fragment.",
         "Use this for broad questions like what is working, what is risky, or which campaign to inspect next.",
         "Do not use this for detailed copy, lead-variable, or reply cohort analysis; pick one campaign and call load_campaign_data or use analysis_starters plus analyze_data.",
-        "Returns exact headline campaign/account/inbox-placement metrics, bounded campaign coverage rows, freshness/readiness metadata, and warnings when scoped output is capped.",
+        "Returns exact headline campaign/account/inbox-placement metrics, bounded ranked campaigns from campaign_overview, campaign coverage rows, freshness/readiness metadata, and warnings when scoped output is capped.",
       ].join(" "),
     inputSchema: {
       instantly_tag: z
@@ -669,11 +669,13 @@ async function buildScopedWorkspaceSnapshot(
   const workspaceId = await getActiveWorkspaceId(db);
   if (!workspaceId) {
     return {
+      schema_version: "workspace_snapshot.v1",
       workspaceId: null,
       summary:
         "No active workspace is loaded. Run refresh_data() before asking for analysis.",
       exact_metrics: {},
       coverage: [],
+      campaigns: [],
       warnings: ["No workspace has been refreshed locally yet."],
       last_refreshed_at: null,
     };
@@ -732,6 +734,7 @@ async function buildScopedWorkspaceSnapshot(
 
   if (campaignRows.length === 0) {
     return {
+      schema_version: "workspace_snapshot.v1",
       workspaceId,
       scope: scopeNotes,
       summary: `No campaigns matched ${scopeNotes.join(" and ")} in the active cached workspace.`,
@@ -785,6 +788,7 @@ async function buildScopedWorkspaceSnapshot(
   const status = await readRefreshStatus();
 
   return {
+    schema_version: "workspace_snapshot.v1",
     workspaceId,
     scope: scopeNotes,
     summary: [

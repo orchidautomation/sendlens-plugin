@@ -37,10 +37,10 @@ await run(
 await run(
   db,
   `INSERT OR REPLACE INTO sendlens.campaign_analytics
-   (workspace_id, campaign_id, campaign_name, leads_count, emails_sent_count, reply_count_unique, reply_count_automatic, bounced_count, total_opportunities, synced_at)
+   (workspace_id, campaign_id, campaign_name, leads_count, emails_sent_count, reply_count_unique, reply_count_automatic, bounced_count, total_opportunities, total_opportunity_value, synced_at)
    VALUES
-   ('ws_test', 'c1', 'Alpha', 400, 800, 24, 5, 8, 2, CURRENT_TIMESTAMP),
-   ('ws_test', 'c2', 'Beta', 300, 200, 1, 0, 7, 0, CURRENT_TIMESTAMP)`,
+   ('ws_test', 'c1', 'Alpha', 400, 800, 24, 5, 8, 2, 25000, CURRENT_TIMESTAMP),
+   ('ws_test', 'c2', 'Beta', 300, 200, 1, 0, 7, 0, 0, CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
@@ -119,6 +119,7 @@ await run(
 await setActiveWorkspaceId(db, "ws_test");
 
 const summary = await buildWorkspaceSummary(db);
+assert.equal(summary.schema_version, "workspace_snapshot.v1");
 assert.equal(summary.workspaceId, "ws_test");
 assert.equal(summary.exact_metrics.campaign_count, 1);
 assert.equal(summary.exact_metrics.active_campaign_count, 1);
@@ -131,16 +132,25 @@ assert.ok(summary.summary.includes("full reply leads"));
 assert.equal(summary.exact_metrics.inbox_placement_test_count, 1);
 assert.equal(summary.exact_metrics.inbox_placement_analytics_rows, 4);
 assert.equal(summary.coverage.length, 1);
+assert.equal(summary.campaigns.length, 1);
+assert.equal(summary.campaigns[0].campaign_id, "c1");
+assert.equal(summary.campaigns[0].campaign_name, "Alpha");
+assert.equal(summary.campaigns[0].emails_sent_count, 800);
+assert.equal(summary.campaigns[0].reply_count_unique, 24);
+assert.equal(summary.campaigns[0].unique_reply_rate_pct, 3);
+assert.equal(summary.campaigns[0].total_opportunity_value, 25000);
+assert.equal(summary.output_limits.campaign_limit, 100);
 
 const campaignOverview = await runQuery(
   db,
-  "SELECT campaign_name, emails_sent_count, reply_count_unique, bounced_count, total_opportunities, reply_lead_rows, nonreply_rows_sampled, unique_reply_rate_pct, bounce_rate_pct FROM sendlens.campaign_overview WHERE campaign_id = 'c1'",
+  "SELECT campaign_name, emails_sent_count, reply_count_unique, bounced_count, total_opportunities, total_opportunity_value, reply_lead_rows, nonreply_rows_sampled, unique_reply_rate_pct, bounce_rate_pct FROM sendlens.campaign_overview WHERE campaign_id = 'c1'",
 );
 assert.equal(campaignOverview[0].campaign_name, "Alpha");
 assert.equal(Number(campaignOverview[0].emails_sent_count), 800);
 assert.equal(Number(campaignOverview[0].reply_count_unique), 24);
 assert.equal(Number(campaignOverview[0].bounced_count), 8);
 assert.equal(Number(campaignOverview[0].total_opportunities), 2);
+assert.equal(Number(campaignOverview[0].total_opportunity_value), 25000);
 assert.equal(Number(campaignOverview[0].reply_lead_rows), 10);
 assert.equal(Number(campaignOverview[0].nonreply_rows_sampled), 1);
 assert.equal(Number(campaignOverview[0].unique_reply_rate_pct), 3);

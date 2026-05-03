@@ -18,7 +18,7 @@ Infer who responds best from exact aggregates plus sampled lead evidence, while 
 
 - If the user provides a campaign name or Instantly tag, use that scope first before inspecting payload variables.
 - Pull `analysis_starters(topic="icp-signals")` before custom analysis.
-- When SendLens MCP tools are available, stay inside the MCP tool surface. Do not inspect local files or query DuckDB through shell fallbacks.
+- Stay inside the SendLens MCP tool surface. If required SendLens tools are missing, stop and tell the user to reload or reinstall the plugin/MCP server. Do not inspect local files, run shell setup checks, parse cached outputs with `jq`, or query DuckDB through shell fallbacks.
 - Keep ICP analysis scoped to one campaign at a time unless the user explicitly asks for a cross-campaign comparison.
 - If the user narrows to one campaign and wants better evidence, run `load_campaign_data` for that campaign first.
 - Use exact campaign aggregates for performance baselines.

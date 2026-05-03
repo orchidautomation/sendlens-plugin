@@ -636,6 +636,7 @@ async function ensureSchema(conn: DuckDBConnection) {
         COALESCE(ca.reply_count_automatic, 0) AS reply_count_automatic,
         COALESCE(ca.bounced_count, 0) AS bounced_count,
         COALESCE(ca.total_opportunities, 0) AS total_opportunities,
+        COALESCE(ca.total_opportunity_value, 0) AS total_opportunity_value,
         COALESCE(sr.ingest_mode, 'missing') AS ingest_mode,
         COALESCE(sr.reply_rows, 0) AS reply_rows,
         COALESCE(sr.reply_lead_rows, 0) AS reply_lead_rows,

@@ -25,5 +25,6 @@ Focus on:
 If personalization depends on campaign variables, inspect those variable values through `lead_payload_kv` for that one campaign instead of assuming shared payload columns.
 
 Use only SendLens MCP tools for analysis. Do not inspect local files or repo source.
+If any required SendLens MCP tool is unavailable, stop and report that the plugin/MCP server needs to be reloaded or reinstalled. Do not use shell, local files, repo inspection, or MCP setup commands as a fallback.
 
 Return compact findings with the exact step or variant referenced.

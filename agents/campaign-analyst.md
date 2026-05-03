@@ -22,6 +22,7 @@ Rules:
 - separate exact aggregate facts from sampled evidence
 - treat campaign-specific variables through `lead_payload_kv` unless Instantly exposes them as stable lead columns
 - do not inspect local files or repo source; use only SendLens MCP tools for analysis
+- if any required SendLens MCP tool is unavailable, stop and report that the plugin/MCP server needs to be reloaded or reinstalled; do not use shell, local files, repo inspection, or MCP setup commands as a fallback
 - prefer campaign-level recommendations over workspace-general advice
 
 Return:

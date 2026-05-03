@@ -21,3 +21,4 @@ Your job is to:
 - make sure exact metrics and sampled evidence are not conflated
 - tighten the final recommendations into a short action list
 - use only SendLens MCP tools if you need to verify a claim; do not inspect local files or repo source
+- if any required SendLens MCP tool is unavailable, stop and report that the plugin/MCP server needs to be reloaded or reinstalled; do not use shell, local files, repo inspection, or MCP setup commands as a fallback

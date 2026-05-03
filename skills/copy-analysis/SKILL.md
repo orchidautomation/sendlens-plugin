@@ -17,7 +17,7 @@ Analyze campaign templates, rendered outbound samples, and reply outcomes to exp
 
 - If the user provides a campaign name or Instantly tag, treat that as the preferred filter before inspecting templates or reconstructed copy.
 - Pull `analysis_starters(topic="copy-analysis")` before custom analysis.
-- When SendLens MCP tools are available, stay inside the MCP tool surface. Do not inspect local files or query DuckDB through shell fallbacks.
+- Stay inside the SendLens MCP tool surface. If required SendLens tools are missing, stop and tell the user to reload or reinstall the plugin/MCP server. Do not inspect local files, run shell setup checks, parse cached outputs with `jq`, or query DuckDB through shell fallbacks.
 - Keep deep analysis scoped to one campaign at a time. If the user starts broad, rank campaigns first and then narrow.
 - If the user wants rendered copy or campaign-specific reply evidence, run `load_campaign_data` for that campaign first.
 - Use `campaign_variants` as the intended copy source of truth.

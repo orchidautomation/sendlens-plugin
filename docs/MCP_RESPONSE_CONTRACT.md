@@ -27,7 +27,9 @@ Where relevant, SendLens responses should include:
 
 `workspace_snapshot`
 
+- `schema_version: "workspace_snapshot.v1"`
 - exact workspace/campaign/account metrics
+- bounded `campaigns` rows from `campaign_overview` for ranking and campaign selection
 - bounded campaign coverage rows
 - optional scope metadata for tag or campaign-name filters
 - warnings when scoped output is capped or no active workspace exists
@@ -70,7 +72,7 @@ The next protocol step is to add host-compatible structured content alongside th
 
 Priority order:
 
-1. `workspace_snapshot`: stable summary, exact metrics, coverage, freshness, warnings.
+1. `workspace_snapshot`: stable summary, exact metrics, campaign rows, coverage, freshness, warnings.
 2. `load_campaign_data`: campaign overview, reply sample counts, rendered-copy limits.
 3. `analysis_starters`: recipes as typed objects.
 4. `analyze_data`: schema-light row payload plus metadata.

@@ -12,6 +12,7 @@ dist/
 .sendlens-local/
 .sendlens-local-state/
 .playwright-mcp/
+site/passthrough/
 .codex/
 .claude/
 .pluxx/*

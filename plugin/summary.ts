@@ -2,6 +2,7 @@ import type { DuckDBConnection } from "@duckdb/node-api";
 import { getActiveWorkspaceId, getPluginState, query } from "./local-db";
 
 const WORKSPACE_COVERAGE_LIMIT = 100;
+const WORKSPACE_CAMPAIGN_LIMIT = 100;
 
 function pct(numerator: number, denominator: number) {
   if (!denominator) return 0;
@@ -20,11 +21,13 @@ export async function buildWorkspaceSummary(
   const activeWorkspaceId = workspaceId ?? (await getActiveWorkspaceId(conn));
   if (!activeWorkspaceId) {
     return {
+      schema_version: "workspace_snapshot.v1",
       workspaceId: null,
       summary:
         "No active workspace is loaded. Run refresh_data() before asking for analysis.",
       exact_metrics: {},
       coverage: [],
+      campaigns: [],
       warnings: ["No workspace has been refreshed locally yet."],
       last_refreshed_at: null,
     };
@@ -51,11 +54,18 @@ export async function buildWorkspaceSummary(
   const bestCampaignRows = await query(
     conn,
     `SELECT
+       campaign_id,
        campaign_name AS name,
+       campaign_name,
+       status,
+       leads_count,
        reply_count_unique,
        emails_sent_count,
        bounced_count,
        total_opportunities,
+       total_opportunity_value,
+       unique_reply_rate_pct,
+       bounce_rate_pct,
        reply_lead_rows,
        nonreply_rows_sampled,
        reply_outbound_rows
@@ -64,7 +74,7 @@ export async function buildWorkspaceSummary(
        AND status = 'active'
      ORDER BY unique_reply_rate_pct DESC NULLS LAST,
               emails_sent_count DESC
-     LIMIT 1`,
+     LIMIT ${WORKSPACE_CAMPAIGN_LIMIT + 1}`,
   );
 
   const coverage = await query(
@@ -119,7 +129,9 @@ export async function buildWorkspaceSummary(
   const totalBounces = num(metrics.total_bounces);
   const replyRate = pct(totalUniqueReplies, totalSent);
   const bounceRate = pct(totalBounces, totalSent);
-  const bestCampaign = bestCampaignRows[0];
+  const campaignRowsTruncated = bestCampaignRows.length > WORKSPACE_CAMPAIGN_LIMIT;
+  const campaignRows = bestCampaignRows.slice(0, WORKSPACE_CAMPAIGN_LIMIT);
+  const bestCampaign = campaignRows[0];
   const warnings: string[] = [];
 
   if (bounceRate > 5) {
@@ -139,6 +151,11 @@ export async function buildWorkspaceSummary(
       `Coverage rows were truncated to ${WORKSPACE_COVERAGE_LIMIT} active campaigns. Use a scoped workspace_snapshot or analyze_data query for a narrower slice.`,
     );
   }
+  if (campaignRowsTruncated) {
+    warnings.push(
+      `Campaign rows were truncated to ${WORKSPACE_CAMPAIGN_LIMIT} active campaigns. Use a scoped workspace_snapshot or analyze_data query for a narrower slice.`,
+    );
+  }
 
   const sampledLeadCount = num(sampledLeadRows[0]?.count);
   const repliedLeadCount = num(repliedLeadRows[0]?.count);
@@ -151,6 +168,7 @@ export async function buildWorkspaceSummary(
     : "No campaign performance row is available yet.";
 
   return {
+    schema_version: "workspace_snapshot.v1",
     workspaceId: activeWorkspaceId,
     summary: [
       `Workspace ${activeWorkspaceId} has ${num(metrics.active_campaign_count)} active campaigns in the current SendLens snapshot.`,
@@ -180,7 +198,24 @@ export async function buildWorkspaceSummary(
     },
     output_limits: {
       coverage_limit: WORKSPACE_COVERAGE_LIMIT,
+      campaign_limit: WORKSPACE_CAMPAIGN_LIMIT,
     },
+    campaigns: campaignRows.map((row) => ({
+      campaign_id: row.campaign_id,
+      campaign_name: row.campaign_name ?? row.name,
+      status: row.status,
+      leads_count: num(row.leads_count),
+      emails_sent_count: num(row.emails_sent_count),
+      reply_count_unique: num(row.reply_count_unique),
+      bounced_count: num(row.bounced_count),
+      total_opportunities: num(row.total_opportunities),
+      total_opportunity_value: num(row.total_opportunity_value),
+      unique_reply_rate_pct: num(row.unique_reply_rate_pct),
+      bounce_rate_pct: num(row.bounce_rate_pct),
+      reply_lead_rows: num(row.reply_lead_rows),
+      nonreply_rows_sampled: num(row.nonreply_rows_sampled),
+      reply_outbound_rows: num(row.reply_outbound_rows),
+    })),
     coverage: visibleCoverage,
     warnings,
     last_refreshed_at: lastRefreshedAt,
