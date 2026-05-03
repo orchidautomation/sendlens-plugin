@@ -1,6 +1,6 @@
 {
   "name": "sendlens",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "private": true,
   "description": "Agentic reasoning over Instantly data with a privacy-first local cache.",
   "scripts": {
@@ -29,7 +29,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@orchid-labs/pluxx": "^0.1.11",
+    "@orchid-labs/pluxx": "^0.1.13",
     "@types/node": "^22.15.3",
     "typescript": "^5.8.3"
   }
