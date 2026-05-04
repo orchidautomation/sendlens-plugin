@@ -236,6 +236,14 @@ function isOptionalInboxPlacementError(error: unknown) {
   return /inbox|placement|permission|scope|plan|subscription|forbidden|not found|invalid/i.test(message);
 }
 
+function isInvalidEmailCursorError(error: unknown) {
+  const message = errorMessage(error);
+  if (!/Instantly API 400:/i.test(message)) {
+    return false;
+  }
+  return /starting_after|cursor|pagination|page/i.test(message);
+}
+
 function pickString(record: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     const value = record[key];
@@ -1564,7 +1572,12 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
           },
         );
       } catch (error) {
-        if (options.mode !== "continue" || page !== 0 || !cursor) {
+        if (
+          options.mode !== "continue" ||
+          page !== 0 ||
+          !cursor ||
+          !isInvalidEmailCursorError(error)
+        ) {
           throw error;
         }
         cursorFallbackUsed = true;
@@ -1626,16 +1639,16 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
     const stateNextStartingAfter = options.mode === "sync_newest"
       ? (typeof previousState?.next_starting_after === "string"
         ? previousState.next_starting_after
-        : null)
+        : cursor)
       : cursor;
     const statePagesHydrated = options.mode === "sync_newest"
-      ? previousPages
+      ? (previousState ? previousPages : pagesFetched)
       : priorPages + pagesFetched;
     const stateEmailsHydrated = options.mode === "sync_newest"
-      ? previousEmails
+      ? (previousState ? previousEmails : rowsStored)
       : priorEmails + rowsStored;
     const stateExhausted = options.mode === "sync_newest"
-      ? previousState?.exhausted === true
+      ? (previousState ? previousState.exhausted === true : !stateNextStartingAfter)
       : exhausted;
     await insertRows(
       db,

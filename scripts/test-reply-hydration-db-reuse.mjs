@@ -21,14 +21,21 @@ process.env.SENDLENS_INSTANTLY_API_KEY = "test-key";
 
 const originalListEmails = instantly.listEmails;
 let listEmailsCalls = 0;
+let listEmailCursors = [];
 let nextCursorForCall = "older-cursor";
-instantly.listEmails = async () => {
+let replyIdForCall = "reply-1";
+let listEmailsError = null;
+instantly.listEmails = async (_apiKey, _campaignId, cursor) => {
   listEmailsCalls += 1;
+  listEmailCursors.push(cursor ?? null);
+  if (listEmailsError) {
+    throw listEmailsError;
+  }
   return {
     nextCursor: nextCursorForCall,
     items: [
       {
-        id: "reply-1",
+        id: replyIdForCall,
         thread_id: "thread-1",
         lead: "lead-uuid-not-email",
         from_address_email: "reply@example.com",
@@ -127,6 +134,93 @@ try {
   assert.equal(stateAfterSyncNewest[0].next_starting_after, "older-cursor");
   assert.equal(Number(stateAfterSyncNewest[0].pages_hydrated), 1);
   assert.equal(Number(stateAfterSyncNewest[0].emails_hydrated), 1);
+
+  await run(
+    db,
+    `INSERT OR REPLACE INTO sendlens.campaigns
+     (workspace_id, id, name, status, synced_at)
+     VALUES ('ws_hydrate', 'c_sync', 'First Sync Fixture', 'active', CURRENT_TIMESTAMP)`,
+  );
+  await run(
+    db,
+    `INSERT OR REPLACE INTO sendlens.sampled_leads
+     (workspace_id, campaign_id, id, email, first_name, last_name, company_name, company_domain, status, email_reply_count, lt_interest_status, email_replied_step, email_replied_variant, timestamp_last_reply, job_title, custom_payload, sample_source, sampled_at)
+     VALUES ('ws_hydrate', 'c_sync', 'lead-sync', 'reply@example.com', 'Riley', 'Reply', 'Reply Co', 'reply.test', 'active', 1, 1, 0, 0, TIMESTAMP '2026-05-03 20:00:00', 'Director', '{}', 'reply_full', CURRENT_TIMESTAMP)`,
+  );
+
+  listEmailsCalls = 0;
+  listEmailCursors = [];
+  replyIdForCall = "reply-sync-1";
+  nextCursorForCall = "sync-first-cursor";
+  const firstSyncNewest = await hydrateReplyText({
+    workspaceId: "ws_hydrate",
+    campaignId: "c_sync",
+    statuses: [1],
+    maxPagesPerStatus: 3,
+    latestOfThread: true,
+    mode: "sync_newest",
+    db,
+  });
+  assert.equal(listEmailsCalls, 1);
+  assert.deepEqual(listEmailCursors, [null]);
+  assert.equal(firstSyncNewest.status_results[0].saved_next_starting_after, "sync-first-cursor");
+  const firstSyncState = await query(
+    db,
+    `SELECT next_starting_after, pages_hydrated, emails_hydrated
+     FROM sendlens.reply_email_hydration_state
+     WHERE workspace_id = 'ws_hydrate'
+       AND campaign_id = 'c_sync'
+       AND i_status = 1`,
+  );
+  assert.equal(firstSyncState.length, 1);
+  assert.equal(firstSyncState[0].next_starting_after, "sync-first-cursor");
+  assert.equal(Number(firstSyncState[0].pages_hydrated), 1);
+  assert.equal(Number(firstSyncState[0].emails_hydrated), 1);
+
+  listEmailsCalls = 0;
+  listEmailCursors = [];
+  replyIdForCall = "reply-sync-2";
+  nextCursorForCall = null;
+  const continuedAfterFirstSync = await hydrateReplyText({
+    workspaceId: "ws_hydrate",
+    campaignId: "c_sync",
+    statuses: [1],
+    maxPagesPerStatus: 1,
+    latestOfThread: true,
+    mode: "continue",
+    db,
+  });
+  assert.equal(listEmailsCalls, 1);
+  assert.deepEqual(listEmailCursors, ["sync-first-cursor"]);
+  assert.equal(continuedAfterFirstSync.total_inserted_new, 1);
+
+  await run(
+    db,
+    `UPDATE sendlens.reply_email_hydration_state
+     SET next_starting_after = 'sync-first-cursor',
+         exhausted = FALSE
+     WHERE workspace_id = 'ws_hydrate'
+       AND campaign_id = 'c_sync'
+       AND i_status = 1`,
+  );
+  listEmailsCalls = 0;
+  listEmailCursors = [];
+  listEmailsError = new Error("Instantly API 429: rate limit");
+  await assert.rejects(
+    () =>
+      hydrateReplyText({
+        workspaceId: "ws_hydrate",
+        campaignId: "c_sync",
+        statuses: [1],
+        maxPagesPerStatus: 1,
+        latestOfThread: true,
+        mode: "continue",
+        db,
+      }),
+    /Instantly API 429/,
+  );
+  assert.equal(listEmailsCalls, 1);
+  assert.deepEqual(listEmailCursors, ["sync-first-cursor"]);
 } finally {
   instantly.listEmails = originalListEmails;
   closeDb(db);
