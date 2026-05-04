@@ -20,25 +20,37 @@ process.env.SENDLENS_DB_PATH = path.join(tempDir, "workspace-cache.duckdb");
 process.env.SENDLENS_INSTANTLY_API_KEY = "test-key";
 
 const originalListEmails = instantly.listEmails;
-instantly.listEmails = async () => ({
-  nextCursor: null,
-  items: [
-    {
-      id: "reply-1",
-      thread_id: "thread-1",
-      lead: "lead-uuid-not-email",
-      from_address_email: "reply@example.com",
-      to_address_email_list: ["sender@example.com"],
-      subject: "Re: Hello",
-      body: { text: "This is the hydrated reply body." },
-      timestamp_email: "2026-05-03T20:00:00Z",
-      is_auto_reply: false,
-      ai_interest_value: 0.9,
-      i_status: 1,
-      content_preview: "This is the hydrated reply body.",
-    },
-  ],
-});
+let listEmailsCalls = 0;
+let listEmailCursors = [];
+let nextCursorForCall = "older-cursor";
+let replyIdForCall = "reply-1";
+let listEmailsError = null;
+instantly.listEmails = async (_apiKey, _campaignId, cursor) => {
+  listEmailsCalls += 1;
+  listEmailCursors.push(cursor ?? null);
+  if (listEmailsError) {
+    throw listEmailsError;
+  }
+  return {
+    nextCursor: nextCursorForCall,
+    items: [
+      {
+        id: replyIdForCall,
+        thread_id: "thread-1",
+        lead: "lead-uuid-not-email",
+        from_address_email: "reply@example.com",
+        to_address_email_list: ["sender@example.com"],
+        subject: "Re: Hello",
+        body: { text: "This is the hydrated reply body." },
+        timestamp_email: "2026-05-03T20:00:00Z",
+        is_auto_reply: false,
+        ai_interest_value: 0.9,
+        i_status: 1,
+        content_preview: "This is the hydrated reply body.",
+      },
+    ],
+  };
+};
 
 const db = await getDb({ timeoutMs: 1_000, retryMs: 25 });
 try {
@@ -67,6 +79,8 @@ try {
   });
 
   assert.equal(hydration.total_stored, 1);
+  assert.equal(hydration.total_inserted_new, 1);
+  assert.equal(hydration.total_updated_existing, 0);
   const rows = await query(
     db,
     `SELECT reply_email_id, reply_body_text
@@ -78,6 +92,135 @@ try {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].reply_email_id, "reply-1");
   assert.equal(rows[0].reply_body_text, "This is the hydrated reply body.");
+  const stateAfterRestart = await query(
+    db,
+    `SELECT next_starting_after, pages_hydrated, emails_hydrated, exhausted
+     FROM sendlens.reply_email_hydration_state
+     WHERE workspace_id = 'ws_hydrate'
+       AND campaign_id = 'c_hydrate'
+       AND i_status = 1`,
+  );
+  assert.equal(stateAfterRestart.length, 1);
+  assert.equal(stateAfterRestart[0].next_starting_after, "older-cursor");
+  assert.equal(Number(stateAfterRestart[0].pages_hydrated), 1);
+  assert.equal(Number(stateAfterRestart[0].emails_hydrated), 1);
+
+  listEmailsCalls = 0;
+  nextCursorForCall = "newest-page-cursor";
+  const syncNewest = await hydrateReplyText({
+    workspaceId: "ws_hydrate",
+    campaignId: "c_hydrate",
+    statuses: [1],
+    maxPagesPerStatus: 3,
+    latestOfThread: true,
+    mode: "sync_newest",
+    db,
+  });
+  assert.equal(listEmailsCalls, 1);
+  assert.equal(syncNewest.total_stored, 1);
+  assert.equal(syncNewest.total_inserted_new, 0);
+  assert.equal(syncNewest.total_updated_existing, 1);
+  assert.equal(syncNewest.status_results[0].next_starting_after, "newest-page-cursor");
+  assert.equal(syncNewest.status_results[0].saved_next_starting_after, "older-cursor");
+  const stateAfterSyncNewest = await query(
+    db,
+    `SELECT next_starting_after, pages_hydrated, emails_hydrated, exhausted
+     FROM sendlens.reply_email_hydration_state
+     WHERE workspace_id = 'ws_hydrate'
+       AND campaign_id = 'c_hydrate'
+       AND i_status = 1`,
+  );
+  assert.equal(stateAfterSyncNewest.length, 1);
+  assert.equal(stateAfterSyncNewest[0].next_starting_after, "older-cursor");
+  assert.equal(Number(stateAfterSyncNewest[0].pages_hydrated), 1);
+  assert.equal(Number(stateAfterSyncNewest[0].emails_hydrated), 1);
+
+  await run(
+    db,
+    `INSERT OR REPLACE INTO sendlens.campaigns
+     (workspace_id, id, name, status, synced_at)
+     VALUES ('ws_hydrate', 'c_sync', 'First Sync Fixture', 'active', CURRENT_TIMESTAMP)`,
+  );
+  await run(
+    db,
+    `INSERT OR REPLACE INTO sendlens.sampled_leads
+     (workspace_id, campaign_id, id, email, first_name, last_name, company_name, company_domain, status, email_reply_count, lt_interest_status, email_replied_step, email_replied_variant, timestamp_last_reply, job_title, custom_payload, sample_source, sampled_at)
+     VALUES ('ws_hydrate', 'c_sync', 'lead-sync', 'reply@example.com', 'Riley', 'Reply', 'Reply Co', 'reply.test', 'active', 1, 1, 0, 0, TIMESTAMP '2026-05-03 20:00:00', 'Director', '{}', 'reply_full', CURRENT_TIMESTAMP)`,
+  );
+
+  listEmailsCalls = 0;
+  listEmailCursors = [];
+  replyIdForCall = "reply-sync-1";
+  nextCursorForCall = "sync-first-cursor";
+  const firstSyncNewest = await hydrateReplyText({
+    workspaceId: "ws_hydrate",
+    campaignId: "c_sync",
+    statuses: [1],
+    maxPagesPerStatus: 3,
+    latestOfThread: true,
+    mode: "sync_newest",
+    db,
+  });
+  assert.equal(listEmailsCalls, 1);
+  assert.deepEqual(listEmailCursors, [null]);
+  assert.equal(firstSyncNewest.status_results[0].saved_next_starting_after, "sync-first-cursor");
+  const firstSyncState = await query(
+    db,
+    `SELECT next_starting_after, pages_hydrated, emails_hydrated
+     FROM sendlens.reply_email_hydration_state
+     WHERE workspace_id = 'ws_hydrate'
+       AND campaign_id = 'c_sync'
+       AND i_status = 1`,
+  );
+  assert.equal(firstSyncState.length, 1);
+  assert.equal(firstSyncState[0].next_starting_after, "sync-first-cursor");
+  assert.equal(Number(firstSyncState[0].pages_hydrated), 1);
+  assert.equal(Number(firstSyncState[0].emails_hydrated), 1);
+
+  listEmailsCalls = 0;
+  listEmailCursors = [];
+  replyIdForCall = "reply-sync-2";
+  nextCursorForCall = null;
+  const continuedAfterFirstSync = await hydrateReplyText({
+    workspaceId: "ws_hydrate",
+    campaignId: "c_sync",
+    statuses: [1],
+    maxPagesPerStatus: 1,
+    latestOfThread: true,
+    mode: "continue",
+    db,
+  });
+  assert.equal(listEmailsCalls, 1);
+  assert.deepEqual(listEmailCursors, ["sync-first-cursor"]);
+  assert.equal(continuedAfterFirstSync.total_inserted_new, 1);
+
+  await run(
+    db,
+    `UPDATE sendlens.reply_email_hydration_state
+     SET next_starting_after = 'sync-first-cursor',
+         exhausted = FALSE
+     WHERE workspace_id = 'ws_hydrate'
+       AND campaign_id = 'c_sync'
+       AND i_status = 1`,
+  );
+  listEmailsCalls = 0;
+  listEmailCursors = [];
+  listEmailsError = new Error("Instantly API 429: rate limit");
+  await assert.rejects(
+    () =>
+      hydrateReplyText({
+        workspaceId: "ws_hydrate",
+        campaignId: "c_sync",
+        statuses: [1],
+        maxPagesPerStatus: 1,
+        latestOfThread: true,
+        mode: "continue",
+        db,
+      }),
+    /Instantly API 429/,
+  );
+  assert.equal(listEmailsCalls, 1);
+  assert.deepEqual(listEmailCursors, ["sync-first-cursor"]);
 } finally {
   instantly.listEmails = originalListEmails;
   closeDb(db);

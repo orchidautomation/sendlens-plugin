@@ -84,7 +84,11 @@ type RefreshOptions = {
 };
 type RefreshSource = "session_start" | "manual";
 type RefreshMode = "fast" | "full";
-export type ReplyTextHydrationMode = "auto" | "continue" | "restart";
+export type ReplyTextHydrationMode =
+  | "auto"
+  | "continue"
+  | "restart"
+  | "sync_newest";
 type EmailFetchPlan = {
   minTimestampCreated?: string;
   latestOfThread: boolean;
@@ -230,6 +234,14 @@ function isOptionalInboxPlacementError(error: unknown) {
     return false;
   }
   return /inbox|placement|permission|scope|plan|subscription|forbidden|not found|invalid/i.test(message);
+}
+
+function isInvalidEmailCursorError(error: unknown) {
+  const message = errorMessage(error);
+  if (!/Instantly API 400:/i.test(message)) {
+    return false;
+  }
+  return /starting_after|cursor|pagination|page/i.test(message);
 }
 
 function pickString(record: Record<string, unknown>, keys: string[]) {
@@ -1407,6 +1419,25 @@ async function storeReplyEmails(
   );
 }
 
+async function countExistingReplyEmailIds(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  ids: string[],
+) {
+  const uniqueIds = [...new Set(ids.filter(Boolean))];
+  if (uniqueIds.length === 0) return 0;
+  const workspaceSafe = esc(workspaceId);
+  const idList = uniqueIds.map((id) => `'${esc(id)}'`).join(", ");
+  const rows = await query(
+    conn,
+    `SELECT COUNT(*) AS count
+     FROM sendlens.reply_emails
+     WHERE workspace_id = '${workspaceSafe}'
+       AND id IN (${idList})`,
+  );
+  return Number(rows[0]?.count ?? 0) || 0;
+}
+
 type HydrateReplyTextOptions = {
   workspaceId: string;
   campaignId: string;
@@ -1448,6 +1479,8 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
   const statusResults: Array<Record<string, unknown>> = [];
   let totalFetched = 0;
   let totalStored = 0;
+  let totalInsertedNew = 0;
+  let totalUpdatedExisting = 0;
   let totalSkippedAutoReplies = 0;
 
   for (const status of statuses) {
@@ -1461,6 +1494,20 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
          AND direction = 'inbound'`,
     );
     const existingCount = Number(existingRows[0]?.count ?? 0) || 0;
+    const missingBodyRows = await query(
+      db,
+      `SELECT COUNT(*) AS count
+       FROM sendlens.reply_context
+       WHERE workspace_id = '${workspaceSafe}'
+         AND campaign_id = '${campaignSafe}'
+         AND lt_interest_status = ${sqlInt(status)}
+         AND (
+           reply_email_id IS NULL
+           OR reply_body_text IS NULL
+           OR trim(reply_body_text) = ''
+         )`,
+    );
+    const missingBodyCount = Number(missingBodyRows[0]?.count ?? 0) || 0;
     const stateRows = await query(
       db,
       `SELECT next_starting_after, pages_hydrated, emails_hydrated, exhausted
@@ -1475,12 +1522,13 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
     const previousState = stateRows[0] ?? null;
     const wasExhausted = previousState?.exhausted === true;
 
-    if (options.mode === "auto" && existingCount > 0) {
+    if (options.mode === "auto" && existingCount > 0 && missingBodyCount === 0) {
       statusResults.push({
         i_status: status,
         skipped: true,
         reason: "cached_rows_exist",
         existing_rows: existingCount,
+        missing_reply_body_rows: missingBodyCount,
       });
       continue;
     }
@@ -1502,22 +1550,51 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
     let pagesFetched = 0;
     let rowsFetched = 0;
     let rowsStored = 0;
+    let rowsInsertedNew = 0;
+    let rowsUpdatedExisting = 0;
     let skippedAutoReplies = 0;
     let exhausted = false;
+    let cursorFallbackUsed = false;
 
     for (let page = 0; page < options.maxPagesPerStatus; page++) {
-      const response = await instantly.listEmails(
-        apiKey,
-        options.campaignId,
-        cursor || undefined,
-        {
-          emailType: "received",
-          iStatus: status,
-          latestOfThread: options.latestOfThread,
-          limit: DEFAULT_PAGE_SIZE,
-          sortOrder: "desc",
-        },
-      );
+      let response;
+      try {
+        response = await instantly.listEmails(
+          apiKey,
+          options.campaignId,
+          cursor || undefined,
+          {
+            emailType: "received",
+            iStatus: status,
+            latestOfThread: options.latestOfThread,
+            limit: DEFAULT_PAGE_SIZE,
+            sortOrder: "desc",
+          },
+        );
+      } catch (error) {
+        if (
+          options.mode !== "continue" ||
+          page !== 0 ||
+          !cursor ||
+          !isInvalidEmailCursorError(error)
+        ) {
+          throw error;
+        }
+        cursorFallbackUsed = true;
+        cursor = null;
+        response = await instantly.listEmails(
+          apiKey,
+          options.campaignId,
+          undefined,
+          {
+            emailType: "received",
+            iStatus: status,
+            latestOfThread: options.latestOfThread,
+            limit: DEFAULT_PAGE_SIZE,
+            sortOrder: "desc",
+          },
+        );
+      }
       pagesFetched += 1;
       rowsFetched += response.items.length;
       cursor = response.nextCursor;
@@ -1532,21 +1609,47 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
         .map((email) => emailRecordFromInstantly(options.campaignId, email))
         .filter((email): email is ReplyEmailRecord => email != null);
 
+      const existingFetchedIds = await countExistingReplyEmailIds(
+        db,
+        options.workspaceId,
+        emails.map((email) => email.id),
+      );
       await storeReplyEmails(db, options.workspaceId, emails);
       rowsStored += emails.length;
+      rowsUpdatedExisting += existingFetchedIds;
+      rowsInsertedNew += Math.max(0, emails.length - existingFetchedIds);
 
+      if (options.mode === "sync_newest") {
+        break;
+      }
       if (!cursor || response.items.length < DEFAULT_PAGE_SIZE) {
         exhausted = true;
         break;
       }
     }
 
+    const previousPages = Number(previousState?.pages_hydrated ?? 0) || 0;
+    const previousEmails = Number(previousState?.emails_hydrated ?? 0) || 0;
     const priorPages = options.mode === "continue"
       ? Number(previousState?.pages_hydrated ?? 0) || 0
       : 0;
     const priorEmails = options.mode === "continue"
       ? Number(previousState?.emails_hydrated ?? 0) || 0
       : 0;
+    const stateNextStartingAfter = options.mode === "sync_newest"
+      ? (typeof previousState?.next_starting_after === "string"
+        ? previousState.next_starting_after
+        : cursor)
+      : cursor;
+    const statePagesHydrated = options.mode === "sync_newest"
+      ? (previousState ? previousPages : pagesFetched)
+      : priorPages + pagesFetched;
+    const stateEmailsHydrated = options.mode === "sync_newest"
+      ? (previousState ? previousEmails : rowsStored)
+      : priorEmails + rowsStored;
+    const stateExhausted = options.mode === "sync_newest"
+      ? (previousState ? previousState.exhausted === true : !stateNextStartingAfter)
+      : exhausted;
     await insertRows(
       db,
       "reply_email_hydration_state",
@@ -1569,10 +1672,10 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
         ${sqlInt(status)},
         ${options.latestOfThread ? "TRUE" : "FALSE"},
         '${emailType}',
-        ${sqlString(cursor)},
-        ${sqlInt(priorPages + pagesFetched)},
-        ${sqlInt(priorEmails + rowsStored)},
-        ${exhausted ? "TRUE" : "FALSE"},
+        ${sqlString(stateNextStartingAfter)},
+        ${sqlInt(statePagesHydrated)},
+        ${sqlInt(stateEmailsHydrated)},
+        ${stateExhausted ? "TRUE" : "FALSE"},
         ${sqlTimestamp(new Date().toISOString())},
         CURRENT_TIMESTAMP
       )`],
@@ -1580,16 +1683,24 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
 
     totalFetched += rowsFetched;
     totalStored += rowsStored;
+    totalInsertedNew += rowsInsertedNew;
+    totalUpdatedExisting += rowsUpdatedExisting;
     totalSkippedAutoReplies += skippedAutoReplies;
     statusResults.push({
       i_status: status,
       existing_rows_before: existingCount,
+      missing_reply_body_rows_before: missingBodyCount,
       pages_fetched: pagesFetched,
       rows_fetched: rowsFetched,
       rows_stored: rowsStored,
+      rows_inserted_new: rowsInsertedNew,
+      rows_updated_existing: rowsUpdatedExisting,
       skipped_auto_replies: skippedAutoReplies,
       next_starting_after: cursor,
+      saved_next_starting_after: stateNextStartingAfter,
       exhausted,
+      saved_exhausted: stateExhausted,
+      cursor_fallback_used: cursorFallbackUsed,
     });
   }
 
@@ -1602,6 +1713,8 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
     latestOfThread: options.latestOfThread,
     totalFetched,
     totalStored,
+    totalInsertedNew,
+    totalUpdatedExisting,
     totalSkippedAutoReplies,
   });
 
@@ -1616,6 +1729,8 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
     max_pages_per_status: options.maxPagesPerStatus,
     total_fetched: totalFetched,
     total_stored: totalStored,
+    total_inserted_new: totalInsertedNew,
+    total_updated_existing: totalUpdatedExisting,
     total_skipped_auto_replies: totalSkippedAutoReplies,
     started_at: startedAt,
     completed_at: new Date().toISOString(),
