@@ -141,6 +141,7 @@ type CampaignRefreshBundle = {
   detail: Record<string, unknown>;
   templates: CampaignVariantTemplate[];
   rawStepAnalytics: Array<Record<string, unknown>>;
+  dailyAnalytics: Array<Record<string, unknown>>;
   stepAnalytics: Array<Record<string, unknown>>;
   skippedStepAnalytics: number;
   leadSample: LeadSampleResult;
@@ -149,6 +150,7 @@ type CampaignRefreshBundle = {
   fullRaw: boolean;
   detailElapsedMs: number;
   stepElapsedMs: number;
+  dailyElapsedMs: number;
   leadSampleElapsedMs: number;
   outboundElapsedMs: number;
   totalElapsedMs: number;
@@ -1894,17 +1896,20 @@ async function hydrateCampaignRefreshBundle(
   const campaignStartedAt = Date.now();
   const detailStartedAt = Date.now();
   const stepStartedAt = Date.now();
-  const [detail, rawStepAnalytics] = await Promise.all([
+  const dailyStartedAt = Date.now();
+  const [detail, rawStepAnalytics, dailyAnalytics] = await Promise.all([
     instantly.getCampaignDetails(apiKey, campaignId),
     instantly.getStepAnalytics(apiKey, campaignId, {
       includeOpportunitiesCount: true,
     }),
+    instantly.getDailyAnalytics(apiKey, campaignId),
   ]);
   const templates = extractCampaignVariants(detail);
   const detailElapsedMs = Date.now() - detailStartedAt;
   const { validRows: stepAnalytics, skippedRows: skippedStepAnalytics } =
     normalizeStepAnalyticsRows(rawStepAnalytics);
   const stepElapsedMs = Date.now() - stepStartedAt;
+  const dailyElapsedMs = Date.now() - dailyStartedAt;
 
   if (skippedStepAnalytics > 0) {
     console.warn(
@@ -1943,6 +1948,7 @@ async function hydrateCampaignRefreshBundle(
     detail,
     templates,
     rawStepAnalytics,
+    dailyAnalytics,
     stepAnalytics,
     skippedStepAnalytics,
     leadSample,
@@ -1951,6 +1957,7 @@ async function hydrateCampaignRefreshBundle(
     fullRaw,
     detailElapsedMs,
     stepElapsedMs,
+    dailyElapsedMs,
     leadSampleElapsedMs,
     outboundElapsedMs,
     totalElapsedMs: Date.now() - campaignStartedAt,
@@ -1963,6 +1970,7 @@ async function storeCampaignData(
   campaign: Record<string, unknown>,
   analytics: Record<string, unknown> | undefined,
   detail: Record<string, unknown>,
+  dailyAnalytics: Array<Record<string, unknown>>,
   stepAnalytics: Array<Record<string, unknown>>,
   replyEmails: ReplyEmailRecord[],
   leadSample: LeadSampleResult,
@@ -2023,6 +2031,51 @@ async function storeCampaignData(
   );
 
   await storeCampaignAccountAssignments(conn, workspaceId, campaignId, detail);
+
+  await insertRows(
+    conn,
+    "campaign_daily_metrics",
+    [
+      "workspace_id",
+      "campaign_id",
+      "date",
+      "sent",
+      "contacted",
+      "new_leads_contacted",
+      "opened",
+      "unique_opened",
+      "replies",
+      "unique_replies",
+      "replies_automatic",
+      "unique_replies_automatic",
+      "clicks",
+      "unique_clicks",
+      "opportunities",
+      "unique_opportunities",
+      "synced_at",
+    ],
+    dailyAnalytics
+      .map((row) => `(
+        '${esc(workspaceId)}',
+        '${esc(campaignId)}',
+        ${sqlString(row.date)}::DATE,
+        ${sqlInt(row.sent)},
+        ${sqlInt(row.contacted)},
+        ${sqlInt(row.new_leads_contacted)},
+        ${sqlInt(row.opened)},
+        ${sqlInt(row.unique_opened)},
+        ${sqlInt(row.replies)},
+        ${sqlInt(row.unique_replies)},
+        ${sqlInt(row.replies_automatic)},
+        ${sqlInt(row.unique_replies_automatic)},
+        ${sqlInt(row.clicks)},
+        ${sqlInt(row.unique_clicks)},
+        ${sqlInt(row.opportunities)},
+        ${sqlInt(row.unique_opportunities)},
+        CURRENT_TIMESTAMP
+      )`)
+      .filter((value) => !value.includes("''::DATE")),
+  );
 
   if (analytics) {
     await insertRows(
@@ -2539,6 +2592,7 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
           bundle.campaign,
           bundle.analyticsRow,
           bundle.detail,
+          bundle.dailyAnalytics,
           bundle.stepAnalytics,
           [],
           bundle.leadSample,
@@ -2554,6 +2608,7 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
           fullRaw: bundle.fullRaw,
           templates: bundle.templates.length,
           rawStepAnalyticsRows: bundle.rawStepAnalytics.length,
+          dailyAnalyticsRows: bundle.dailyAnalytics.length,
           stepAnalyticsRows: bundle.stepAnalytics.length,
           skippedStepAnalytics: bundle.skippedStepAnalytics,
           exactUniqueReplies: bundle.totalUniqueReplies,
@@ -2568,6 +2623,7 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
           nonReplyOutboundRows: bundle.outboundSample.nonReplyRowsSampled,
           detailElapsedMs: bundle.detailElapsedMs,
           stepElapsedMs: bundle.stepElapsedMs,
+          dailyElapsedMs: bundle.dailyElapsedMs,
           leadSampleElapsedMs: bundle.leadSampleElapsedMs,
           outboundElapsedMs: bundle.outboundElapsedMs,
           totalElapsedMs: bundle.totalElapsedMs,

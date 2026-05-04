@@ -30,9 +30,10 @@ const db = await getDb();
 await run(
   db,
   `INSERT OR REPLACE INTO sendlens.campaigns
-   (id, workspace_id, organization_id, name, status, synced_at)
-   VALUES ('c1', 'ws_test', 'ws_test', 'Alpha', 'active', CURRENT_TIMESTAMP),
-          ('c2', 'ws_test', 'ws_test', 'Beta', 'paused', CURRENT_TIMESTAMP)`,
+   (id, workspace_id, organization_id, name, status, daily_limit, synced_at)
+   VALUES ('c1', 'ws_test', 'ws_test', 'Alpha', 'active', 50, CURRENT_TIMESTAMP),
+          ('c2', 'ws_test', 'ws_test', 'Beta', 'paused', 25, CURRENT_TIMESTAMP),
+          ('c3', 'ws_test', 'ws_test', 'Gamma', 'active', 5, CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
@@ -40,7 +41,16 @@ await run(
    (workspace_id, campaign_id, campaign_name, leads_count, emails_sent_count, reply_count_unique, reply_count_automatic, bounced_count, total_opportunities, total_opportunity_value, synced_at)
    VALUES
    ('ws_test', 'c1', 'Alpha', 400, 800, 24, 5, 8, 2, 25000, CURRENT_TIMESTAMP),
-   ('ws_test', 'c2', 'Beta', 300, 200, 1, 0, 7, 0, 0, CURRENT_TIMESTAMP)`,
+   ('ws_test', 'c2', 'Beta', 300, 200, 1, 0, 7, 0, 0, CURRENT_TIMESTAMP),
+   ('ws_test', 'c3', 'Gamma', 50, 0, 0, 0, 0, 0, 0, CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.campaign_daily_metrics
+   (workspace_id, campaign_id, date, sent, contacted, new_leads_contacted, opened, unique_opened, replies, unique_replies, replies_automatic, unique_replies_automatic, clicks, unique_clicks, opportunities, unique_opportunities, synced_at)
+   VALUES ('ws_test', 'c1', '2026-05-01'::DATE, 25, 25, 25, 5, 4, 2, 2, 0, 0, 1, 1, 1, 1, CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', '2026-05-02'::DATE, 15, 15, 15, 3, 2, 1, 1, 0, 0, 0, 0, 0, 0, CURRENT_TIMESTAMP),
+          ('ws_test', 'c3', '2026-05-01'::DATE, 5, 5, 5, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
@@ -103,14 +113,23 @@ await run(
   `INSERT OR REPLACE INTO sendlens.custom_tag_mappings
    (workspace_id, tag_id, resource_type, resource_id, synced_at)
    VALUES ('ws_test', 't1', '2', 'c1', CURRENT_TIMESTAMP),
+          ('ws_test', 't1', '2', 'c3', CURRENT_TIMESTAMP),
           ('ws_test', 't2', '1', 'tagged@example.com', CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
   `INSERT OR REPLACE INTO sendlens.accounts
-   (workspace_id, email, status, warmup_status, warmup_score, total_sent_30d, total_replies_30d, total_bounces_30d, synced_at)
-   VALUES ('ws_test', 'direct@example.com', 'active', 'healthy', 99, 100, 5, 1, CURRENT_TIMESTAMP),
-          ('ws_test', 'tagged@example.com', 'active', 'healthy', 98, 200, 10, 4, CURRENT_TIMESTAMP)`,
+   (workspace_id, email, status, warmup_status, warmup_score, daily_limit, total_sent_30d, total_replies_30d, total_bounces_30d, synced_at)
+   VALUES ('ws_test', 'direct@example.com', 'active', 'healthy', 99, 30, 100, 5, 1, CURRENT_TIMESTAMP),
+          ('ws_test', 'tagged@example.com', 'active', 'healthy', 98, 20, 200, 10, 4, CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.account_daily_metrics
+   (workspace_id, email, date, sent, bounced, unique_replies, synced_at)
+   VALUES ('ws_test', 'direct@example.com', '2026-05-01'::DATE, 10, 1, 2, CURRENT_TIMESTAMP),
+          ('ws_test', 'tagged@example.com', '2026-05-01'::DATE, 20, 0, 3, CURRENT_TIMESTAMP),
+          ('ws_test', 'direct@example.com', '2026-05-02'::DATE, 15, 0, 1, CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
@@ -149,8 +168,8 @@ await setActiveWorkspaceId(db, "ws_test");
 const summary = await buildWorkspaceSummary(db);
 assert.equal(summary.schema_version, "workspace_snapshot.v1");
 assert.equal(summary.workspaceId, "ws_test");
-assert.equal(summary.exact_metrics.campaign_count, 1);
-assert.equal(summary.exact_metrics.active_campaign_count, 1);
+assert.equal(summary.exact_metrics.campaign_count, 2);
+assert.equal(summary.exact_metrics.active_campaign_count, 2);
 assert.equal(summary.exact_metrics.total_sent, 800);
 assert.equal(summary.exact_metrics.total_unique_replies, 24);
 assert.ok(summary.summary.includes("2 custom tags stored locally"));
@@ -160,7 +179,7 @@ assert.ok(summary.summary.includes("full reply leads"));
 assert.equal(summary.exact_metrics.inbox_placement_test_count, 1);
 assert.equal(summary.exact_metrics.inbox_placement_analytics_rows, 4);
 assert.equal(summary.coverage.length, 1);
-assert.equal(summary.campaigns.length, 1);
+assert.equal(summary.campaigns.length, 2);
 assert.equal(summary.campaigns[0].campaign_id, "c1");
 assert.equal(summary.campaigns[0].campaign_name, "Alpha");
 assert.equal(summary.campaigns[0].emails_sent_count, 800);
@@ -277,6 +296,69 @@ assert.equal(campaignAccounts[1].assignment_source, "tag");
 assert.equal(campaignAccounts[1].tag_label, "Sender Pool");
 assert.equal(Number(campaignAccounts[1].total_sent_30d), 200);
 
+const tagScopeViewRows = await runQuery(
+  db,
+  "SELECT inferred_resource_scope, tagged_resources FROM sendlens.tag_scope_audit WHERE normalized_tag_label = 'priority'",
+);
+assert.equal(tagScopeViewRows.length, 1);
+assert.equal(tagScopeViewRows[0].inferred_resource_scope, "campaign");
+assert.equal(Number(tagScopeViewRows[0].tagged_resources), 2);
+
+const senderCoverageViewRows = await runQuery(
+  db,
+  "SELECT campaign_id, coverage_status FROM sendlens.campaign_tag_sender_coverage WHERE normalized_tag_label = 'priority' ORDER BY coverage_status DESC, campaign_id",
+);
+assert.equal(senderCoverageViewRows.length, 2);
+assert.equal(senderCoverageViewRows.some((row) => row.campaign_id === "c1" && row.coverage_status === "covered"), true);
+assert.equal(senderCoverageViewRows.some((row) => row.campaign_id === "c3" && row.coverage_status === "missing_sender_inventory"), true);
+
+const dailyVolumeViewRows = await runQuery(
+  db,
+  "SELECT date, active_campaigns, configured_campaign_daily_limit_total, deduped_sender_sent FROM sendlens.campaign_tag_daily_volume_deduped WHERE normalized_tag_label = 'priority' ORDER BY date DESC",
+);
+assert.equal(dailyVolumeViewRows.length, 2);
+assert.equal(Number(dailyVolumeViewRows[0].active_campaigns), 2);
+assert.equal(Number(dailyVolumeViewRows[0].configured_campaign_daily_limit_total), 55);
+assert.equal(Number(dailyVolumeViewRows[1].deduped_sender_sent), 30);
+
+const utilizationViewRows = await runQuery(
+  db,
+  "SELECT date, resolved_account_daily_limit_total, campaign_limit_utilization_pct, account_limit_utilization_pct FROM sendlens.campaign_tag_daily_volume_utilization WHERE normalized_tag_label = 'priority' ORDER BY date DESC",
+);
+assert.equal(Number(utilizationViewRows[0].resolved_account_daily_limit_total), 50);
+assert.equal(Number(utilizationViewRows[0].campaign_limit_utilization_pct), 27.27);
+assert.equal(Number(utilizationViewRows[0].account_limit_utilization_pct), 30);
+
+const trendViewRows = await runQuery(
+  db,
+  "SELECT date, rolling_7_day_avg_sent, peak_daily_sent, cached_sending_days FROM sendlens.campaign_tag_daily_volume_trend WHERE normalized_tag_label = 'priority' ORDER BY date DESC",
+);
+assert.equal(Number(trendViewRows[0].peak_daily_sent), 30);
+assert.equal(Number(trendViewRows[0].cached_sending_days), 2);
+
+const trueDailyVolumeRows = await runQuery(
+  db,
+  "SELECT date, active_campaigns_with_daily_metrics, configured_campaign_daily_limit_total, campaign_attributed_sent, campaign_attributed_unique_replies, campaign_attributed_opportunities FROM sendlens.campaign_tag_true_daily_volume WHERE normalized_tag_label = 'priority' ORDER BY date DESC",
+);
+assert.equal(trueDailyVolumeRows.length, 2);
+assert.equal(String(trueDailyVolumeRows[0].date).slice(0, 10), "2026-05-02");
+assert.equal(Number(trueDailyVolumeRows[0].active_campaigns_with_daily_metrics), 1);
+assert.equal(Number(trueDailyVolumeRows[0].configured_campaign_daily_limit_total), 50);
+assert.equal(Number(trueDailyVolumeRows[0].campaign_attributed_sent), 15);
+assert.equal(String(trueDailyVolumeRows[1].date).slice(0, 10), "2026-05-01");
+assert.equal(Number(trueDailyVolumeRows[1].active_campaigns_with_daily_metrics), 2);
+assert.equal(Number(trueDailyVolumeRows[1].configured_campaign_daily_limit_total), 55);
+assert.equal(Number(trueDailyVolumeRows[1].campaign_attributed_sent), 30);
+assert.equal(Number(trueDailyVolumeRows[1].campaign_attributed_unique_replies), 2);
+assert.equal(Number(trueDailyVolumeRows[1].campaign_attributed_opportunities), 1);
+
+const trueTrendRows = await runQuery(
+  db,
+  "SELECT date, rolling_7_day_avg_sent, peak_daily_sent, cached_sending_days FROM sendlens.campaign_tag_true_daily_volume_trend WHERE normalized_tag_label = 'priority' ORDER BY date DESC",
+);
+assert.equal(Number(trueTrendRows[0].peak_daily_sent), 30);
+assert.equal(Number(trueTrendRows[0].cached_sending_days), 2);
+
 const leadPayloadKv = await runQuery(
   db,
   "SELECT payload_key, payload_value FROM sendlens.lead_payload_kv WHERE campaign_id = 'c1' AND email = 'a@example.com' ORDER BY payload_key",
@@ -377,6 +459,116 @@ await runQuery(
 
 const campaignRecipes = getQueryRecipes("campaign-performance");
 const workspaceHealthRecipes = getQueryRecipes("workspace-health");
+const tagCatalogRecipe = tagRecipes.find((recipe) => recipe.id === "tag-catalog");
+assert.ok(tagCatalogRecipe);
+const tagCatalogRows = await runQuery(db, enforceLocalWorkspaceScope(tagCatalogRecipe.sql, "ws_test"));
+const priorityTagCatalog = tagCatalogRows.find((row) => row.tag_name === "Priority");
+assert.ok(priorityTagCatalog);
+assert.equal(priorityTagCatalog.normalized_tag_name, "priority");
+assert.equal(Number(priorityTagCatalog.tagged_campaigns), 2);
+assert.equal(Number(priorityTagCatalog.tagged_accounts), 0);
+const tagScopeAuditRecipe = tagRecipes.find((recipe) => recipe.id === "tag-scope-audit");
+assert.ok(tagScopeAuditRecipe);
+const tagScopeRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(
+    tagScopeAuditRecipe.sql.replaceAll("{{tag_name}}", " priority "),
+    "ws_test",
+  ),
+);
+assert.equal(tagScopeRows.length, 1);
+assert.equal(tagScopeRows[0].inferred_resource_scope, "campaign");
+assert.equal(Number(tagScopeRows[0].tagged_resources), 2);
+const senderCoverageRecipe = workspaceHealthRecipes.find((recipe) => recipe.id === "campaign-tag-sender-coverage");
+assert.ok(senderCoverageRecipe);
+const senderCoverageRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(
+    senderCoverageRecipe.sql.replaceAll("{{tag_name}}", " priority "),
+    "ws_test",
+  ),
+);
+assert.equal(senderCoverageRows.length, 2);
+assert.equal(senderCoverageRows[0].campaign_id, "c3");
+assert.equal(senderCoverageRows[0].coverage_status, "missing_sender_inventory");
+assert.equal(senderCoverageRows[1].campaign_id, "c1");
+assert.equal(senderCoverageRows[1].coverage_status, "covered");
+const trueDailyVolumeRecipe = campaignRecipes.find((recipe) => recipe.id === "campaign-tag-true-daily-volume");
+assert.ok(trueDailyVolumeRecipe);
+assert.equal(trueDailyVolumeRecipe.sql.includes("sendlens.campaign_tag_true_daily_volume"), true);
+const trueDailyVolumeRecipeRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(
+    trueDailyVolumeRecipe.sql.replaceAll("{{tag_name}}", "Priority"),
+    "ws_test",
+  ),
+);
+assert.equal(trueDailyVolumeRecipeRows.length, 2);
+assert.equal(Number(trueDailyVolumeRecipeRows[0].campaign_attributed_sent), 15);
+const trueDailyTrendRecipe = campaignRecipes.find((recipe) => recipe.id === "campaign-tag-true-daily-volume-trend");
+assert.ok(trueDailyTrendRecipe);
+assert.equal(trueDailyTrendRecipe.sql.includes("sendlens.campaign_tag_true_daily_volume_trend"), true);
+const dailyVolumeRecipe = campaignRecipes.find((recipe) => recipe.id === "campaign-tag-daily-volume");
+assert.ok(dailyVolumeRecipe);
+assert.equal(dailyVolumeRecipe.sql.includes("sendlens.account_daily_metrics"), true);
+assert.equal(dailyVolumeRecipe.sql.includes("campaign_daily_limit"), true);
+const dailyVolumeRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(
+    dailyVolumeRecipe.sql.replaceAll("{{tag_name}}", "Priority"),
+    "ws_test",
+  ),
+);
+assert.equal(dailyVolumeRows.length, 2);
+assert.equal(String(dailyVolumeRows[0].date).slice(0, 10), "2026-05-02");
+assert.equal(Number(dailyVolumeRows[0].campaign_daily_limit), 50);
+assert.equal(Number(dailyVolumeRows[0].sender_scoped_sent), 15);
+const dedupedDailyVolumeRecipe = campaignRecipes.find((recipe) => recipe.id === "campaign-tag-daily-volume-deduped");
+assert.ok(dedupedDailyVolumeRecipe);
+assert.equal(dedupedDailyVolumeRecipe.sql.includes("SELECT DISTINCT"), true);
+assert.equal(dedupedDailyVolumeRecipe.sql.includes("deduped_sender_sent"), true);
+const dedupedDailyVolumeRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(
+    dedupedDailyVolumeRecipe.sql.replaceAll("{{tag_name}}", "Priority"),
+    "ws_test",
+  ),
+);
+assert.equal(dedupedDailyVolumeRows.length, 2);
+assert.equal(String(dedupedDailyVolumeRows[0].date).slice(0, 10), "2026-05-02");
+assert.equal(Number(dedupedDailyVolumeRows[0].active_campaigns), 2);
+assert.equal(Number(dedupedDailyVolumeRows[0].configured_campaign_daily_limit_total), 55);
+assert.equal(Number(dedupedDailyVolumeRows[0].deduped_sender_sent), 15);
+assert.equal(String(dedupedDailyVolumeRows[1].date).slice(0, 10), "2026-05-01");
+assert.equal(Number(dedupedDailyVolumeRows[1].deduped_sender_sent), 30);
+const utilizationRecipe = campaignRecipes.find((recipe) => recipe.id === "campaign-tag-daily-volume-utilization");
+assert.ok(utilizationRecipe);
+const utilizationRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(
+    utilizationRecipe.sql.replaceAll("{{tag_name}}", "PRIORITY"),
+    "ws_test",
+  ),
+);
+assert.equal(utilizationRows.length, 2);
+assert.equal(Number(utilizationRows[0].configured_campaign_daily_limit_total), 55);
+assert.equal(Number(utilizationRows[0].resolved_account_daily_limit_total), 50);
+assert.equal(Number(utilizationRows[0].deduped_sender_sent), 15);
+assert.equal(Number(utilizationRows[0].campaign_limit_utilization_pct), 27.27);
+assert.equal(Number(utilizationRows[0].account_limit_utilization_pct), 30);
+const trendRecipe = campaignRecipes.find((recipe) => recipe.id === "campaign-tag-daily-volume-trend");
+assert.ok(trendRecipe);
+const trendRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(
+    trendRecipe.sql.replaceAll("{{tag_name}}", "Priority"),
+    "ws_test",
+  ),
+);
+assert.equal(trendRows.length, 2);
+assert.equal(Number(trendRows[0].cached_sending_days), 2);
+assert.equal(Number(trendRows[0].peak_daily_sent), 30);
+assert.equal(Number(trendRows[0].avg_daily_sent_all_cached_days), 22.5);
 assert.equal(
   workspaceHealthRecipes.some((recipe) => recipe.id === "campaign-sender-inventory-by-tag" && recipe.sql.includes("sendlens.campaign_accounts")),
   true,
