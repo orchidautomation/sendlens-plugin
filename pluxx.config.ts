@@ -2,7 +2,7 @@ import { definePlugin } from "pluxx";
 
 export default definePlugin({
   name: "sendlens",
-  version: "0.1.20",
+  version: "0.1.21",
   description:
     "Agentic reasoning over Instantly data with a privacy-first local cache.",
   author: {

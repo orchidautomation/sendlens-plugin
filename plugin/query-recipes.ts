@@ -1,6 +1,9 @@
 export const QUERY_RECIPE_TOPICS = [
   "workspace-health",
   "campaign-performance",
+  "account-manager-brief",
+  "campaign-launch-qa",
+  "experiment-planner",
   "copy-analysis",
   "reply-patterns",
   "icp-signals",
@@ -529,6 +532,598 @@ ORDER BY date DESC;`,
       "This uses all cached account daily metrics for resolved assigned senders; add an explicit date predicate if the user asks for a specific window.",
       "Use this when the user asks how volume looks, whether it is trending up/down, or what the normal daily pace is.",
       "Because only dates with observed account metrics appear, missing dates should not automatically be treated as zero-send days.",
+    ],
+  },
+  {
+    id: "campaign-tag-runway-inputs",
+    topic: "campaign-performance",
+    title: "Campaign tag runway inputs",
+    question: "How much runway remains before campaigns with a given Instantly tag run out of new leads and follow-up volume?",
+    exactness: "exact",
+    rationale: "Combine exact campaign totals, daily campaign-attributed pace, observed weekday schedule, step distribution, and configured sequence delays before estimating runway.",
+    sql: `WITH tagged_campaigns AS (
+  SELECT
+    ct.workspace_id,
+    ct.tag_label,
+    co.campaign_id,
+    co.campaign_name,
+    co.status,
+    co.daily_limit AS campaign_daily_limit,
+    co.leads_count,
+    co.contacted_count,
+    GREATEST(COALESCE(co.leads_count, 0) - COALESCE(co.contacted_count, 0), 0) AS leads_remaining,
+    COALESCE(co.emails_sent_count, 0) AS emails_sent_count,
+    co.reply_count_unique,
+    co.unique_reply_rate_pct,
+    c.schedule_timezone,
+    c.step_count
+  FROM sendlens.campaign_tags ct
+  JOIN sendlens.campaign_overview co
+    ON ct.workspace_id = co.workspace_id
+   AND ct.campaign_id = co.campaign_id
+  JOIN sendlens.campaigns c
+    ON co.workspace_id = c.workspace_id
+   AND co.campaign_id = c.id
+  WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+    AND co.status = 'active'
+),
+recent_daily AS (
+  SELECT
+    tc.workspace_id,
+    tc.campaign_id,
+    cdm.date,
+    strftime(cdm.date, '%w') AS weekday_number,
+    strftime(cdm.date, '%A') AS weekday_name,
+    COALESCE(cdm.sent, 0) AS sent,
+    COALESCE(cdm.new_leads_contacted, 0) AS new_leads_contacted
+  FROM tagged_campaigns tc
+  LEFT JOIN sendlens.campaign_daily_metrics cdm
+    ON tc.workspace_id = cdm.workspace_id
+   AND tc.campaign_id = cdm.campaign_id
+   AND cdm.date >= CURRENT_DATE - INTERVAL 30 DAY
+),
+pace AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    COUNT(*) FILTER (WHERE sent > 0) AS observed_sending_days_30d,
+    string_agg(DISTINCT weekday_name, ', ') FILTER (WHERE sent > 0) AS observed_sending_weekdays_30d,
+    ROUND(AVG(sent) FILTER (WHERE sent > 0), 2) AS avg_sent_per_observed_sending_day_30d,
+    MAX(sent) AS peak_sent_single_day_30d,
+    ROUND(AVG(new_leads_contacted) FILTER (WHERE new_leads_contacted > 0), 2) AS avg_new_leads_contacted_per_active_day_30d,
+    MAX(new_leads_contacted) AS peak_new_leads_contacted_single_day_30d
+  FROM recent_daily
+  GROUP BY 1, 2
+),
+step_totals AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    step,
+    SUM(COALESCE(sent, 0)) AS sent
+  FROM sendlens.step_analytics
+  GROUP BY 1, 2, 3
+),
+step_rollup AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    string_agg(
+      'step ' || CAST(step AS VARCHAR) || ': ' || CAST(sent AS VARCHAR),
+      ' / '
+      ORDER BY step
+    ) AS sent_by_step,
+    SUM(sent) AS step_analytics_sent_total,
+    MAX(step) AS max_step_seen
+  FROM step_totals
+  GROUP BY 1, 2
+),
+sequence_rollup AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    COUNT(DISTINCT step) AS configured_steps_with_templates,
+    string_agg(
+      'step ' || CAST(step AS VARCHAR) || ': delay ' || COALESCE(CAST(delay_value AS VARCHAR), '?') || ' ' || COALESCE(delay_unit, '?'),
+      ' / '
+      ORDER BY step
+    ) AS configured_step_delays
+  FROM (
+    SELECT DISTINCT
+      workspace_id,
+      campaign_id,
+      step,
+      delay_value,
+      delay_unit
+    FROM sendlens.campaign_variants
+  ) cv
+  GROUP BY 1, 2
+)
+SELECT
+  tc.tag_label,
+  tc.campaign_id,
+  tc.campaign_name,
+  tc.campaign_daily_limit,
+  tc.schedule_timezone,
+  tc.leads_count,
+  tc.contacted_count,
+  tc.leads_remaining,
+  tc.emails_sent_count,
+  tc.reply_count_unique,
+  tc.unique_reply_rate_pct,
+  tc.step_count,
+  sr.configured_steps_with_templates,
+  sr.configured_step_delays,
+  st.sent_by_step,
+  st.step_analytics_sent_total,
+  p.observed_sending_days_30d,
+  p.observed_sending_weekdays_30d,
+  p.avg_sent_per_observed_sending_day_30d,
+  p.peak_sent_single_day_30d,
+  p.avg_new_leads_contacted_per_active_day_30d,
+  p.peak_new_leads_contacted_single_day_30d,
+  ROUND(tc.leads_remaining / NULLIF(p.avg_new_leads_contacted_per_active_day_30d, 0), 1) AS new_lead_runway_observed_sending_days,
+  CASE
+    WHEN tc.leads_remaining = 0 THEN 'dry_on_new_prospects'
+    WHEN p.avg_new_leads_contacted_per_active_day_30d IS NULL THEN 'missing_recent_new_lead_pace'
+    WHEN tc.leads_remaining / NULLIF(p.avg_new_leads_contacted_per_active_day_30d, 0) < 2 THEN 'less_than_2_sending_days'
+    WHEN tc.leads_remaining / NULLIF(p.avg_new_leads_contacted_per_active_day_30d, 0) < 5 THEN 'less_than_1_work_week'
+    ELSE 'has_new_lead_buffer'
+  END AS new_lead_runway_status
+FROM tagged_campaigns tc
+LEFT JOIN pace p
+  ON tc.workspace_id = p.workspace_id
+ AND tc.campaign_id = p.campaign_id
+LEFT JOIN step_rollup st
+  ON tc.workspace_id = st.workspace_id
+ AND tc.campaign_id = st.campaign_id
+LEFT JOIN sequence_rollup sr
+  ON tc.workspace_id = sr.workspace_id
+ AND tc.campaign_id = sr.campaign_id
+ORDER BY
+  CASE new_lead_runway_status
+    WHEN 'dry_on_new_prospects' THEN 1
+    WHEN 'less_than_2_sending_days' THEN 2
+    WHEN 'less_than_1_work_week' THEN 3
+    WHEN 'missing_recent_new_lead_pace' THEN 4
+    ELSE 5
+  END,
+  new_lead_runway_observed_sending_days ASC NULLS LAST,
+  tc.unique_reply_rate_pct DESC NULLS LAST;`,
+    notes: [
+      "Replace '{{tag_name}}' with a real campaign tag.",
+      "This is the required first recipe for runway questions because it prevents confusing new-lead exhaustion with total send-volume exhaustion.",
+      "Use `leads_remaining` and `avg_new_leads_contacted_per_active_day_30d` for new-prospect runway.",
+      "Use `sent_by_step`, `configured_steps_with_templates`, and `configured_step_delays` to explain the follow-up tail after step 0 is exhausted.",
+      "Use observed sending weekdays and peak daily sends as real schedule/capacity evidence before relying on configured campaign daily limits.",
+    ],
+  },
+  {
+    id: "campaign-tag-runway-daily-history",
+    topic: "campaign-performance",
+    title: "Campaign tag runway daily history",
+    question: "Which days are campaigns with a given Instantly tag actually sending on, and what is their observed per-campaign ceiling?",
+    exactness: "exact",
+    rationale: "Expose campaign-attributed daily sends and new-lead contacts by weekday so runway estimates are schedule-aware.",
+    sql: `WITH tagged_campaigns AS (
+  SELECT
+    ct.workspace_id,
+    ct.tag_label,
+    co.campaign_id,
+    co.campaign_name,
+    co.daily_limit AS campaign_daily_limit,
+    co.leads_count,
+    co.contacted_count
+  FROM sendlens.campaign_tags ct
+  JOIN sendlens.campaign_overview co
+    ON ct.workspace_id = co.workspace_id
+   AND ct.campaign_id = co.campaign_id
+  WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+    AND co.status = 'active'
+)
+SELECT
+  tc.tag_label,
+  tc.campaign_id,
+  tc.campaign_name,
+  cdm.date,
+  strftime(cdm.date, '%w') AS weekday_number,
+  strftime(cdm.date, '%A') AS weekday_name,
+  tc.campaign_daily_limit,
+  GREATEST(COALESCE(tc.leads_count, 0) - COALESCE(tc.contacted_count, 0), 0) AS current_leads_remaining,
+  COALESCE(cdm.sent, 0) AS campaign_attributed_sent,
+  COALESCE(cdm.new_leads_contacted, 0) AS campaign_attributed_new_leads_contacted,
+  COALESCE(cdm.contacted, 0) AS campaign_attributed_contacted,
+  COALESCE(cdm.unique_replies, 0) AS campaign_attributed_unique_replies,
+  COALESCE(cdm.opportunities, 0) AS campaign_attributed_opportunities
+FROM tagged_campaigns tc
+JOIN sendlens.campaign_daily_metrics cdm
+  ON tc.workspace_id = cdm.workspace_id
+ AND tc.campaign_id = cdm.campaign_id
+WHERE cdm.date >= CURRENT_DATE - INTERVAL 30 DAY
+ORDER BY cdm.date DESC, campaign_attributed_sent DESC, tc.campaign_name;`,
+    notes: [
+      "Replace '{{tag_name}}' with a real campaign tag.",
+      "Use this after `campaign-tag-runway-inputs` when the answer needs a schedule table or a defensible real-capacity ceiling.",
+      "Campaign-attributed daily metrics are exact Instantly campaign/day analytics.",
+      "If weekend dates are absent or zero, state that the schedule was inferred from observed sends unless explicit schedule columns are available.",
+    ],
+  },
+  {
+    id: "account-manager-client-brief",
+    topic: "account-manager-brief",
+    title: "Account manager client brief",
+    question: "What should an account manager tell the client this week?",
+    exactness: "exact",
+    rationale: "Combine exact active-campaign health, recent campaign-attributed volume, reply/opportunity outcomes, and lead runway into a client-safe brief foundation.",
+    sql: `WITH active_campaigns AS (
+  SELECT
+    co.workspace_id,
+    co.campaign_id,
+    co.campaign_name,
+    co.status,
+    co.daily_limit,
+    co.leads_count,
+    co.contacted_count,
+    GREATEST(COALESCE(co.leads_count, 0) - COALESCE(co.contacted_count, 0), 0) AS leads_remaining,
+    co.emails_sent_count,
+    co.reply_count_unique,
+    co.unique_reply_rate_pct,
+    co.bounced_count,
+    co.bounce_rate_pct,
+    co.total_opportunities,
+    co.total_opportunity_value,
+    co.ingest_mode,
+    co.reply_lead_rows,
+    co.nonreply_rows_sampled,
+    co.reply_outbound_rows
+  FROM sendlens.campaign_overview co
+  WHERE co.status = 'active'
+),
+recent_7d AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    SUM(COALESCE(sent, 0)) AS sent_7d,
+    SUM(COALESCE(new_leads_contacted, 0)) AS new_leads_contacted_7d,
+    SUM(COALESCE(unique_replies, 0)) AS unique_replies_7d,
+    SUM(COALESCE(opportunities, 0)) AS opportunities_7d
+  FROM sendlens.campaign_daily_metrics
+  WHERE date >= CURRENT_DATE - INTERVAL 7 DAY
+  GROUP BY 1, 2
+),
+recent_30d AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    COUNT(*) FILTER (WHERE COALESCE(sent, 0) > 0) AS sending_days_30d,
+    ROUND(AVG(sent) FILTER (WHERE COALESCE(sent, 0) > 0), 2) AS avg_sent_per_sending_day_30d,
+    MAX(sent) AS peak_sent_single_day_30d,
+    ROUND(AVG(new_leads_contacted) FILTER (WHERE COALESCE(new_leads_contacted, 0) > 0), 2) AS avg_new_leads_contacted_per_active_day_30d
+  FROM sendlens.campaign_daily_metrics
+  WHERE date >= CURRENT_DATE - INTERVAL 30 DAY
+  GROUP BY 1, 2
+),
+tag_rollup AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    string_agg(tag_label, ', ' ORDER BY tag_label) AS campaign_tags
+  FROM sendlens.campaign_tags
+  GROUP BY 1, 2
+),
+sender_coverage AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    COUNT(DISTINCT account_email) AS resolved_sender_accounts,
+    COUNT(DISTINCT CASE WHEN status IS NOT NULL THEN account_email END) AS sender_accounts_with_status
+  FROM sendlens.campaign_accounts
+  GROUP BY 1, 2
+)
+SELECT
+  ac.campaign_id,
+  ac.campaign_name,
+  tr.campaign_tags,
+  ac.daily_limit,
+  ac.leads_count,
+  ac.contacted_count,
+  ac.leads_remaining,
+  r7.sent_7d,
+  r7.new_leads_contacted_7d,
+  r7.unique_replies_7d,
+  r7.opportunities_7d,
+  r30.sending_days_30d,
+  r30.avg_sent_per_sending_day_30d,
+  r30.peak_sent_single_day_30d,
+  ROUND(ac.leads_remaining / NULLIF(r30.avg_new_leads_contacted_per_active_day_30d, 0), 1) AS new_lead_runway_sending_days,
+  ac.emails_sent_count,
+  ac.reply_count_unique,
+  ac.unique_reply_rate_pct,
+  ac.bounced_count,
+  ac.bounce_rate_pct,
+  ac.total_opportunities,
+  ac.total_opportunity_value,
+  COALESCE(sc.resolved_sender_accounts, 0) AS resolved_sender_accounts,
+  COALESCE(sc.sender_accounts_with_status, 0) AS sender_accounts_with_status,
+  ac.ingest_mode,
+  ac.reply_lead_rows,
+  ac.nonreply_rows_sampled,
+  ac.reply_outbound_rows,
+  CASE
+    WHEN ac.bounce_rate_pct >= 5 THEN 'high_bounce_risk'
+    WHEN ac.leads_remaining = 0 THEN 'dry_on_new_prospects'
+    WHEN ac.leads_remaining / NULLIF(r30.avg_new_leads_contacted_per_active_day_30d, 0) < 5 THEN 'lead_refill_needed'
+    WHEN COALESCE(sc.resolved_sender_accounts, 0) = 0 THEN 'sender_inventory_missing'
+    WHEN COALESCE(r7.sent_7d, 0) = 0 THEN 'no_recent_volume'
+    ELSE 'monitor'
+  END AS am_attention_reason
+FROM active_campaigns ac
+LEFT JOIN recent_7d r7
+  ON ac.workspace_id = r7.workspace_id
+ AND ac.campaign_id = r7.campaign_id
+LEFT JOIN recent_30d r30
+  ON ac.workspace_id = r30.workspace_id
+ AND ac.campaign_id = r30.campaign_id
+LEFT JOIN tag_rollup tr
+  ON ac.workspace_id = tr.workspace_id
+ AND ac.campaign_id = tr.campaign_id
+LEFT JOIN sender_coverage sc
+  ON ac.workspace_id = sc.workspace_id
+ AND ac.campaign_id = sc.campaign_id
+ORDER BY
+  CASE am_attention_reason
+    WHEN 'high_bounce_risk' THEN 1
+    WHEN 'dry_on_new_prospects' THEN 2
+    WHEN 'lead_refill_needed' THEN 3
+    WHEN 'sender_inventory_missing' THEN 4
+    WHEN 'no_recent_volume' THEN 5
+    ELSE 6
+  END,
+  ac.unique_reply_rate_pct DESC NULLS LAST,
+  r7.sent_7d DESC NULLS LAST;`,
+    notes: [
+      "Use this as the first exact data pull for account-manager briefs and daily action queues.",
+      "Write the brief in client-safe language: wins, risks, current actions, asks, and next review date.",
+      "Do not expose internal caveats verbosely to a client; translate them into clear limitations or next checks.",
+      "For tag-specific briefs, add a join or WHERE filter on `campaign_tags` before ordering.",
+    ],
+  },
+  {
+    id: "campaign-launch-qa-checklist",
+    topic: "campaign-launch-qa",
+    title: "Campaign launch QA checklist",
+    question: "Is this campaign ready to turn on?",
+    exactness: "exact",
+    rationale: "Check sender assignment, tracking settings, daily limit, schedule timezone, template steps, lead supply, and recent account health before launch.",
+    sql: `WITH campaign_base AS (
+  SELECT
+    c.workspace_id,
+    c.id AS campaign_id,
+    c.name AS campaign_name,
+    c.status,
+    c.daily_limit,
+    c.text_only,
+    c.open_tracking,
+    c.link_tracking,
+    c.schedule_timezone,
+    c.sequence_count,
+    c.step_count,
+    co.leads_count,
+    co.contacted_count,
+    GREATEST(COALESCE(co.leads_count, 0) - COALESCE(co.contacted_count, 0), 0) AS leads_remaining,
+    co.bounce_rate_pct,
+    co.unique_reply_rate_pct
+  FROM sendlens.campaigns c
+  LEFT JOIN sendlens.campaign_overview co
+    ON c.workspace_id = co.workspace_id
+   AND c.id = co.campaign_id
+  WHERE lower(c.name) LIKE lower('%{{campaign_name}}%')
+),
+template_rollup AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    COUNT(DISTINCT step) AS template_steps,
+    COUNT(*) AS template_variants,
+    SUM(CASE WHEN subject IS NULL OR trim(subject) = '' THEN 1 ELSE 0 END) AS blank_subject_templates,
+    SUM(CASE WHEN body_text IS NULL OR trim(body_text) = '' THEN 1 ELSE 0 END) AS blank_body_templates,
+    string_agg(
+      DISTINCT 'step ' || CAST(step AS VARCHAR) || ': delay ' || COALESCE(CAST(delay_value AS VARCHAR), '?') || ' ' || COALESCE(delay_unit, '?'),
+      ' / '
+    ) AS step_delays
+  FROM sendlens.campaign_variants
+  GROUP BY 1, 2
+),
+sender_rollup AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    COUNT(DISTINCT account_email) AS resolved_sender_accounts,
+    SUM(CASE WHEN status IS NULL THEN 1 ELSE 0 END) AS sender_rows_missing_status,
+    SUM(CASE WHEN COALESCE(bounce_rate_30d_pct, 0) >= 5 THEN 1 ELSE 0 END) AS senders_over_5pct_bounce_30d,
+    ROUND(AVG(warmup_score), 2) AS avg_warmup_score,
+    SUM(COALESCE(daily_limit, 0)) AS resolved_sender_daily_limit_total
+  FROM sendlens.campaign_accounts
+  GROUP BY 1, 2
+)
+SELECT
+  cb.campaign_id,
+  cb.campaign_name,
+  cb.status,
+  cb.daily_limit AS campaign_daily_limit,
+  cb.text_only,
+  cb.open_tracking,
+  cb.link_tracking,
+  cb.schedule_timezone,
+  cb.sequence_count,
+  cb.step_count,
+  tr.template_steps,
+  tr.template_variants,
+  tr.step_delays,
+  tr.blank_subject_templates,
+  tr.blank_body_templates,
+  cb.leads_count,
+  cb.contacted_count,
+  cb.leads_remaining,
+  sr.resolved_sender_accounts,
+  sr.resolved_sender_daily_limit_total,
+  sr.sender_rows_missing_status,
+  sr.senders_over_5pct_bounce_30d,
+  sr.avg_warmup_score,
+  cb.bounce_rate_pct,
+  cb.unique_reply_rate_pct,
+  CASE
+    WHEN COALESCE(sr.resolved_sender_accounts, 0) = 0 THEN 'blocker_missing_senders'
+    WHEN COALESCE(cb.leads_remaining, 0) = 0 THEN 'blocker_no_uncontacted_leads'
+    WHEN COALESCE(tr.template_steps, 0) = 0 THEN 'blocker_missing_templates'
+    WHEN COALESCE(tr.blank_body_templates, 0) > 0 THEN 'blocker_blank_body'
+    WHEN cb.open_tracking = TRUE OR cb.link_tracking = TRUE THEN 'review_tracking_enabled'
+    WHEN COALESCE(sr.senders_over_5pct_bounce_30d, 0) > 0 THEN 'review_sender_bounce_risk'
+    ELSE 'ready_with_checks'
+  END AS launch_qa_status
+FROM campaign_base cb
+LEFT JOIN template_rollup tr
+  ON cb.workspace_id = tr.workspace_id
+ AND cb.campaign_id = tr.campaign_id
+LEFT JOIN sender_rollup sr
+  ON cb.workspace_id = sr.workspace_id
+ AND cb.campaign_id = sr.campaign_id
+ORDER BY
+  CASE launch_qa_status
+    WHEN 'blocker_missing_senders' THEN 1
+    WHEN 'blocker_no_uncontacted_leads' THEN 2
+    WHEN 'blocker_missing_templates' THEN 3
+    WHEN 'blocker_blank_body' THEN 4
+    WHEN 'review_tracking_enabled' THEN 5
+    WHEN 'review_sender_bounce_risk' THEN 6
+    ELSE 7
+  END,
+  cb.campaign_name;`,
+    notes: [
+      "Replace '{{campaign_name}}' with a campaign name fragment, or swap the WHERE clause for `c.id = '{{campaign_id}}'`.",
+      "Pair this with `personalization-leak-audit` when the campaign uses template variables.",
+      "Launch QA should produce blockers, warnings, and ready checks; do not bury blockers under general analysis.",
+      "Open/link tracking warnings come from cold email best-practice policy, not a hard Instantly API error.",
+    ],
+  },
+  {
+    id: "experiment-planner-candidates",
+    topic: "experiment-planner",
+    title: "Experiment planner candidates",
+    question: "Which campaign experiments should we launch next?",
+    exactness: "hybrid",
+    rationale: "Rank active campaigns by exact performance and evidence coverage so the agent can choose whether the next test should target copy, ICP, reply handling, lead supply, or deliverability.",
+    sql: `WITH active_campaigns AS (
+  SELECT
+    co.workspace_id,
+    co.campaign_id,
+    co.campaign_name,
+    co.leads_count,
+    co.contacted_count,
+    GREATEST(COALESCE(co.leads_count, 0) - COALESCE(co.contacted_count, 0), 0) AS leads_remaining,
+    co.emails_sent_count,
+    co.reply_count_unique,
+    co.unique_reply_rate_pct,
+    co.bounced_count,
+    co.bounce_rate_pct,
+    co.total_opportunities,
+    co.ingest_mode,
+    co.reply_lead_rows,
+    co.nonreply_rows_sampled,
+    co.reply_outbound_rows
+  FROM sendlens.campaign_overview co
+  WHERE co.status = 'active'
+),
+step_summary AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    COUNT(DISTINCT step) AS steps_with_analytics,
+    SUM(COALESCE(sent, 0)) AS step_sent_total,
+    SUM(COALESCE(unique_replies, 0)) AS step_unique_replies_total,
+    SUM(COALESCE(opportunities, 0)) AS step_opportunities_total
+  FROM sendlens.step_analytics
+  GROUP BY 1, 2
+),
+recent_volume AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    SUM(COALESCE(sent, 0)) AS sent_14d,
+    SUM(COALESCE(new_leads_contacted, 0)) AS new_leads_contacted_14d,
+    SUM(COALESCE(unique_replies, 0)) AS unique_replies_14d,
+    SUM(COALESCE(opportunities, 0)) AS opportunities_14d
+  FROM sendlens.campaign_daily_metrics
+  WHERE date >= CURRENT_DATE - INTERVAL 14 DAY
+  GROUP BY 1, 2
+),
+tag_rollup AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    string_agg(tag_label, ', ' ORDER BY tag_label) AS campaign_tags
+  FROM sendlens.campaign_tags
+  GROUP BY 1, 2
+)
+SELECT
+  ac.campaign_id,
+  ac.campaign_name,
+  tr.campaign_tags,
+  ac.leads_count,
+  ac.contacted_count,
+  ac.leads_remaining,
+  rv.sent_14d,
+  rv.new_leads_contacted_14d,
+  rv.unique_replies_14d,
+  rv.opportunities_14d,
+  ac.emails_sent_count,
+  ac.reply_count_unique,
+  ac.unique_reply_rate_pct,
+  ac.bounced_count,
+  ac.bounce_rate_pct,
+  ac.total_opportunities,
+  ss.steps_with_analytics,
+  ss.step_sent_total,
+  ss.step_unique_replies_total,
+  ss.step_opportunities_total,
+  ac.ingest_mode,
+  ac.reply_lead_rows,
+  ac.nonreply_rows_sampled,
+  ac.reply_outbound_rows,
+  CASE
+    WHEN ac.bounce_rate_pct >= 5 THEN 'deliverability_or_lead_quality_test'
+    WHEN COALESCE(ac.leads_remaining, 0) < 100 THEN 'lead_supply_or_segment_refill_test'
+    WHEN ac.emails_sent_count >= 300 AND ac.unique_reply_rate_pct < 0.5 THEN 'copy_or_icp_test'
+    WHEN ac.emails_sent_count >= 300 AND ac.total_opportunities = 0 THEN 'reply_quality_or_offer_test'
+    WHEN COALESCE(ac.reply_outbound_rows, 0) = 0 THEN 'hydrate_or_load_campaign_before_testing'
+    ELSE 'optimize_winner_or_holdout_test'
+  END AS recommended_test_lane
+FROM active_campaigns ac
+LEFT JOIN recent_volume rv
+  ON ac.workspace_id = rv.workspace_id
+ AND ac.campaign_id = rv.campaign_id
+LEFT JOIN step_summary ss
+  ON ac.workspace_id = ss.workspace_id
+ AND ac.campaign_id = ss.campaign_id
+LEFT JOIN tag_rollup tr
+  ON ac.workspace_id = tr.workspace_id
+ AND ac.campaign_id = tr.campaign_id
+ORDER BY
+  CASE recommended_test_lane
+    WHEN 'deliverability_or_lead_quality_test' THEN 1
+    WHEN 'copy_or_icp_test' THEN 2
+    WHEN 'reply_quality_or_offer_test' THEN 3
+    WHEN 'lead_supply_or_segment_refill_test' THEN 4
+    WHEN 'hydrate_or_load_campaign_before_testing' THEN 5
+    ELSE 6
+  END,
+  rv.sent_14d DESC NULLS LAST,
+  ac.emails_sent_count DESC;`,
+    notes: [
+      "Use this as the first pass for experiment planning, then narrow to one campaign and use copy, reply, or ICP recipes for the actual hypothesis.",
+      "This recipe is hybrid because it combines exact campaign metrics with sampled/evidence coverage fields to decide whether deeper evidence is ready.",
+      "A good experiment plan should include hypothesis, change, target cohort, success metric, stop condition, owner, and evaluation date.",
+      "Do not recommend copy tests for campaigns with unresolved deliverability or lead-supply blockers until those blockers are addressed.",
     ],
   },
   {

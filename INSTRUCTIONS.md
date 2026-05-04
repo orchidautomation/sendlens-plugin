@@ -13,6 +13,9 @@ SendLens is the reasoning layer over Instantly data. It runs read-only, stores d
 
 - `workspace-health`: Use for broad health checks, reply-rate diagnosis, account quality, and "what changed?" questions.
 - `campaign-performance`: Use for campaign comparisons, step analysis, variant ranking, and prioritization.
+- `account-manager-brief`: Use for client-safe updates, daily AM action queues, risk summaries, and "what should I tell the client?" questions.
+- `campaign-launch-qa`: Use before turning on, scaling, resuming, cloning, or handing off a campaign.
+- `experiment-planner`: Use for "what should we test next?", campaign improvement plans, and experiment evaluation design.
 - `copy-analysis`: Use for subject/body analysis, template review, and recommendations grounded in real replies.
 - `reply-patterns`: Use for positive vs negative reply cohort analysis, intent patterns, and outcome comparisons by step or variant.
 - `icp-signals`: Use for lead-segment hypotheses, campaign-variable patterns, and "who responds?" questions.
@@ -35,6 +38,7 @@ SendLens is the reasoning layer over Instantly data. It runs read-only, stores d
 - `refresh_status`: Use when the user asks what startup refresh is doing, whether the cache is current, or why data looks incomplete or stale.
 - `load_campaign_data`: Use when the user narrows to one campaign and wants copy analysis, ICP analysis, reply outcome analysis, or reconstructed outbound for that campaign. Prefer this over a workspace-wide `refresh_data` call.
 - `analysis_starters`: First stop for common workspace-health, campaign, copy, reply, ICP, or tag-filter questions before writing custom analysis.
+- For AM operating workflows, use `analysis_starters(topic="account-manager-brief")`, `analysis_starters(topic="campaign-launch-qa")`, or `analysis_starters(topic="experiment-planner")` before custom analysis.
 - `list_tables`, `list_columns`, `search_catalog`: Use when the user asks for custom breakdowns and you need schema discovery.
 - `analyze_data`: Use for follow-up analysis once the schema and question are clear.
 
@@ -72,6 +76,9 @@ If the host does not expose native delegated agents, preserve the same one-campa
 - Treat campaign and account headline metrics as exact only when they come from `campaign_analytics`, `step_analytics`, `campaigns`, or `account_daily_metrics`.
 - Keep campaign-level ranking on `campaign_analytics.reply_count_unique` and derived campaign reply rate when available. Do not assume step-level `unique_replies` has the same coverage.
 - For step or sequence ranking, use `step_analytics.unique_replies` only when coverage is clearly present for that campaign. If step-level reply counts are sparse or null, switch the ranking basis to `step_analytics.opportunities` and derived opportunity rate, and say so explicitly.
+- For AM briefs, separate internal action priority from client-safe wording. Include an action queue when the user asks what to do next.
+- For launch QA, blockers come first. Do not mark a campaign ready when sender inventory, lead supply, or templates are missing.
+- For experiment planning, choose one campaign and one test lane before prescribing changes. Include hypothesis, metric, guardrail, stop condition, and evidence basis.
 - Treat `custom_tags` and `custom_tag_mappings` as the exact tag-filter layer. Use them to scope analyses by campaign or sampled lead tags.
 - Treat `lead_evidence`, `lead_payload_kv`, `reply_context`, and `rendered_outbound_context` as the preferred semantic evidence layer.
 - Treat `sampled_leads` and `sampled_outbound_emails` as storage tables behind that layer. Never project full-population totals from sampled raw rows.
