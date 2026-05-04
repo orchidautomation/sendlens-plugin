@@ -165,6 +165,26 @@ function sqlString(value: unknown) {
   return `'${esc(String(value))}'`;
 }
 
+function campaignScheduleTimezone(...sources: Array<Record<string, unknown> | undefined>) {
+  for (const source of sources) {
+    const schedule = source?.campaign_schedule as Record<string, unknown> | undefined;
+    const direct = schedule?.timezone;
+    if (typeof direct === "string" && direct.trim()) {
+      return direct.trim();
+    }
+
+    const schedules = Array.isArray(schedule?.schedules) ? schedule.schedules : [];
+    for (const entry of schedules) {
+      const timezone = (entry as Record<string, unknown> | undefined)?.timezone;
+      if (typeof timezone === "string" && timezone.trim()) {
+        return timezone.trim();
+      }
+    }
+  }
+
+  return null;
+}
+
 function sqlInt(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? String(Math.trunc(parsed)) : "NULL";
@@ -1172,7 +1192,7 @@ async function storeCampaignDirectory(
           ${sqlBool(campaign.text_only)},
           ${sqlBool(campaign.open_tracking)},
           ${sqlBool(campaign.link_tracking)},
-          ${sqlString((campaign.campaign_schedule as Record<string, unknown> | undefined)?.timezone)},
+          ${sqlString(campaignScheduleTimezone(campaign))},
           NULL,
           NULL,
           ${sqlTimestamp(campaign.timestamp_created)},
@@ -2017,10 +2037,7 @@ async function storeCampaignData(
         ${sqlBool(campaign.text_only)},
         ${sqlBool(campaign.open_tracking)},
         ${sqlBool(campaign.link_tracking)},
-        ${sqlString(
-          (campaign.campaign_schedule as Record<string, unknown> | undefined)?.timezone ??
-            (detail.campaign_schedule as Record<string, unknown> | undefined)?.timezone,
-        )},
+        ${sqlString(campaignScheduleTimezone(campaign, detail))},
         ${sqlInt(Array.isArray(detail.sequences) ? detail.sequences.length : null)},
         ${sqlInt(firstSequenceSteps.length || null)},
         ${sqlTimestamp(campaign.timestamp_created)},
