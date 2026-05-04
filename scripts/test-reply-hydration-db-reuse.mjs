@@ -67,6 +67,8 @@ try {
   });
 
   assert.equal(hydration.total_stored, 1);
+  assert.equal(hydration.total_inserted_new, 1);
+  assert.equal(hydration.total_updated_existing, 0);
   const rows = await query(
     db,
     `SELECT reply_email_id, reply_body_text
@@ -78,6 +80,19 @@ try {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].reply_email_id, "reply-1");
   assert.equal(rows[0].reply_body_text, "This is the hydrated reply body.");
+
+  const syncNewest = await hydrateReplyText({
+    workspaceId: "ws_hydrate",
+    campaignId: "c_hydrate",
+    statuses: [1],
+    maxPagesPerStatus: 1,
+    latestOfThread: true,
+    mode: "sync_newest",
+    db,
+  });
+  assert.equal(syncNewest.total_stored, 1);
+  assert.equal(syncNewest.total_inserted_new, 0);
+  assert.equal(syncNewest.total_updated_existing, 1);
 } finally {
   instantly.listEmails = originalListEmails;
   closeDb(db);

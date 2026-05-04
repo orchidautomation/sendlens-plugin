@@ -529,7 +529,7 @@ WHERE campaign_id = '{{campaign_id}}'
 ORDER BY reply_at DESC
 LIMIT 100;`,
     notes: [
-      "If `reply_body_text` is null, run hydrate_reply_text for this campaign and rerun the query.",
+      "Run hydrate_reply_text for this campaign in default sync_newest mode, then rerun the query when the user needs current reply wording.",
       "Hydrated inbound reply text is exact when available; rendered outbound copy remains reconstructed evidence.",
       "Use it for positive/negative cohort analysis and copy reconstruction.",
     ],
@@ -558,7 +558,7 @@ WHERE campaign_id = '{{campaign_id}}'
 ORDER BY reply_received_at DESC NULLS LAST
 LIMIT 100;`,
     notes: [
-      "Run hydrate_reply_text for this campaign first if no rows are returned.",
+      "Run hydrate_reply_text for this campaign in default sync_newest mode first if no rows are returned or the user wants the newest reply wording.",
       "This is exact for hydrated inbound email rows stored in reply_emails.",
       "Status 0 out-of-office is intentionally excluded.",
     ],

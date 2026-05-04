@@ -21,7 +21,7 @@ loadClientEnv();
 
 const server = new McpServer({
   name: "sendlens",
-  version: "0.1.18",
+  version: "0.1.19",
 });
 
 const SESSION_REFRESH_WAIT_TIMEOUT_MS = 15_000;
@@ -311,7 +311,7 @@ server.registerTool(
       [
         "Hydrate actual inbound reply email text for exactly one campaign and write it into the local DuckDB cache.",
         "Use this only when the user needs real reply bodies; do not run it during routine startup or broad workspace triage because Instantly List email is capped at 20 requests per minute.",
-        "Before fetching, the tool checks cached reply_emails for the selected campaign/statuses. Default auto mode skips statuses that already have cached rows; continue mode resumes pagination from reply_email_hydration_state; restart mode starts from the newest page again and upserts by email ID.",
+        "Default sync_newest mode fetches the newest page and upserts by email ID so current replies are checked without duplicating cached rows. continue mode resumes older pagination from reply_email_hydration_state; restart mode starts from newest again; auto skips only when cached rows exist and no reply_context body gaps are detected.",
         "Default statuses are interested, not interested, and wrong person: 1, -1, -2. Out-of-office status 0 is excluded unless explicitly requested.",
       ].join(" "),
     inputSchema: {
@@ -339,9 +339,9 @@ server.registerTool(
         .optional()
         .describe("Whether to hydrate only the latest email in each thread. Defaults to true."),
       mode: z
-        .enum(["auto", "continue", "restart"])
+        .enum(["auto", "continue", "restart", "sync_newest"])
         .optional()
-        .describe("auto skips already-cached statuses; continue fetches the next saved page; restart starts from newest and upserts by email ID."),
+        .describe("sync_newest fetches the newest page and upserts by email ID; continue fetches older rows from the saved cursor; restart starts from newest again; auto skips only when cached rows exist and no body gaps are detected."),
       sample_limit: z
         .number()
         .int()
@@ -357,7 +357,7 @@ server.registerTool(
     statuses = [1, -1, -2],
     max_pages_per_status = 1,
     latest_of_thread = true,
-    mode = "auto",
+    mode = "sync_newest",
     sample_limit = 10,
   }) => {
     const readiness = await waitForSessionSnapshot();
