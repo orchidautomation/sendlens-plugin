@@ -21,7 +21,7 @@ loadClientEnv();
 
 const server = new McpServer({
   name: "sendlens",
-  version: "0.1.17",
+  version: "0.1.18",
 });
 
 const SESSION_REFRESH_WAIT_TIMEOUT_MS = 15_000;
@@ -431,6 +431,7 @@ server.registerTool(
         maxPagesPerStatus: max_pages_per_status,
         latestOfThread: latest_of_thread,
         mode,
+        db,
       });
 
       const campaignSafe = resolvedCampaignId.replace(/'/g, "''");
