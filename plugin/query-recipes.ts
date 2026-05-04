@@ -32,6 +32,7 @@ const QUERY_RECIPES: QueryRecipe[] = [
   campaign_id,
   campaign_name AS name,
   status,
+  daily_limit,
   emails_sent_count,
   reply_count_unique,
   unique_reply_rate_pct,
@@ -98,12 +99,436 @@ FROM sendlens.campaign_tags ct
 JOIN sendlens.campaign_accounts ca
   ON ct.workspace_id = ca.workspace_id
  AND ct.campaign_id = ca.campaign_id
-WHERE ct.tag_label = '{{tag_name}}'
+WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
 ORDER BY ca.bounce_rate_30d_pct DESC NULLS LAST, ca.total_sent_30d DESC NULLS LAST, ca.campaign_name, ca.account_email;`,
     notes: [
       "Replace '{{tag_name}}' with a real campaign tag such as 'The Kiln'.",
       "This resolves both direct campaign account lists and tag-based account assignments when account tag mappings are cached.",
       "If this returns no rows, SendLens has no resolved campaign sender inventory for that tag yet.",
+    ],
+  },
+  {
+    id: "campaign-tag-sender-coverage",
+    topic: "workspace-health",
+    title: "Campaign tag sender coverage",
+    question: "Which campaigns with a given Instantly tag are missing resolved sender assignments or daily metric coverage?",
+    exactness: "exact",
+    rationale: "Check coverage before trusting tag-scoped sender volume, deliverability, or utilization rollups.",
+    sql: `WITH tagged_campaigns AS (
+  SELECT
+    ct.workspace_id,
+    co.campaign_id,
+    co.campaign_name,
+    co.status,
+    co.daily_limit AS campaign_daily_limit,
+    co.emails_sent_count
+  FROM sendlens.campaign_tags ct
+  JOIN sendlens.campaign_overview co
+    ON ct.workspace_id = co.workspace_id
+   AND ct.campaign_id = co.campaign_id
+  WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+    AND co.status = 'active'
+),
+sender_coverage AS (
+  SELECT
+    tc.workspace_id,
+    tc.campaign_id,
+    COUNT(DISTINCT ca.account_email) AS resolved_sender_accounts,
+    COUNT(DISTINCT CASE WHEN adm.email IS NOT NULL THEN ca.account_email END) AS sender_accounts_with_daily_metrics,
+    MIN(adm.date) AS first_metric_date,
+    MAX(adm.date) AS last_metric_date
+  FROM tagged_campaigns tc
+  LEFT JOIN sendlens.campaign_accounts ca
+    ON tc.workspace_id = ca.workspace_id
+   AND tc.campaign_id = ca.campaign_id
+  LEFT JOIN sendlens.account_daily_metrics adm
+    ON ca.workspace_id = adm.workspace_id
+   AND lower(ca.account_email) = lower(adm.email)
+  GROUP BY 1, 2
+)
+SELECT
+  tc.campaign_id,
+  tc.campaign_name,
+  tc.status,
+  tc.campaign_daily_limit,
+  tc.emails_sent_count AS campaign_total_sent,
+  COALESCE(sc.resolved_sender_accounts, 0) AS resolved_sender_accounts,
+  COALESCE(sc.sender_accounts_with_daily_metrics, 0) AS sender_accounts_with_daily_metrics,
+  sc.first_metric_date,
+  sc.last_metric_date,
+  CASE
+    WHEN COALESCE(sc.resolved_sender_accounts, 0) = 0 THEN 'missing_sender_inventory'
+    WHEN COALESCE(sc.sender_accounts_with_daily_metrics, 0) = 0 THEN 'missing_account_daily_metrics'
+    WHEN sc.sender_accounts_with_daily_metrics < sc.resolved_sender_accounts THEN 'partial_account_daily_metrics'
+    ELSE 'covered'
+  END AS coverage_status
+FROM tagged_campaigns tc
+LEFT JOIN sender_coverage sc
+  ON tc.workspace_id = sc.workspace_id
+ AND tc.campaign_id = sc.campaign_id
+ORDER BY
+  CASE coverage_status
+    WHEN 'missing_sender_inventory' THEN 1
+    WHEN 'missing_account_daily_metrics' THEN 2
+    WHEN 'partial_account_daily_metrics' THEN 3
+    ELSE 4
+  END,
+  tc.emails_sent_count DESC,
+  tc.campaign_name;`,
+    notes: [
+      "Replace '{{tag_name}}' with a real campaign tag.",
+      "Run this before daily-volume or utilization rollups when the user is asking for tag-scoped sender volume.",
+      "A missing sender inventory row means SendLens cannot connect that campaign to sender accounts from the cached Instantly surfaces.",
+      "A covered campaign can still use senders shared with other campaigns, so account-level observed volume remains sender-scoped.",
+    ],
+  },
+  {
+    id: "campaign-tag-true-daily-volume",
+    topic: "campaign-performance",
+    title: "Campaign tag true daily volume",
+    question: "What is the true campaign-attributed daily sending volume for campaigns with a given Instantly tag?",
+    exactness: "exact",
+    rationale: "Use campaign_daily_metrics joined to exact campaign tags so daily sends are attributed to campaigns, not inferred from sender accounts.",
+    sql: `SELECT
+  date,
+  tag_label,
+  active_campaigns_with_daily_metrics,
+  configured_campaign_daily_limit_total,
+  campaign_total_sent,
+  campaign_attributed_sent,
+  campaign_attributed_contacted,
+  campaign_attributed_new_leads_contacted,
+  campaign_attributed_unique_replies,
+  campaign_attributed_replies,
+  campaign_attributed_opportunities,
+  campaign_limit_utilization_pct
+FROM sendlens.campaign_tag_true_daily_volume
+WHERE normalized_tag_label = lower(trim('{{tag_name}}'))
+ORDER BY date DESC;`,
+    notes: [
+      "Replace '{{tag_name}}' with a real campaign tag.",
+      "This is the preferred recipe for tag-level daily volume because it uses exact campaign/day analytics.",
+      "If this returns no rows, the cache has not ingested campaign_daily_metrics for matching tagged campaigns; use campaign-tag-sender-coverage and sender-scoped fallback recipes to diagnose coverage.",
+      "The view includes active campaigns only, matching the default SendLens active-campaign scope.",
+    ],
+  },
+  {
+    id: "campaign-tag-true-daily-volume-trend",
+    topic: "campaign-performance",
+    title: "Campaign tag true daily volume trend",
+    question: "What is the true campaign-attributed daily volume trend for campaigns with a given Instantly tag?",
+    exactness: "exact",
+    rationale: "Summarize true campaign/day analytics with rolling averages, peaks, weekday context, and cached date range.",
+    sql: `SELECT
+  date,
+  weekday_number,
+  weekday_name,
+  campaign_attributed_sent,
+  rolling_7_day_avg_sent,
+  peak_daily_sent,
+  avg_daily_sent_all_cached_days,
+  cached_sending_days,
+  first_cached_send_date,
+  last_cached_send_date,
+  campaign_attributed_unique_replies,
+  campaign_attributed_replies,
+  campaign_attributed_opportunities
+FROM sendlens.campaign_tag_true_daily_volume_trend
+WHERE normalized_tag_label = lower(trim('{{tag_name}}'))
+ORDER BY date DESC;`,
+    notes: [
+      "Replace '{{tag_name}}' with a real campaign tag.",
+      "Use this for broad 'what does daily volume look like' questions because it is true campaign-attributed volume plus trend context.",
+      "Missing dates are not automatically zero-send days; this view reports cached dates returned by Instantly campaign daily analytics.",
+    ],
+  },
+  {
+    id: "campaign-tag-daily-volume",
+    topic: "campaign-performance",
+    title: "Campaign tag daily volume",
+    question: "What does daily sending volume look like for campaigns with a given Instantly tag?",
+    exactness: "exact",
+    rationale: "Use exact campaign tags, configured campaign limits, resolved campaign sender assignments, and exact account daily metrics before answering tag-scoped volume questions.",
+    sql: `WITH tagged_campaigns AS (
+  SELECT
+    ct.workspace_id,
+    co.campaign_id,
+    co.campaign_name,
+    co.status,
+    co.daily_limit AS campaign_daily_limit,
+    co.emails_sent_count
+  FROM sendlens.campaign_tags ct
+  JOIN sendlens.campaign_overview co
+    ON ct.workspace_id = co.workspace_id
+   AND ct.campaign_id = co.campaign_id
+  WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+    AND co.status = 'active'
+),
+campaign_days AS (
+  SELECT
+    tc.campaign_id,
+    tc.campaign_name,
+    adm.date,
+    COUNT(DISTINCT ca.account_email) AS assigned_accounts_with_metrics,
+    SUM(COALESCE(adm.sent, 0)) AS sender_scoped_sent,
+    SUM(COALESCE(adm.unique_replies, 0)) AS sender_scoped_unique_replies,
+    SUM(COALESCE(adm.bounced, 0)) AS sender_scoped_bounces
+  FROM tagged_campaigns tc
+  JOIN sendlens.campaign_accounts ca
+    ON tc.workspace_id = ca.workspace_id
+   AND tc.campaign_id = ca.campaign_id
+  JOIN sendlens.account_daily_metrics adm
+    ON ca.workspace_id = adm.workspace_id
+   AND lower(ca.account_email) = lower(adm.email)
+  GROUP BY 1, 2, 3
+)
+SELECT
+  cd.date,
+  cd.campaign_id,
+  cd.campaign_name,
+  tc.campaign_daily_limit,
+  tc.emails_sent_count AS campaign_total_sent,
+  cd.assigned_accounts_with_metrics,
+  cd.sender_scoped_sent,
+  cd.sender_scoped_unique_replies,
+  cd.sender_scoped_bounces
+FROM campaign_days cd
+JOIN tagged_campaigns tc
+  ON cd.campaign_id = tc.campaign_id
+ORDER BY cd.date DESC, cd.sender_scoped_sent DESC, cd.campaign_name;`,
+    notes: [
+      "Replace '{{tag_name}}' with a real campaign tag.",
+      "This reports observed daily sends from the accounts assigned to each tagged campaign. Instantly's cached account_daily_metrics are exact at the account/day level, but not campaign-attributed.",
+      "If one sender account is assigned to multiple campaigns, account-level daily sends can appear under more than one campaign; use campaign_daily_limit for exact configured capacity.",
+      "If this returns no rows, either no sender inventory is resolved for the tag or no account daily metrics are cached for those senders.",
+    ],
+  },
+  {
+    id: "campaign-tag-daily-volume-deduped",
+    topic: "campaign-performance",
+    title: "Campaign tag daily volume deduped",
+    question: "What is the deduped daily sending volume for campaigns with a given Instantly tag?",
+    exactness: "exact",
+    rationale: "Use one row per assigned sender account per day so tag-level daily volume does not double count shared inboxes assigned to multiple tagged campaigns.",
+    sql: `WITH tagged_campaigns AS (
+  SELECT
+    ct.workspace_id,
+    co.campaign_id,
+    co.campaign_name,
+    co.daily_limit AS campaign_daily_limit,
+    co.emails_sent_count
+  FROM sendlens.campaign_tags ct
+  JOIN sendlens.campaign_overview co
+    ON ct.workspace_id = co.workspace_id
+   AND ct.campaign_id = co.campaign_id
+  WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+    AND co.status = 'active'
+),
+assigned_accounts AS (
+  SELECT DISTINCT
+    tc.workspace_id,
+    ca.account_email
+  FROM tagged_campaigns tc
+  JOIN sendlens.campaign_accounts ca
+    ON tc.workspace_id = ca.workspace_id
+   AND tc.campaign_id = ca.campaign_id
+  WHERE ca.account_email IS NOT NULL
+),
+capacity AS (
+  SELECT
+    COUNT(DISTINCT campaign_id) AS active_campaigns,
+    COALESCE(SUM(campaign_daily_limit), 0) AS configured_campaign_daily_limit_total,
+    COALESCE(SUM(emails_sent_count), 0) AS campaign_total_sent
+  FROM tagged_campaigns
+)
+SELECT
+  adm.date,
+  capacity.active_campaigns,
+  capacity.configured_campaign_daily_limit_total,
+  capacity.campaign_total_sent,
+  COUNT(DISTINCT adm.email) AS assigned_accounts_with_metrics,
+  SUM(COALESCE(adm.sent, 0)) AS deduped_sender_sent,
+  SUM(COALESCE(adm.unique_replies, 0)) AS deduped_sender_unique_replies,
+  SUM(COALESCE(adm.bounced, 0)) AS deduped_sender_bounces
+FROM assigned_accounts aa
+JOIN sendlens.account_daily_metrics adm
+  ON aa.workspace_id = adm.workspace_id
+ AND lower(aa.account_email) = lower(adm.email)
+CROSS JOIN capacity
+GROUP BY
+  adm.date,
+  capacity.active_campaigns,
+  capacity.configured_campaign_daily_limit_total,
+  capacity.campaign_total_sent
+ORDER BY adm.date DESC;`,
+    notes: [
+      "Replace '{{tag_name}}' with a real campaign tag.",
+      "This is the safest default for broad tag-level daily volume questions because each assigned sender account contributes at most once per date.",
+      "The daily send counts come from exact account_daily_metrics, so they are observed sender volume, not campaign-attributed sends.",
+      "Use campaign-tag-daily-volume when the user wants a campaign-by-campaign view and this deduped recipe when they want the tag total.",
+    ],
+  },
+  {
+    id: "campaign-tag-daily-volume-utilization",
+    topic: "campaign-performance",
+    title: "Campaign tag daily volume utilization",
+    question: "How does observed daily sending volume compare with configured campaign and sender capacity for a given Instantly tag?",
+    exactness: "exact",
+    rationale: "Compare observed sender-scoped sends against both campaign daily limits and resolved account daily limits before diagnosing under- or over-utilization.",
+    sql: `WITH tagged_campaigns AS (
+  SELECT
+    ct.workspace_id,
+    co.campaign_id,
+    co.campaign_name,
+    co.daily_limit AS campaign_daily_limit,
+    co.emails_sent_count
+  FROM sendlens.campaign_tags ct
+  JOIN sendlens.campaign_overview co
+    ON ct.workspace_id = co.workspace_id
+   AND ct.campaign_id = co.campaign_id
+  WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+    AND co.status = 'active'
+),
+assigned_accounts AS (
+  SELECT DISTINCT
+    tc.workspace_id,
+    ca.account_email,
+    ca.daily_limit AS account_daily_limit
+  FROM tagged_campaigns tc
+  JOIN sendlens.campaign_accounts ca
+    ON tc.workspace_id = ca.workspace_id
+   AND tc.campaign_id = ca.campaign_id
+  WHERE ca.account_email IS NOT NULL
+),
+capacity AS (
+  SELECT
+    COUNT(DISTINCT campaign_id) AS active_campaigns,
+    COALESCE(SUM(campaign_daily_limit), 0) AS configured_campaign_daily_limit_total,
+    COALESCE(SUM(emails_sent_count), 0) AS campaign_total_sent
+  FROM tagged_campaigns
+),
+sender_capacity AS (
+  SELECT
+    COUNT(DISTINCT account_email) AS resolved_sender_accounts,
+    COALESCE(SUM(account_daily_limit), 0) AS resolved_account_daily_limit_total
+  FROM assigned_accounts
+),
+daily_volume AS (
+  SELECT
+    adm.date,
+    COUNT(DISTINCT adm.email) AS assigned_accounts_with_metrics,
+    SUM(COALESCE(adm.sent, 0)) AS deduped_sender_sent,
+    SUM(COALESCE(adm.unique_replies, 0)) AS deduped_sender_unique_replies,
+    SUM(COALESCE(adm.bounced, 0)) AS deduped_sender_bounces
+  FROM assigned_accounts aa
+  JOIN sendlens.account_daily_metrics adm
+    ON aa.workspace_id = adm.workspace_id
+   AND lower(aa.account_email) = lower(adm.email)
+  GROUP BY 1
+)
+SELECT
+  dv.date,
+  c.active_campaigns,
+  sc.resolved_sender_accounts,
+  dv.assigned_accounts_with_metrics,
+  c.configured_campaign_daily_limit_total,
+  sc.resolved_account_daily_limit_total,
+  dv.deduped_sender_sent,
+  ROUND(100.0 * dv.deduped_sender_sent / NULLIF(c.configured_campaign_daily_limit_total, 0), 2) AS campaign_limit_utilization_pct,
+  ROUND(100.0 * dv.deduped_sender_sent / NULLIF(sc.resolved_account_daily_limit_total, 0), 2) AS account_limit_utilization_pct,
+  dv.deduped_sender_unique_replies,
+  dv.deduped_sender_bounces,
+  c.campaign_total_sent
+FROM daily_volume dv
+CROSS JOIN capacity c
+CROSS JOIN sender_capacity sc
+ORDER BY dv.date DESC;`,
+    notes: [
+      "Replace '{{tag_name}}' with a real campaign tag.",
+      "Observed sends are exact account/day metrics for resolved assigned senders, not exact campaign-attributed sends.",
+      "Campaign limit utilization compares observed sender volume with summed active campaign daily limits.",
+      "Account limit utilization compares observed sender volume with summed daily limits for resolved assigned accounts.",
+      "If utilization looks impossible or too high, inspect sender sharing and run campaign-tag-sender-coverage.",
+    ],
+  },
+  {
+    id: "campaign-tag-daily-volume-trend",
+    topic: "campaign-performance",
+    title: "Campaign tag daily volume trend",
+    question: "What are the recent daily volume trend, average, peak, and consistency for campaigns with a given Instantly tag?",
+    exactness: "exact",
+    rationale: "Summarize deduped sender-scoped daily volume with rolling averages and weekday context so the model can answer trend questions without dumping raw rows.",
+    sql: `WITH tagged_campaigns AS (
+  SELECT
+    ct.workspace_id,
+    co.campaign_id
+  FROM sendlens.campaign_tags ct
+  JOIN sendlens.campaign_overview co
+    ON ct.workspace_id = co.workspace_id
+   AND ct.campaign_id = co.campaign_id
+  WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+    AND co.status = 'active'
+),
+assigned_accounts AS (
+  SELECT DISTINCT
+    tc.workspace_id,
+    ca.account_email
+  FROM tagged_campaigns tc
+  JOIN sendlens.campaign_accounts ca
+    ON tc.workspace_id = ca.workspace_id
+   AND tc.campaign_id = ca.campaign_id
+  WHERE ca.account_email IS NOT NULL
+),
+daily_volume AS (
+  SELECT
+    adm.date,
+    strftime(adm.date, '%w') AS weekday_number,
+    strftime(adm.date, '%A') AS weekday_name,
+    SUM(COALESCE(adm.sent, 0)) AS deduped_sender_sent,
+    SUM(COALESCE(adm.unique_replies, 0)) AS deduped_sender_unique_replies,
+    SUM(COALESCE(adm.bounced, 0)) AS deduped_sender_bounces
+  FROM assigned_accounts aa
+  JOIN sendlens.account_daily_metrics adm
+    ON aa.workspace_id = adm.workspace_id
+   AND lower(aa.account_email) = lower(adm.email)
+  GROUP BY 1, 2, 3
+),
+scored AS (
+  SELECT
+    date,
+    weekday_number,
+    weekday_name,
+    deduped_sender_sent,
+    deduped_sender_unique_replies,
+    deduped_sender_bounces,
+    ROUND(AVG(deduped_sender_sent) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 2) AS rolling_7_day_avg_sent,
+    MAX(deduped_sender_sent) OVER () AS peak_daily_sent,
+    AVG(deduped_sender_sent) OVER () AS avg_daily_sent_all_cached_days,
+    COUNT(*) OVER () AS cached_sending_days,
+    MIN(date) OVER () AS first_cached_send_date,
+    MAX(date) OVER () AS last_cached_send_date
+  FROM daily_volume
+)
+SELECT
+  date,
+  weekday_number,
+  weekday_name,
+  deduped_sender_sent,
+  rolling_7_day_avg_sent,
+  peak_daily_sent,
+  ROUND(avg_daily_sent_all_cached_days, 2) AS avg_daily_sent_all_cached_days,
+  cached_sending_days,
+  first_cached_send_date,
+  last_cached_send_date,
+  deduped_sender_unique_replies,
+  deduped_sender_bounces
+FROM scored
+ORDER BY date DESC;`,
+    notes: [
+      "Replace '{{tag_name}}' with a real campaign tag.",
+      "This uses all cached account daily metrics for resolved assigned senders; add an explicit date predicate if the user asks for a specific window.",
+      "Use this when the user asks how volume looks, whether it is trending up/down, or what the normal daily pace is.",
+      "Because only dates with observed account metrics appear, missing dates should not automatically be treated as zero-send days.",
     ],
   },
   {
@@ -214,6 +639,7 @@ LIMIT 100;`,
   campaign_id,
   campaign_name AS name,
   status,
+  daily_limit,
   emails_sent_count,
   reply_count_unique,
   unique_reply_rate_pct,
@@ -734,16 +1160,58 @@ LIMIT 25;`,
     exactness: "exact",
     rationale: "Inspect the tag catalog before building filtered analyses.",
     sql: `SELECT
-  id AS tag_id,
-  COALESCE(label, name) AS tag_name,
-  color,
-  description,
-  timestamp_updated
-FROM sendlens.custom_tags
+  t.id AS tag_id,
+  COALESCE(t.label, t.name) AS tag_name,
+  lower(trim(COALESCE(t.label, t.name))) AS normalized_tag_name,
+  t.color,
+  t.description,
+  COUNT(DISTINCT CASE WHEN m.resource_type = '2' THEN m.resource_id END) AS tagged_campaigns,
+  COUNT(DISTINCT CASE WHEN m.resource_type = '1' THEN m.resource_id END) AS tagged_accounts,
+  COUNT(DISTINCT m.resource_id) AS tagged_resources,
+  t.timestamp_updated
+FROM sendlens.custom_tags t
+LEFT JOIN sendlens.custom_tag_mappings m
+  ON t.workspace_id = m.workspace_id
+ AND t.id = m.tag_id
+GROUP BY 1, 2, 3, 4, 5, 9
 ORDER BY tag_name;`,
     notes: [
       "Use this first when the user says 'filter by tags'.",
+      "The normalized tag name helps match case or whitespace variants before replacing '{{tag_name}}' in other recipes.",
+      "Mapping counts distinguish campaign tags from account tags so the model does not assume the wrong scope.",
       "Tags are exact workspace metadata.",
+    ],
+  },
+  {
+    id: "tag-scope-audit",
+    topic: "tags",
+    title: "Tag scope audit",
+    question: "Does a given Instantly tag apply to campaigns, accounts, or another resource type?",
+    exactness: "exact",
+    rationale: "Resolve tag scope before choosing campaign-tag, account-tag, or custom SQL analyses.",
+    sql: `SELECT
+  COALESCE(t.label, t.name) AS tag_name,
+  lower(trim(COALESCE(t.label, t.name))) AS normalized_tag_name,
+  m.resource_type,
+  CASE m.resource_type
+    WHEN '1' THEN 'account'
+    WHEN '2' THEN 'campaign'
+    ELSE 'other_or_unknown'
+  END AS inferred_resource_scope,
+  COUNT(DISTINCT m.resource_id) AS tagged_resources,
+  MIN(m.synced_at) AS first_mapping_synced_at,
+  MAX(m.synced_at) AS last_mapping_synced_at
+FROM sendlens.custom_tags t
+LEFT JOIN sendlens.custom_tag_mappings m
+  ON t.workspace_id = m.workspace_id
+ AND t.id = m.tag_id
+WHERE lower(trim(COALESCE(t.label, t.name))) = lower(trim('{{tag_name}}'))
+GROUP BY 1, 2, 3, 4
+ORDER BY tagged_resources DESC, inferred_resource_scope;`,
+    notes: [
+      "Replace '{{tag_name}}' with the user's tag label.",
+      "Use this when the user says 'tagged' but does not clearly say whether the tag is on campaigns, accounts, or another resource.",
+      "Campaign-tag recipes require campaign mappings; account-tag questions may need account_tags or custom SQL instead.",
     ],
   },
   {
@@ -764,7 +1232,7 @@ FROM sendlens.lead_evidence le
 JOIN sendlens.campaign_tags ct
   ON le.workspace_id = ct.workspace_id
  AND le.campaign_id = ct.campaign_id
-WHERE ct.tag_label = '{{tag_name}}'
+WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
 GROUP BY 1, 2, 3
 ORDER BY sampled_reply_share_pct DESC NULLS LAST, sampled_lead_count DESC;`,
     notes: [
@@ -784,6 +1252,7 @@ ORDER BY sampled_reply_share_pct DESC NULLS LAST, sampled_lead_count DESC;`,
   campaign_id,
   campaign_name AS name,
   status,
+  daily_limit,
   emails_sent_count,
   reply_count_unique,
   unique_reply_rate_pct,
@@ -792,7 +1261,7 @@ FROM sendlens.campaign_tags ct
 JOIN sendlens.campaign_overview co
   ON ct.workspace_id = co.workspace_id
  AND ct.campaign_id = co.campaign_id
-WHERE tag_label = '{{tag_name}}'
+WHERE lower(trim(tag_label)) = lower(trim('{{tag_name}}'))
 ORDER BY unique_reply_rate_pct DESC NULLS LAST, emails_sent_count DESC;`,
     notes: [
       "This is exact for campaign-level tags and performance aggregates.",

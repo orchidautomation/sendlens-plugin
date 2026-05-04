@@ -888,6 +888,7 @@ async function buildScopedWorkspaceSnapshot(
        co.campaign_id,
        co.campaign_name,
        co.status,
+       co.daily_limit,
        co.emails_sent_count,
        co.reply_count_unique,
        co.unique_reply_rate_pct,
@@ -923,6 +924,7 @@ async function buildScopedWorkspaceSnapshot(
     `SELECT
        COUNT(*) AS campaign_count,
        SUM(CASE WHEN co.status = 'active' THEN 1 ELSE 0 END) AS active_campaign_count,
+       COALESCE(SUM(co.daily_limit), 0) AS configured_daily_limit_total,
        COALESCE(SUM(co.emails_sent_count), 0) AS total_sent,
        COALESCE(SUM(co.reply_count_unique), 0) AS total_unique_replies,
        COALESCE(SUM(co.bounced_count), 0) AS total_bounces,
@@ -934,6 +936,7 @@ async function buildScopedWorkspaceSnapshot(
 
   const metrics = metricsRows[0] ?? {};
   const totalSent = Number(metrics.total_sent ?? 0) || 0;
+  const configuredDailyLimitTotal = Number(metrics.configured_daily_limit_total ?? 0) || 0;
   const totalUniqueReplies = Number(metrics.total_unique_replies ?? 0) || 0;
   const totalBounces = Number(metrics.total_bounces ?? 0) || 0;
   const totalOpportunities = Number(metrics.total_opportunities ?? 0) || 0;
@@ -966,6 +969,7 @@ async function buildScopedWorkspaceSnapshot(
     summary: [
       `Scoped cached snapshot for ${scopeNotes.join(" and ")}.`,
       `${Number(metrics.campaign_count ?? 0)} active campaigns, ${totalSent} sends, ${totalUniqueReplies} unique human replies, ${totalBounces} bounces, ${totalOpportunities} opportunities, and $${totalPipeline} pipeline.`,
+      `Configured campaign daily limit in scope: ${configuredDailyLimitTotal} emails/day.`,
       `Exact scoped headline rates: ${replyRate.toFixed(2)}% unique reply rate and ${bounceRate.toFixed(2)}% bounce rate.`,
       leader
         ? `Largest campaign in scope: ${String(leader.campaign_name)} with ${Number(leader.emails_sent_count ?? 0)} sends and ${Number(leader.unique_reply_rate_pct ?? 0).toFixed(2)}% unique reply rate.`
@@ -976,6 +980,7 @@ async function buildScopedWorkspaceSnapshot(
     exact_metrics: {
       campaign_count: Number(metrics.campaign_count ?? 0) || 0,
       active_campaign_count: Number(metrics.active_campaign_count ?? 0) || 0,
+      configured_daily_limit_total: configuredDailyLimitTotal,
       total_sent: totalSent,
       total_unique_replies: totalUniqueReplies,
       total_bounces: totalBounces,

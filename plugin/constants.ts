@@ -27,6 +27,7 @@ export const SIGNAL_REPLY_INTEREST_STATUSES = [1, -1, -2] as const;
 export const PUBLIC_TABLES = [
   "campaigns",
   "campaign_analytics",
+  "campaign_daily_metrics",
   "step_analytics",
   "campaign_variants",
   "campaign_account_assignments",
@@ -37,6 +38,14 @@ export const PUBLIC_TABLES = [
   "custom_tag_mappings",
   "campaign_tags",
   "account_tags",
+  "tag_scope_audit",
+  "campaign_tag_sender_coverage",
+  "campaign_tag_daily_volume_by_campaign",
+  "campaign_tag_daily_volume_deduped",
+  "campaign_tag_daily_volume_utilization",
+  "campaign_tag_daily_volume_trend",
+  "campaign_tag_true_daily_volume",
+  "campaign_tag_true_daily_volume_trend",
   "inbox_placement_tests",
   "inbox_placement_analytics",
   "inbox_placement_test_overview",
@@ -60,6 +69,8 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Exact campaign metadata from Instantly, including tracking and sequence counts.",
   campaign_analytics:
     "Exact per-campaign aggregate metrics such as sends, replies, bounces, and opportunities.",
+  campaign_daily_metrics:
+    "Exact per-campaign daily performance metrics from Instantly daily campaign analytics.",
   step_analytics:
     "Exact step and variant performance metrics from Instantly analytics.",
   campaign_variants:
@@ -80,6 +91,22 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Convenience view joining campaign tag mappings to campaign names for exact tag-based filtering.",
   account_tags:
     "Convenience view joining account tag mappings to account emails for exact sender filtering.",
+  tag_scope_audit:
+    "Semantic tag-scope rollup showing whether each custom tag is mapped to campaigns, accounts, or other resources.",
+  campaign_tag_sender_coverage:
+    "Semantic campaign-tag coverage view showing which tagged active campaigns have resolved sender accounts and account daily metrics.",
+  campaign_tag_daily_volume_by_campaign:
+    "Sender-scoped daily volume by campaign tag and campaign, built from exact account/day metrics for resolved assigned senders.",
+  campaign_tag_daily_volume_deduped:
+    "Deduped tag-level sender-scoped daily volume; each assigned sender account contributes at most once per tag/date.",
+  campaign_tag_daily_volume_utilization:
+    "Tag-level daily volume compared with configured campaign daily limits and resolved sender account daily limits.",
+  campaign_tag_daily_volume_trend:
+    "Tag-level daily volume trend with rolling averages, peak volume, weekday, and cached date range context.",
+  campaign_tag_true_daily_volume:
+    "True tag-level daily campaign volume from campaign_daily_metrics joined to exact campaign tags.",
+  campaign_tag_true_daily_volume_trend:
+    "True tag-level campaign daily volume trend with rolling averages, peak volume, weekday, and cached date range context.",
   inbox_placement_tests:
     "Exact inbox placement test definitions from Instantly, including linked campaigns, sending accounts, recipients, schedules, and raw metadata.",
   inbox_placement_analytics:

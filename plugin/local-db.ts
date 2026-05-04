@@ -259,6 +259,26 @@ async function ensureSchema(conn: DuckDBConnection) {
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (workspace_id, campaign_id)
     )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.campaign_daily_metrics (
+      workspace_id VARCHAR NOT NULL,
+      campaign_id VARCHAR NOT NULL,
+      date DATE NOT NULL,
+      sent INTEGER,
+      contacted INTEGER,
+      new_leads_contacted INTEGER,
+      opened INTEGER,
+      unique_opened INTEGER,
+      replies INTEGER,
+      unique_replies INTEGER,
+      replies_automatic INTEGER,
+      unique_replies_automatic INTEGER,
+      clicks INTEGER,
+      unique_clicks INTEGER,
+      opportunities INTEGER,
+      unique_opportunities INTEGER,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, campaign_id, date)
+    )`,
     `CREATE TABLE IF NOT EXISTS sendlens.step_analytics (
       workspace_id VARCHAR NOT NULL,
       campaign_id VARCHAR NOT NULL,
@@ -559,6 +579,8 @@ async function ensureSchema(conn: DuckDBConnection) {
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS reply_lead_rows INTEGER",
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS reply_outbound_rows INTEGER",
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS filtered_lead_rows INTEGER",
+    "ALTER TABLE sendlens.campaign_daily_metrics ADD COLUMN IF NOT EXISTS opportunities INTEGER",
+    "ALTER TABLE sendlens.campaign_daily_metrics ADD COLUMN IF NOT EXISTS unique_opportunities INTEGER",
     `CREATE OR REPLACE VIEW sendlens.campaign_tags AS
       SELECT
         m.workspace_id,
@@ -753,6 +775,291 @@ async function ensureSchema(conn: DuckDBConnection) {
       LEFT JOIN sendlens.sampling_runs sr
         ON c.workspace_id = sr.workspace_id
        AND c.id = sr.campaign_id`,
+    `CREATE OR REPLACE VIEW sendlens.tag_scope_audit AS
+      SELECT
+        t.workspace_id,
+        t.id AS tag_id,
+        COALESCE(t.label, t.name) AS tag_label,
+        lower(trim(COALESCE(t.label, t.name))) AS normalized_tag_label,
+        m.resource_type,
+        CASE m.resource_type
+          WHEN '1' THEN 'account'
+          WHEN '2' THEN 'campaign'
+          ELSE 'other_or_unknown'
+        END AS inferred_resource_scope,
+        COUNT(DISTINCT m.resource_id) AS tagged_resources,
+        MIN(m.synced_at) AS first_mapping_synced_at,
+        MAX(m.synced_at) AS last_mapping_synced_at
+      FROM sendlens.custom_tags t
+      LEFT JOIN sendlens.custom_tag_mappings m
+        ON t.workspace_id = m.workspace_id
+       AND t.id = m.tag_id
+      GROUP BY
+        t.workspace_id,
+        t.id,
+        COALESCE(t.label, t.name),
+        lower(trim(COALESCE(t.label, t.name))),
+        m.resource_type`,
+    `CREATE OR REPLACE VIEW sendlens.campaign_tag_sender_coverage AS
+      WITH tagged_campaigns AS (
+        SELECT
+          ct.workspace_id,
+          ct.tag_id,
+          ct.tag_label,
+          lower(trim(ct.tag_label)) AS normalized_tag_label,
+          co.campaign_id,
+          co.campaign_name,
+          co.status,
+          co.daily_limit AS campaign_daily_limit,
+          co.emails_sent_count
+        FROM sendlens.campaign_tags ct
+        JOIN sendlens.campaign_overview co
+          ON ct.workspace_id = co.workspace_id
+         AND ct.campaign_id = co.campaign_id
+        WHERE co.status = 'active'
+      ),
+      sender_coverage AS (
+        SELECT
+          tc.workspace_id,
+          tc.tag_id,
+          tc.campaign_id,
+          COUNT(DISTINCT ca.account_email) AS resolved_sender_accounts,
+          COUNT(DISTINCT CASE WHEN adm.email IS NOT NULL THEN ca.account_email END) AS sender_accounts_with_daily_metrics,
+          MIN(adm.date) AS first_metric_date,
+          MAX(adm.date) AS last_metric_date
+        FROM tagged_campaigns tc
+        LEFT JOIN sendlens.campaign_accounts ca
+          ON tc.workspace_id = ca.workspace_id
+         AND tc.campaign_id = ca.campaign_id
+        LEFT JOIN sendlens.account_daily_metrics adm
+          ON ca.workspace_id = adm.workspace_id
+         AND lower(ca.account_email) = lower(adm.email)
+        GROUP BY 1, 2, 3
+      )
+      SELECT
+        tc.workspace_id,
+        tc.tag_id,
+        tc.tag_label,
+        tc.normalized_tag_label,
+        tc.campaign_id,
+        tc.campaign_name,
+        tc.status,
+        tc.campaign_daily_limit,
+        tc.emails_sent_count AS campaign_total_sent,
+        COALESCE(sc.resolved_sender_accounts, 0) AS resolved_sender_accounts,
+        COALESCE(sc.sender_accounts_with_daily_metrics, 0) AS sender_accounts_with_daily_metrics,
+        sc.first_metric_date,
+        sc.last_metric_date,
+        CASE
+          WHEN COALESCE(sc.resolved_sender_accounts, 0) = 0 THEN 'missing_sender_inventory'
+          WHEN COALESCE(sc.sender_accounts_with_daily_metrics, 0) = 0 THEN 'missing_account_daily_metrics'
+          WHEN sc.sender_accounts_with_daily_metrics < sc.resolved_sender_accounts THEN 'partial_account_daily_metrics'
+          ELSE 'covered'
+        END AS coverage_status
+      FROM tagged_campaigns tc
+      LEFT JOIN sender_coverage sc
+        ON tc.workspace_id = sc.workspace_id
+       AND tc.tag_id = sc.tag_id
+       AND tc.campaign_id = sc.campaign_id`,
+    `CREATE OR REPLACE VIEW sendlens.campaign_tag_daily_volume_by_campaign AS
+      SELECT
+        ct.workspace_id,
+        ct.tag_id,
+        ct.tag_label,
+        lower(trim(ct.tag_label)) AS normalized_tag_label,
+        co.campaign_id,
+        co.campaign_name,
+        adm.date,
+        co.daily_limit AS campaign_daily_limit,
+        co.emails_sent_count AS campaign_total_sent,
+        COUNT(DISTINCT ca.account_email) AS assigned_accounts_with_metrics,
+        SUM(COALESCE(adm.sent, 0)) AS sender_scoped_sent,
+        SUM(COALESCE(adm.unique_replies, 0)) AS sender_scoped_unique_replies,
+        SUM(COALESCE(adm.bounced, 0)) AS sender_scoped_bounces
+      FROM sendlens.campaign_tags ct
+      JOIN sendlens.campaign_overview co
+        ON ct.workspace_id = co.workspace_id
+       AND ct.campaign_id = co.campaign_id
+      JOIN sendlens.campaign_accounts ca
+        ON co.workspace_id = ca.workspace_id
+       AND co.campaign_id = ca.campaign_id
+      JOIN sendlens.account_daily_metrics adm
+        ON ca.workspace_id = adm.workspace_id
+       AND lower(ca.account_email) = lower(adm.email)
+      WHERE co.status = 'active'
+      GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9`,
+    `CREATE OR REPLACE VIEW sendlens.campaign_tag_daily_volume_deduped AS
+      WITH assigned_accounts AS (
+        SELECT DISTINCT
+          ct.workspace_id,
+          ct.tag_id,
+          ct.tag_label,
+          lower(trim(ct.tag_label)) AS normalized_tag_label,
+          ca.account_email
+        FROM sendlens.campaign_tags ct
+        JOIN sendlens.campaign_overview co
+          ON ct.workspace_id = co.workspace_id
+         AND ct.campaign_id = co.campaign_id
+        JOIN sendlens.campaign_accounts ca
+          ON co.workspace_id = ca.workspace_id
+         AND co.campaign_id = ca.campaign_id
+        WHERE co.status = 'active'
+          AND ca.account_email IS NOT NULL
+      ),
+      capacity AS (
+        SELECT
+          ct.workspace_id,
+          ct.tag_id,
+          COUNT(DISTINCT co.campaign_id) AS active_campaigns,
+          COALESCE(SUM(co.daily_limit), 0) AS configured_campaign_daily_limit_total,
+          COALESCE(SUM(co.emails_sent_count), 0) AS campaign_total_sent
+        FROM sendlens.campaign_tags ct
+        JOIN sendlens.campaign_overview co
+          ON ct.workspace_id = co.workspace_id
+         AND ct.campaign_id = co.campaign_id
+        WHERE co.status = 'active'
+        GROUP BY 1, 2
+      )
+      SELECT
+        aa.workspace_id,
+        aa.tag_id,
+        aa.tag_label,
+        aa.normalized_tag_label,
+        adm.date,
+        c.active_campaigns,
+        c.configured_campaign_daily_limit_total,
+        c.campaign_total_sent,
+        COUNT(DISTINCT adm.email) AS assigned_accounts_with_metrics,
+        SUM(COALESCE(adm.sent, 0)) AS deduped_sender_sent,
+        SUM(COALESCE(adm.unique_replies, 0)) AS deduped_sender_unique_replies,
+        SUM(COALESCE(adm.bounced, 0)) AS deduped_sender_bounces
+      FROM assigned_accounts aa
+      JOIN sendlens.account_daily_metrics adm
+        ON aa.workspace_id = adm.workspace_id
+       AND lower(aa.account_email) = lower(adm.email)
+      JOIN capacity c
+        ON aa.workspace_id = c.workspace_id
+       AND aa.tag_id = c.tag_id
+      GROUP BY 1, 2, 3, 4, 5, 6, 7, 8`,
+    `CREATE OR REPLACE VIEW sendlens.campaign_tag_daily_volume_utilization AS
+      WITH assigned_accounts AS (
+        SELECT DISTINCT
+          ct.workspace_id,
+          ct.tag_id,
+          ca.account_email,
+          ca.daily_limit AS account_daily_limit
+        FROM sendlens.campaign_tags ct
+        JOIN sendlens.campaign_overview co
+          ON ct.workspace_id = co.workspace_id
+         AND ct.campaign_id = co.campaign_id
+        JOIN sendlens.campaign_accounts ca
+          ON co.workspace_id = ca.workspace_id
+         AND co.campaign_id = ca.campaign_id
+        WHERE co.status = 'active'
+          AND ca.account_email IS NOT NULL
+      ),
+      sender_capacity AS (
+        SELECT
+          workspace_id,
+          tag_id,
+          COUNT(DISTINCT account_email) AS resolved_sender_accounts,
+          COALESCE(SUM(account_daily_limit), 0) AS resolved_account_daily_limit_total
+        FROM assigned_accounts
+        GROUP BY 1, 2
+      )
+      SELECT
+        dv.workspace_id,
+        dv.tag_id,
+        dv.tag_label,
+        dv.normalized_tag_label,
+        dv.date,
+        dv.active_campaigns,
+        COALESCE(sc.resolved_sender_accounts, 0) AS resolved_sender_accounts,
+        dv.assigned_accounts_with_metrics,
+        dv.configured_campaign_daily_limit_total,
+        COALESCE(sc.resolved_account_daily_limit_total, 0) AS resolved_account_daily_limit_total,
+        dv.deduped_sender_sent,
+        ROUND(100.0 * dv.deduped_sender_sent / NULLIF(dv.configured_campaign_daily_limit_total, 0), 2) AS campaign_limit_utilization_pct,
+        ROUND(100.0 * dv.deduped_sender_sent / NULLIF(sc.resolved_account_daily_limit_total, 0), 2) AS account_limit_utilization_pct,
+        dv.deduped_sender_unique_replies,
+        dv.deduped_sender_bounces,
+        dv.campaign_total_sent
+      FROM sendlens.campaign_tag_daily_volume_deduped dv
+      LEFT JOIN sender_capacity sc
+        ON dv.workspace_id = sc.workspace_id
+       AND dv.tag_id = sc.tag_id`,
+    `CREATE OR REPLACE VIEW sendlens.campaign_tag_daily_volume_trend AS
+      SELECT
+        workspace_id,
+        tag_id,
+        tag_label,
+        normalized_tag_label,
+        date,
+        strftime(date, '%w') AS weekday_number,
+        strftime(date, '%A') AS weekday_name,
+        deduped_sender_sent,
+        ROUND(AVG(deduped_sender_sent) OVER (PARTITION BY workspace_id, tag_id ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 2) AS rolling_7_day_avg_sent,
+        MAX(deduped_sender_sent) OVER (PARTITION BY workspace_id, tag_id) AS peak_daily_sent,
+        ROUND(AVG(deduped_sender_sent) OVER (PARTITION BY workspace_id, tag_id), 2) AS avg_daily_sent_all_cached_days,
+        COUNT(*) OVER (PARTITION BY workspace_id, tag_id) AS cached_sending_days,
+        MIN(date) OVER (PARTITION BY workspace_id, tag_id) AS first_cached_send_date,
+        MAX(date) OVER (PARTITION BY workspace_id, tag_id) AS last_cached_send_date,
+        deduped_sender_unique_replies,
+        deduped_sender_bounces
+      FROM sendlens.campaign_tag_daily_volume_deduped`,
+    `CREATE OR REPLACE VIEW sendlens.campaign_tag_true_daily_volume AS
+      SELECT
+        ct.workspace_id,
+        ct.tag_id,
+        ct.tag_label,
+        lower(trim(ct.tag_label)) AS normalized_tag_label,
+        cdm.date,
+        COUNT(DISTINCT co.campaign_id) AS active_campaigns_with_daily_metrics,
+        COALESCE(SUM(co.daily_limit), 0) AS configured_campaign_daily_limit_total,
+        COALESCE(SUM(co.emails_sent_count), 0) AS campaign_total_sent,
+        SUM(COALESCE(cdm.sent, 0)) AS campaign_attributed_sent,
+        SUM(COALESCE(cdm.contacted, 0)) AS campaign_attributed_contacted,
+        SUM(COALESCE(cdm.new_leads_contacted, 0)) AS campaign_attributed_new_leads_contacted,
+        SUM(COALESCE(cdm.opened, 0)) AS campaign_attributed_opened,
+        SUM(COALESCE(cdm.unique_opened, 0)) AS campaign_attributed_unique_opened,
+        SUM(COALESCE(cdm.replies, 0)) AS campaign_attributed_replies,
+        SUM(COALESCE(cdm.unique_replies, 0)) AS campaign_attributed_unique_replies,
+        SUM(COALESCE(cdm.replies_automatic, 0)) AS campaign_attributed_replies_automatic,
+        SUM(COALESCE(cdm.unique_replies_automatic, 0)) AS campaign_attributed_unique_replies_automatic,
+        SUM(COALESCE(cdm.clicks, 0)) AS campaign_attributed_clicks,
+        SUM(COALESCE(cdm.unique_clicks, 0)) AS campaign_attributed_unique_clicks,
+        SUM(COALESCE(cdm.opportunities, 0)) AS campaign_attributed_opportunities,
+        SUM(COALESCE(cdm.unique_opportunities, 0)) AS campaign_attributed_unique_opportunities,
+        ROUND(100.0 * SUM(COALESCE(cdm.sent, 0)) / NULLIF(SUM(co.daily_limit), 0), 2) AS campaign_limit_utilization_pct
+      FROM sendlens.campaign_tags ct
+      JOIN sendlens.campaign_overview co
+        ON ct.workspace_id = co.workspace_id
+       AND ct.campaign_id = co.campaign_id
+      JOIN sendlens.campaign_daily_metrics cdm
+        ON co.workspace_id = cdm.workspace_id
+       AND co.campaign_id = cdm.campaign_id
+      WHERE co.status = 'active'
+      GROUP BY 1, 2, 3, 4, 5`,
+    `CREATE OR REPLACE VIEW sendlens.campaign_tag_true_daily_volume_trend AS
+      SELECT
+        workspace_id,
+        tag_id,
+        tag_label,
+        normalized_tag_label,
+        date,
+        strftime(date, '%w') AS weekday_number,
+        strftime(date, '%A') AS weekday_name,
+        campaign_attributed_sent,
+        ROUND(AVG(campaign_attributed_sent) OVER (PARTITION BY workspace_id, tag_id ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 2) AS rolling_7_day_avg_sent,
+        MAX(campaign_attributed_sent) OVER (PARTITION BY workspace_id, tag_id) AS peak_daily_sent,
+        ROUND(AVG(campaign_attributed_sent) OVER (PARTITION BY workspace_id, tag_id), 2) AS avg_daily_sent_all_cached_days,
+        COUNT(*) OVER (PARTITION BY workspace_id, tag_id) AS cached_sending_days,
+        MIN(date) OVER (PARTITION BY workspace_id, tag_id) AS first_cached_send_date,
+        MAX(date) OVER (PARTITION BY workspace_id, tag_id) AS last_cached_send_date,
+        campaign_attributed_unique_replies,
+        campaign_attributed_replies,
+        campaign_attributed_opportunities
+      FROM sendlens.campaign_tag_true_daily_volume`,
     `CREATE OR REPLACE VIEW sendlens.lead_evidence AS
       SELECT
         sl.workspace_id,
@@ -964,6 +1271,7 @@ export async function clearWorkspaceData(
   const writableTables = [
     "campaigns",
     "campaign_analytics",
+    "campaign_daily_metrics",
     "step_analytics",
     "campaign_variants",
     "campaign_account_assignments",
@@ -982,6 +1290,7 @@ export async function clearWorkspaceData(
   const scopedTables = [
     "campaigns",
     "campaign_analytics",
+    "campaign_daily_metrics",
     "step_analytics",
     "campaign_variants",
     "campaign_account_assignments",
