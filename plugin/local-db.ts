@@ -876,7 +876,12 @@ async function ensureSchema(conn: DuckDBConnection) {
       LEFT JOIN sendlens.reply_emails re
         ON le.workspace_id = re.workspace_id
        AND le.campaign_id = re.campaign_id
-       AND lower(le.email) = lower(COALESCE(re.lead_email, re.from_email))
+       AND lower(le.email) = lower(
+         CASE
+           WHEN re.lead_email LIKE '%@%' THEN re.lead_email
+           ELSE re.from_email
+         END
+       )
        AND re.direction = 'inbound'
       LEFT JOIN sendlens.sampled_outbound_emails so
         ON le.workspace_id = so.workspace_id

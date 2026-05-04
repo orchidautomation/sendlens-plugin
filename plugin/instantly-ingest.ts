@@ -424,6 +424,11 @@ function normalizeEmail(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
 }
 
+function emailOrNull(value: unknown) {
+  const email = normalizeEmail(value);
+  return email.includes("@") ? email : null;
+}
+
 function extractPayload(lead: LeadRecord) {
   const record = lead as Record<string, unknown>;
   const directPayload = record.payload;
@@ -1265,7 +1270,11 @@ async function fetchReplyEmails(
       id: String(email.id ?? ""),
       campaignId,
       threadId: String(email.thread_id ?? ""),
-      leadEmail: String(email.lead ?? email.lead_email ?? ""),
+      leadEmail:
+        emailOrNull(email.lead_email) ??
+        emailOrNull(email.lead) ??
+        emailOrNull(email.from_address_email) ??
+        "",
       messageId: typeof email.message_id === "string" ? email.message_id : null,
       eaccount: typeof email.eaccount === "string" ? email.eaccount : null,
       fromEmail: String(email.from_address_email ?? ""),
@@ -1310,7 +1319,11 @@ function emailRecordFromInstantly(
     id,
     campaignId,
     threadId: String(email.thread_id ?? ""),
-    leadEmail: String(email.lead ?? email.lead_email ?? ""),
+    leadEmail:
+      emailOrNull(email.lead_email) ??
+      emailOrNull(email.lead) ??
+      emailOrNull(email.from_address_email) ??
+      "",
     messageId: typeof email.message_id === "string" ? email.message_id : null,
     eaccount: typeof email.eaccount === "string" ? email.eaccount : null,
     fromEmail: String(email.from_address_email ?? ""),
@@ -1401,6 +1414,7 @@ type HydrateReplyTextOptions = {
   maxPagesPerStatus: number;
   latestOfThread: boolean;
   mode: ReplyTextHydrationMode;
+  db?: DuckDBConnection;
 };
 
 export async function hydrateReplyText(options: HydrateReplyTextOptions) {
@@ -1409,9 +1423,11 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
     throw new Error("Missing SENDLENS_INSTANTLY_API_KEY.");
   }
 
-  const db = await getDb();
+  const db = options.db ?? await getDb();
+  const ownsDb = options.db == null;
   const workspaceSafe = esc(options.workspaceId);
   const campaignSafe = esc(options.campaignId);
+  try {
   const campaignRows = await query(
     db,
     `SELECT id, name
@@ -1605,6 +1621,11 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
     completed_at: new Date().toISOString(),
     status_results: statusResults,
   };
+  } finally {
+    if (ownsDb) {
+      closeDb(db);
+    }
+  }
 }
 
 async function fetchLeadSample(
