@@ -1606,18 +1606,37 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
       rowsUpdatedExisting += existingFetchedIds;
       rowsInsertedNew += Math.max(0, emails.length - existingFetchedIds);
 
+      if (options.mode === "sync_newest") {
+        break;
+      }
       if (!cursor || response.items.length < DEFAULT_PAGE_SIZE) {
         exhausted = true;
         break;
       }
     }
 
+    const previousPages = Number(previousState?.pages_hydrated ?? 0) || 0;
+    const previousEmails = Number(previousState?.emails_hydrated ?? 0) || 0;
     const priorPages = options.mode === "continue"
       ? Number(previousState?.pages_hydrated ?? 0) || 0
       : 0;
     const priorEmails = options.mode === "continue"
       ? Number(previousState?.emails_hydrated ?? 0) || 0
       : 0;
+    const stateNextStartingAfter = options.mode === "sync_newest"
+      ? (typeof previousState?.next_starting_after === "string"
+        ? previousState.next_starting_after
+        : null)
+      : cursor;
+    const statePagesHydrated = options.mode === "sync_newest"
+      ? previousPages
+      : priorPages + pagesFetched;
+    const stateEmailsHydrated = options.mode === "sync_newest"
+      ? previousEmails
+      : priorEmails + rowsStored;
+    const stateExhausted = options.mode === "sync_newest"
+      ? previousState?.exhausted === true
+      : exhausted;
     await insertRows(
       db,
       "reply_email_hydration_state",
@@ -1640,10 +1659,10 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
         ${sqlInt(status)},
         ${options.latestOfThread ? "TRUE" : "FALSE"},
         '${emailType}',
-        ${sqlString(cursor)},
-        ${sqlInt(priorPages + pagesFetched)},
-        ${sqlInt(priorEmails + rowsStored)},
-        ${exhausted ? "TRUE" : "FALSE"},
+        ${sqlString(stateNextStartingAfter)},
+        ${sqlInt(statePagesHydrated)},
+        ${sqlInt(stateEmailsHydrated)},
+        ${stateExhausted ? "TRUE" : "FALSE"},
         ${sqlTimestamp(new Date().toISOString())},
         CURRENT_TIMESTAMP
       )`],
@@ -1665,7 +1684,9 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
       rows_updated_existing: rowsUpdatedExisting,
       skipped_auto_replies: skippedAutoReplies,
       next_starting_after: cursor,
+      saved_next_starting_after: stateNextStartingAfter,
       exhausted,
+      saved_exhausted: stateExhausted,
       cursor_fallback_used: cursorFallbackUsed,
     });
   }
