@@ -186,7 +186,7 @@ Main MCP tools:
 - `refresh_status`
 - `refresh_data`
 - `load_campaign_data`
-- `hydrate_reply_text`
+- `fetch_reply_text`
 
 Preferred warehouse surfaces:
 
@@ -239,7 +239,7 @@ The intended flow is:
 
 1. triage the workspace
 2. choose a campaign
-3. hydrate that campaign's evidence
+3. load that campaign's evidence
 4. run specialist analysis
 5. synthesize the result
 

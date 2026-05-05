@@ -25,7 +25,7 @@ Plan the next campaign experiment with hypothesis, metric, stop condition, and e
 - If the test lane is ICP/segment, switch to `icp-signals` after loading the campaign.
 - If the test lane is reply quality or objection handling, switch to `reply-patterns`.
 - Every experiment must include hypothesis, change, target cohort, success metric, minimum read window, stop condition, and what not to change during the test.
-- Call out whether the plan is based on exact aggregate metrics, sampled lead evidence, hydrated replies, or reconstructed outbound copy.
+- Call out whether the plan is based on exact aggregate metrics, sampled lead evidence, fetched replies, or reconstructed outbound copy.
 
 ## Output Shape
 
