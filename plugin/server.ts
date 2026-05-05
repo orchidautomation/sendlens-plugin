@@ -185,13 +185,13 @@ server.registerTool(
   {
     description:
       [
-        "Hydrate and return one campaign's analysis context when the user has chosen a campaign and wants copy, ICP, reply outcome, or next-test diagnosis.",
+        "Load and return one campaign's analysis context when the user has chosen a campaign and wants copy, ICP, reply outcome, or next-test diagnosis.",
         "Use this after workspace_snapshot or campaign ranking, not for broad workspace comparisons.",
         "Returns campaign_overview, a stratified human_reply_sample, optional rendered_outbound_sample, output limits, warnings, and refresh/readiness metadata.",
         "campaign_overview uses exact Instantly aggregates; human replies use lead-level reply outcome state; rendered outbound rows are locally reconstructed/sampled evidence, not exact delivered email bodies.",
       ].join(" "),
     inputSchema: {
-      campaign_id: z.string().describe("Instantly campaign ID to hydrate."),
+      campaign_id: z.string().describe("Instantly campaign ID to load."),
       include_rendered_outbound: z
         .boolean()
         .optional()
@@ -202,7 +202,7 @@ server.registerTool(
         .min(0)
         .max(500)
         .optional()
-        .describe("Maximum non-reply leads to retain for this campaign hydration."),
+        .describe("Maximum non-reply leads to retain for this campaign load."),
       reply_bucket_limit: z
         .number()
         .int()
@@ -236,7 +236,7 @@ server.registerTool(
       const workspaceId = refreshed.workspaceId ?? (await getActiveWorkspaceId(db));
       if (!workspaceId) {
         return jsonResponse({
-          error: "No active workspace is loaded after campaign hydration.",
+          error: "No active workspace is loaded after campaign load.",
         });
       }
 
@@ -305,13 +305,13 @@ server.registerTool(
 );
 
 server.registerTool(
-  "hydrate_reply_text",
+  "fetch_reply_text",
   {
     description:
       [
-        "Hydrate actual inbound reply email text for exactly one campaign and write it into the local DuckDB cache.",
+        "Fetch actual inbound reply email text for exactly one campaign and write it into the local DuckDB cache.",
         "Use this only when the user needs real reply bodies; do not run it during routine startup or broad workspace triage because Instantly List email is capped at 20 requests per minute.",
-        "Default sync_newest mode fetches the newest page and upserts by email ID so current replies are checked without duplicating cached rows. continue mode resumes older pagination from reply_email_hydration_state; restart mode starts from newest again; auto skips only when cached rows exist and no reply_context body gaps are detected.",
+        "Default sync_newest mode fetches the newest page and upserts by email ID so current replies are checked without duplicating cached rows. continue mode resumes older pagination from the saved reply-fetch cursor; restart mode starts from newest again; auto skips only when cached rows exist and no reply_context body gaps are detected.",
         "Default statuses are interested, not interested, and wrong person: 1, -1, -2. Out-of-office status 0 is excluded unless explicitly requested.",
       ].join(" "),
     inputSchema: {
@@ -326,7 +326,7 @@ server.registerTool(
       statuses: z
         .array(z.number().int())
         .optional()
-        .describe("Instantly i_status values to hydrate. Defaults to [1, -1, -2]. Status 0 is out-of-office and excluded by default."),
+        .describe("Instantly i_status values to fetch. Defaults to [1, -1, -2]. Status 0 is out-of-office and excluded by default."),
       max_pages_per_status: z
         .number()
         .int()
@@ -337,7 +337,7 @@ server.registerTool(
       latest_of_thread: z
         .boolean()
         .optional()
-        .describe("Whether to hydrate only the latest email in each thread. Defaults to true."),
+        .describe("Whether to fetch only the latest email in each thread. Defaults to true."),
       mode: z
         .enum(["auto", "continue", "restart", "sync_newest"])
         .optional()
@@ -348,7 +348,7 @@ server.registerTool(
         .min(0)
         .max(50)
         .optional()
-        .describe("Number of hydrated reply rows to return as a preview after writing to DuckDB."),
+        .describe("Number of fetched reply rows to return as a preview after writing to DuckDB."),
     },
   },
   async ({
@@ -424,7 +424,7 @@ server.registerTool(
       }
 
       const resolvedCampaignId = String(campaignRows[0].id);
-      const hydration = await hydrateReplyText({
+      const fetchResult = await hydrateReplyText({
         workspaceId,
         campaignId: resolvedCampaignId,
         statuses,
@@ -435,7 +435,7 @@ server.registerTool(
       });
 
       const campaignSafe = resolvedCampaignId.replace(/'/g, "''");
-      const hydratedRows = sample_limit > 0
+      const fetchedRows = sample_limit > 0
         ? await query(
           db,
           `SELECT
@@ -460,9 +460,9 @@ server.registerTool(
         : [];
 
       return jsonResponse({
-        hydration,
+        fetch_result: fetchResult,
         readiness: readinessPayload(readiness),
-        hydrated_reply_sample: hydratedRows,
+        fetched_reply_sample: fetchedRows,
       });
     } catch (error) {
       if (error instanceof LocalDbUnavailableError) {

@@ -411,7 +411,7 @@ assert.equal(
 );
 const replyRecipes = getQueryRecipes("reply-patterns");
 assert.equal(
-  replyRecipes.some((recipe) => recipe.id === "hydrated-reply-text-by-campaign" && recipe.sql.includes("reply_body_text")),
+  replyRecipes.some((recipe) => recipe.id === "fetched-reply-text-by-campaign" && recipe.sql.includes("reply_body_text")),
   true,
 );
 const icpRecipes = getQueryRecipes("icp-signals");

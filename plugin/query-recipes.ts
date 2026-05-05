@@ -1550,18 +1550,18 @@ WHERE campaign_id = '{{campaign_id}}'
 ORDER BY reply_at DESC
 LIMIT 100;`,
     notes: [
-      "Run hydrate_reply_text for this campaign in default sync_newest mode, then rerun the query when the user needs current reply wording.",
-      "Hydrated inbound reply text is exact when available; rendered outbound copy remains reconstructed evidence.",
+      "Run fetch_reply_text for this campaign in default sync_newest mode, then rerun the query when the user needs current reply wording.",
+      "Fetched inbound reply text is exact when available; rendered outbound copy remains reconstructed evidence.",
       "Use it for positive/negative cohort analysis and copy reconstruction.",
     ],
   },
   {
-    id: "hydrated-reply-text-by-campaign",
+    id: "fetched-reply-text-by-campaign",
     topic: "reply-patterns",
-    title: "Hydrated reply text by campaign",
-    question: "What are prospects actually saying in hydrated positive and negative replies?",
+    title: "Fetched reply text by campaign",
+    question: "What are prospects actually saying in fetched positive and negative replies?",
     exactness: "exact",
-    rationale: "Use hydrated inbound reply bodies after running hydrate_reply_text for one campaign.",
+    rationale: "Use fetched inbound reply bodies after running fetch_reply_text for one campaign.",
     sql: `SELECT
   campaign_id,
   campaign_name,
@@ -1579,8 +1579,8 @@ WHERE campaign_id = '{{campaign_id}}'
 ORDER BY reply_received_at DESC NULLS LAST
 LIMIT 100;`,
     notes: [
-      "Run hydrate_reply_text for this campaign in default sync_newest mode first if no rows are returned or the user wants the newest reply wording.",
-      "This is exact for hydrated inbound email rows stored in reply_emails.",
+      "Run fetch_reply_text for this campaign in default sync_newest mode first if no rows are returned or the user wants the newest reply wording.",
+      "This is exact for fetched inbound email rows stored in reply_emails.",
       "Status 0 out-of-office is intentionally excluded.",
     ],
   },
