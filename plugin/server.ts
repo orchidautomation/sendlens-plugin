@@ -13,6 +13,7 @@ import {
 import { refreshWorkspace } from "./instantly-ingest";
 import { hydrateReplyText } from "./instantly-ingest";
 import { getQueryRecipes, QUERY_RECIPE_TOPICS } from "./query-recipes";
+import { toReplyTextFetchResult } from "./reply-text-contract";
 import { readRefreshStatus } from "./refresh-status";
 import { enforceLocalWorkspaceScope, LocalSqlGuardError } from "./sql-guard";
 import { buildWorkspaceSummary } from "./summary";
@@ -424,7 +425,7 @@ server.registerTool(
       }
 
       const resolvedCampaignId = String(campaignRows[0].id);
-      const fetchResult = await hydrateReplyText({
+      const fetchResult = toReplyTextFetchResult(await hydrateReplyText({
         workspaceId,
         campaignId: resolvedCampaignId,
         statuses,
@@ -432,7 +433,7 @@ server.registerTool(
         latestOfThread: latest_of_thread,
         mode,
         db,
-      });
+      }));
 
       const campaignSafe = resolvedCampaignId.replace(/'/g, "''");
       const fetchedRows = sample_limit > 0
