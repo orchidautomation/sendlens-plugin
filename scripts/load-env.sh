@@ -15,6 +15,24 @@ is_unresolved_sendlens_path() {
   [[ "${value}" == *"+ name +"* || "${value}" == *'${'* || "${value}" == *"{{"* || "${value}" == *"}}"* ]]
 }
 
+is_unresolved_sendlens_value() {
+  local value="${1:-}"
+  local normalized
+  normalized="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')"
+  [[
+    "${normalized}" == *"+ name +"* ||
+    "${normalized}" == *'${'* ||
+    "${normalized}" == *"{{"* ||
+    "${normalized}" == *"}}"* ||
+    "${normalized}" == "your_key" ||
+    "${normalized}" == "your-api-key" ||
+    "${normalized}" == "your_api_key" ||
+    "${normalized}" == "your-instantly-api-key" ||
+    "${normalized}" == "your_instantly_api_key" ||
+    "${normalized}" == "instantly_api_key"
+  ]]
+}
+
 PLUGIN_ROOT="${PLUGIN_ROOT:-$(pwd)}"
 ENV_ROOT="${SENDLENS_CONTEXT_ROOT:-${PWD}}"
 CLIENTS_DIR="${SENDLENS_CLIENTS_DIR:-.env.clients}"
@@ -34,4 +52,9 @@ fi
 if is_unresolved_sendlens_path "${SENDLENS_STATE_DIR:-}"; then
   echo "[sendlens] Ignoring unresolved SENDLENS_STATE_DIR value and using the DuckDB directory for state." >&2
   unset SENDLENS_STATE_DIR
+fi
+
+if is_unresolved_sendlens_value "${SENDLENS_INSTANTLY_API_KEY:-}"; then
+  echo "[sendlens] Ignoring unresolved SENDLENS_INSTANTLY_API_KEY placeholder." >&2
+  unset SENDLENS_INSTANTLY_API_KEY
 fi

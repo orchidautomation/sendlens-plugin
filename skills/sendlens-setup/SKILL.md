@@ -34,6 +34,7 @@ If the output has failures, guide the user through the exact next step shown by 
 
 - missing API key and no local cache: call the SendLens MCP tool `seed_demo_workspace` immediately, unless the user explicitly says they only want real Instantly data. Treat this as the default quick-start path; do not make the user set `SENDLENS_DEMO_MODE=1` first.
 - missing API key with an existing local cache: explain that read-only cached analysis is available, and that `seed_demo_workspace` can be used for a synthetic proof workspace if desired.
+- rejected or unreachable production API key: follow the doctor next step to fix or retry the key, and offer `seed_demo_workspace` as the demo-safe fallback while credentials are being corrected.
 - missing env for real workspace refresh: point to `docs/INSTALL.md` and `docs/TROUBLESHOOTING.md`; do not ask the user to paste secrets into chat.
 - missing build output: run `npm run build:plugin`.
 - missing runtime dependencies: run `npm install` from source, or `bash scripts/bootstrap-runtime.sh` in an installed bundle.

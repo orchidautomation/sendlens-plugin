@@ -69,7 +69,7 @@ MCP tools are registered by the local `sendlens` stdio server. Responses are JSO
 | Tool | Purpose | When to use |
 | --- | --- | --- |
 | `setup_doctor` | Read setup readiness without shell commands | First run, missing key diagnosis, local cache readiness, stale refresh state |
-| `seed_demo_workspace` | Seed synthetic proof data when demo seeding is available | No API key configured and no local cache exists, or `SENDLENS_DEMO_MODE=1` explicitly enabled |
+| `seed_demo_workspace` | Seed synthetic proof data for demo or recovery | No usable API key, failed credential validation, or an explicit request for demo/sample data |
 | `refresh_status` | Read local refresh lifecycle state | Stale data, startup refresh, or cache-readiness questions |
 | `refresh_data` | Refresh local cache from Instantly | Explicit fresh pull, client/workspace change, or stale/failed status |
 | `workspace_snapshot` | First high-level read of a workspace, tag, or campaign-name scope | Broad triage and campaign selection |

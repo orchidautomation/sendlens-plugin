@@ -368,6 +368,32 @@ async function assertDemoModeContracts() {
     /\/sendlens-setup/i.test(`${readOnlyCheck.stdout}${readOnlyCheck.stderr}`),
     "scripts/check-env.sh: expected missing API key output to point users to /sendlens-setup",
   );
+  const placeholderKeyCheck = runCheckEnv({
+    SENDLENS_INSTANTLY_API_KEY: "${SENDLENS_INSTANTLY_API_KEY}",
+  });
+  assert(
+    placeholderKeyCheck.status === 0,
+    `scripts/check-env.sh: expected unresolved API key placeholder to pass as missing-key read-only mode\n${placeholderKeyCheck.stdout}${placeholderKeyCheck.stderr}`,
+  );
+  assert(
+    /Ignoring unresolved SENDLENS_INSTANTLY_API_KEY placeholder/i.test(`${placeholderKeyCheck.stdout}${placeholderKeyCheck.stderr}`),
+    "scripts/check-env.sh: expected unresolved API key placeholder to be ignored",
+  );
+  assert(
+    /\/sendlens-setup/i.test(`${placeholderKeyCheck.stdout}${placeholderKeyCheck.stderr}`),
+    "scripts/check-env.sh: expected unresolved API key placeholder output to point users to /sendlens-setup",
+  );
+  const docsPlaceholderKeyCheck = runCheckEnv({
+    SENDLENS_INSTANTLY_API_KEY: "your_key",
+  });
+  assert(
+    docsPlaceholderKeyCheck.status === 0,
+    `scripts/check-env.sh: expected docs API key placeholder to pass as missing-key read-only mode\n${docsPlaceholderKeyCheck.stdout}${docsPlaceholderKeyCheck.stderr}`,
+  );
+  assert(
+    /Ignoring unresolved SENDLENS_INSTANTLY_API_KEY placeholder/i.test(`${docsPlaceholderKeyCheck.stdout}${docsPlaceholderKeyCheck.stderr}`),
+    "scripts/check-env.sh: expected docs API key placeholder to be ignored",
+  );
 
   for (const value of ["1", "true", "TRUE", "yes", "YES"]) {
     const check = runCheckEnv({ SENDLENS_DEMO_MODE: value });

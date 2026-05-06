@@ -46,7 +46,7 @@ Where relevant, SendLens responses should include:
 
 `seed_demo_workspace`
 
-- registered only when no production API key is configured, or when `SENDLENS_DEMO_MODE=1` explicitly enables demo mode
+- registered as a recovery/demo path even when production credentials are configured
 - `schema_version: "sendlens_demo_seed.v1"`
 - activates synthetic `demo_workspace` in the local cache
 - includes campaign IDs, seed timestamp, evidence note, and next steps

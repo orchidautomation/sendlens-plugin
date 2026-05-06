@@ -184,6 +184,66 @@ export async function listCampaigns(apiKey: string) {
   return (data.items || []) as Array<Record<string, unknown>>;
 }
 
+export type InstantlyApiKeyValidation = {
+  status: "valid" | "invalid" | "unreachable";
+  message: string;
+  http_status?: number;
+  returned_campaigns?: number;
+};
+
+export async function validateApiKey(
+  apiKey: string,
+  timeoutMs = 5000,
+): Promise<InstantlyApiKeyValidation> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${API_BASE}/campaigns?limit=1`, {
+      headers: headers(apiKey),
+      signal: controller.signal,
+    });
+
+    if (res.ok) {
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+      const items = Array.isArray(data.items)
+        ? data.items
+        : Array.isArray(data)
+          ? data
+          : [];
+      return {
+        status: "valid",
+        message: `Instantly accepted the key and returned ${items.length} campaign row${items.length === 1 ? "" : "s"} in the probe.`,
+        http_status: res.status,
+        returned_campaigns: items.length,
+      };
+    }
+
+    if (res.status === 401 || res.status === 403) {
+      return {
+        status: "invalid",
+        message: `Instantly rejected the key with HTTP ${res.status}.`,
+        http_status: res.status,
+      };
+    }
+
+    return {
+      status: "unreachable",
+      message: `Instantly credential probe returned HTTP ${res.status}; retry setup or run refresh_data after connectivity is healthy.`,
+      http_status: res.status,
+    };
+  } catch (error) {
+    return {
+      status: "unreachable",
+      message:
+        error instanceof Error
+          ? `Instantly credential probe could not complete: ${error.message}.`
+          : "Instantly credential probe could not complete.",
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function listSubsequencesPage(
   apiKey: string,
   parentCampaignId: string,

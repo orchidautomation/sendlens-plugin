@@ -17,7 +17,7 @@ const {
   normalizeStepAnalyticsRows,
   toPlainText,
 } = require("../build/plugin/instantly-ingest.js");
-const { loadClientEnv, loadSendLensEnv } = require("../build/plugin/env.js");
+const { isUnresolvedEnvValue, loadClientEnv, loadSendLensEnv } = require("../build/plugin/env.js");
 const { enforceLocalWorkspaceScope } = require("../build/plugin/sql-guard.js");
 const { buildWorkspaceSummary } = require("../build/plugin/summary.js");
 const { readRefreshStatus } = require("../build/plugin/refresh-status.js");
@@ -740,6 +740,15 @@ assert.equal(process.env.SENDLENS_CLIENT, "bravo");
 assert.equal(process.env.SENDLENS_DB_PATH, path.join(os.homedir(), ".sendlens", "bravo.duckdb"));
 delete process.env.SENDLENS_CONTEXT_ROOT;
 
+process.env.SENDLENS_INSTANTLY_API_KEY = "${SENDLENS_INSTANTLY_API_KEY}";
+assert.equal(isUnresolvedEnvValue(process.env.SENDLENS_INSTANTLY_API_KEY), true);
+loadSendLensEnv();
+assert.equal(process.env.SENDLENS_INSTANTLY_API_KEY, undefined);
+process.env.SENDLENS_INSTANTLY_API_KEY = "your_key";
+assert.equal(isUnresolvedEnvValue(process.env.SENDLENS_INSTANTLY_API_KEY), true);
+loadSendLensEnv();
+assert.equal(process.env.SENDLENS_INSTANTLY_API_KEY, undefined);
+
 process.env.SENDLENS_DB_PATH = path.join(
   os.homedir(),
   "Documents",
@@ -804,6 +813,26 @@ assert.match(
   /Instantly API key is not set and no local DuckDB cache exists/,
 );
 
+const originalFetch = globalThis.fetch;
+process.env.SENDLENS_INSTANTLY_API_KEY = "bad-key";
+globalThis.fetch = async () => ({
+  ok: false,
+  status: 401,
+});
+const invalidKeyDoctorReport = await buildSetupDoctorReport();
+assert.equal(invalidKeyDoctorReport.setup_status, "blocked");
+assert.equal(invalidKeyDoctorReport.capabilities.live_refresh, false);
+assert.equal(invalidKeyDoctorReport.capabilities.demo_seed, true);
+assert.equal(invalidKeyDoctorReport.capabilities.instantly_key_validated, false);
+assert.match(
+  String(invalidKeyDoctorReport.failures[0]),
+  /Instantly API key is configured but Instantly rejected it/,
+);
+assert.match(
+  invalidKeyDoctorReport.next_steps.join("\n"),
+  /seed_demo_workspace/,
+);
+
 await fs.writeFile(
   path.join(statusRoot, "refresh-status.json"),
   JSON.stringify({
@@ -817,11 +846,19 @@ await fs.writeFile(
 );
 await fs.writeFile(process.env.SENDLENS_DB_PATH, "");
 process.env.SENDLENS_INSTANTLY_API_KEY = "test-key";
+globalThis.fetch = async () => ({
+  ok: true,
+  status: 200,
+  json: async () => ({ items: [{ id: "campaign_1" }] }),
+});
 const doctorReport = await buildSetupDoctorReport();
 assert.equal(doctorReport.cache_freshness.status, "succeeded");
 assert.equal(doctorReport.cache_freshness.age_seconds < 60, true);
 assert.match(doctorReport.cache_freshness.label, /just now/);
+assert.equal(doctorReport.capabilities.live_refresh, true);
+assert.equal(doctorReport.capabilities.instantly_key_validated, true);
 assert.match(String(doctorReport.next_steps[0]), /Current cache freshness: just now/);
+globalThis.fetch = originalFetch;
 delete process.env.SENDLENS_INSTANTLY_API_KEY;
 delete process.env.SENDLENS_DB_PATH;
 delete process.env.SENDLENS_STATE_DIR;

@@ -1,5 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { DEMO_WORKSPACE_ID } from "./demo-workspace";
+import { isUnresolvedEnvValue } from "./env";
+import { validateApiKey } from "./instantly-client";
 import { resolveDbPath } from "./local-db";
 import { readRefreshStatus, type RefreshStatus } from "./refresh-status";
 
@@ -132,7 +135,8 @@ export async function buildSetupDoctorReport() {
     : path.dirname(dbPath);
   const shadowDbPath = path.join(stateDir, `.${path.basename(dbPath)}.refreshing`);
   const demoMode = isDemoMode();
-  const apiKeyConfigured = Boolean(process.env.SENDLENS_INSTANTLY_API_KEY?.trim());
+  const apiKey = process.env.SENDLENS_INSTANTLY_API_KEY?.trim();
+  const apiKeyConfigured = Boolean(apiKey) && !isUnresolvedEnvValue(apiKey);
   const dbExists = await exists(dbPath);
   const dbSize = formatBytes(await fileSize(dbPath));
   const dbDirWritable = await checkWritableDir(path.dirname(dbPath));
@@ -166,6 +170,10 @@ export async function buildSetupDoctorReport() {
   const buildRuntimeExists = await exists(path.join(root, "build", "plugin", "server.js"));
   const refreshRuntimeExists = await exists(path.join(root, "build", "plugin", "refresh-cli.js"));
   const demoRuntimeExists = await exists(path.join(root, "build", "plugin", "demo-workspace.js"));
+  const credentialValidation = apiKeyConfigured && !demoMode
+    ? await validateApiKey(apiKey!)
+    : null;
+  const activeCacheIsDemo = refreshStatus.workspaceId === DEMO_WORKSPACE_ID;
 
   const checks: DoctorCheck[] = [];
 
@@ -176,12 +184,28 @@ export async function buildSetupDoctorReport() {
       message: "Demo mode enabled; production Instantly API key is optional.",
     });
   } else if (apiKeyConfigured) {
-    checks.push({
-      name: "Credentials",
-      status: "pass",
-      message: "Instantly API key is configured.",
-      detail: "Secret value suppressed.",
-    });
+    if (credentialValidation?.status === "valid") {
+      checks.push({
+        name: "Credentials",
+        status: "pass",
+        message: "Instantly API key is configured and validated.",
+        detail: `${credentialValidation.message} Secret value suppressed.`,
+      });
+    } else if (credentialValidation?.status === "invalid") {
+      checks.push({
+        name: "Credentials",
+        status: "fail",
+        message: "Instantly API key is configured but Instantly rejected it.",
+        detail: `${credentialValidation.message} Secret value suppressed.`,
+      });
+    } else {
+      checks.push({
+        name: "Credentials",
+        status: "warn",
+        message: "Instantly API key is configured but could not be validated.",
+        detail: `${credentialValidation?.message ?? "Credential probe did not complete."} Secret value suppressed.`,
+      });
+    }
   } else if (dbExists) {
     checks.push({
       name: "Credentials",
@@ -205,6 +229,14 @@ export async function buildSetupDoctorReport() {
       ? `Exists at ${dbPath}${dbSize ? ` (${dbSize})` : ""}.`
       : `No local DuckDB cache found at ${dbPath}.`,
   });
+  if (!demoMode && apiKeyConfigured && activeCacheIsDemo) {
+    checks.push({
+      name: "Active workspace",
+      status: "warn",
+      message: "Active local cache is the synthetic demo workspace, not live Instantly data.",
+      detail: "Run refresh_data after setup to replace the active analysis workspace with live Instantly data.",
+    });
+  }
   checks.push({
     name: "DuckDB directory",
     status: dbDirWritable ? "pass" : "fail",
@@ -277,12 +309,26 @@ export async function buildSetupDoctorReport() {
         : "ready";
 
   const nextSteps: string[] = [];
+  const liveRefreshReady = credentialValidation?.status === "valid";
+  const demoSeedReady =
+    demoMode ||
+    !apiKeyConfigured ||
+    credentialValidation?.status === "invalid" ||
+    credentialValidation?.status === "unreachable";
   if (!apiKeyConfigured && !demoMode && dbExists) {
     nextSteps.push("Use workspace_snapshot or analysis skills against the existing local cache.");
     nextSteps.push("Configure SENDLENS_INSTANTLY_API_KEY before running refresh_data for fresh Instantly data.");
   } else if (!apiKeyConfigured && !demoMode) {
     nextSteps.push("Call seed_demo_workspace now for a zero-key synthetic demo workspace.");
     nextSteps.push("Configure SENDLENS_INSTANTLY_API_KEY later when you want real Instantly workspace analysis.");
+  } else if (apiKeyConfigured && credentialValidation?.status === "invalid") {
+    nextSteps.push("Update SENDLENS_INSTANTLY_API_KEY with a valid Instantly API key, then restart or reload the host.");
+    nextSteps.push("For the demo, call seed_demo_workspace now to use synthetic data while the key is fixed.");
+  } else if (apiKeyConfigured && credentialValidation?.status === "unreachable") {
+    nextSteps.push("Retry /sendlens-setup or run refresh_data after network access to Instantly is healthy.");
+    nextSteps.push("For the demo, call seed_demo_workspace now to use synthetic data while Instantly is unreachable.");
+  } else if (!demoMode && liveRefreshReady && activeCacheIsDemo) {
+    nextSteps.push("Run refresh_data now to pull live Instantly data and switch the active workspace away from demo_workspace.");
   } else if (demoMode && !dbExists) {
     nextSteps.push("Call seed_demo_workspace before analysis.");
   } else {
@@ -295,8 +341,9 @@ export async function buildSetupDoctorReport() {
     demo_mode: demoMode,
     capabilities: {
       local_cache_read: dbExists,
-      live_refresh: apiKeyConfigured || demoMode,
-      demo_seed: demoMode || !apiKeyConfigured,
+      live_refresh: liveRefreshReady || demoMode,
+      demo_seed: demoSeedReady,
+      instantly_key_validated: credentialValidation?.status === "valid",
     },
     cache_freshness: cacheFreshness,
     paths: {

@@ -22,7 +22,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 1. Call the SendLens MCP `setup_doctor` tool.
 2. Show the relevant setup status, failures, warnings, and next steps.
-3. If no Instantly API key and no local cache are present, call `seed_demo_workspace` immediately as the zero-key quick-start path unless the user explicitly wants real data only.
+3. If no usable Instantly API key and no local cache are present, call `seed_demo_workspace` immediately as the quick-start path unless the user explicitly wants real data only.
 4. Use the tool output as the source of truth for setup checks.
 5. Guide the user through the exact next command or doc link shown by the tool.
 6. After setup succeeds, switch to SendLens MCP tools for analysis instead of local file, shell, or DuckDB inspection.
@@ -35,7 +35,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 - Next command to run.
 - Relevant docs links.
 - Whether demo mode is enabled.
-- Whether demo seeding is available because credentials are missing or `SENDLENS_DEMO_MODE=1` is enabled.
+- Whether demo seeding is available because credentials are missing, rejected, unreachable, or `SENDLENS_DEMO_MODE=1` is enabled.
 
 ## Privacy Boundaries
 

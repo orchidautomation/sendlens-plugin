@@ -48,6 +48,29 @@ function applyEnv(values: EnvMap, lockedKeys: Set<string>) {
   }
 }
 
+export function isUnresolvedEnvValue(value: string | undefined | null) {
+  const trimmed = value?.trim().toLowerCase();
+  if (!trimmed) return false;
+  return (
+    trimmed.includes("+ name +") ||
+    trimmed.includes("${") ||
+    trimmed.includes("{{") ||
+    trimmed.includes("}}") ||
+    trimmed === "your_key" ||
+    trimmed === "your-api-key" ||
+    trimmed === "your_api_key" ||
+    trimmed === "your-instantly-api-key" ||
+    trimmed === "your_instantly_api_key" ||
+    trimmed === "instantly_api_key"
+  );
+}
+
+function sanitizeSendLensEnv() {
+  if (isUnresolvedEnvValue(process.env.SENDLENS_INSTANTLY_API_KEY)) {
+    delete process.env.SENDLENS_INSTANTLY_API_KEY;
+  }
+}
+
 export function getClientEnvPaths(rootDir = process.cwd()) {
   const clientsDir = process.env.SENDLENS_CLIENTS_DIR?.trim()
     ? path.resolve(rootDir, process.env.SENDLENS_CLIENTS_DIR)
@@ -91,6 +114,8 @@ export function loadClientEnv(rootDir = process.cwd()) {
     applyEnv(parseEnvFile(filePath), lockedKeys);
     loaded.push(filePath);
   }
+
+  sanitizeSendLensEnv();
 
   return {
     client: resolved.client,
