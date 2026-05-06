@@ -1,97 +1,106 @@
 # SendLens
 
-**An outbound analyst that lives inside the AI tool you already use.**
+**The outbound analyst that lives inside the AI tool you already use.**
 
-SendLens turns your Instantly workspace into something you can talk to. Ask a question in plain English inside Claude Code, Cursor, Codex, or OpenCode, and you get the kind of grounded, evidence-backed answer a senior growth-ops hire would write — about your actual campaigns, your actual senders, and what your actual prospects are saying back.
+SendLens turns your Instantly account into something you can talk to. Ask a question in plain English inside Claude Code, Cursor, Codex, or OpenCode, and you get a clear, evidence-backed answer about your actual campaigns, your actual senders, and what your actual prospects are saying back.
+
+No spreadsheets. No dashboards. No SQL. Just answers.
 
 ## Why this matters
 
-Outbound teams are sitting on rich data that nobody has time to dig through. Dashboards show what happened. Spreadsheets get stale by Friday. Most "AI for cold email" stops at one-line tips against a generic prompt.
+If you run cold outbound, you already know the problem. The numbers exist, but pulling them together to get a real answer takes hours — and by the time the answer is ready, the week has already moved on.
 
-SendLens is different because it does the analyst's homework for you before the AI ever sees the question. It already knows how to compare campaigns, rank step and variant winners, surface deliverability risk, separate human replies from auto-noise, project lead runway, and call out when an answer is based on exact numbers vs. a sample. You just ask.
+SendLens is different because it does the analyst's homework before you ever ask the question. It already knows how to:
 
-The result: one analyst-quality answer per question, with the work shown, in the time it takes to type the question.
+- compare campaigns and tell you which one to scale, kill, or rewrite
+- rank the steps and copy variants that are actually doing the work
+- separate genuine human replies from auto-responders and out-of-office noise
+- spot deliverability problems before they tank a launch
+- project how many days of sending you have left before you run out of leads
+- read the replies your prospects are sending and tell you the patterns
+- write a client-safe weekly update for every account you manage
+
+You ask one question. You get one analyst-quality answer, with the work shown, in the time it takes to type the question.
 
 ## Who it is for
 
 - **Growth marketers** who need a defensible read on which campaign to scale, kill, or rewrite.
-- **GTM engineers** who want a programmable layer over their outbound stack without standing up a data warehouse.
-- **Agencies** running 10–100 client workspaces who need client-safe weekly briefs and an internal action queue from the same data pull.
-- **Founders and operators** who want one analyst-quality answer per week instead of ten dashboards.
-- **RevOps and sales leaders** trying to understand why positive replies aren't converting, and which step or variant is actually doing the work.
+- **Sales leaders** who want to know why positive replies aren't converting and which step or variant is actually doing the work.
+- **Founders and operators** who want one good answer per week instead of ten dashboards.
+- **Agencies** running 10–100 client accounts who need a client-safe weekly update for each one without burning a day building it.
+- **Anyone running cold outbound** who is tired of staring at numbers and is ready to just have a conversation about them.
 
-You don't need to know anything about how the data is stored or which question maps to which analysis. You ask in plain language; SendLens picks the right play.
+You don't need to know how anything is stored, or what to call any of this. You ask in plain language. SendLens picks the right play and answers.
 
 ## What you can actually ask
 
-The kinds of questions you can ask are far deeper than a typical "AI for outbound" tool. A sample:
+These are the kinds of questions SendLens can answer today. Read a few — most outbound tools can't touch this depth.
 
-### Workspace triage and weekly rollups
+### Weekly triage and account-manager briefs
 
-- "Rank every active campaign by what most needs my attention. Tell me which are at high bounce risk, dry on new prospects, missing a sender, or have no recent volume — then write a one-paragraph client-safe brief for each."
-- "Build this week's account-manager brief: wins, risks, current actions, asks, and next review date."
-- "For my Q2 CFOs tag, give me daily sender volume vs. what each campaign is configured to send. Where am I under-utilizing capacity, and which campaigns are starving the others?"
-- "Compare campaign-attributed daily volume to sender-attributed daily volume for my Series-B SaaS tag. If they diverge, tell me whether the gap is a campaign-side under-send or a sender-side spillover into other campaigns."
+- "Rank every active campaign by what most needs my attention. Tell me which are at risk of bouncing, dry on new prospects, missing a sender, or have stopped sending — then write a one-paragraph client-safe update for each."
+- "Build this week's account-manager brief: wins, risks, what we're doing now, what we need from the client, and the next review date."
+- "For my Q2 CFOs tag, where am I under-using my sending capacity, and which campaigns are starving the others?"
 
 ### Lead runway and pacing
 
-- "For every active campaign in my mid-market RevOps tag, project new-lead runway in sending days. Flag anything under 5 days of runway and propose a refill order."
-- "Which campaigns have I been sending on every available sending day for the last 30 days, and what is the real per-campaign daily ceiling vs. the limit I configured? Where can I safely raise the limit?"
-- "Project this tag's runway by weekday — accounting for the fact that sends drop on weekends. When do I run dry given the current schedule?"
+- "For every active campaign in my mid-market RevOps tag, tell me how many days of new prospects I have left before I run dry. Flag anything under 5 days and propose a refill order."
+- "Which campaigns have I been sending on every available day for the last 30 days? Where can I safely raise the daily limit?"
+- "Project my runway by weekday — accounting for the fact that sends drop on weekends. When do I run out of leads?"
 
-### Campaign performance, step fatigue, and variant winners
+### Campaign performance, step fatigue, and copy winners
 
-- "For my top three active campaigns by recent volume, rank step and variant winners by reply rate when there's enough data, and by opportunity rate when there isn't. Tell me which one you used and why."
-- "Find step fatigue in my 5-step sequence. Where do replies drop off? Where does the negative-reply share start exceeding the positive-reply share?"
-- "Compare two campaigns with similar audiences. Tell me what's different — daily limit, sender inventory, schedule, copy length, step delays — and which difference best explains the reply-rate gap."
+- "For my top three campaigns, rank the winning steps and copy variants — and tell me how confident the answer is."
+- "Find step fatigue in my 5-step sequence. Where do replies drop off? Where do the negative replies start outweighing the positive ones?"
+- "Compare two campaigns with similar audiences. Tell me what's different — daily limit, senders, schedule, copy length, step delays — and which difference best explains the reply-rate gap."
 
-### Copy, personalization, and template QA
+### Copy and personalization QA
 
-- "Audit the last 50 outbound samples for unresolved personalization tokens. Group by step and variant and tell me how many leads were affected."
-- "Diff the live template body for Step 0 variant A against the variant that was running last sync. Which words changed, and did the reply mix change with it?"
-- "Take the live templates for this campaign, the actual outbound that went out, and the inbound replies. Tell me which sentence in Step 0 is doing the work and which one is killing positive responses."
+- "Audit my last 50 sent emails for unfilled personalization tokens. Group by step and tell me how many leads were affected."
+- "Diff the live opener for Step 0 against the version that was running last week. Which words changed, and did the reply mix change with it?"
+- "Take the live templates, the actual emails I sent, and the replies that came back. Tell me which sentence in Step 0 is doing the work and which one is killing positive responses."
 
-### Reply patterns, themes, and outcome-aware quoting
+### Reply themes and patterns
 
-- "Pull the latest reply text for this campaign and summarize positive vs. negative themes. Quote three representative replies of each."
-- "Across all campaigns, what's the share of wrong-person replies? Which campaigns over-index, and what is the common job-title pattern in the recipients?"
-- "Are auto-replies inflating my reply rate? Show me unique replies excluding auto-responders, and what that does to each campaign's effective reply rate."
+- "Pull the latest replies for this campaign and summarize positive vs. negative themes. Quote three representative replies for each."
+- "Across all my campaigns, what's the share of wrong-person replies? Which campaigns over-index, and what is the common job-title pattern?"
+- "Are auto-replies inflating my reply rate? Show me unique replies excluding auto-responders, and what that does to each campaign's effective number."
 
-### ICP signals from sampled lead data
+### ICP signals — who actually replies
 
-- "For my Demo CFOs Midwest campaign, inventory the custom fields present on sampled leads. Flag the fields that appear more often in replying or positive leads, and propose the next single-variable test."
-- "For the employee-band field in this campaign, which values correlate with positive outcomes in the sample? Treat the result as a hypothesis, not a population claim."
-- "Do leads with a populated finance-stack field outperform empty ones in this campaign? If yes, draft an enrichment-or-suppression rule for the next list pull."
+- "For my Demo CFOs Midwest campaign, look at the custom fields on my leads. Which fields appear more often on the prospects who replied positively? Propose the next single-variable test."
+- "For the employee-band field in this campaign, which values are correlating with positive outcomes? Treat the result as a hypothesis, not a final verdict."
+- "Do leads with a populated finance-stack field outperform empty ones? If yes, draft an enrichment-or-suppression rule for the next list pull."
 
-### Deliverability, sender health, and inbox placement
+### Deliverability and sender health
 
-- "Roll up SPF, DKIM, DMARC failures and blacklist hits per sender across the last 100 inbox-placement rows. Recommend pause, inspect, or rotate per inbox."
-- "Which senders are landing in spam or category folders? Cross-reference with warmup status and 30-day bounce rate to decide whether the issue is auth, warmup, or content."
+- "Roll up email authentication failures and blacklist hits per sender across my last 100 inbox-placement results. Recommend pause, inspect, or rotate for each inbox."
+- "Which senders are landing in spam or the Promotions tab? Cross-reference with warmup status and 30-day bounce rate to decide whether the issue is authentication, warmup, or content."
 - "For my Series-B SaaS tag, list the senders assigned to each campaign, flag any account over 5% bounce in the last 30 days, and tell me whether sender coverage looks complete, partial, or missing."
 
 ### Launch QA and experiment planning
 
-- "Is my Q3 Series-B GTM campaign ready to turn on? Block on missing senders, missing templates, blank bodies, or open and link tracking; warn on anything else."
-- "For every active campaign, recommend the next test lane — copy, ICP, reply quality, lead supply, or deliverability — based on the actual numbers and how much evidence we have. Don't recommend copy tests on campaigns with unresolved deliverability blockers."
-- "Plan the next experiment for this campaign end-to-end: hypothesis, change, target cohort, success metric, guardrail metric, stop condition, owner, and evaluation date — anchored in the evidence you just looked at."
+- "Is my Q3 Series-B GTM campaign ready to turn on? Block the launch if it's missing senders, missing templates, has blank bodies, or has open and link tracking on. Warn on anything else."
+- "For every active campaign, recommend the next test — copy, audience, reply handling, lead supply, or deliverability — based on the actual numbers. Don't recommend a copy test on a campaign with deliverability problems."
+- "Plan the next experiment for this campaign end-to-end: hypothesis, change, target audience, success metric, guardrail, stop condition, owner, evaluation date — anchored in the evidence you just looked at."
 
-### Tag-scoped multi-client analysis (agencies)
+### Multi-client analysis (agencies)
 
 - "Resolve which campaigns belong to my Acme Inc tag, then run the full weekly brief just for that tag. Output one client-safe page and one internal page."
 - "Across all my client tags, which clients have the worst sender-coverage gap right now?"
 
-## End-to-end workflow examples
+## Real workflow examples
 
-### Monday-morning agency stand-up (2 minutes of typing, ~10 minutes of agent work)
+### Monday-morning agency stand-up (2 minutes of typing, ~10 minutes of work for SendLens)
+
+Type something like this into your AI tool:
 
 ```text
-/sendlens-setup
-Refresh the workspace.
-Use the account-manager-brief skill. For each client tag, produce:
+Refresh my workspace. For each client tag, give me:
 1) a client-safe weekly update (wins, risks, current actions, asks, next review date),
 2) an internal action queue ranked by what most needs attention,
 3) a one-line "do this Monday" recommendation.
-Quote sender bounce rates and reply rates exactly. Caveat anything that came from a sample.
+Quote bounce rates and reply rates exactly. Caveat anything that came from a sample.
 ```
 
 You get one document per client, ready to paste into Slack or email.
@@ -99,44 +108,39 @@ You get one document per client, ready to paste into Slack or email.
 ### "Why is this campaign suddenly under-performing?"
 
 ```text
-Use the campaign-performance skill on "Q3 Series-B GTM".
-Pull step and variant winners, step fatigue, and the last 30 days of daily volume.
-Then pull the latest reply text and the reply-outcome feed.
+Look at "Q3 Series-B GTM". Pull the winning steps and copy variants, where in the sequence replies are dropping off, and the last 30 days of daily volume. Then pull the latest replies and read them.
 Tell me whether the drop is a copy issue, a sender-health issue, an audience issue, or a runway issue — and quote the evidence that convinced you.
 ```
 
-The agent walks the evidence, picks the right play at each step, and writes a verdict you can defend.
+SendLens walks the evidence, picks the right move at each step, and writes a verdict you can defend.
 
 ### Pre-launch QA before scaling spend
 
 ```text
-Use the campaign-launch-qa skill on every campaign currently paused.
-Block launches with missing senders, missing templates, blank bodies, or open and link tracking.
-Warn on senders over 5% 30-day bounce, missing schedule timezone, or fewer than 5 days of new-lead runway at the configured daily limit.
+Look at every campaign currently paused. Block any launch with missing senders, missing templates, blank bodies, or open and link tracking on. Warn me about senders over 5% bounce in the last 30 days, missing schedule timezone, or fewer than 5 days of new-lead runway.
 Output a launch-readiness table sorted worst-first.
 ```
 
 ### One-shot ICP test plan
 
 ```text
-Use the icp-signals skill on "Demo CFOs - Midwest".
-Inventory the custom fields on sampled leads. Identify the single field whose presence most correlates with positive outcomes. Pick the top candidate value. Draft the next single-variable test with hypothesis, target cohort, success metric, guardrail, stop condition, and evaluation date.
-Treat the analysis as a hypothesis, not a population claim, and say so.
+For "Demo CFOs - Midwest", look at the custom fields on the leads who replied positively. Pick the single field most correlated with positive outcomes. Pick the top value within that field. Draft the next test: hypothesis, target audience, success metric, guardrail, stop condition, evaluation date.
+Treat it as a hypothesis, not a final answer, and say so.
 ```
 
-## What makes the answer trustworthy
+## Why you can trust the answer
 
-Most "AI for analytics" tools blur exact totals with sampled evidence. SendLens never does. Every answer tells you whether it's based on:
+Most "AI for analytics" tools blur the difference between exact totals and an educated guess from a sample. SendLens never does. Every answer tells you whether it came from:
 
-- **Exact numbers** — campaign totals, daily metrics, account warmup and bounce stats, inbox-placement results, tag mappings, and the actual fetched text of inbound replies.
-- **A sample** — lead-level signals, custom fields on sampled leads, and outbound copy reconstructed from your templates plus the lead variables.
-- **A mix of the two** — like reply outcomes by variant, where the totals are exact but the copy is reconstructed.
+- **Exact numbers** — campaign totals, daily metrics, sender bounce stats, deliverability results, and the actual text of replies.
+- **A sample** — patterns across a representative slice of your leads, when the full set is too big to look at every row.
+- **A mix of the two** — for example, exact reply totals broken down by reconstructed copy.
 
-When the data isn't there yet, SendLens says *that*, instead of guessing — and tells you exactly which refresh or fetch to run.
+When the data isn't there yet, SendLens says *that*, instead of guessing — and tells you exactly what to do next.
 
 ## Try it without real data
 
-Synthetic demo workspace, no Instantly key required:
+Want to see the experience before connecting your account? There's a synthetic demo built in:
 
 ```bash
 SENDLENS_DEMO_MODE=1 npm run demo:seed
@@ -145,16 +149,16 @@ SENDLENS_DEMO_MODE=1 npm run demo:seed
 Then ask:
 
 ```text
-Use the workspace-health skill on the demo workspace. Then run the experiment-planner skill against the highest-performing demo campaign.
+Walk me through what's happening in this workspace, then plan the next experiment on the best-performing campaign.
 ```
 
-Demo data is synthetic and labeled as such in every output.
+The demo data is made up, and SendLens labels it as such in every answer.
 
 ## Install
 
 Latest release: [release page](https://github.com/orchidautomation/sendlens-plugin/releases/latest)
 
-Copy-paste installers:
+Copy-paste installers — pick the AI tool you use:
 
 ```bash
 # Claude Code
@@ -169,11 +173,11 @@ curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/d
 # OpenCode
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-opencode.sh | bash
 
-# All supported hosts
+# All of the above
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-all.sh | bash
 ```
 
-Direct bundles:
+Direct downloads:
 
 - [Claude Code](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/sendlens-claude-code-latest.tar.gz)
 - [Cursor](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/sendlens-cursor-latest.tar.gz)
@@ -182,61 +186,47 @@ Direct bundles:
 
 ## First run
 
+After installing, type this in your AI tool:
+
 ```text
 /sendlens-setup
 ```
 
-From a local checkout:
-
-```bash
-npm run doctor
-```
-
-Setup verifies runtime, working folder, and credentials (or demo mode).
+It will walk you through connecting your account (or starting in demo mode) and confirm everything is ready.
 
 ## Privacy in plain English
 
-SendLens is built so the core workflow stays on your machine.
+- SendLens is read-only. It never sends emails or changes anything in your Instantly account.
+- Your data stays on your computer. Nothing is uploaded to a server we run.
+- Demo mode works without connecting any real account.
+- Whatever question you ask, the answer becomes part of the conversation in your AI tool — same as anything else you type there.
 
-- Read-only analysis paths.
-- Working data is cached locally in your home folder.
-- No hosted database is required for normal use.
-- Demo mode runs without production credentials.
-- When your AI host asks SendLens a question, the answer becomes part of that host session — same as any other tool result.
+Full data-handling details: [Trust and privacy](./docs/TRUST_AND_PRIVACY.md).
 
-Local state lives under `~/.sendlens/`.
+## What it works with today
 
-Full data-handling model: [Trust and privacy](./docs/TRUST_AND_PRIVACY.md).
-
-## Data sources
-
-This release works with **Instantly**: campaigns, daily metrics, step analytics, sender accounts, account daily metrics, custom tags, inbox-placement tests and analytics, sampled leads with custom fields, sampled outbound, and on-demand reply-text fetching.
+This release works with **Instantly** — campaigns, daily metrics, senders, custom tags, deliverability tests, lead details, and reply text.
 
 ## Who builds SendLens
 
-SendLens is built by **Orchid Labs**, the product division of **Orchid Automation** ([orchidautomation.com](https://orchidautomation.com)). Have an idea, an agency use case, or feedback on the analysis? Open an issue on this repo.
+SendLens is built by **Orchid Labs**, the product division of **Orchid Automation** ([orchidautomation.com](https://orchidautomation.com)). Have an idea, an agency use case, or feedback? Open an issue on this repo.
 
-## What ships in this repo
-
-- installable bundles for Claude Code, Cursor, Codex, OpenCode
-- setup, doctor, and demo-mode flows
-- nine specialist analysis skills with reference docs
-- a library of pre-built analyses covering performance, copy, replies, ICP signals, launch QA, deliverability, and account-manager workflows
-- analyst agents (campaign analyst, copy auditor, ICP auditor, reply auditor, synthesis reviewer, workspace triager)
-- public docs, examples, and release tooling
-
-Helpful docs:
+## Helpful docs
 
 - [Install guide](./docs/INSTALL.md)
 - [Trust and privacy](./docs/TRUST_AND_PRIVACY.md)
-- [Synthetic example outputs](./docs/examples/SYNTHETIC_OUTPUTS.md)
-- [Component catalog](./docs/CATALOG.md)
-- [Skill docs](./docs/skills/README.md)
-- [Troubleshooting guide](./docs/TROUBLESHOOTING.md)
+- [Example outputs](./docs/examples/SYNTHETIC_OUTPUTS.md)
+- [What's in the box](./docs/CATALOG.md)
+- [Plays you can run](./docs/skills/README.md)
+- [Troubleshooting](./docs/TROUBLESHOOTING.md)
 - [Local customization](./docs/LOCAL_CUSTOMIZATION.md)
 - [Release guide](./docs/RELEASING.md)
 
+---
+
 ## Developer quickstart
+
+> The rest of this README is for people building on top of SendLens or contributing to the codebase. If you just want to use SendLens, you can stop here.
 
 ```bash
 git clone https://github.com/orchidautomation/sendlens-plugin.git
@@ -275,7 +265,7 @@ npm run site:install
 npm run site:dev
 ```
 
-## Client-scoped env support
+### Client-scoped env support
 
 Env loading order supports named client overlays:
 
