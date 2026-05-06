@@ -2,6 +2,7 @@ import * as z from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { listColumns, listTables, searchCatalog } from "./catalog";
+import { isDemoMode, seedDemoWorkspace } from "./demo-workspace";
 import { loadClientEnv } from "./env";
 import {
   closeDb,
@@ -133,6 +134,11 @@ function sessionRefreshBusyResponse(
   });
 }
 
+async function ensureDemoWorkspaceForRead() {
+  if (!isDemoMode()) return null;
+  return seedDemoWorkspace();
+}
+
 function dbUnavailableResponse(error: LocalDbUnavailableError) {
   return jsonResponse({
     error: error.message,
@@ -164,12 +170,15 @@ server.registerTool(
     }
 
     try {
-      const refreshed = await refreshWorkspace({
-        campaignIds: campaign_ids,
-        source: "manual",
-      });
+      const refreshed = isDemoMode()
+        ? await seedDemoWorkspace()
+        : await refreshWorkspace({
+          campaignIds: campaign_ids,
+          source: "manual",
+        });
       return jsonResponse({
         ...refreshed,
+        demo_mode: isDemoMode() ? true : undefined,
         readiness: readinessPayload(readiness),
       });
     } catch (error) {
@@ -226,12 +235,14 @@ server.registerTool(
 
     let db: Awaited<ReturnType<typeof getDb>> | null = null;
     try {
-      const refreshed = await refreshWorkspace({
-        campaignIds: [campaign_id],
-        source: "manual",
-        forceHybrid: true,
-        nonReplyLeadLimit: max_nonreply_leads,
-      });
+      const refreshed = isDemoMode()
+        ? await seedDemoWorkspace()
+        : await refreshWorkspace({
+          campaignIds: [campaign_id],
+          source: "manual",
+          forceHybrid: true,
+          nonReplyLeadLimit: max_nonreply_leads,
+        });
 
       db = await getDb();
       const workspaceId = refreshed.workspaceId ?? (await getActiveWorkspaceId(db));
@@ -279,6 +290,7 @@ server.registerTool(
       );
       return jsonResponse({
         refreshed,
+        demo_mode: isDemoMode() ? true : undefined,
         readiness: readinessPayload(readiness),
         output_limits: {
           reply_context_scan_limit: REPLY_CONTEXT_SCAN_LIMIT,
@@ -368,6 +380,7 @@ server.registerTool(
 
     let db: Awaited<ReturnType<typeof getDb>> | null = null;
     try {
+      await ensureDemoWorkspaceForRead();
       db = await getDb();
       const workspaceId = await getActiveWorkspaceId(db);
       if (!workspaceId) {
@@ -425,15 +438,24 @@ server.registerTool(
       }
 
       const resolvedCampaignId = String(campaignRows[0].id);
-      const fetchResult = toReplyTextFetchResult(await hydrateReplyText({
-        workspaceId,
-        campaignId: resolvedCampaignId,
-        statuses,
-        maxPagesPerStatus: max_pages_per_status,
-        latestOfThread: latest_of_thread,
-        mode,
-        db,
-      }));
+      const fetchResult = isDemoMode()
+        ? toReplyTextFetchResult({
+          mode: "demo",
+          status: "skipped_live_fetch",
+          workspace_id: workspaceId,
+          campaign_id: resolvedCampaignId,
+          message:
+            "Demo mode uses pre-seeded synthetic reply bodies and does not call Instantly.",
+        })
+        : toReplyTextFetchResult(await hydrateReplyText({
+          workspaceId,
+          campaignId: resolvedCampaignId,
+          statuses,
+          maxPagesPerStatus: max_pages_per_status,
+          latestOfThread: latest_of_thread,
+          mode,
+          db,
+        }));
 
       const campaignSafe = resolvedCampaignId.replace(/'/g, "''");
       const fetchedRows = sample_limit > 0
@@ -462,6 +484,7 @@ server.registerTool(
 
       return jsonResponse({
         fetch_result: fetchResult,
+        demo_mode: isDemoMode() ? true : undefined,
         readiness: readinessPayload(readiness),
         fetched_reply_sample: fetchedRows,
       });
@@ -501,6 +524,7 @@ server.registerTool(
     const readiness = await waitForSessionSnapshot();
     let db: Awaited<ReturnType<typeof getDb>> | null = null;
     try {
+      await ensureDemoWorkspaceForRead();
       db = await getDb();
       const hasScope = Boolean(instantly_tag?.trim() || campaign_name?.trim());
       const summary = hasScope
@@ -561,6 +585,7 @@ server.registerTool(
     const readiness = await waitForSessionSnapshot();
     let db: Awaited<ReturnType<typeof getDb>> | null = null;
     try {
+      await ensureDemoWorkspaceForRead();
       db = await getDb();
       const columns = await listColumns(db, table_name);
       return jsonResponse({
@@ -597,6 +622,7 @@ server.registerTool(
     const readiness = await waitForSessionSnapshot();
     let db: Awaited<ReturnType<typeof getDb>> | null = null;
     try {
+      await ensureDemoWorkspaceForRead();
       db = await getDb();
       const matches = await searchCatalog(db, search);
       return jsonResponse({
@@ -702,6 +728,7 @@ server.registerTool(
     let db: Awaited<ReturnType<typeof getDb>> | null = null;
     let rewritten: string | null = null;
     try {
+      await ensureDemoWorkspaceForRead();
       db = await getDb();
       const workspaceId = await getActiveWorkspaceId(db);
       if (!workspaceId) {

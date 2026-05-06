@@ -118,10 +118,42 @@ Direct bundle downloads:
 More detail:
 
 - [Install guide](./docs/INSTALL.md)
+- [Component catalog](./docs/CATALOG.md)
+- [Trust and privacy](./docs/TRUST_AND_PRIVACY.md)
+- [Skill docs](./docs/skills/README.md)
+- [Synthetic example outputs](./docs/examples/SYNTHETIC_OUTPUTS.md)
 - [Troubleshooting guide](./docs/TROUBLESHOOTING.md)
 - [MCP response contract](./docs/MCP_RESPONSE_CONTRACT.md)
 - [Local customization](./docs/LOCAL_CUSTOMIZATION.md)
 - [Release guide](./docs/RELEASING.md)
+
+## First Run And Demo Mode
+
+After install, run the setup/doctor flow before deep analysis:
+
+```text
+/sendlens-setup
+```
+
+From a local checkout, the same checks are available with:
+
+```bash
+npm run doctor
+```
+
+To evaluate SendLens without production Instantly credentials, seed the synthetic demo workspace:
+
+```bash
+SENDLENS_DEMO_MODE=1 npm run demo:seed
+```
+
+Then ask:
+
+```text
+Use SendLens to summarize what is working and not working in the demo workspace.
+```
+
+Demo output is synthetic proof data, not customer data or a performance benchmark.
 
 ## How It Works
 
@@ -187,6 +219,9 @@ Main MCP tools:
 - `refresh_data`
 - `load_campaign_data`
 - `fetch_reply_text`
+- `list_tables`
+- `list_columns`
+- `search_catalog`
 
 Preferred warehouse surfaces:
 
@@ -302,6 +337,11 @@ This is the beginning of multi-client support. See [SEND-134](https://linear.app
 ## Documentation
 
 - [Install guide](./docs/INSTALL.md)
+- [Component catalog](./docs/CATALOG.md)
+- [Trust and privacy](./docs/TRUST_AND_PRIVACY.md)
+- [Skill docs](./docs/skills/README.md)
+- [Synthetic example outputs](./docs/examples/SYNTHETIC_OUTPUTS.md)
+- [OSS-safe operator memory](./docs/operator-memory/README.md)
 - [Troubleshooting guide](./docs/TROUBLESHOOTING.md)
 - [MCP response contract](./docs/MCP_RESPONSE_CONTRACT.md)
 - [Local customization](./docs/LOCAL_CUSTOMIZATION.md)

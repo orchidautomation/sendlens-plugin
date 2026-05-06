@@ -93,6 +93,38 @@ To verify already installed local bundles:
 pluxx verify-install --target codex claude-code
 ```
 
+## First-Run Doctor
+
+After installing from source or a host bundle, run the setup check:
+
+```text
+/sendlens-setup
+```
+
+From a local checkout:
+
+```bash
+npm run doctor
+```
+
+The doctor checks env loading, runtime dependencies, compiled MCP/refresh/demo entries, DuckDB and state writability, refresh status, stale session-start locks, and host bundle presence. It does not print secret values.
+
+## Demo Mode Without Production Credentials
+
+To prove the workflow before connecting a real Instantly workspace:
+
+```bash
+SENDLENS_DEMO_MODE=1 npm run demo:seed
+```
+
+Then ask your host:
+
+```text
+Use SendLens to summarize what is working and not working in the demo workspace.
+```
+
+All demo rows are synthetic. Treat the output as product proof and output-shape guidance, not customer evidence. See [synthetic example outputs](./examples/SYNTHETIC_OUTPUTS.md).
+
 ## After Install
 
 Reload your host:
@@ -167,4 +199,4 @@ export SENDLENS_STATE_DIR=/absolute/path/to/sendlens-state
 - refresh status: `~/.sendlens/refresh-status.json`
 - session-start log: `~/.sendlens/session-start-refresh.log`
 
-SendLens is local-first and read-only against Instantly.
+SendLens is local-first and read-only against Instantly. See [trust and privacy](./TRUST_AND_PRIVACY.md) for the full data-handling model.

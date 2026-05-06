@@ -9,8 +9,15 @@ export SENDLENS_CONTEXT_ROOT="${SENDLENS_CONTEXT_ROOT:-${PWD}}"
 # shellcheck disable=SC1091
 source "${PLUGIN_ROOT}/scripts/load-env.sh"
 
-if [[ -z "${SENDLENS_INSTANTLY_API_KEY:-}" ]]; then
+is_demo_mode() {
+  local raw
+  raw="$(printf '%s' "${SENDLENS_DEMO_MODE:-}" | tr '[:upper:]' '[:lower:]')"
+  [[ "${raw}" == "1" || "${raw}" == "true" || "${raw}" == "yes" ]]
+}
+
+if [[ -z "${SENDLENS_INSTANTLY_API_KEY:-}" ]] && ! is_demo_mode; then
   echo "[sendlens] Missing SendLens Instantly API key. Set SENDLENS_INSTANTLY_API_KEY through install config or .env." >&2
+  echo "[sendlens] For synthetic demo data without production credentials, set SENDLENS_DEMO_MODE=1 and run npm run demo:seed." >&2
   exit 1
 fi
 
