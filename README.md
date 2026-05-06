@@ -1,74 +1,65 @@
 # SendLens
 
-Privacy-first Instantly analysis that runs on the user's machine.
+SendLens helps teams understand why outbound campaigns are winning or losing.
 
-SendLens is the missing reasoning layer on top of Instantly.
+It turns campaign results, replies, message copy, sender health, and lead details into plain-English analysis inside the AI tools your team already uses.
 
-It gives Claude Code, Cursor, Codex, and OpenCode agentic access to your campaign, lead, template, and analytics data so you can see:
+## What SendLens Does
 
-- what is actually landing with prospects
-- which campaigns and sequences are producing positive replies
-- which lead variables and segments correlate with good outcomes
-- what to change next to improve performance
+SendLens helps you answer the questions that matter after campaigns start sending:
 
-It is designed to be fast, local, and safe by default:
+- Which campaigns are working best?
+- Which campaigns need attention?
+- What messages are getting positive replies?
+- What do good responders have in common?
+- Which senders or inbox tests show deliverability risk?
+- What should we test next?
 
-- read-only against Instantly
-- local DuckDB cache
-- campaign-scoped analysis by default
-- raw `custom_payload` preserved per lead
-- fast startup refresh on every new session
+Instead of digging through exports, dashboards, and scattered notes, you can ask your AI workspace for a grounded read on what is happening and what to change.
 
-## Repo Layout
+## Who It Is For
 
-This repo is the canonical open-source home for SendLens.
+SendLens is for people who run outbound programs and need faster feedback:
 
-- `plugin/` contains the MCP runtime, local DuckDB cache logic, and host-native plugin behavior
-- `site/` contains the public landing page, waitlist flow, and install-command funnel
+- founders checking whether a campaign is worth scaling
+- growth teams comparing messages and audiences
+- agencies managing client campaigns
+- sales teams trying to understand positive replies
+- operators looking for deliverability or sender-health issues
 
-`json-render-lab` is legacy/internal history and is no longer the canonical home for SendLens.
+You do not need to understand the internal data model to use it. The normal workflow is to install the plugin, run setup, refresh data, and ask questions in plain language.
 
-## Why SendLens Exists
+## What You Can Ask
 
-No other tool gives you agentic reasoning over your Instantly data in a way that is fast, private, and actually useful day to day.
+Examples:
 
-Instantly has the signal, but it does not give you a clean local reasoning layer for questions like:
+- "What is working and not working in this workspace?"
+- "Which campaign should we scale first?"
+- "Why is this campaign getting replies but few positive outcomes?"
+- "What do the best responders have in common?"
+- "Compare these two campaigns and tell me what to test next."
+- "Show me the reply themes prospects keep mentioning."
+- "Do any senders or inbox placement tests look risky?"
 
-- what copy is really working
-- what kinds of leads are replying positively
-- what segments are getting ignored or bouncing
-- what should we test next to get more positive replies
+SendLens is designed to separate evidence from opinion. When it uses exact campaign metrics, sampled lead evidence, fetched reply text, or synthetic demo data, the output should say so.
 
-SendLens gives you:
+## Try It Without Real Data
 
-- a normalized local warehouse
-- exact campaign and step analytics
-- reconstructed rendered copy from templates plus lead variables
-- campaign-specific payload analysis without hardcoding every enrichment field
-- host-native workflows across Claude Code, Cursor, Codex, and OpenCode
+You can evaluate SendLens without connecting a production workspace.
 
-The unlock is simple: you can finally reason across all of your Instantly data with an agent and get usable answers about what is landing, who is responding, and how to improve.
+From a local checkout:
 
-## What It Enables
+```bash
+SENDLENS_DEMO_MODE=1 npm run demo:seed
+```
 
-SendLens is optimized for questions like:
+Then ask:
 
-- "What campaigns are performing best and worst right now?"
-- "What is common among positive responders in this campaign?"
-- "Which variables are showing up in winning leads for this sequence?"
-- "Show me the reconstructed step copy that a replied lead saw."
-- "Compare two campaigns without conflating their payload schema."
-- "Are our senders landing in primary inbox, categories, or spam?"
-- "Which SPF, DKIM, DMARC, or blacklist issues show up in inbox placement tests?"
+```text
+Use SendLens to summarize what is working and not working in the demo workspace.
+```
 
-In practice, that means:
-
-- faster diagnosis of underperforming campaigns
-- clearer visibility into what messaging lands with real prospects
-- better segmentation decisions from the data already living in Instantly
-- a much tighter feedback loop between sending, learning, and improving
-
-It is intentionally not overfit to any single client. Stable Instantly fields are first-class columns; arbitrary campaign-specific variables stay in raw `custom_payload` and are analyzed after scoping to one campaign.
+Demo results are synthetic. They are useful for seeing the experience, not for judging a real campaign or customer.
 
 ## Download And Install
 
@@ -115,168 +106,69 @@ Direct bundle downloads:
 - [Codex bundle](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/sendlens-codex-latest.tar.gz)
 - [OpenCode bundle](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/sendlens-opencode-latest.tar.gz)
 
-More detail:
+## First Run
 
-- [Install guide](./docs/INSTALL.md)
-- [Component catalog](./docs/CATALOG.md)
-- [Trust and privacy](./docs/TRUST_AND_PRIVACY.md)
-- [Skill docs](./docs/skills/README.md)
-- [Synthetic example outputs](./docs/examples/SYNTHETIC_OUTPUTS.md)
-- [Troubleshooting guide](./docs/TROUBLESHOOTING.md)
-- [MCP response contract](./docs/MCP_RESPONSE_CONTRACT.md)
-- [Local customization](./docs/LOCAL_CUSTOMIZATION.md)
-- [Release guide](./docs/RELEASING.md)
-
-## First Run And Demo Mode
-
-After install, run the setup/doctor flow before deep analysis:
+After install, run setup before deep analysis:
 
 ```text
 /sendlens-setup
 ```
 
-From a local checkout, the same checks are available with:
+From a local checkout:
 
 ```bash
 npm run doctor
 ```
 
-To evaluate SendLens without production Instantly credentials, seed the synthetic demo workspace:
+Setup checks whether the plugin can run, whether the local working folder is writable, and whether credentials or demo mode are configured.
 
-```bash
-SENDLENS_DEMO_MODE=1 npm run demo:seed
-```
+## Privacy In Plain English
 
-Then ask:
+SendLens is built to keep the core workflow local.
 
-```text
-Use SendLens to summarize what is working and not working in the demo workspace.
-```
+- It uses read-only analysis paths.
+- It stores its working data on your machine.
+- It does not require an Orchid-hosted cloud database for normal use.
+- Demo mode works without production credentials.
+- When your AI host asks SendLens a question, the answer becomes part of that host session.
 
-Demo output is synthetic proof data, not customer data or a performance benchmark.
+Current local state defaults:
 
-## How It Works
-
-```text
-Instantly API
-   |
-   v
-session-start refresh
-   |
-   v
-local DuckDB cache
-   |
-   +-- exact layer
-   |    campaigns
-   |    campaign_analytics
-   |    step_analytics
-   |    campaign_variants
-   |    accounts
-   |    account_daily_metrics
-   |    inbox_placement_tests
-   |    inbox_placement_analytics
-   |    custom_tags
-   |    custom_tag_mappings
-   |
-   +-- evidence layer
-        sampled_leads
-        sampled_outbound_emails
-        sampling_runs
-```
-
-The refresh path is optimized around speed and useful coverage:
-
-- exact campaign and step analytics are always pulled
-- account performance, warmup, and inbox placement test analytics are pulled when available
-- templates are always pulled
-- full reply-signal leads are kept
-- bounded non-reply samples are kept
-- copy is reconstructed locally from templates plus lead variables
-
-## Local-First Privacy Model
-
-SendLens is intentionally privacy-first.
-
-- It reads from Instantly using a user-provided API key.
-- It stores analysis state locally in DuckDB.
-- It does not require a shared cloud warehouse for the core workflow.
-- It keeps campaign-specific variables in per-lead `custom_payload` instead of flattening private enrichment into a universal schema.
-
-Default local state:
-
-- DuckDB: `~/.sendlens/workspace-cache.duckdb`
+- local analysis database: `~/.sendlens/workspace-cache.duckdb`
 - refresh status: `~/.sendlens/refresh-status.json`
-- session-start logs: `~/.sendlens/session-start-refresh.log`
+- setup and refresh logs: `~/.sendlens/session-start-refresh.log`
 
-## Core Analysis Surfaces
+For the full data-handling model, read [Trust and privacy](./docs/TRUST_AND_PRIVACY.md).
 
-Main MCP tools:
+## Current Connector
 
-- `workspace_snapshot`
-- `analysis_starters`
-- `analyze_data`
-- `refresh_status`
-- `refresh_data`
-- `load_campaign_data`
-- `fetch_reply_text`
-- `list_tables`
-- `list_columns`
-- `search_catalog`
+SendLens is built around outbound performance analysis. This release supports Instantly as its first data source.
 
-Preferred warehouse surfaces:
+With that connector, SendLens can read campaign metrics, message templates, sender health, inbox placement results, lead evidence, and reply text for analysis.
 
-- `campaign_overview`
-- `lead_evidence`
-- `lead_payload_kv`
-- `reply_context`
-- `reply_emails`
-- `reply_email_hydration_state`
-- `rendered_outbound_context`
-- `campaign_tags`
-- `account_tags`
-- `inbox_placement_test_overview`
-- `sender_deliverability_health`
+## What Ships In This Repo
 
-Key design rule:
+This repo is the open-source home for the SendLens plugin.
 
-- workspace-level ranking is fine
-- deeper analysis should usually scope to one campaign at a time
+It includes:
 
-## Campaign Payload Model
+- installable bundles for Claude Code, Cursor, Codex, and OpenCode
+- setup and doctor flows
+- demo mode with synthetic proof data
+- specialist analysis skills for performance, replies, copy, ICP signals, launch QA, and workspace health
+- local-first runtime code
+- public docs, examples, and release tooling
 
-SendLens treats Instantly data in two layers:
+Helpful docs:
 
-- stable Instantly-native lead fields become first-class columns
-- campaign-specific variables stay inside raw `custom_payload`
-
-That means Campaign A and Campaign B can use completely different variables without schema conflict. Analysis should:
-
-1. pick a campaign
-2. inspect which payload keys exist in that campaign
-3. group or compare within that campaign
-
-Use `lead_payload_kv` for key inventory and value-level ICP analysis. It exposes campaign payload JSON as SendLens-owned key/value rows so agents do not need shell access or raw JSON table functions to discover payload keys.
-
-This keeps the warehouse portable across many customers instead of overfitting to today's campaigns.
-
-## Specialist Analysis Flow
-
-The plugin also ships specialist reviewers so the host can split campaign analysis cleanly when needed:
-
-- `workspace-triager`
-- `campaign-analyst`
-- `copy-auditor`
-- `icp-auditor`
-- `reply-auditor`
-- `synthesis-reviewer`
-
-The intended flow is:
-
-1. triage the workspace
-2. choose a campaign
-3. load that campaign's evidence
-4. run specialist analysis
-5. synthesize the result
+- [Install guide](./docs/INSTALL.md)
+- [Trust and privacy](./docs/TRUST_AND_PRIVACY.md)
+- [Synthetic example outputs](./docs/examples/SYNTHETIC_OUTPUTS.md)
+- [Component catalog](./docs/CATALOG.md)
+- [Skill docs](./docs/skills/README.md)
+- [Troubleshooting guide](./docs/TROUBLESHOOTING.md)
+- [Local customization](./docs/LOCAL_CUSTOMIZATION.md)
+- [Release guide](./docs/RELEASING.md)
 
 ## Developer Quickstart
 
@@ -287,7 +179,7 @@ npm install
 cp .env.example .env
 ```
 
-Set at least:
+Set a data-source API key for real workspace analysis:
 
 ```bash
 SENDLENS_INSTANTLY_API_KEY=your_key
@@ -296,10 +188,18 @@ SENDLENS_INSTANTLY_API_KEY=your_key
 Then:
 
 ```bash
-npm run test:plugin
+npm run ci:plugin
+```
+
+Useful development commands:
+
+```bash
+npm run build:plugin
+npm run refresh:plugin
+npm run benchmark:fast-sync
 pluxx validate
 pluxx build --target claude-code cursor codex opencode
-pluxx install --target claude-code cursor codex opencode --trust
+pluxx verify-install --target claude-code cursor codex opencode
 ```
 
 Landing page:
@@ -309,41 +209,13 @@ npm run site:install
 npm run site:dev
 ```
 
-Useful commands:
-
-```bash
-npm run build:plugin
-npm run refresh:plugin
-npm run benchmark:fast-sync
-npm run ci:plugin
-pluxx verify-install --target claude-code cursor codex opencode
-```
-
 ## Client-Scoped Env Support
 
-Env loading order already supports named client overlays:
+Env loading order supports named client overlays:
 
 1. `.env`
 2. `.env.local`
 3. `.env.clients/<client>.env`
 4. `.env.clients/<client>.local.env`
 
-Example:
-
 Use `SENDLENS_CLIENT` when you want to load a client-specific env overlay.
-
-This is the beginning of multi-client support. See [SEND-134](https://linear.app/orchid-automation/issue/SEND-134/design-multi-client-sendlens-architecture-with-named-workspaces-per) for the next architecture step around named clients, per-client DBs, and MCP-native client switching.
-
-## Documentation
-
-- [Install guide](./docs/INSTALL.md)
-- [Component catalog](./docs/CATALOG.md)
-- [Trust and privacy](./docs/TRUST_AND_PRIVACY.md)
-- [Skill docs](./docs/skills/README.md)
-- [Synthetic example outputs](./docs/examples/SYNTHETIC_OUTPUTS.md)
-- [OSS-safe operator memory](./docs/operator-memory/README.md)
-- [Troubleshooting guide](./docs/TROUBLESHOOTING.md)
-- [MCP response contract](./docs/MCP_RESPONSE_CONTRACT.md)
-- [Local customization](./docs/LOCAL_CUSTOMIZATION.md)
-- [Release guide](./docs/RELEASING.md)
-- [Brand assets](./assets/README.md)

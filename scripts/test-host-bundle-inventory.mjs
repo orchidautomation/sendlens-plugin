@@ -203,8 +203,8 @@ async function assertManifestMetadata() {
     );
     assert(
       typeof manifest.description === "string" &&
-        manifest.description.includes("Instantly data"),
-      `${relativePath}: expected SendLens description to survive host build`,
+        manifest.description.includes("outbound campaign analysis"),
+      `${relativePath}: expected SendLens product description to survive host build`,
     );
   }
 }

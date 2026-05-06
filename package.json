@@ -1,8 +1,8 @@
 {
   "name": "sendlens",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "private": true,
-  "description": "Agentic reasoning over Instantly data with a privacy-first local cache.",
+  "description": "Privacy-first outbound campaign analysis for AI workspaces.",
   "license": "MIT",
   "homepage": "https://github.com/orchidautomation/sendlens-plugin#readme",
   "repository": {

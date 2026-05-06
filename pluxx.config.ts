@@ -2,9 +2,9 @@ import { definePlugin } from "pluxx";
 
 export default definePlugin({
   name: "sendlens",
-  version: "0.1.22",
+  version: "0.1.23",
   description:
-    "Agentic reasoning over Instantly data with a privacy-first local cache.",
+    "Privacy-first outbound campaign analysis for AI workspaces.",
   author: {
     name: "Orchid Labs",
     url: "https://github.com/orchidautomation",
@@ -13,6 +13,7 @@ export default definePlugin({
   repository: "https://github.com/orchidautomation/sendlens-plugin",
   keywords: [
     "instantly",
+    "outbound",
     "duckdb",
     "cold-email",
     "analytics",
@@ -23,9 +24,9 @@ export default definePlugin({
   brand: {
     displayName: "SendLens",
     shortDescription:
-      "Agentic reasoning over your Instantly data, with privacy-first local analysis.",
+      "Privacy-first outbound campaign analysis inside your AI workspace.",
     longDescription:
-      "Use SendLens to understand what is actually landing with prospects, which campaigns and segments are driving positive replies, and what to change next. SendLens reads from Instantly, stores analysis state in a local DuckDB cache, and keeps campaign-specific enrichment data local to the user's machine.",
+      "Use SendLens to understand what is landing with prospects, which campaigns and segments are driving positive replies, and what to change next. The open-source release currently connects to Instantly, stores analysis state locally, and keeps campaign-specific enrichment data on the user's machine.",
     category: "Analytics",
     websiteURL: "https://github.com/orchidautomation/sendlens-plugin",
     privacyPolicyURL:
@@ -36,7 +37,7 @@ export default definePlugin({
     defaultPrompts: [
       "Run SendLens setup and tell me whether this plugin is ready.",
       "Use SendLens demo mode to show me a synthetic workspace analysis without production credentials.",
-      "Use SendLens to tell me what is working and not working in this Instantly workspace.",
+      "Use SendLens to tell me what is working and not working in this outbound workspace.",
     ],
   },
 

@@ -111,7 +111,7 @@ The doctor checks env loading, runtime dependencies, compiled MCP/refresh/demo e
 
 ## Demo Mode Without Production Credentials
 
-To prove the workflow before connecting a real Instantly workspace:
+To prove the workflow before connecting a real outbound workspace:
 
 ```bash
 SENDLENS_DEMO_MODE=1 npm run demo:seed
@@ -147,7 +147,7 @@ If tools do not appear, the API key is missing, refresh is still running, or the
 After tools appear, start with broad triage:
 
 ```text
-Use SendLens to summarize what is working and not working in this Instantly workspace.
+Use SendLens to summarize what is working and not working in this outbound workspace.
 ```
 
 Then pick one campaign:
