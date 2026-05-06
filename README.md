@@ -89,6 +89,34 @@ These are the kinds of questions SendLens can answer today. Read a few — most 
 - "Resolve which campaigns belong to my Acme Inc tag, then run the full weekly brief just for that tag. Output one client-safe page and one internal page."
 - "Across all my client tags, which clients have the worst sender-coverage gap right now?"
 
+## The heavy hitters — questions that used to take a senior analyst a week
+
+These are real. The data is there. Try any of them.
+
+- **Reply-rate forensics.** "My reply rate dropped from 4.2% to 1.8% over the last 14 days. Walk back the timeline day by day and tell me what changed first — did a sender go off, did volume spike, did I switch copy, did the lead quality drop? Quote the exact day each shift started and the evidence that proves it."
+
+- **Objection clustering.** "Read every negative reply from the last 30 days. Cluster the objections — timing, budget, wrong person, already using a competitor, no interest. For each cluster, tell me which step it comes from, which opener triggers it most, and the job-title and company-size pattern of the people sending it. Then tell me which objection I can fix with a copy change vs. which one is a targeting problem."
+
+- **Winning-opener pattern mining.** "Find every Step 0 opener that earned a positive reply this quarter. Group them by pattern — what kind of hook, what kind of ask, what kind of personalization. Tell me the patterns that consistently win, quote three exemplar replies for each, and draft the next opener that combines the strongest pieces."
+
+- **Sender starvation audit.** "Some of my senders are shared across multiple campaigns. For each shared sender in the last 30 days, show me how their sending actually got split across campaigns. Identify any campaign that got starved because a higher-priority campaign hogged its sender, and tell me what that cost me in lost reach."
+
+- **Sender rotation blast radius.** "If I rotate sender X out tomorrow, which campaigns lose how much capacity, and how many days of runway do they have left under the reduced capacity? Rank campaigns by how much pain the rotation would cause and tell me which campaigns I'd need to backfill first."
+
+- **Natural A/B without running an A/B test.** "I have two campaigns that share most of their senders and target a similar audience but use different openers. Treat them as a natural A/B test. Tell me which opener is actually winning on positive replies, and what would happen if I rolled it out across both."
+
+- **Leaky-bucket funnel decay.** "Take my best campaign and walk the funnel step by step. At Step 0 — how many sent, opened, replied, replied positively, booked a meeting? Same at Steps 1, 2, 3, 4. Tell me whether the biggest leak is the subject line, the body, the ask, or the offer — then tell me what to fix first and what to expect."
+
+- **Mailbox-provider deliverability spider.** "Group my deliverability tests by recipient mailbox provider — Gmail, Outlook, Yahoo, work domains. Where am I clean, where am I in spam, where am I in Promotions? For the worst provider, tell me which of my senders is the worst offender there specifically and whether it's an authentication issue, a warmup issue, or a content issue."
+
+- **List quality vs. inbox problem disambiguation.** "Take the leads who never opened. What custom fields differ between them and the leads who replied positively? Is the issue list quality, or is it that they're on a mailbox provider where my deliverability is bad? Which segment should I cut from my next list pull, and which segment should I save and re-send to?"
+
+- **Stop-loss design per campaign.** "For each active campaign, find the step at which I should stop sending. Define 'stop' as the step where negative replies start outweighing positive replies, or where the next step's bounces exceed its replies. Output the recommended sequence length per campaign and what shortening to that length would save in sender capacity."
+
+- **Agency churn-risk radar.** "Across all my client tags, rank which clients are most at risk this month. Use: reply-rate trend over the last 4 weeks, days of new-lead runway left, sender-coverage gaps, and lack of recent positive replies. For each at-risk client, draft the proactive note I should send Monday — what we're seeing, what we're doing, and what we need from them."
+
+- **Personalization payoff.** "Compare the reply rate for leads where my personalization variable was actually filled in versus leads where it fell back to a default. Quantify the lift in real numbers. Was the enrichment worth the cost, and which fields are pulling their weight?"
+
 ## Real workflow examples
 
 ### Monday-morning agency stand-up (2 minutes of typing, ~10 minutes of work for SendLens)
