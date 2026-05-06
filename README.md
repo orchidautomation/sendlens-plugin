@@ -38,7 +38,7 @@ The current README's question list is the tip of the iceberg. Here is the depth 
 - "Rank every active campaign by attention reason. Tell me which are at high bounce risk, dry on new prospects, missing sender inventory, or have no recent volume — then write a one-paragraph client-safe brief for each."
 - "Build this week's account-manager brief: wins, risks, current actions, asks, and next review date. Sort by attention reason, then by 7-day sent volume."
 - "For tag `Q2-CFOs`, give me deduped daily sender volume vs. configured campaign daily limit. Where are we under-utilizing capacity, and which campaigns are starving the others?"
-- "Compare campaign-attributed daily volume to sender-attributed daily volume for tag `The Kiln`. If they diverge, tell me whether the gap is a campaign-side under-send or a sender-side spillover into other campaigns."
+- "Compare campaign-attributed daily volume to sender-attributed daily volume for tag `Series-B-SaaS`. If they diverge, tell me whether the gap is a campaign-side under-send or a sender-side spillover into other campaigns."
 
 ### Lead runway and pacing
 
@@ -74,7 +74,7 @@ The current README's question list is the tip of the iceberg. Here is the depth 
 
 - "Roll up SPF / DKIM / DMARC failures and blacklist hits per sender across the last 100 inbox-placement rows. Recommend pause / inspect / rotate per inbox."
 - "Which senders are landing in spam or category folders? Cross-reference with `accounts.warmup_status` and 30-day bounce rate to decide whether the issue is auth, warmup, or content."
-- "For tag `The Kiln`, list the resolved sender inventory per campaign, flag any account over 5% bounce in the last 30 days, and tell me whether sender coverage is `covered`, `partial`, or `missing`."
+- "For tag `Series-B-SaaS`, list the resolved sender inventory per campaign, flag any account over 5% bounce in the last 30 days, and tell me whether sender coverage is `covered`, `partial`, or `missing`."
 
 ### Launch QA and experiment planning
 
@@ -237,7 +237,11 @@ The OSS plugin is the analyst layer. SendLens Cloud is what comes next:
 - alerting on attention reasons (`high_bounce_risk`, `dry_on_new_prospects`, `sender_inventory_missing`) the moment they appear
 - managed connectors and deeper enrichment
 
-If the open-source experience is useful to you, the cloud version is the same engine without the laptop. Want early access? Open an issue or reach out at [orchidautomation.com](https://orchidautomation.com).
+If the open-source experience is useful to you, the cloud version is the same engine without the laptop.
+
+## Who builds SendLens
+
+SendLens is built by **Orchid Labs**, the product division of **Orchid Automation** ([orchidautomation.com](https://orchidautomation.com)). Want early access to SendLens Cloud, a custom connector, or to talk about an agency rollout? Open an issue on this repo or get in touch through Orchid Automation.
 
 ## What ships in this repo
 
