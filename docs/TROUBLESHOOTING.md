@@ -4,26 +4,38 @@ Use this when SendLens installs but the MCP tools do not appear, the local cache
 
 ## Quick Checks
 
-1. Confirm Node.js is available:
+1. Run the bundled doctor:
+
+   ```bash
+   npm run doctor
+   ```
+
+   Or, inside a host, run:
+
+   ```text
+   /sendlens-setup
+   ```
+
+2. Confirm Node.js is available:
 
    ```bash
    node --version
    ```
 
-2. Confirm your Instantly API key is set:
+3. Confirm your Instantly API key is present without printing it:
 
    ```bash
-   echo "$SENDLENS_INSTANTLY_API_KEY"
+   test -n "$SENDLENS_INSTANTLY_API_KEY" && echo "set" || echo "missing"
    ```
 
-3. Confirm the plugin builds locally:
+4. Confirm the plugin builds locally:
 
    ```bash
    npm run build:plugin
    npm run test:plugin
    ```
 
-4. Reload the host after install:
+5. Reload the host after install:
 
    - Claude Code: run `/reload-plugins`
    - Cursor: reload the window
@@ -46,6 +58,7 @@ Expected core tools:
 - `refresh_status`
 - `refresh_data`
 - `load_campaign_data`
+- `fetch_reply_text`
 - `analysis_starters`
 - `list_tables`
 - `list_columns`
@@ -76,6 +89,14 @@ SendLens reads env files in this order:
 2. `.env.local`
 3. `.env.clients/<client>.env`
 4. `.env.clients/<client>.local.env`
+
+For synthetic demo proof without production credentials:
+
+```bash
+SENDLENS_DEMO_MODE=1 npm run demo:seed
+```
+
+Demo mode is only for public-safe fixture data and should always be described as synthetic.
 
 ## Refresh Is Still Running
 

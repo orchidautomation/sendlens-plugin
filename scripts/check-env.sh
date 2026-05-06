@@ -12,8 +12,9 @@ source "${PLUGIN_ROOT}/scripts/load-env.sh"
 API_KEY="${SENDLENS_INSTANTLY_API_KEY:-}"
 DB_PATH="${SENDLENS_DB_PATH:-${HOME}/.sendlens/workspace-cache.duckdb}"
 
-if [[ -z "${API_KEY}" ]]; then
+if [[ -z "${API_KEY}" && "${SENDLENS_DEMO_MODE:-}" != "1" && "${SENDLENS_DEMO_MODE:-}" != "true" ]]; then
   echo "[sendlens] Missing SendLens Instantly API key. Set SENDLENS_INSTANTLY_API_KEY through .env / .env.clients/<client>.env." >&2
+  echo "[sendlens] For synthetic demo data without production credentials, set SENDLENS_DEMO_MODE=1 and run npm run demo:seed." >&2
   exit 1
 fi
 
@@ -32,7 +33,9 @@ if [[ ! -f "${BUILD_ENTRY}" ]]; then
   exit 1
 fi
 
-if [[ -n "${SENDLENS_CLIENT:-}" ]]; then
+if [[ "${SENDLENS_DEMO_MODE:-}" == "1" || "${SENDLENS_DEMO_MODE:-}" == "true" ]]; then
+  echo "[sendlens] Runtime checks passed in demo mode. Local DuckDB path: ${DB_PATH}" >&2
+elif [[ -n "${SENDLENS_CLIENT:-}" ]]; then
   echo "[sendlens] Runtime checks passed for client '${SENDLENS_CLIENT}'. Local DuckDB path: ${DB_PATH}" >&2
 else
   echo "[sendlens] Runtime checks passed. Local DuckDB path: ${DB_PATH}" >&2

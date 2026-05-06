@@ -8,6 +8,8 @@
     "build:plugin": "tsc -p tsconfig.plugin.json",
     "build:hosts": "pluxx build --target claude-code cursor codex opencode",
     "benchmark:fast-sync": "bash ./scripts/benchmark-fast-refresh.sh",
+    "doctor": "bash ./scripts/sendlens-doctor.sh",
+    "demo:seed": "npm run --silent build:plugin && node ./build/plugin/demo-workspace.js",
     "site:install": "npm --prefix site install",
     "site:dev": "npm --prefix site run dev",
     "site:build": "npm --prefix site run build",
@@ -17,10 +19,13 @@
     "release:check": "npm run ci:plugin",
     "refresh:plugin": "npm run --silent build:plugin && node ./build/plugin/refresh-cli.js",
     "start:plugin-mcp": "npm run --silent build:plugin && node ./build/plugin/server.js",
+    "test:demo": "npm run --silent build:plugin && node scripts/test-demo-workspace.mjs",
+    "test:prompt-contracts": "node scripts/test-prompt-contracts.mjs",
+    "test:host-bundles": "node scripts/test-host-bundle-inventory.mjs",
     "test:sql-guard": "npm run --silent build:plugin && node scripts/test-sql-guard.mjs",
     "test:db-lock": "npm run --silent build:plugin && node scripts/test-db-lock-retry.mjs",
     "test:templates": "npm run --silent build:plugin && node scripts/test-ingest-template-fixtures.mjs",
-    "test:plugin": "npm run --silent build:plugin && node scripts/test-sql-guard.mjs && node scripts/test-db-lock-retry.mjs && node scripts/test-ingest-template-fixtures.mjs && node scripts/test-local-plugin-sampling.mjs && node scripts/test-local-plugin-runtime.mjs && node scripts/test-reply-hydration-db-reuse.mjs && node scripts/test-reply-fetch-contract.mjs"
+    "test:plugin": "npm run --silent build:plugin && node scripts/test-sql-guard.mjs && node scripts/test-db-lock-retry.mjs && node scripts/test-ingest-template-fixtures.mjs && node scripts/test-local-plugin-sampling.mjs && node scripts/test-local-plugin-runtime.mjs && node scripts/test-reply-hydration-db-reuse.mjs && node scripts/test-reply-fetch-contract.mjs && node scripts/test-demo-workspace.mjs && node scripts/test-prompt-contracts.mjs"
   },
   "dependencies": {
     "@duckdb/node-api": "^1.5.1-r.1",

@@ -29,9 +29,9 @@ export default definePlugin({
     icon: "./assets/sendlens-mark.svg",
     screenshots: ["./assets/sendlens-cover.svg"],
     defaultPrompts: [
+      "Run SendLens setup and tell me whether this plugin is ready.",
+      "Use SendLens demo mode to show me a synthetic workspace analysis without production credentials.",
       "Use SendLens to tell me what is working and not working in this Instantly workspace.",
-      "Use SendLens to show me which campaigns and sequences are landing best.",
-      "Use SendLens to tell me what is resonating with prospects and what to change next.",
     ],
   },
 
@@ -87,6 +87,16 @@ export default definePlugin({
       envVar: "SENDLENS_DB_PATH",
       targets: ["claude-code", "cursor", "codex", "opencode"],
     },
+    {
+      key: "sendlens-demo-mode",
+      title: "Demo Mode",
+      description:
+        "Optional synthetic demo workspace mode. Set to 1 to seed and analyze public-safe fixture data without Instantly credentials.",
+      type: "string",
+      required: false,
+      envVar: "SENDLENS_DEMO_MODE",
+      targets: ["claude-code", "cursor", "codex", "opencode"],
+    },
   ],
 
   mcp: {
@@ -96,6 +106,10 @@ export default definePlugin({
       args: ["./scripts/start-mcp.sh"],
       env: {
         SENDLENS_INSTANTLY_API_KEY: "${SENDLENS_INSTANTLY_API_KEY}",
+        SENDLENS_CLIENT: "${SENDLENS_CLIENT}",
+        SENDLENS_CLIENTS_DIR: "${SENDLENS_CLIENTS_DIR}",
+        SENDLENS_DB_PATH: "${SENDLENS_DB_PATH}",
+        SENDLENS_DEMO_MODE: "${SENDLENS_DEMO_MODE}",
       },
     },
   },

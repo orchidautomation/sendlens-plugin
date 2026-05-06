@@ -15,8 +15,9 @@ export SENDLENS_STATE_DIR="${STATE_DIR}"
 # shellcheck disable=SC1091
 source "${PLUGIN_ROOT}/scripts/load-env.sh"
 
-if [[ -z "${SENDLENS_INSTANTLY_API_KEY:-}" ]]; then
+if [[ -z "${SENDLENS_INSTANTLY_API_KEY:-}" && "${SENDLENS_DEMO_MODE:-}" != "1" && "${SENDLENS_DEMO_MODE:-}" != "true" ]]; then
   echo "[sendlens] Missing SendLens Instantly API key. Set SENDLENS_INSTANTLY_API_KEY through install config or .env." >&2
+  echo "[sendlens] For synthetic demo data without production credentials, set SENDLENS_DEMO_MODE=1 and run npm run demo:seed." >&2
   exit 1
 fi
 
@@ -33,6 +34,17 @@ fi
 if [[ ! -f "${PLUGIN_ROOT}/build/plugin/refresh-cli.js" ]]; then
   echo "[sendlens] Compiled refresh runtime not found at ${PLUGIN_ROOT}/build/plugin/refresh-cli.js." >&2
   exit 1
+fi
+
+if [[ "${SENDLENS_DEMO_MODE:-}" == "1" || "${SENDLENS_DEMO_MODE:-}" == "true" ]]; then
+  if [[ ! -f "${PLUGIN_ROOT}/build/plugin/demo-workspace.js" ]]; then
+    echo "[sendlens] Compiled demo workspace runtime not found at ${PLUGIN_ROOT}/build/plugin/demo-workspace.js." >&2
+    exit 1
+  fi
+  cd "${PLUGIN_ROOT}"
+  node "${PLUGIN_ROOT}/build/plugin/demo-workspace.js" >/dev/null
+  echo "[sendlens] Demo mode loaded synthetic workspace. Local DuckDB path: ${DB_PATH}" >&2
+  exit 0
 fi
 
 cd "${PLUGIN_ROOT}"
