@@ -40,13 +40,15 @@ Read the evidence and copy reconstruction references before marking a campaign r
 ### Stage 2: Load Campaign Evidence
 
 - Run the launch QA checklist recipe with the campaign name or campaign ID.
+- Run `campaign-tracking-deliverability-settings` when the user asks whether tracking, bounce protection, risky contacts, unsubscribe headers, or ESP matching are on per campaign.
 - Run `load_campaign_data` for the selected campaign when checking copy, sampled replies, or reconstructed personalization.
 - Use `analyze_data` only through the SendLens MCP tool and only after a starter recipe or schema surface is clear.
 
 ### Stage 3: Check Blockers Before Polish
 
-- Check sender assignment, uncontacted leads, sequence templates, blank copy, tracking settings, schedule/timezone, sequence steps/delays, and sender health.
-- Apply cold-email best practices when interpreting open tracking, link tracking, bounce risk, and text/HTML choices.
+- Check sender assignment, uncontacted leads, sequence templates, blank copy, tracking settings, deliverability guardrails, schedule/timezone, sequence steps/delays, and sender health.
+- Apply cold-email best practices when interpreting open tracking, link tracking, disabled bounce protection, allowed risky contacts, bounce risk, and text/HTML choices.
+- Treat `open_tracking`, `link_tracking`, `match_lead_esp`, `allow_risky_contacts`, `disable_bounce_protect`, and `insert_unsubscribe_header` as exact campaign settings when present in `campaign_overview`.
 - If the user asks for personalization safety, pair launch QA with the `personalization-leak-audit` copy-analysis recipe and the copy reconstruction caveat reference.
 
 ### Stage 4: Calibrate The Verdict

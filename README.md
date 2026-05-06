@@ -1,176 +1,141 @@
 # SendLens
 
-SendLens helps teams understand why outbound campaigns are winning or losing.
+**The outbound analyst that lives inside the AI tool you already use.**
 
-It turns campaign results, replies, message copy, sender health, and lead details into plain-English analysis inside the AI tools your team already uses.
+SendLens turns your Instantly account into something you can talk to. Ask a question in plain English inside Claude Code, Cursor, Codex, or OpenCode, and you get a clear, evidence-backed answer about your actual campaigns, your actual senders, and what your actual prospects are saying back.
 
-## What SendLens Does
+No spreadsheets. No dashboards. No SQL. Just answers.
 
-SendLens helps you answer the questions that matter after campaigns start sending:
+## Why this matters
 
-- Which campaigns are working best?
-- Which campaigns need attention?
-- What messages are getting positive replies?
-- What do good responders have in common?
-- Which senders or inbox tests show deliverability risk?
-- What should we test next?
+Cold outbound data is scattered across campaign totals, sender health, replies, lead fields, daily volume, tags, and deliverability tests. SendLens pulls that into a local DuckDB cache and gives your AI tool a set of specialist plays for answering the questions that usually take a senior analyst hours.
 
-Instead of digging through exports, dashboards, and scattered notes, you can ask your AI workspace for a grounded read on what is happening and what to change.
+It can:
 
-## Who It Is For
+- compare campaigns and tell you which one to scale, kill, or rewrite
+- rank the steps and copy variants that are actually doing the work
+- separate genuine human replies from auto-responders and out-of-office noise
+- surface tracking, bounce-protection, sender, and inbox-placement risk before launch
+- project how many days of sending you have left before you run out of leads
+- read replies and lead fields for patterns, objections, and ICP signals
+- write client-safe account-manager briefs
 
-SendLens is for people who run outbound programs and need faster feedback:
+You don't need to know how anything is stored, or what to call any of this. You ask in plain language. SendLens picks the right play and answers.
 
-- founders checking whether a campaign is worth scaling
-- growth teams comparing messages and audiences
-- agencies managing client campaigns
-- sales teams trying to understand positive replies
-- operators looking for deliverability or sender-health issues
+## What you can actually ask
 
-You do not need to understand the internal data model to use it. The normal workflow is to install the plugin, run setup, refresh data, and ask questions in plain language.
+These are the kinds of questions SendLens can answer today:
 
-## What You Can Ask
+- "Rank every active campaign by what most needs attention: bounce risk, lead runway, missing senders, low replies, or stopped sending."
+- "For my Q2 CFOs tag, where am I under-using sending capacity, and which campaigns are starving the others?"
+- "For every active campaign in this tag, tell me how many days of new prospects I have left before I run dry."
+- "For my top three campaigns, rank the winning steps and copy variants, and tell me how confident the answer is."
+- "Audit my sent-email samples for unfilled personalization tokens, blank rendered bodies, and the affected step/variant."
+- "Pull the latest replies for this campaign and summarize positive vs. negative themes. Quote representative replies."
+- "Which custom lead fields show up more often on prospects who reply positively? Treat it as a hypothesis."
+- "Which senders are landing in spam or categories in inbox-placement tests, and is the issue authentication, warmup, or content?"
+- "For every campaign, show whether open tracking, link tracking, ESP matching, bounce protection, risky contacts, and unsubscribe headers are on."
+- "Build this week's account-manager brief: wins, risks, current actions, client asks, and next review date."
 
-Examples:
+## The Heavy Hitters
 
-- "What is working and not working in this workspace?"
-- "Which campaign should we scale first?"
-- "Why is this campaign getting replies but few positive outcomes?"
-- "What do the best responders have in common?"
-- "Compare these two campaigns and tell me what to test next."
-- "Show me the reply themes prospects keep mentioning."
-- "Do any senders or inbox placement tests look risky?"
+Most of these are not dashboard questions. They require campaign totals, daily pacing, sender assignments, account health, tag scopes, step and variant analytics, live templates, fetched reply text, lead outcomes, lead custom fields, sampled reconstructed outbound copy, and inbox-placement seed-test rows when available.
 
-SendLens is designed to separate evidence from opinion. When it uses exact campaign metrics, sampled lead evidence, fetched reply text, or synthetic demo data, the output should say so.
+SendLens keeps those surfaces in one local DuckDB cache and labels the evidence as exact, sampled, or hybrid. Exact totals stay exact. Lead-field and rendered-copy analysis is treated as sample evidence when the cache only has a bounded slice. That is the point: you can ask senior-analyst questions without losing track of what is proven, what is directional, and what needs a follow-up pull.
 
-## Try It Without Real Data
+- **Sentence-level reply attribution:** "Which sentence in my Step 0 email is prospects actually reacting to, and which one is triggering objections?"
+- **Meeting-booked field fingerprint:** "Which sampled custom-field values show up disproportionately in booked or won leads?"
+- **Inbox vs. conversion crossover:** "Where do seed tests show good placement but the conversation still fails, and where are provider filters hiding likely demand?"
+- **Wrong-person referral mining:** "Which job titles are wrong-person replies routing me toward, and should my next list shift there?"
+- **Reply-rate forensics:** "Walk back the last 14 days across reply rate, sender volume, bounces, and sampled lead-batch quality. Which shifted first?"
+- **Tag-scoped scoreboard:** "For my Series-B SaaS tag, rank campaigns by positive replies, sender coverage, runway, volume utilization, and inbox-placement health."
+- **Launch-blocker heatmap:** "Across paused campaigns, show missing senders, blank bodies, tracking risk, relaxed deliverability guardrails, weak runway, and sender bounce risk."
 
-You can evaluate SendLens without connecting a production workspace.
+## Why you can trust the answer
 
-From a local checkout:
+Most "AI for analytics" tools blur the difference between exact totals and an educated guess from a sample. SendLens never does. Every answer tells you whether it came from:
 
-```bash
-SENDLENS_DEMO_MODE=1 npm run demo:seed
-```
+- **Exact numbers** — campaign totals, daily metrics, sender bounce stats, deliverability results, and the actual text of replies.
+- **A sample** — patterns across a representative slice of your leads, when the full set is too big to look at every row.
+- **A mix of the two** — for example, exact reply totals broken down by reconstructed copy.
 
-Then ask:
+When the data isn't there yet, SendLens says *that*, instead of guessing — and tells you exactly what to do next.
 
-```text
-Use SendLens to summarize what is working and not working in the demo workspace.
-```
+## Install
 
-Demo results are synthetic. They are useful for seeing the experience, not for judging a real campaign or customer.
+Latest release: [release page](https://github.com/orchidautomation/sendlens-plugin/releases/latest)
 
-## Download And Install
-
-Latest release:
-
-- [Latest release page](https://github.com/orchidautomation/sendlens-plugin/releases/latest)
-
-Copy-paste installers:
-
-Claude Code
+Copy-paste installers — pick the AI tool you use:
 
 ```bash
+# Claude Code
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-claude-code.sh | bash
-```
 
-Cursor
-
-```bash
+# Cursor
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-cursor.sh | bash
-```
 
-Codex
-
-```bash
+# Codex
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | bash
-```
 
-OpenCode
-
-```bash
+# OpenCode
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-opencode.sh | bash
-```
 
-All supported hosts
-
-```bash
+# All of the above
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-all.sh | bash
 ```
 
-Direct bundle downloads:
+Direct downloads:
 
-- [Claude Code bundle](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/sendlens-claude-code-latest.tar.gz)
-- [Cursor bundle](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/sendlens-cursor-latest.tar.gz)
-- [Codex bundle](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/sendlens-codex-latest.tar.gz)
-- [OpenCode bundle](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/sendlens-opencode-latest.tar.gz)
+- [Claude Code](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/sendlens-claude-code-latest.tar.gz)
+- [Cursor](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/sendlens-cursor-latest.tar.gz)
+- [Codex](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/sendlens-codex-latest.tar.gz)
+- [OpenCode](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/sendlens-opencode-latest.tar.gz)
 
-## First Run
+## First run
 
-After install, run setup before deep analysis:
+After installing, type this in your AI tool:
 
 ```text
 /sendlens-setup
 ```
 
-From a local checkout:
+It will walk you through connecting your account (or starting in demo mode) and confirm everything is ready.
 
-```bash
-npm run doctor
-```
+Want to try SendLens without connecting Instantly? Choose demo mode during `/sendlens-setup`. If you are developing from a cloned repo, use the demo seed command in the developer quickstart below.
 
-Setup checks whether the plugin can run, whether the local working folder is writable, and whether credentials or demo mode are configured.
+## Privacy in plain English
 
-## Privacy In Plain English
+- SendLens is read-only. It never sends emails or changes anything in your Instantly account.
+- Your data stays on your computer. Nothing is uploaded to a server we run.
+- Demo mode works without connecting any real account.
+- Whatever question you ask, the answer becomes part of the conversation in your AI tool — same as anything else you type there.
 
-SendLens is built to keep the core workflow local.
+Full data-handling details: [Trust and privacy](./docs/TRUST_AND_PRIVACY.md).
 
-- It uses read-only analysis paths.
-- It stores its working data on your machine.
-- It does not require an Orchid-hosted cloud database for normal use.
-- Demo mode works without production credentials.
-- When your AI host asks SendLens a question, the answer becomes part of that host session.
+## What it works with today
 
-Current local state defaults:
+This release works with **Instantly** — campaigns, daily metrics, senders, custom tags, deliverability tests, lead details, and reply text.
 
-- local analysis database: `~/.sendlens/workspace-cache.duckdb`
-- refresh status: `~/.sendlens/refresh-status.json`
-- setup and refresh logs: `~/.sendlens/session-start-refresh.log`
+## Who builds SendLens
 
-For the full data-handling model, read [Trust and privacy](./docs/TRUST_AND_PRIVACY.md).
+SendLens is built by **Orchid Labs**, the product division of **Orchid Automation** ([orchidautomation.com](https://orchidautomation.com)). Have an idea, an agency use case, or feedback? Open an issue on this repo.
 
-## Current Connector
-
-SendLens is built around outbound performance analysis. This release supports Instantly as its first data source.
-
-With that connector, SendLens can read campaign metrics, message templates, sender health, inbox placement results, lead evidence, and reply text for analysis.
-
-## What Ships In This Repo
-
-This repo is the open-source home for the SendLens plugin.
-
-It includes:
-
-- installable bundles for Claude Code, Cursor, Codex, and OpenCode
-- setup and doctor flows
-- demo mode with synthetic proof data
-- specialist analysis skills for performance, replies, copy, ICP signals, launch QA, and workspace health
-- local-first runtime code
-- public docs, examples, and release tooling
-
-Helpful docs:
+## Helpful docs
 
 - [Install guide](./docs/INSTALL.md)
 - [Trust and privacy](./docs/TRUST_AND_PRIVACY.md)
-- [Synthetic example outputs](./docs/examples/SYNTHETIC_OUTPUTS.md)
-- [Component catalog](./docs/CATALOG.md)
-- [Skill docs](./docs/skills/README.md)
-- [Troubleshooting guide](./docs/TROUBLESHOOTING.md)
+- [Example outputs](./docs/examples/SYNTHETIC_OUTPUTS.md)
+- [What's in the box](./docs/CATALOG.md)
+- [Plays you can run](./docs/skills/README.md)
+- [Troubleshooting](./docs/TROUBLESHOOTING.md)
 - [Local customization](./docs/LOCAL_CUSTOMIZATION.md)
 - [Release guide](./docs/RELEASING.md)
 
-## Developer Quickstart
+---
+
+## Developer quickstart
+
+> The rest of this README is for people building on top of SendLens or contributing to the codebase. If you just want to use SendLens, you can stop here.
 
 ```bash
 git clone https://github.com/orchidautomation/sendlens-plugin.git
@@ -179,10 +144,22 @@ npm install
 cp .env.example .env
 ```
 
-Set a data-source API key for real workspace analysis:
+For real workspace analysis:
 
 ```bash
 SENDLENS_INSTANTLY_API_KEY=your_key
+```
+
+For synthetic local demo data instead:
+
+```bash
+SENDLENS_DEMO_MODE=1 npm run demo:seed
+```
+
+Then ask your host:
+
+```text
+Walk me through what's happening in this workspace, then plan the next experiment on the best-performing campaign.
 ```
 
 Then:
@@ -191,7 +168,7 @@ Then:
 npm run ci:plugin
 ```
 
-Useful development commands:
+Common dev commands:
 
 ```bash
 npm run build:plugin
@@ -209,7 +186,7 @@ npm run site:install
 npm run site:dev
 ```
 
-## Client-Scoped Env Support
+### Client-scoped env support
 
 Env loading order supports named client overlays:
 
@@ -218,4 +195,4 @@ Env loading order supports named client overlays:
 3. `.env.clients/<client>.env`
 4. `.env.clients/<client>.local.env`
 
-Use `SENDLENS_CLIENT` when you want to load a client-specific env overlay.
+Use `SENDLENS_CLIENT` to load a client-specific overlay. This is what makes a single laptop usable across many client workspaces.

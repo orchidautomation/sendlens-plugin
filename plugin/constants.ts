@@ -48,6 +48,7 @@ export const PUBLIC_TABLES = [
   "campaign_tag_true_daily_volume_trend",
   "inbox_placement_tests",
   "inbox_placement_analytics",
+  "inbox_placement_analytics_labeled",
   "inbox_placement_test_overview",
   "sender_deliverability_health",
   "reply_emails",
@@ -66,7 +67,7 @@ export type PublicTableName = (typeof PUBLIC_TABLES)[number];
 
 export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
   campaigns:
-    "Exact campaign metadata from Instantly, including tracking and sequence counts.",
+    "Exact campaign metadata from Instantly, including tracking, deliverability guardrail settings, and sequence counts.",
   campaign_analytics:
     "Exact per-campaign aggregate metrics such as sends, replies, bounces, and opportunities.",
   campaign_daily_metrics:
@@ -111,6 +112,8 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Exact inbox placement test definitions from Instantly, including linked campaigns, sending accounts, recipients, schedules, and raw metadata.",
   inbox_placement_analytics:
     "Exact per-email inbox placement analytics from Instantly tests, including sender, recipient ESP/geo/type, spam/category flags, and SPF/DKIM/DMARC results.",
+  inbox_placement_analytics_labeled:
+    "Exact per-email inbox placement analytics with documented Instantly ESP, recipient geography, and recipient type labels decoded from integer codes.",
   inbox_placement_test_overview:
     "Semantic inbox placement test rollup with primary inbox, category, spam, and authentication failure rates by test.",
   sender_deliverability_health:
@@ -126,7 +129,7 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
   sampling_runs:
     "Per-campaign ingest coverage metadata, including exact-vs-sampled mode and sample sizes.",
   campaign_overview:
-    "Semantic campaign health view: exact metrics, status, sample coverage, and reply/bounce rates in one place.",
+    "Semantic campaign health view: exact metrics, status, tracking and deliverability settings, sample coverage, and reply/bounce rates in one place.",
   lead_evidence:
     "Semantic lead evidence view with stable Instantly lead fields, reply signals, and preserved campaign-scoped payload JSON.",
   lead_payload_kv:

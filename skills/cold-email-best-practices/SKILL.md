@@ -26,6 +26,7 @@ Read the evidence and metric references when applying these rules to actual Send
 - Reply rate matters more than open rate for cold outbound.
 - Bounce rate above 2% deserves attention; above 5% is a red flag.
 - Open tracking and link tracking should stay off for cold outbound unless the user has a very specific reason.
+- Disabled bounce protection and allowed risky contacts are launch-review warnings unless the user has a deliberate exception.
 - Text-only beats polished HTML for most cold-email use cases.
 - Separate auto-replies from human replies in every performance read where the evidence surface supports it.
 - Keep recommendations concise, specific, and tied to campaign evidence.
@@ -40,7 +41,7 @@ Read the evidence and metric references when applying these rules to actual Send
 
 ### Stage 2: Apply Evidence-Calibrated Benchmarks
 
-- Use exact aggregates for reply rate, bounce rate, tracking settings, sender health, and campaign settings when available.
+- Use exact aggregates for reply rate, bounce rate, tracking settings, deliverability guardrails, sender health, and campaign settings when available.
 - Use sampled evidence only for examples, themes, or hypotheses.
 - Do not blame copy when sender health, inbox placement, launch readiness, or lead supply is the stronger evidence-backed explanation.
 - Do not over-index on open rate, especially when open tracking is disabled or should be disabled.

@@ -85,12 +85,12 @@ The local schema exposes exact aggregate tables and semantic analysis views. Com
 
 | Surface | Classification | Use |
 | --- | --- | --- |
-| `campaigns`, `campaign_analytics`, `campaign_daily_metrics`, `step_analytics`, `campaign_variants` | Exact Instantly-derived campaign surfaces | Campaign, step, variant, template, and daily performance analysis |
+| `campaigns`, `campaign_analytics`, `campaign_daily_metrics`, `step_analytics`, `campaign_variants` | Exact Instantly-derived campaign surfaces | Campaign, step, variant, template, tracking/deliverability settings, and daily performance analysis |
 | `accounts`, `account_daily_metrics`, `campaign_accounts` | Exact or resolved sender/account surfaces | Account health, sender coverage, and capacity checks |
 | `custom_tags`, `custom_tag_mappings`, `campaign_tags`, `account_tags` | Exact tag surfaces | Campaign and sender scoping |
 | `inbox_placement_tests`, `inbox_placement_analytics` | Exact when available from Instantly | Inbox placement and authentication evidence |
 | `inbox_placement_test_overview`, `sender_deliverability_health` | Semantic rollups over inbox placement data | Deliverability diagnosis with availability caveats |
-| `campaign_overview` | Semantic campaign rollup | Default campaign ranking and health view |
+| `campaign_overview` | Semantic campaign rollup | Default campaign ranking, tracking/deliverability settings, and health view |
 | `lead_evidence`, `lead_payload_kv` | Sampled lead and campaign-payload evidence | ICP and lead-variable hypotheses |
 | `reply_context`, `reply_emails` | Reply outcome context and fetched exact reply rows | Reply cohort analysis and exact reply-body analysis when hydrated |
 | `rendered_outbound_context` | Locally reconstructed outbound context | Personalization QA and copy analysis, not byte-for-byte delivered email |
