@@ -2,92 +2,83 @@
 
 **An outbound analyst that lives inside the AI tool you already use.**
 
-SendLens turns your Instantly workspace into a queryable, AI-native dataset — campaign metrics, sender health, inbox-placement results, message templates, reconstructed sends, lead payloads, and full reply text — and then lets your AI host (Claude Code, Cursor, Codex, OpenCode) reason over it with grounded, evidence-cited answers.
-
-The result: the analysis a senior growth-ops hire would write, on demand, against your actual workspace, in plain English.
+SendLens turns your Instantly workspace into something you can talk to. Ask a question in plain English inside Claude Code, Cursor, Codex, or OpenCode, and you get the kind of grounded, evidence-backed answer a senior growth-ops hire would write — about your actual campaigns, your actual senders, and what your actual prospects are saying back.
 
 ## Why this matters
 
-Outbound teams are sitting on rich data that nobody has time to query. Dashboards show *what* happened. Spreadsheets get stale by Friday. Most "AI for cold email" stops at one-line tips against a generic prompt.
+Outbound teams are sitting on rich data that nobody has time to dig through. Dashboards show what happened. Spreadsheets get stale by Friday. Most "AI for cold email" stops at one-line tips against a generic prompt.
 
-SendLens is different because the heavy lifting is already done locally before the model ever sees a question:
+SendLens is different because it does the analyst's homework for you before the AI ever sees the question. It already knows how to compare campaigns, rank step and variant winners, surface deliverability risk, separate human replies from auto-noise, project lead runway, and call out when an answer is based on exact numbers vs. a sample. You just ask.
 
-- **A normalized DuckDB warehouse** of your workspace, refreshed in place.
-- **18+ semantic views** that pre-join campaigns, accounts, tags, daily metrics, sampled leads, reconstructed outbound copy, and fetched replies.
-- **30+ analyst-grade SQL recipes** with built-in verdict columns (`am_attention_reason`, `launch_qa_status`, `recommended_test_lane`, `coverage_status`, `reply_outcome_label`, …) so the model gets ranked, decision-ready rows instead of raw counts.
-- **Specialist skills** — workspace health, campaign performance, copy analysis, reply patterns, ICP signals, launch QA, experiment planner, account-manager brief, cold-email best practices — that know which recipe to run, what evidence class it produces (`exact` / `sampled` / `hybrid`), and how to caveat the answer.
-
-You ask one question. SendLens runs the right query, fetches the right reply text, joins the right sampled evidence, and writes the answer with the work shown.
+The result: one analyst-quality answer per question, with the work shown, in the time it takes to type the question.
 
 ## Who it is for
 
 - **Growth marketers** who need a defensible read on which campaign to scale, kill, or rewrite.
-- **GTM engineers** who want a programmable layer over Instantly without standing up Snowflake + dbt.
+- **GTM engineers** who want a programmable layer over their outbound stack without standing up a data warehouse.
 - **Agencies** running 10–100 client workspaces who need client-safe weekly briefs and an internal action queue from the same data pull.
 - **Founders and operators** who want one analyst-quality answer per week instead of ten dashboards.
-- **RevOps / sales leaders** trying to understand why positive replies aren't converting, and which step or variant is actually doing the work.
+- **RevOps and sales leaders** trying to understand why positive replies aren't converting, and which step or variant is actually doing the work.
 
-You don't need to know SQL, the schema, or which recipe runs when. You ask in plain language; the skill router picks the recipes.
+You don't need to know anything about how the data is stored or which question maps to which analysis. You ask in plain language; SendLens picks the right play.
 
 ## What you can actually ask
 
-The current README's question list is the tip of the iceberg. Here is the depth available now.
+The kinds of questions you can ask are far deeper than a typical "AI for outbound" tool. A sample:
 
 ### Workspace triage and weekly rollups
 
-- "Rank every active campaign by attention reason. Tell me which are at high bounce risk, dry on new prospects, missing sender inventory, or have no recent volume — then write a one-paragraph client-safe brief for each."
-- "Build this week's account-manager brief: wins, risks, current actions, asks, and next review date. Sort by attention reason, then by 7-day sent volume."
-- "For tag `Q2-CFOs`, give me deduped daily sender volume vs. configured campaign daily limit. Where are we under-utilizing capacity, and which campaigns are starving the others?"
-- "Compare campaign-attributed daily volume to sender-attributed daily volume for tag `Series-B-SaaS`. If they diverge, tell me whether the gap is a campaign-side under-send or a sender-side spillover into other campaigns."
+- "Rank every active campaign by what most needs my attention. Tell me which are at high bounce risk, dry on new prospects, missing a sender, or have no recent volume — then write a one-paragraph client-safe brief for each."
+- "Build this week's account-manager brief: wins, risks, current actions, asks, and next review date."
+- "For my Q2 CFOs tag, give me daily sender volume vs. what each campaign is configured to send. Where am I under-utilizing capacity, and which campaigns are starving the others?"
+- "Compare campaign-attributed daily volume to sender-attributed daily volume for my Series-B SaaS tag. If they diverge, tell me whether the gap is a campaign-side under-send or a sender-side spillover into other campaigns."
 
 ### Lead runway and pacing
 
-- "For every active campaign in tag `Mid-market RevOps`, compute new-lead runway in sending days. Flag anything under 5 days of runway and propose a refill order."
-- "Which campaigns have we sent on every sending day in the last 30 days, and what's the observed per-campaign daily ceiling vs. the configured `daily_limit`? Where can we safely raise the limit?"
-- "Project this tag's runway by weekday — accounting for the fact that sends drop on Saturdays. When do we run dry given the current schedule?"
+- "For every active campaign in my mid-market RevOps tag, project new-lead runway in sending days. Flag anything under 5 days of runway and propose a refill order."
+- "Which campaigns have I been sending on every available sending day for the last 30 days, and what is the real per-campaign daily ceiling vs. the limit I configured? Where can I safely raise the limit?"
+- "Project this tag's runway by weekday — accounting for the fact that sends drop on weekends. When do I run dry given the current schedule?"
 
-### Campaign performance, step fatigue, variant winners
+### Campaign performance, step fatigue, and variant winners
 
-- "For the top three active campaigns by 14-day volume, rank step+variant winners by unique reply rate when step coverage is dense, and by opportunity rate when it isn't. Tell me which basis you used."
-- "Find step fatigue in our 5-step sequence. Where do replies drop off? Where does the negative reply share start exceeding the positive reply share?"
+- "For my top three active campaigns by recent volume, rank step and variant winners by reply rate when there's enough data, and by opportunity rate when there isn't. Tell me which one you used and why."
+- "Find step fatigue in my 5-step sequence. Where do replies drop off? Where does the negative-reply share start exceeding the positive-reply share?"
 - "Compare two campaigns with similar audiences. Tell me what's different — daily limit, sender inventory, schedule, copy length, step delays — and which difference best explains the reply-rate gap."
 
 ### Copy, personalization, and template QA
 
-- "Audit the last 50 reconstructed outbound samples for unresolved `{{...}}` tokens. Group by step+variant and tell me how many leads were affected."
-- "Diff the live template body for Step 0 variant A against the variant that was running last sync. Which words changed, and did the reply-outcome mix change with it?"
-- "Take the live templates for campaign X, the rendered outbound samples I actually sent, and the fetched inbound replies. Tell me which sentence in Step 0 is doing the work and which one is killing positive responses."
+- "Audit the last 50 outbound samples for unresolved personalization tokens. Group by step and variant and tell me how many leads were affected."
+- "Diff the live template body for Step 0 variant A against the variant that was running last sync. Which words changed, and did the reply mix change with it?"
+- "Take the live templates for this campaign, the actual outbound that went out, and the inbound replies. Tell me which sentence in Step 0 is doing the work and which one is killing positive responses."
 
 ### Reply patterns, themes, and outcome-aware quoting
 
-- "Run `fetch_reply_text` for campaign X, then summarize positive vs. negative reply themes from the fetched bodies. Quote three representative replies of each, with `reply_email_i_status`."
-- "Across all campaigns, what's the share of `wrong_person` replies? Which campaigns over-index, and what's the common job-title pattern in the recipients?"
-- "Are auto-replies inflating our reply rate? Show me unique replies excluding `is_auto_reply = TRUE`, and what that does to each campaign's effective reply rate."
+- "Pull the latest reply text for this campaign and summarize positive vs. negative themes. Quote three representative replies of each."
+- "Across all campaigns, what's the share of wrong-person replies? Which campaigns over-index, and what is the common job-title pattern in the recipients?"
+- "Are auto-replies inflating my reply rate? Show me unique replies excluding auto-responders, and what that does to each campaign's effective reply rate."
 
-### ICP signals from sampled lead payloads
+### ICP signals from sampled lead data
 
-- "For campaign `Demo CFOs - Midwest`, inventory the custom payload keys present on sampled leads. Flag the keys that appear more often in replying or positive leads, and propose the next single-variable test."
-- "For payload key `employee_band` in this campaign, which values correlate with positive outcomes in the sample? Treat the result as a hypothesis, not a population claim."
-- "Do `finance_stack`-populated leads outperform empty ones in this campaign? If yes, draft an enrichment-or-suppression rule for the next list pull."
+- "For my Demo CFOs Midwest campaign, inventory the custom fields present on sampled leads. Flag the fields that appear more often in replying or positive leads, and propose the next single-variable test."
+- "For the employee-band field in this campaign, which values correlate with positive outcomes in the sample? Treat the result as a hypothesis, not a population claim."
+- "Do leads with a populated finance-stack field outperform empty ones in this campaign? If yes, draft an enrichment-or-suppression rule for the next list pull."
 
-### Deliverability, sender health, inbox placement
+### Deliverability, sender health, and inbox placement
 
-- "Roll up SPF / DKIM / DMARC failures and blacklist hits per sender across the last 100 inbox-placement rows. Recommend pause / inspect / rotate per inbox."
-- "Which senders are landing in spam or category folders? Cross-reference with `accounts.warmup_status` and 30-day bounce rate to decide whether the issue is auth, warmup, or content."
-- "For tag `Series-B-SaaS`, list the resolved sender inventory per campaign, flag any account over 5% bounce in the last 30 days, and tell me whether sender coverage is `covered`, `partial`, or `missing`."
+- "Roll up SPF, DKIM, DMARC failures and blacklist hits per sender across the last 100 inbox-placement rows. Recommend pause, inspect, or rotate per inbox."
+- "Which senders are landing in spam or category folders? Cross-reference with warmup status and 30-day bounce rate to decide whether the issue is auth, warmup, or content."
+- "For my Series-B SaaS tag, list the senders assigned to each campaign, flag any account over 5% bounce in the last 30 days, and tell me whether sender coverage looks complete, partial, or missing."
 
 ### Launch QA and experiment planning
 
-- "Is campaign `Q3 Series-B GTM` ready to turn on? Block on missing senders, missing templates, blank bodies, or open/link tracking; warn on anything else."
-- "For every active campaign, recommend the next test lane — copy, ICP, reply quality, lead supply, or deliverability — based on exact metrics plus evidence coverage. Don't recommend copy tests on campaigns with unresolved deliverability blockers."
-- "Plan the next experiment for campaign X end-to-end: hypothesis, change, target cohort, success metric, guardrail metric, stop condition, owner, evaluation date — anchored in the evidence you just looked at."
+- "Is my Q3 Series-B GTM campaign ready to turn on? Block on missing senders, missing templates, blank bodies, or open and link tracking; warn on anything else."
+- "For every active campaign, recommend the next test lane — copy, ICP, reply quality, lead supply, or deliverability — based on the actual numbers and how much evidence we have. Don't recommend copy tests on campaigns with unresolved deliverability blockers."
+- "Plan the next experiment for this campaign end-to-end: hypothesis, change, target cohort, success metric, guardrail metric, stop condition, owner, and evaluation date — anchored in the evidence you just looked at."
 
 ### Tag-scoped multi-client analysis (agencies)
 
-- "Resolve which campaigns belong to tag `Acme Inc`, then run the full weekly brief just for that tag. Output one client-safe page and one internal page."
-- "Across all client tags, which clients have the worst sender-coverage gap right now? Sort by `missing_sender_inventory` first, then `partial_account_daily_metrics`."
-
-Every one of these maps to a real, named recipe in [`plugin/query-recipes.ts`](./plugin/query-recipes.ts), backed by a real view in [`plugin/local-db.ts`](./plugin/local-db.ts). The model isn't guessing — it's running ranked SQL and explaining ranked rows.
+- "Resolve which campaigns belong to my Acme Inc tag, then run the full weekly brief just for that tag. Output one client-safe page and one internal page."
+- "Across all my client tags, which clients have the worst sender-coverage gap right now?"
 
 ## End-to-end workflow examples
 
@@ -98,9 +89,9 @@ Every one of these maps to a real, named recipe in [`plugin/query-recipes.ts`](.
 Refresh the workspace.
 Use the account-manager-brief skill. For each client tag, produce:
 1) a client-safe weekly update (wins, risks, current actions, asks, next review date),
-2) an internal action queue ranked by attention reason,
+2) an internal action queue ranked by what most needs attention,
 3) a one-line "do this Monday" recommendation.
-Quote sender bounce rates and reply rates exactly. Caveat anything sampled.
+Quote sender bounce rates and reply rates exactly. Caveat anything that came from a sample.
 ```
 
 You get one document per client, ready to paste into Slack or email.
@@ -109,18 +100,18 @@ You get one document per client, ready to paste into Slack or email.
 
 ```text
 Use the campaign-performance skill on "Q3 Series-B GTM".
-Pull step+variant winners, step fatigue, and the last 30 days of campaign-attributed daily volume.
-Then run fetch_reply_text and pull the reply outcome feed.
-Tell me whether the drop is a copy issue, a sender-health issue, an audience issue, or a runway issue — and quote the evidence row that convinced you.
+Pull step and variant winners, step fatigue, and the last 30 days of daily volume.
+Then pull the latest reply text and the reply-outcome feed.
+Tell me whether the drop is a copy issue, a sender-health issue, an audience issue, or a runway issue — and quote the evidence that convinced you.
 ```
 
-The agent walks the layered evidence, picks the right recipe at each step, and writes a verdict you can defend.
+The agent walks the evidence, picks the right play at each step, and writes a verdict you can defend.
 
 ### Pre-launch QA before scaling spend
 
 ```text
-Use the campaign-launch-qa skill on every campaign currently in `paused` status.
-Block launches with missing senders, missing templates, blank bodies, or open/link tracking.
+Use the campaign-launch-qa skill on every campaign currently paused.
+Block launches with missing senders, missing templates, blank bodies, or open and link tracking.
 Warn on senders over 5% 30-day bounce, missing schedule timezone, or fewer than 5 days of new-lead runway at the configured daily limit.
 Output a launch-readiness table sorted worst-first.
 ```
@@ -129,19 +120,19 @@ Output a launch-readiness table sorted worst-first.
 
 ```text
 Use the icp-signals skill on "Demo CFOs - Midwest".
-Inventory payload keys on sampled leads. Identify the single key whose presence most correlates with positive outcomes. Pick the top candidate value. Draft the next single-variable test with hypothesis, target cohort, success metric, guardrail, stop condition, and evaluation date.
+Inventory the custom fields on sampled leads. Identify the single field whose presence most correlates with positive outcomes. Pick the top candidate value. Draft the next single-variable test with hypothesis, target cohort, success metric, guardrail, stop condition, and evaluation date.
 Treat the analysis as a hypothesis, not a population claim, and say so.
 ```
 
 ## What makes the answer trustworthy
 
-Most "AI for analytics" tools blur exact aggregates with sampled evidence. SendLens labels every recipe `exact`, `sampled`, or `hybrid`, and the skills are required to surface the basis when they answer.
+Most "AI for analytics" tools blur exact totals with sampled evidence. SendLens never does. Every answer tells you whether it's based on:
 
-- **Exact**: campaign analytics, daily metrics, account warmup/bounce stats, inbox-placement analytics, tag mappings, fetched inbound reply bodies.
-- **Sampled**: lead-level payload signals, reconstructed outbound copy (template + lead variables), payload-key correlations.
-- **Hybrid**: anything that joins the two — reply outcome feeds, variant outcomes, tag-scoped lead comparisons.
+- **Exact numbers** — campaign totals, daily metrics, account warmup and bounce stats, inbox-placement results, tag mappings, and the actual fetched text of inbound replies.
+- **A sample** — lead-level signals, custom fields on sampled leads, and outbound copy reconstructed from your templates plus the lead variables.
+- **A mix of the two** — like reply outcomes by variant, where the totals are exact but the copy is reconstructed.
 
-When the model uses sampled evidence, it says so. When it uses exact aggregates, it says so. When the data isn't there yet, it says *that*, instead of guessing — and tells you which sync or fetch to run.
+When the data isn't there yet, SendLens says *that*, instead of guessing — and tells you exactly which refresh or fetch to run.
 
 ## Try it without real data
 
@@ -208,36 +199,30 @@ Setup verifies runtime, working folder, and credentials (or demo mode).
 SendLens is built so the core workflow stays on your machine.
 
 - Read-only analysis paths.
-- Working data stored locally in DuckDB.
-- No Orchid-hosted database is required for normal use.
+- Working data is cached locally in your home folder.
+- No hosted database is required for normal use.
 - Demo mode runs without production credentials.
 - When your AI host asks SendLens a question, the answer becomes part of that host session — same as any other tool result.
 
-Local state defaults:
-
-- analysis database: `~/.sendlens/workspace-cache.duckdb`
-- refresh status: `~/.sendlens/refresh-status.json`
-- setup and refresh logs: `~/.sendlens/session-start-refresh.log`
+Local state lives under `~/.sendlens/`.
 
 Full data-handling model: [Trust and privacy](./docs/TRUST_AND_PRIVACY.md).
 
-## Connectors
+## Data sources
 
-This release supports **Instantly** as the first data source: campaigns, daily metrics, step analytics, sender accounts, account daily metrics, custom tags, inbox-placement tests + analytics, sampled leads with custom payloads, sampled reconstructed outbound, and on-demand reply-text hydration.
-
-The semantic-view layer is intentionally connector-agnostic, so the same skills keep working as more sources are added.
+This release works with **Instantly**: campaigns, daily metrics, step analytics, sender accounts, account daily metrics, custom tags, inbox-placement tests and analytics, sampled leads with custom fields, sampled outbound, and on-demand reply-text fetching.
 
 ## Who builds SendLens
 
-SendLens is built by **Orchid Labs**, the product division of **Orchid Automation** ([orchidautomation.com](https://orchidautomation.com)). Have a custom connector idea, an agency use case, or feedback on the analysis layer? Open an issue on this repo.
+SendLens is built by **Orchid Labs**, the product division of **Orchid Automation** ([orchidautomation.com](https://orchidautomation.com)). Have an idea, an agency use case, or feedback on the analysis? Open an issue on this repo.
 
 ## What ships in this repo
 
 - installable bundles for Claude Code, Cursor, Codex, OpenCode
 - setup, doctor, and demo-mode flows
 - nine specialist analysis skills with reference docs
-- the local DuckDB warehouse, semantic views, and recipe library
-- agents (campaign analyst, copy auditor, ICP auditor, reply auditor, synthesis reviewer, workspace triager)
+- a library of pre-built analyses covering performance, copy, replies, ICP signals, launch QA, deliverability, and account-manager workflows
+- analyst agents (campaign analyst, copy auditor, ICP auditor, reply auditor, synthesis reviewer, workspace triager)
 - public docs, examples, and release tooling
 
 Helpful docs:
