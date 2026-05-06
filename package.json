@@ -3,6 +3,12 @@
   "version": "0.1.22",
   "private": true,
   "description": "Agentic reasoning over Instantly data with a privacy-first local cache.",
+  "license": "MIT",
+  "homepage": "https://github.com/orchidautomation/sendlens-plugin#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/orchidautomation/sendlens-plugin.git"
+  },
   "scripts": {
     "clean:plugin": "rm -rf build dist .sendlens .sendlens-local .sendlens-state .sendlens-local-state",
     "build:plugin": "tsc -p tsconfig.plugin.json",
@@ -15,7 +21,7 @@
     "site:build": "npm --prefix site run build",
     "validate:plugin": "pluxx validate",
     "lint:plugin": "pluxx lint",
-    "ci:plugin": "npm run test:plugin && npm run validate:plugin && npm run lint:plugin && npm run build:hosts",
+    "ci:plugin": "npm run test:plugin && npm run validate:plugin && npm run lint:plugin && npm run test:host-bundles",
     "release:check": "npm run ci:plugin",
     "refresh:plugin": "npm run --silent build:plugin && node ./build/plugin/refresh-cli.js",
     "start:plugin-mcp": "npm run --silent build:plugin && node ./build/plugin/server.js",

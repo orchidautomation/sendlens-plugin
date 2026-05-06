@@ -81,6 +81,20 @@ function runNpmScript(scriptName) {
   return `${result.stdout}${result.stderr}`;
 }
 
+function runCheckEnv(envOverrides) {
+  return spawnSync("bash", ["scripts/check-env.sh"], {
+    cwd: root,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      SENDLENS_INSTANTLY_API_KEY: "",
+      SENDLENS_CLIENT: "",
+      SENDLENS_DEMO_MODE: "",
+      ...envOverrides,
+    },
+  });
+}
+
 function sameSet(actual, expected, label) {
   const actualSet = new Set(actual);
   const expectedSet = new Set(expected);
@@ -318,6 +332,44 @@ async function assertNoCredentialsRequired() {
   }
 }
 
+async function assertDemoModeContracts() {
+  const config = await readText("pluxx.config.ts");
+  assert(
+    /key:\s*"instantly-api-key"[\s\S]*?required:\s*false/.test(config),
+    "pluxx.config.ts: Instantly API key userConfig must remain optional so demo mode can install without production credentials",
+  );
+  assert(
+    /repository:\s*"https:\/\/github\.com\/orchidautomation\/sendlens-plugin"/.test(
+      config,
+    ),
+    "pluxx.config.ts: expected repository URL in marketplace metadata",
+  );
+  assert(
+    /url:\s*"https:\/\/github\.com\/orchidautomation"/.test(config),
+    "pluxx.config.ts: expected author URL in marketplace metadata",
+  );
+  assert(
+    /privacyPolicyURL:\s*"https:\/\/github\.com\/orchidautomation\/sendlens-plugin\/blob\/main\/docs\/TRUST_AND_PRIVACY\.md"/.test(
+      config,
+    ),
+    "pluxx.config.ts: expected privacy policy URL in marketplace metadata",
+  );
+
+  const failingCheck = runCheckEnv({});
+  assert(
+    failingCheck.status !== 0,
+    "scripts/check-env.sh: expected missing API key without demo mode to fail",
+  );
+
+  for (const value of ["1", "true", "TRUE", "yes", "YES"]) {
+    const check = runCheckEnv({ SENDLENS_DEMO_MODE: value });
+    assert(
+      check.status === 0,
+      `scripts/check-env.sh: expected SENDLENS_DEMO_MODE=${value} to pass without an API key\n${check.stdout}${check.stderr}`,
+    );
+  }
+}
+
 const inventory = await sourceInventory();
 
 let buildOutput = "";
@@ -352,6 +404,7 @@ await assertManifestMetadata();
 await assertHostCommandInventory(inventory.commands);
 await assertExplicitHostDegradation();
 await assertNoCredentialsRequired();
+await assertDemoModeContracts();
 
 if (failures.length > 0) {
   console.error("Host bundle inventory failures:");

@@ -7,8 +7,10 @@ export default definePlugin({
     "Agentic reasoning over Instantly data with a privacy-first local cache.",
   author: {
     name: "Orchid Labs",
+    url: "https://github.com/orchidautomation",
   },
   license: "MIT",
+  repository: "https://github.com/orchidautomation/sendlens-plugin",
   keywords: [
     "instantly",
     "duckdb",
@@ -23,8 +25,11 @@ export default definePlugin({
     shortDescription:
       "Agentic reasoning over your Instantly data, with privacy-first local analysis.",
     longDescription:
-      "Use SendLens to understand what is actually landing with prospects, which campaigns and segments are driving positive replies, and what to change next, all from a fast local cache on the user's machine.",
+      "Use SendLens to understand what is actually landing with prospects, which campaigns and segments are driving positive replies, and what to change next. SendLens reads from Instantly, stores analysis state in a local DuckDB cache, and keeps campaign-specific enrichment data local to the user's machine.",
     category: "Analytics",
+    websiteURL: "https://github.com/orchidautomation/sendlens-plugin",
+    privacyPolicyURL:
+      "https://github.com/orchidautomation/sendlens-plugin/blob/main/docs/TRUST_AND_PRIVACY.md",
     color: "#0F766E",
     icon: "./assets/sendlens-mark.svg",
     screenshots: ["./assets/sendlens-cover.svg"],
@@ -51,9 +56,9 @@ export default definePlugin({
       key: "instantly-api-key",
       title: "Instantly API Key",
       description:
-        "Bearer token for read-only Instantly workspace access. This never leaves the user's machine.",
+        "Bearer token for read-only Instantly workspace access. Required for real workspace analysis; optional when SENDLENS_DEMO_MODE=1 is enabled.",
       type: "secret",
-      required: true,
+      required: false,
       envVar: "SENDLENS_INSTANTLY_API_KEY",
       targets: ["claude-code", "cursor", "codex", "opencode"],
     },

@@ -12,7 +12,6 @@ source "${PLUGIN_ROOT}/scripts/load-env.sh" 2>/dev/null || true
 
 DB_PATH="${SENDLENS_DB_PATH:-${HOME}/.sendlens/workspace-cache.duckdb}"
 STATE_DIR="${SENDLENS_STATE_DIR:-$(dirname "${DB_PATH}")}"
-DEMO_MODE="${SENDLENS_DEMO_MODE:-}"
 ISSUES=0
 WARNINGS=0
 
@@ -23,7 +22,9 @@ detail() { echo "        $1"; }
 section() { echo ""; echo "$1"; }
 
 is_demo_mode() {
-  [[ "${DEMO_MODE}" == "1" || "${DEMO_MODE}" == "true" || "${DEMO_MODE}" == "yes" ]]
+  local raw
+  raw="$(printf '%s' "${SENDLENS_DEMO_MODE:-}" | tr '[:upper:]' '[:lower:]')"
+  [[ "${raw}" == "1" || "${raw}" == "true" || "${raw}" == "yes" ]]
 }
 
 check_writable_dir() {

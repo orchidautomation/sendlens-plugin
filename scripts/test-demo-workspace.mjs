@@ -11,6 +11,7 @@ const {
   query,
   resetDbConnectionForTests,
 } = require("../build/plugin/local-db.js");
+const { PUBLIC_TABLES } = require("../build/plugin/constants.js");
 const { buildWorkspaceSummary } = require("../build/plugin/summary.js");
 const { readRefreshStatus } = require("../build/plugin/refresh-status.js");
 
@@ -34,6 +35,18 @@ try {
   assert.equal(summary.exact_metrics.active_campaign_count, 3);
   assert.ok(summary.exact_metrics.total_sent > 0);
   assert.ok(summary.summary.includes("Sampled raw tables are evidence support only"));
+
+  const emptyPublicSurfaces = [];
+  for (const tableName of PUBLIC_TABLES) {
+    const countRows = await query(
+      db,
+      `SELECT COUNT(*) AS row_count FROM sendlens.${tableName}`,
+    );
+    if (Number(countRows[0].row_count) <= 0) {
+      emptyPublicSurfaces.push(tableName);
+    }
+  }
+  assert.deepEqual(emptyPublicSurfaces, []);
 
   const payloadRows = await query(
     db,
