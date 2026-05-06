@@ -47,6 +47,7 @@ Read the evidence and output references before making a diagnostic claim. These 
 
 - First read headline exact aggregates: active campaigns, reply rate, bounce rate, active campaign count, account health, and coverage warnings.
 - For deliverability questions, combine `account-health`, `inbox-placement-test-overview`, `sender-deliverability-health`, and `inbox-placement-auth-failures` before blaming copy.
+- Use `inbox_placement_analytics_labeled` when provider, recipient geography, or recipient type labels matter; use raw `inbox_placement_analytics` only when integer codes are enough.
 - Treat inbox placement rows as exact Instantly test evidence when present. Missing inbox placement data means no local test evidence was available, not that sender health is clean.
 - Do not infer spam placement, category placement, SPF, DKIM, DMARC, blacklist failures, or provider placement from reply rates alone.
 

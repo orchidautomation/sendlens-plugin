@@ -231,8 +231,10 @@ signals:
   - Empty inbox-placement tables.
   - Bounce rate above operator thresholds.
   - Open or link tracking enabled on cold outbound.
+  - Disabled bounce protection or allowed risky contacts.
 do:
-  - Check account health, sender coverage, inbox-placement tests, sender deliverability health, and authentication failures when available.
+  - Check account health, sender coverage, campaign tracking/deliverability settings, inbox-placement tests, sender deliverability health, and authentication failures when available.
+  - Use `inbox_placement_analytics_labeled` for provider, geography, and recipient-type grouped placement analysis.
   - Treat bounce rate above 2% as attention-worthy and above 5% as a red flag.
   - Describe tracking warnings as best-practice guidance.
 avoid:
@@ -245,6 +247,8 @@ evidence_basis:
     - `account_daily_metrics`
     - `inbox_placement_tests`
     - `inbox_placement_analytics`
+    - `inbox_placement_analytics_labeled`
+    - `campaign_overview`
   hybrid:
     - `sender_deliverability_health`
     - `inbox_placement_test_overview`

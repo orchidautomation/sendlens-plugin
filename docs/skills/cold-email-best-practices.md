@@ -21,6 +21,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 - Reply rate matters more than open rate for cold outbound.
 - Bounce rate above 2% deserves attention; above 5% is a red flag.
 - Open tracking and link tracking should stay off for cold outbound unless there is a specific reason.
+- Disabled bounce protection and allowed risky contacts are launch-review warnings unless there is a deliberate exception.
 - Text-only usually beats polished HTML for cold email.
 - Auto-replies should be separated from human replies.
 - Recommendations should be concise, specific, and tied to campaign evidence.

@@ -223,8 +223,15 @@ async function ensureSchema(conn: DuckDBConnection) {
       status VARCHAR,
       daily_limit INTEGER,
       text_only BOOLEAN,
+      first_email_text_only BOOLEAN,
       open_tracking BOOLEAN,
       link_tracking BOOLEAN,
+      stop_on_reply BOOLEAN,
+      stop_on_auto_reply BOOLEAN,
+      match_lead_esp BOOLEAN,
+      allow_risky_contacts BOOLEAN,
+      disable_bounce_protect BOOLEAN,
+      insert_unsubscribe_header BOOLEAN,
       schedule_timezone VARCHAR,
       sequence_count INTEGER,
       step_count INTEGER,
@@ -571,6 +578,13 @@ async function ensureSchema(conn: DuckDBConnection) {
     "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS status_summary VARCHAR",
     "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS subsequence_id VARCHAR",
     "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS list_id VARCHAR",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS first_email_text_only BOOLEAN",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS stop_on_reply BOOLEAN",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS stop_on_auto_reply BOOLEAN",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS match_lead_esp BOOLEAN",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS allow_risky_contacts BOOLEAN",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS disable_bounce_protect BOOLEAN",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS insert_unsubscribe_header BOOLEAN",
     "ALTER TABLE sendlens.reply_emails ADD COLUMN IF NOT EXISTS lead_email VARCHAR",
     "ALTER TABLE sendlens.reply_emails ADD COLUMN IF NOT EXISTS message_id VARCHAR",
     "ALTER TABLE sendlens.reply_emails ADD COLUMN IF NOT EXISTS eaccount VARCHAR",
@@ -713,6 +727,36 @@ async function ensureSchema(conn: DuckDBConnection) {
         t.type,
         t.timestamp_created,
         t.timestamp_next_run`,
+    `CREATE OR REPLACE VIEW sendlens.inbox_placement_analytics_labeled AS
+      SELECT
+        a.*,
+        CASE a.sender_esp
+          WHEN 1 THEN 'Google'
+          WHEN 2 THEN 'Microsoft'
+          WHEN 12 THEN 'Web.de'
+          WHEN 13 THEN 'Libero.it'
+          ELSE NULL
+        END AS sender_esp_label,
+        CASE a.recipient_esp
+          WHEN 1 THEN 'Google'
+          WHEN 2 THEN 'Microsoft'
+          WHEN 12 THEN 'Web.de'
+          WHEN 13 THEN 'Libero.it'
+          ELSE NULL
+        END AS recipient_esp_label,
+        CASE a.recipient_geo
+          WHEN 1 THEN 'United States'
+          WHEN 2 THEN 'Italy'
+          WHEN 3 THEN 'Germany'
+          WHEN 4 THEN 'France'
+          ELSE NULL
+        END AS recipient_geo_label,
+        CASE a.recipient_type
+          WHEN 1 THEN 'Professional'
+          WHEN 2 THEN 'Personal'
+          ELSE NULL
+        END AS recipient_type_label
+      FROM sendlens.inbox_placement_analytics a`,
     `CREATE OR REPLACE VIEW sendlens.sender_deliverability_health AS
       SELECT
         a.workspace_id,
@@ -745,6 +789,24 @@ async function ensureSchema(conn: DuckDBConnection) {
         c.open_tracking,
         c.link_tracking,
         c.text_only,
+        c.first_email_text_only,
+        c.stop_on_reply,
+        c.stop_on_auto_reply,
+        c.match_lead_esp,
+        c.allow_risky_contacts,
+        c.disable_bounce_protect,
+        c.insert_unsubscribe_header,
+        CASE
+          WHEN c.open_tracking = TRUE AND c.link_tracking = TRUE THEN 'open_and_link_tracking_on'
+          WHEN c.open_tracking = TRUE THEN 'open_tracking_on'
+          WHEN c.link_tracking = TRUE THEN 'link_tracking_on'
+          ELSE 'tracking_off'
+        END AS tracking_status,
+        CASE
+          WHEN c.disable_bounce_protect = TRUE OR c.allow_risky_contacts = TRUE THEN 'deliverability_guardrails_relaxed'
+          WHEN c.match_lead_esp = TRUE THEN 'esp_matching_enabled'
+          ELSE 'standard_deliverability_guardrails'
+        END AS deliverability_settings_status,
         COALESCE(ca.leads_count, 0) AS leads_count,
         COALESCE(ca.new_leads_contacted_count, 0) AS contacted_count,
         COALESCE(ca.emails_sent_count, 0) AS emails_sent_count,

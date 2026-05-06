@@ -67,7 +67,7 @@ Where relevant, SendLens responses should include:
 ## Exactness Rules
 
 - `campaigns`, `campaign_analytics`, `step_analytics`, `campaign_variants`, `accounts`, `account_daily_metrics`, `custom_tags`, tag mapping views, `inbox_placement_tests`, and `inbox_placement_analytics` are exact local copies of Instantly-derived surfaces.
-- `campaign_overview` is the preferred exact campaign rollup plus sample coverage metadata.
+- `campaign_overview` is the preferred exact campaign rollup plus tracking settings, deliverability guardrail settings, and sample coverage metadata.
 - `inbox_placement_test_overview` and `sender_deliverability_health` are exact semantic rollups over Instantly inbox placement analytics when those API surfaces are available.
 - `reply_emails` contains exact inbound email rows fetched on demand from Instantly List email. It is intentionally not part of the session-start fast refresh.
 - `reply_email_hydration_state` is exact local pagination state for continuing older reply fetches by campaign/status/thread mode. Use `sync_newest` or `restart` to check newly arrived replies above the saved cursor.

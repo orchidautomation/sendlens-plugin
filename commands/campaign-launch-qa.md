@@ -11,4 +11,4 @@ Use the `campaign-launch-qa` skill when the user wants to know whether a campaig
 
 Arguments: $ARGUMENTS
 
-If arguments are provided, treat them as the campaign name or campaign ID. Return blockers first, then warnings, ready checks, and next actions.
+If arguments are provided, treat them as the campaign name or campaign ID. Return blockers first, then tracking/deliverability guardrail warnings, ready checks, and next actions.

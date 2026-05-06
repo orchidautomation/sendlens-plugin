@@ -903,8 +903,17 @@ ORDER BY
     c.status,
     c.daily_limit,
     c.text_only,
+    c.first_email_text_only,
     c.open_tracking,
     c.link_tracking,
+    c.stop_on_reply,
+    c.stop_on_auto_reply,
+    c.match_lead_esp,
+    c.allow_risky_contacts,
+    c.disable_bounce_protect,
+    c.insert_unsubscribe_header,
+    co.tracking_status,
+    co.deliverability_settings_status,
     c.schedule_timezone,
     c.sequence_count,
     c.step_count,
@@ -952,8 +961,17 @@ SELECT
   cb.status,
   cb.daily_limit AS campaign_daily_limit,
   cb.text_only,
+  cb.first_email_text_only,
   cb.open_tracking,
   cb.link_tracking,
+  cb.stop_on_reply,
+  cb.stop_on_auto_reply,
+  cb.match_lead_esp,
+  cb.allow_risky_contacts,
+  cb.disable_bounce_protect,
+  cb.insert_unsubscribe_header,
+  cb.tracking_status,
+  cb.deliverability_settings_status,
   cb.schedule_timezone,
   cb.sequence_count,
   cb.step_count,
@@ -977,6 +995,7 @@ SELECT
     WHEN COALESCE(cb.leads_remaining, 0) = 0 THEN 'blocker_no_uncontacted_leads'
     WHEN COALESCE(tr.template_steps, 0) = 0 THEN 'blocker_missing_templates'
     WHEN COALESCE(tr.blank_body_templates, 0) > 0 THEN 'blocker_blank_body'
+    WHEN cb.disable_bounce_protect = TRUE OR cb.allow_risky_contacts = TRUE THEN 'review_deliverability_guardrails_relaxed'
     WHEN cb.open_tracking = TRUE OR cb.link_tracking = TRUE THEN 'review_tracking_enabled'
     WHEN COALESCE(sr.senders_over_5pct_bounce_30d, 0) > 0 THEN 'review_sender_bounce_risk'
     ELSE 'ready_with_checks'
@@ -994,8 +1013,9 @@ ORDER BY
     WHEN 'blocker_no_uncontacted_leads' THEN 2
     WHEN 'blocker_missing_templates' THEN 3
     WHEN 'blocker_blank_body' THEN 4
-    WHEN 'review_tracking_enabled' THEN 5
-    WHEN 'review_sender_bounce_risk' THEN 6
+    WHEN 'review_deliverability_guardrails_relaxed' THEN 5
+    WHEN 'review_tracking_enabled' THEN 6
+    WHEN 'review_sender_bounce_risk' THEN 7
     ELSE 7
   END,
   cb.campaign_name;`,
@@ -1004,9 +1024,57 @@ ORDER BY
       "Pair this with `personalization-leak-audit` when the campaign uses template variables.",
       "Launch QA should produce blockers, warnings, and ready checks; do not bury blockers under general analysis.",
       "Open/link tracking warnings come from cold email best-practice policy, not a hard Instantly API error.",
+      "Disabled bounce protection or allowed risky contacts are surfaced as deliverability guardrail review items.",
     ],
   },
   {
+    id: "campaign-tracking-deliverability-settings",
+    topic: "campaign-launch-qa",
+    title: "Campaign tracking and deliverability settings",
+    question: "Which campaigns have tracking or deliverability guardrail settings enabled?",
+    exactness: "exact",
+    rationale: "Expose per-campaign tracking and deliverability-related campaign settings from the exact Instantly campaign surface before launch or audit work.",
+    sql: `SELECT
+  campaign_id,
+  campaign_name,
+  status,
+  daily_limit,
+  text_only,
+  first_email_text_only,
+  open_tracking,
+  link_tracking,
+  tracking_status,
+  stop_on_reply,
+  stop_on_auto_reply,
+  match_lead_esp,
+  allow_risky_contacts,
+  disable_bounce_protect,
+  insert_unsubscribe_header,
+  deliverability_settings_status,
+  bounce_rate_pct,
+  unique_reply_rate_pct,
+  CASE
+    WHEN disable_bounce_protect = TRUE OR allow_risky_contacts = TRUE THEN 'review_deliverability_guardrails'
+    WHEN open_tracking = TRUE OR link_tracking = TRUE THEN 'review_tracking'
+    ELSE 'ready_with_settings_checked'
+  END AS settings_review_status
+FROM sendlens.campaign_overview
+ORDER BY
+  CASE settings_review_status
+    WHEN 'review_deliverability_guardrails' THEN 1
+    WHEN 'review_tracking' THEN 2
+    ELSE 3
+  END,
+  emails_sent_count DESC,
+  campaign_name
+LIMIT 100;`,
+    notes: [
+      "Use this when a user asks whether tracking, bounce protection, risky contacts, unsubscribe headers, or ESP matching are on per campaign.",
+      "`disable_bounce_protect = TRUE` and `allow_risky_contacts = TRUE` mean deliverability guardrails are relaxed and deserve launch review.",
+      "`open_tracking` and `link_tracking` are exact campaign settings, not inferred from opens or clicks.",
+    ],
+  },
+	  {
     id: "experiment-planner-candidates",
     topic: "experiment-planner",
     title: "Experiment planner candidates",

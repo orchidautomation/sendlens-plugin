@@ -8,7 +8,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 - The user asks whether a campaign is ready to turn on.
 - A campaign is about to scale, resume, clone, or move to an AM/client handoff.
-- Sender setup, lead supply, templates, tracking, schedule, or sender health need blocker review.
+- Sender setup, lead supply, templates, tracking, deliverability guardrails, schedule, or sender health need blocker review.
 
 ## Primary Surfaces
 
@@ -23,7 +23,8 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 2. Use the provided campaign name or campaign ID as the scope.
 3. Check blockers before polish.
 4. Pair with copy analysis when the user asks about personalization safety.
-5. Apply cold-email best-practice rules when interpreting tracking and bounce risk.
+5. Apply cold-email best-practice rules when interpreting tracking, disabled bounce protection, risky contacts, and bounce risk.
+6. Use `campaign-tracking-deliverability-settings` when the user asks which campaign settings are on.
 
 ## Output Shape
 
@@ -35,4 +36,4 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 ## Evidence Boundaries
 
-Do not mark a campaign ready when sender inventory, lead supply, or templates are missing. Missing inbox-placement evidence should be described as missing evidence, not a clean sender-health result.
+Do not mark a campaign ready when sender inventory, lead supply, or templates are missing. Disabled bounce protection or allowed risky contacts are deliverability guardrail warnings. Missing inbox-placement evidence should be described as missing evidence, not a clean sender-health result.

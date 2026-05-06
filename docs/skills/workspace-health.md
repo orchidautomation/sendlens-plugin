@@ -24,7 +24,8 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 2. Pull `analysis_starters(topic="workspace-health")` before custom SQL.
 3. Keep broad reads active-only unless the user asks for inactive or historical campaigns.
 4. For deliverability questions, combine account health and inbox-placement evidence before blaming copy or targeting.
-5. End with specific actions ordered by likely impact.
+5. Use `inbox_placement_analytics_labeled` when provider, recipient geography, or recipient type labels matter.
+6. End with specific actions ordered by likely impact.
 
 ## Output Shape
 
