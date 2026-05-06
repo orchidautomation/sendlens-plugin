@@ -225,23 +225,11 @@ Full data-handling model: [Trust and privacy](./docs/TRUST_AND_PRIVACY.md).
 
 This release supports **Instantly** as the first data source: campaigns, daily metrics, step analytics, sender accounts, account daily metrics, custom tags, inbox-placement tests + analytics, sampled leads with custom payloads, sampled reconstructed outbound, and on-demand reply-text hydration.
 
-More connectors are on the roadmap. The semantic-view layer is intentionally connector-agnostic so the same skills work as new sources land.
-
-## SendLens Cloud (preview)
-
-The OSS plugin is the analyst layer. SendLens Cloud is what comes next:
-
-- shared workspaces and tag-scoped client views for agencies
-- scheduled refreshes, weekly briefs, and Slack/email delivery without leaving a laptop running
-- cross-workspace benchmarks (your reply rate vs. the cohort, with privacy-preserving aggregates)
-- alerting on attention reasons (`high_bounce_risk`, `dry_on_new_prospects`, `sender_inventory_missing`) the moment they appear
-- managed connectors and deeper enrichment
-
-If the open-source experience is useful to you, the cloud version is the same engine without the laptop.
+The semantic-view layer is intentionally connector-agnostic, so the same skills keep working as more sources are added.
 
 ## Who builds SendLens
 
-SendLens is built by **Orchid Labs**, the product division of **Orchid Automation** ([orchidautomation.com](https://orchidautomation.com)). Want early access to SendLens Cloud, a custom connector, or to talk about an agency rollout? Open an issue on this repo or get in touch through Orchid Automation.
+SendLens is built by **Orchid Labs**, the product division of **Orchid Automation** ([orchidautomation.com](https://orchidautomation.com)). Have a custom connector idea, an agency use case, or feedback on the analysis layer? Open an issue on this repo.
 
 ## What ships in this repo
 
