@@ -89,33 +89,57 @@ These are the kinds of questions SendLens can answer today. Read a few — most 
 - "Resolve which campaigns belong to my Acme Inc tag, then run the full weekly brief just for that tag. Output one client-safe page and one internal page."
 - "Across all my client tags, which clients have the worst sender-coverage gap right now?"
 
-## The heavy hitters — questions that used to take a senior analyst a week
+## The heavy hitters — questions only this dataset can answer
 
-These are real. The data is there. Try any of them.
+Most of these are genuinely impossible to answer in the Instantly UI, in a generic dashboard, or by handing a CSV to ChatGPT. They work in SendLens because SendLens has the templates you wrote, the actual personalized emails that went out, the replies that came back with the prospect's full text and outcome (positive, negative, wrong-person, out-of-office, won, meeting-booked), the deliverability seed-test results, the senders behind every email, and every custom field on every lead — all joined at the lead level.
 
-- **Reply-rate forensics.** "My reply rate dropped from 4.2% to 1.8% over the last 14 days. Walk back the timeline day by day and tell me what changed first — did a sender go off, did volume spike, did I switch copy, did the lead quality drop? Quote the exact day each shift started and the evidence that proves it."
+### Sentence-level reply attribution
 
-- **Objection clustering.** "Read every negative reply from the last 30 days. Cluster the objections — timing, budget, wrong person, already using a competitor, no interest. For each cluster, tell me which step it comes from, which opener triggers it most, and the job-title and company-size pattern of the people sending it. Then tell me which objection I can fix with a copy change vs. which one is a targeting problem."
+"Take my top variant by positive reply rate. Read the actual replies it earned. Tell me which sentence in my email each prospect referenced or responded to — what's working at the line level. Then read the negative replies for the same variant and tell me which sentence triggered each objection. Output two ranked lists: sentences pulling their weight, sentences that need to go."
 
-- **Winning-opener pattern mining.** "Find every Step 0 opener that earned a positive reply this quarter. Group them by pattern — what kind of hook, what kind of ask, what kind of personalization. Tell me the patterns that consistently win, quote three exemplar replies for each, and draft the next opener that combines the strongest pieces."
+### Meeting-booked field fingerprint
 
-- **Sender starvation audit.** "Some of my senders are shared across multiple campaigns. For each shared sender in the last 30 days, show me how their sending actually got split across campaigns. Identify any campaign that got starved because a higher-priority campaign hogged its sender, and tell me what that cost me in lost reach."
+"Look at every lead with a meeting-booked or won outcome. Compare their custom fields against the leads who replied negatively. Find the smallest combination of 2 or 3 field values that's present in 80%+ of meeting-booked leads but in less than 20% of leads who replied negatively. That's the fingerprint of a buyer in my pipeline — draft my next list spec around it."
 
-- **Sender rotation blast radius.** "If I rotate sender X out tomorrow, which campaigns lose how much capacity, and how many days of runway do they have left under the reduced capacity? Rank campaigns by how much pain the rotation would cause and tell me which campaigns I'd need to backfill first."
+### Inbox vs. conversion crossover by mailbox provider
 
-- **Natural A/B without running an A/B test.** "I have two campaigns that share most of their senders and target a similar audience but use different openers. Treat them as a natural A/B test. Tell me which opener is actually winning on positive replies, and what would happen if I rolled it out across both."
+"For each recipient mailbox provider — Gmail, Outlook, Yahoo, work domains — compare my positive reply rate against how my senders are actually placing in seed tests for that same provider. Where am I winning the inbox but losing the conversation? Where am I getting filtered by a provider whose users would have replied positively if I'd reached them? That second bucket is hidden lost revenue. Quantify it."
 
-- **Leaky-bucket funnel decay.** "Take my best campaign and walk the funnel step by step. At Step 0 — how many sent, opened, replied, replied positively, booked a meeting? Same at Steps 1, 2, 3, 4. Tell me whether the biggest leak is the subject line, the body, the ask, or the offer — then tell me what to fix first and what to expect."
+### Wrong-person referral mining
 
-- **Mailbox-provider deliverability spider.** "Group my deliverability tests by recipient mailbox provider — Gmail, Outlook, Yahoo, work domains. Where am I clean, where am I in spam, where am I in Promotions? For the worst provider, tell me which of my senders is the worst offender there specifically and whether it's an authentication issue, a warmup issue, or a content issue."
+"Read every reply marked 'wrong person' from the last 90 days. Extract who they're referring me to — the job title, the team, sometimes a name. Tell me the top 5 referral targets I'm being routed to most often, then compare that to the job titles of leads who replied positively. Should my next list pull shift to the referral title, or are the wrong-person replies a sign my list is broken at a deeper level?"
 
-- **List quality vs. inbox problem disambiguation.** "Take the leads who never opened. What custom fields differ between them and the leads who replied positively? Is the issue list quality, or is it that they're on a mailbox provider where my deliverability is bad? Which segment should I cut from my next list pull, and which segment should I save and re-send to?"
+### Personalization break cost
 
-- **Stop-loss design per campaign.** "For each active campaign, find the step at which I should stop sending. Define 'stop' as the step where negative replies start outweighing positive replies, or where the next step's bounces exceed its replies. Output the recommended sequence length per campaign and what shortening to that length would save in sender capacity."
+"Compare reply rate and positive-reply rate between leads who got a fully personalized opener and leads where the personalization fell back to a default or leaked an unfilled token. Quantify the gap in real numbers. Then tell me which personalization fields actually drive the lift and which are decorative — so I know which enrichment to keep paying for and which to drop."
 
-- **Agency churn-risk radar.** "Across all my client tags, rank which clients are most at risk this month. Use: reply-rate trend over the last 4 weeks, days of new-lead runway left, sender-coverage gaps, and lack of recent positive replies. For each at-risk client, draft the proactive note I should send Monday — what we're seeing, what we're doing, and what we need from them."
+### Per-sender placement-test vs. real-world divergence
 
-- **Personalization payoff.** "Compare the reply rate for leads where my personalization variable was actually filled in versus leads where it fell back to a default. Quantify the lift in real numbers. Was the enrichment worth the cost, and which fields are pulling their weight?"
+"For each of my senders, line up their inbox-placement spam rate against their actual reply rate over the last 30 days. Tell me which senders pass placement but still earn no replies — that's a copy or audience problem, not deliverability. Tell me which senders fail placement and I never connected the dots — that's deliverability silently bleeding me out. Recommend pause, inspect, or rotate per sender."
+
+### Auto-reply contamination diagnosis
+
+"Find the campaigns where stripping out auto-replies and out-of-office responses drops the reply rate by more than 30%. For each, tell me whether the inflation is a *targeting* problem (lots of wrong-person replies hiding in the noise) or a *timing* problem (lots of out-of-office replies suggesting I'm sending during their industry's vacation cycle). Then tell me what to fix per campaign."
+
+### Reply-rate forensics — day-by-day timeline rewind
+
+"My reply rate dropped from 4.2% to 1.8% over the last 14 days. Walk back the timeline day by day across four dimensions: campaign-level reply rate, per-sender daily volume and bounce, copy-variant changes, and lead-batch quality (look at the custom-field shape of the leads contacted each day). Tell me which dimension shifted first, on which exact day, and quote the evidence that proves it. Don't tell me 'it could be any of these' — pick one and defend it."
+
+### Objection-to-step-to-variant triangulation
+
+"Read every negative reply from the last 30 days and cluster the objections — timing, budget, wrong person, already using a competitor, value unclear. For each cluster, tell me which step in the sequence it comes from most, which copy variant triggers it most, and the job-title and company-size pattern of the prospects sending it. Then split the objections into two buckets: ones I can fix with a copy change vs. ones that signal a list problem. Output a fix plan ranked by impact."
+
+### Send-window analysis with volume normalization
+
+"Map every positive reply to the day-of-week and hour-of-day the original email was sent. Do the same for negative replies. Then normalize against how much volume I sent in each window so I'm measuring conversion rate, not absolute count. Tell me my golden send window, my dead send window, and how much reply rate I'd gain by reallocating the dead window's volume into the golden window."
+
+### Interest-status pipeline anatomy
+
+"Bucket every lead by their final outcome — won, meeting completed, meeting booked, interested, neutral, out-of-office, not interested, wrong person, lost, no-show. For each bucket, tell me the median step at which they replied, the median length of their reply, and the most common job-title pattern. Tell me at which step my pipeline actually generates revenue — not just opens or replies — and whether shortening my sequence would cost me real bookings."
+
+### Tag-scoped composite scoreboard
+
+"For my Series-B SaaS tag, build a single scoreboard for every active campaign that combines positive reply rate, sender-coverage health, days of new-lead runway, recent volume vs. configured capacity, and inbox-placement clean rate. Weight them however makes sense and explain the weights. Rank the campaigns. Tell me my one campaign to scale, my one to pause, and my one to rebuild — with the evidence that drove each verdict."
 
 ## Real workflow examples
 
