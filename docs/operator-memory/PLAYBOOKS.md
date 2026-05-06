@@ -151,9 +151,9 @@ visibility: public-oss
 workflow: icp-signals
 summary: Campaign payload keys are not global schema. Inspect keys and values inside one campaign before making segment hypotheses.
 applies_when:
-  - A user asks which roles, industries, countries, company sizes, or enrichment variables respond best.
+  - A user asks which roles, industries, countries, company sizes, or uploaded lead metadata variables respond best.
 signals:
-  - The question mentions segments, ICP, payloads, enrichment, or who is replying.
+  - The question mentions segments, ICP, payloads, uploaded lead metadata, or who is replying.
 do:
   - Pick one campaign first.
   - Inventory available payload keys.
@@ -172,6 +172,7 @@ evidence_basis:
     - hypothesis framing and test design
 caveats:
   - Sparse payload keys can create misleading apparent winners.
+  - Missing role/title/custom fields usually mean the uploaded list metadata was thin; recommend improving future uploaded lead metadata rather than blaming Instantly enrichment.
 safe_examples:
   - "In this demo sample, employee_band appears more useful than geography."
 related_docs:

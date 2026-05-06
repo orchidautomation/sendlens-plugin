@@ -34,6 +34,24 @@ Where relevant, SendLens responses should include:
 - optional scope metadata for tag or campaign-name filters
 - warnings when scoped output is capped or no active workspace exists
 
+`setup_doctor`
+
+- `schema_version: "sendlens_setup_doctor.v1"`
+- setup status, demo mode, and local-cache/live-refresh/demo-seed capabilities
+- `cache_freshness` with the refresh timestamp, relative age in seconds, and display label
+- plugin root, DuckDB cache path, and state directory
+- setup checks with pass/warn/fail/info statuses
+- failures, warnings, docs, and next steps
+- never prints secret values and never refreshes or mutates campaign data
+
+`seed_demo_workspace`
+
+- registered only when no production API key is configured, or when `SENDLENS_DEMO_MODE=1` explicitly enables demo mode
+- `schema_version: "sendlens_demo_seed.v1"`
+- activates synthetic `demo_workspace` in the local cache
+- includes campaign IDs, seed timestamp, evidence note, and next steps
+- does not delete real workspace rows; real `refresh_data` can switch active analysis back to Instantly data
+
 `load_campaign_data`
 
 - refresh result for the requested campaign

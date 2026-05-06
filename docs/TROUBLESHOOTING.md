@@ -75,6 +75,19 @@ For local development, create `.env`:
 SENDLENS_INSTANTLY_API_KEY=your_key
 ```
 
+For a one-session launch, export the value or prefix the host command:
+
+```bash
+export SENDLENS_INSTANTLY_API_KEY=your_key
+cc
+
+SENDLENS_INSTANTLY_API_KEY=your_key cc
+```
+
+Running `SENDLENS_INSTANTLY_API_KEY=your_key` by itself only creates a shell variable in shells such as zsh; it does not export the key to Claude Code or other child processes.
+
+Claude Code and other hosts pass environment values to the MCP process when the host/plugin starts. After changing the key, reload plugins or restart the host before retrying `refresh_data`.
+
 For client-specific local overlays, use:
 
 ```bash

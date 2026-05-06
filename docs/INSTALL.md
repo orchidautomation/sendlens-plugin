@@ -188,10 +188,13 @@ Use `SENDLENS_CLIENT` when you want to load a client-specific env overlay.
 Optional overrides:
 
 ```bash
+export SENDLENS_INSTANTLY_API_KEY=your_key
 export SENDLENS_CLIENTS_DIR=.env.clients
 export SENDLENS_DB_PATH=/absolute/path/to/workspace-cache.duckdb
 export SENDLENS_STATE_DIR=/absolute/path/to/sendlens-state
 ```
+
+For a one-off host launch, `SENDLENS_INSTANTLY_API_KEY=your_key cc` passes the key only to that Claude Code process. A standalone `SENDLENS_INSTANTLY_API_KEY=your_key` assignment is not enough unless it is exported.
 
 ## What Gets Stored Locally
 

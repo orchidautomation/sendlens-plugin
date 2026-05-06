@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { listColumns, listTables, searchCatalog } from "./catalog";
 import { isDemoMode, seedDemoWorkspace } from "./demo-workspace";
-import { loadClientEnv } from "./env";
+import { loadSendLensEnv } from "./env";
 import {
   closeDb,
   getActiveWorkspaceId,
@@ -16,10 +16,11 @@ import { hydrateReplyText } from "./instantly-ingest";
 import { getQueryRecipes, QUERY_RECIPE_TOPICS } from "./query-recipes";
 import { toReplyTextFetchResult } from "./reply-text-contract";
 import { readRefreshStatus } from "./refresh-status";
+import { buildSetupDoctorReport } from "./setup-doctor";
 import { enforceLocalWorkspaceScope, LocalSqlGuardError } from "./sql-guard";
 import { buildWorkspaceSummary } from "./summary";
 
-loadClientEnv();
+loadSendLensEnv();
 
 const server = new McpServer({
   name: "sendlens",
@@ -37,6 +38,10 @@ const PLUXX_READINESS_FOLLOWUP = [
   "Temporary SendLens readiness gate in effect.",
   "If startup refresh is still running, this tool may wait briefly for the local snapshot before answering.",
 ].join(" ");
+
+function shouldExposeDemoSeedTool() {
+  return isDemoMode() || !process.env.SENDLENS_INSTANTLY_API_KEY?.trim();
+}
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -678,6 +683,49 @@ server.registerTool(
     };
   },
 );
+
+server.registerTool(
+  "setup_doctor",
+  {
+    description:
+      [
+        "Run a safe in-process SendLens setup doctor without shell commands.",
+        "Use this for first-run setup, missing API key diagnosis, local cache readiness, stale refresh state, and host bundle context.",
+        "It never prints secret values and does not refresh or mutate campaign data.",
+      ].join(" "),
+    inputSchema: {},
+  },
+  async () => {
+    return jsonResponse(await buildSetupDoctorReport());
+  },
+);
+
+if (shouldExposeDemoSeedTool()) {
+  server.registerTool(
+    "seed_demo_workspace",
+    {
+      description:
+        [
+          "Seed and activate a synthetic SendLens demo workspace in the local DuckDB cache without Instantly credentials.",
+          "Use this only when the user explicitly wants demo, dummy, sample, synthetic, or proof data.",
+          "Demo rows are public-safe fixtures, not customer data; label downstream analysis as synthetic demo evidence.",
+        ].join(" "),
+      inputSchema: {},
+    },
+    async () => {
+      const seeded = await seedDemoWorkspace();
+      return jsonResponse({
+        ...seeded,
+        demo_mode: true,
+        next_steps: [
+          "Run workspace_snapshot for a high-level demo workspace read.",
+          "Ask workspace-health, campaign-performance, copy-analysis, icp-signals, or reply-patterns for synthetic examples.",
+          "Label every conclusion as synthetic demo evidence, not real campaign performance.",
+        ],
+      });
+    },
+  );
+}
 
 server.registerTool(
   "refresh_status",

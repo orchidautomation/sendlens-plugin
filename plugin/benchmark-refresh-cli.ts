@@ -2,12 +2,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { clearTraceLog, getTraceLogPath, isTraceEnabled } from "./debug-log";
-import { loadClientEnv } from "./env";
+import { loadSendLensEnv } from "./env";
 import { closeDb, getDb, query, resolveDbPath } from "./local-db";
 import { refreshWorkspace } from "./instantly-ingest";
 import { writeRefreshStatus } from "./refresh-status";
 
-loadClientEnv();
+loadSendLensEnv();
 
 function formatMs(ms: number) {
   return `${ms.toFixed(0)}ms`;

@@ -34,6 +34,7 @@ Use only SendLens MCP tools for SendLens analysis.
 4. Inspect `campaign_variants` as exact intended template evidence.
 5. Inspect `rendered_outbound_context` only as reconstructed sampled evidence.
 6. If personalization depends on campaign variables, inspect values through `lead_payload_kv` for that campaign instead of assuming shared payload columns.
+7. If title, role, segment, or trigger variables are missing, describe it as missing uploaded lead metadata/custom fields and recommend adding those fields to future lead uploads.
 7. Anchor rewrite ideas in exact templates, sampled reconstructed issues, reply outcome cohorts, or hydrated reply bodies already available.
 
 ## Allowed Language

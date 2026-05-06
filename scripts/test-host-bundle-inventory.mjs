@@ -355,10 +355,14 @@ async function assertDemoModeContracts() {
     "pluxx.config.ts: expected privacy policy URL in marketplace metadata",
   );
 
-  const failingCheck = runCheckEnv({});
+  const readOnlyCheck = runCheckEnv({});
   assert(
-    failingCheck.status !== 0,
-    "scripts/check-env.sh: expected missing API key without demo mode to fail",
+    readOnlyCheck.status === 0,
+    `scripts/check-env.sh: expected missing API key without demo mode to pass in read-only local-cache mode\n${readOnlyCheck.stdout}${readOnlyCheck.stderr}`,
+  );
+  assert(
+    /read-only local-cache mode/i.test(`${readOnlyCheck.stdout}${readOnlyCheck.stderr}`),
+    "scripts/check-env.sh: expected missing API key output to explain read-only local-cache mode",
   );
 
   for (const value of ["1", "true", "TRUE", "yes", "YES"]) {

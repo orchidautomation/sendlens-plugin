@@ -10,26 +10,23 @@ Use this skill when the user installs SendLens for the first time, wants to veri
 
 ## Phase 1: Diagnose
 
-Run the bundled doctor script from the plugin root:
+Call the SendLens MCP tool `setup_doctor`.
 
-```bash
-bash scripts/sendlens-doctor.sh
-```
+Display the relevant status, failures, warnings, and next steps from the JSON response. The MCP tool is the source of truth for setup checks; do not replace it with Bash, manual shell probing, local file inspection, or DuckDB inspection.
 
-Display the full output. The script is the source of truth for setup checks; do not replace it with manual shell probing.
+When describing freshness, use the exact `cache_freshness.label` and timestamp from `setup_doctor`. Do not replace a seconds/minutes-old refresh with vague phrasing such as "earlier today."
 
 The doctor checks:
 
 - Instantly API key presence, unless `SENDLENS_DEMO_MODE=1` is enabled.
-- Node and npm availability.
-- native runtime dependency loading.
+- whether existing local cache reads are available without live refresh credentials.
 - compiled MCP, refresh, and demo runtimes.
 - DuckDB path and state directory writability.
 - refresh status readability.
 - stale session-start lock state.
-- generated host bundle presence.
+- installed/source host bundle context.
 
-The doctor never prints secrets.
+The doctor never prints secrets and never refreshes or mutates campaign data.
 
 ## Phase 2: Fix
 
@@ -41,13 +38,13 @@ If the output has failures, guide the user through the exact next step shown by 
 - non-writable DuckDB or state path: ask the user to choose a writable `SENDLENS_DB_PATH` or `SENDLENS_STATE_DIR`.
 - missing host bundles from source: run `npm run build:hosts`.
 
-If the user wants a proof path without production credentials:
+If the user wants a proof path and no production credentials are configured:
 
-```bash
-SENDLENS_DEMO_MODE=1 npm run demo:seed
-```
+Call the SendLens MCP tool `seed_demo_workspace`.
 
 Then tell the user to ask for `workspace-health` on the demo workspace. Keep every answer clearly labeled as synthetic demo evidence.
+
+If production credentials are configured, do not suggest demo seeding by default. Recommend `workspace_snapshot` or `refresh_data` for real workspace analysis. Mention demo only if the user explicitly asks for synthetic, dummy, sample, or proof data.
 
 ## Output Contract
 
@@ -57,6 +54,7 @@ Return:
 - blocking failures, if any.
 - warnings, if any.
 - next command to run.
+- cache freshness, using `cache_freshness.label` when present.
 - docs links for the relevant failure.
 - whether demo mode is enabled.
 

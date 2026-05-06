@@ -47,6 +47,7 @@ Read the evidence and payload references before making a segment claim.
 ### Stage 3: Inspect Payloads Safely
 
 - Preserve campaign-specific payload context.
+- Treat payload keys, `job_title`, and similar fields as metadata supplied by uploaded lead lists or campaign custom fields. Do not imply Instantly failed to enrich a lead when a field is blank.
 - Prefer `campaign-payload-key-inventory` before value-level analysis when the user has not named a payload key.
 - Use `campaign-payload-presence-signals` to compare whether a key being present versus absent looks directionally meaningful in sampled evidence.
 - Use `campaign-payload-key-signals` only after choosing one concrete key.
@@ -55,14 +56,14 @@ Read the evidence and payload references before making a segment claim.
 ### Stage 4: Calibrate Segment Claims
 
 - Treat payload and lead evidence as sampled unless an exact aggregate surface supports the claim.
-- Do not assume payload keys are shared across campaigns just because two campaigns use similar enrichment concepts.
+- Do not assume payload keys are shared across campaigns just because two campaigns use similar lead-metadata concepts.
 - Be explicit when evidence is suggestive rather than statistically decisive.
 - Convert strong sampled signals into test recommendations, not absolute targeting rules.
 
 ## Fallback Behavior
 
 - If required SendLens MCP tools are missing, stop and tell the user to reload or reinstall the plugin/MCP server.
-- If sample sizes are too thin, say what additional evidence or experiment would make the segment claim usable.
+- If sample sizes or lead metadata are too thin, recommend updating future uploaded lead lists with richer fields, such as job title, function, seniority, company category, geography, list source, and campaign-specific triggers, so future analysis can segment more reliably.
 - Do not use Bash, `jq`, shell DuckDB access, repository inspection, local cache files, raw JSON functions, or setup scripts as fallback analysis paths.
 
 ## Output Shape

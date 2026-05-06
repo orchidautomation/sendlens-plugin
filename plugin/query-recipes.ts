@@ -1700,6 +1700,7 @@ GROUP BY 1, 2, 3
 ORDER BY sampled_leads_with_key DESC, sampled_reply_share_pct DESC NULLS LAST, payload_key;`,
     notes: [
       "This is sampled evidence only and must stay scoped to one campaign.",
+      "Payload keys usually come from uploaded lead-list metadata or campaign custom fields; missing keys mean metadata coverage is thin, not that Instantly enrichment failed.",
       "Use this before `campaign-payload-key-signals` when you do not know the available payload keys.",
       "A key appearing in replied leads does not prove full-population lift; it identifies variables worth testing next.",
     ],
@@ -1759,6 +1760,7 @@ JOIN campaign_totals ct
 ORDER BY reply_share_with_key_pct DESC NULLS LAST, leads_with_key DESC, payload_key;`,
     notes: [
       "This is sampled evidence only and should produce hypotheses, not full-population claims.",
+      "Treat missing keys as a lead-list metadata coverage issue. Recommend adding richer metadata to future uploads when sparse fields block analysis.",
       "Use it to decide which payload keys deserve value-level analysis with `campaign-payload-key-signals`.",
       "`lead_payload_kv` avoids JSON-path edge cases, so keys with spaces, dots, or punctuation can still be analyzed by exact key value.",
     ],
@@ -1788,6 +1790,7 @@ ORDER BY sampled_reply_share_pct DESC NULLS LAST, sampled_lead_count DESC;`,
     notes: [
       "This is sampled evidence only and should stay scoped to one campaign.",
       "Replace '{{payload_key}}' with the exact payload key for that campaign, such as region, existing_customer, or recent_grant_or_initiative.",
+      "If the key has too few populated values, recommend collecting that field in future uploaded lead lists rather than blaming Instantly enrichment.",
       "Use it to form hypotheses, not final population claims.",
     ],
   },
@@ -1813,6 +1816,7 @@ LIMIT 25;`,
     notes: [
       "Use this first when you do not know the campaign's payload keys yet.",
       "Payload structure is campaign-specific and should not be assumed to match other campaigns.",
+      "Blank `job_title` or payload fields should be described as missing uploaded lead metadata/custom fields. Recommend adding role/title, function, seniority, company category, geography, list source, and trigger fields to future uploads when needed.",
     ],
   },
   {

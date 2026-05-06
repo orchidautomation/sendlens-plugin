@@ -98,3 +98,10 @@ export function loadClientEnv(rootDir = process.cwd()) {
     loaded,
   };
 }
+
+export function loadSendLensEnv() {
+  const rootDir = process.env.SENDLENS_CONTEXT_ROOT?.trim()
+    ? path.resolve(process.env.SENDLENS_CONTEXT_ROOT)
+    : process.cwd();
+  return loadClientEnv(rootDir);
+}

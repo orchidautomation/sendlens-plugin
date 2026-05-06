@@ -101,7 +101,9 @@ After installing, type this in your AI tool:
 
 It will walk you through connecting your account (or starting in demo mode) and confirm everything is ready.
 
-Want to try SendLens without connecting Instantly? Choose demo mode during `/sendlens-setup`. If you are developing from a cloned repo, use the demo seed command in the developer quickstart below.
+Want to try SendLens without connecting Instantly? Ask for demo data during `/sendlens-setup` only when you do not have a real Instantly key configured. When a real API key is configured, SendLens keeps the default workflow focused on your real workspace. To force demo mode anyway, set `SENDLENS_DEMO_MODE=1` before starting the host.
+
+Demo results are synthetic. They are useful for seeing the experience, not for judging a real campaign or customer. Seeding demo data does not delete real workspace rows from the local cache; it activates a synthetic workspace named `demo_workspace`, and a real `refresh_data` later switches active analysis back to live Instantly data.
 
 ## Privacy in plain English
 

@@ -56,7 +56,7 @@ const PROHIBITED_AGENT_SURFACES = [
 const COMMAND_ROUTING_EXCEPTIONS = new Map([
   [
     "sendlens-setup",
-    "Setup is explicit-invocation and runs the bundled doctor workflow; it is not a SendLens analysis subtask and should not route to an MCP-only specialist agent.",
+    "Setup is explicit-invocation and runs the MCP setup doctor workflow; it is not a SendLens analysis subtask and should not route to an MCP-only specialist agent.",
   ],
 ]);
 

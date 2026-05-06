@@ -16,9 +16,8 @@ is_demo_mode() {
 }
 
 if [[ -z "${SENDLENS_INSTANTLY_API_KEY:-}" ]] && ! is_demo_mode; then
-  echo "[sendlens] Missing SendLens Instantly API key. Set SENDLENS_INSTANTLY_API_KEY through install config or .env." >&2
+  echo "[sendlens] SENDLENS_INSTANTLY_API_KEY is not set. Starting MCP in read-only local-cache mode; refresh_data will require the key." >&2
   echo "[sendlens] For synthetic demo data without production credentials, set SENDLENS_DEMO_MODE=1 and run npm run demo:seed." >&2
-  exit 1
 fi
 
 if ! command -v node >/dev/null 2>&1; then

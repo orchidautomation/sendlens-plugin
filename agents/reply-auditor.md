@@ -33,7 +33,8 @@ Use only SendLens MCP tools for SendLens analysis.
 3. Query `reply_context` for positive, negative, neutral, wrong-person, step, and variant patterns.
 4. When actual wording is needed, call `fetch_reply_text` for the one campaign using default `mode="sync_newest"` and statuses `[1, -1, -2]`, then query `reply_context` again.
 5. Include out-of-office status `0` only when the user explicitly asks for OOO handling.
-6. When segmenting by enrichment variables, query `lead_payload_kv` only after the campaign is fixed.
+6. When segmenting by uploaded lead metadata or custom fields, query `lead_payload_kv` only after the campaign is fixed.
+7. If title, role, or segment metadata is missing, describe it as thin uploaded lead metadata and recommend adding richer fields to future lead uploads.
 
 ## Fallback And Suppression
 

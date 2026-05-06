@@ -15,16 +15,71 @@ export SENDLENS_STATE_DIR="${STATE_DIR}"
 # shellcheck disable=SC1091
 source "${PLUGIN_ROOT}/scripts/load-env.sh"
 
+DB_PATH="${SENDLENS_DB_PATH:-${HOME}/.sendlens/workspace-cache.duckdb}"
+STATE_DIR="${SENDLENS_STATE_DIR:-$(dirname "${DB_PATH}")}"
+LOCK_DIR="${STATE_DIR}/session-start-refresh.lock"
+LOG_PATH="${STATE_DIR}/session-start-refresh.log"
+SHADOW_DB_PATH="${STATE_DIR}/.$(basename "${DB_PATH}").refreshing"
+export SENDLENS_DB_PATH="${DB_PATH}"
+export SENDLENS_STATE_DIR="${STATE_DIR}"
+
 is_demo_mode() {
   local raw
   raw="$(printf '%s' "${SENDLENS_DEMO_MODE:-}" | tr '[:upper:]' '[:lower:]')"
   [[ "${raw}" == "1" || "${raw}" == "true" || "${raw}" == "yes" ]]
 }
 
+refresh_lock_is_active() {
+  if [[ ! -f "${LOCK_DIR}/pid" ]]; then
+    return 1
+  fi
+  local existing_pid
+  existing_pid="$(cat "${LOCK_DIR}/pid" 2>/dev/null || true)"
+  [[ -n "${existing_pid}" ]] && kill -0 "${existing_pid}" 2>/dev/null
+}
+
+cleanup_stale_refresh_state() {
+  if refresh_lock_is_active; then
+    return 0
+  fi
+  rm -rf "${LOCK_DIR}" 2>/dev/null || true
+  rm -f "${SHADOW_DB_PATH}" "${SHADOW_DB_PATH}.wal" 2>/dev/null || true
+}
+
+write_missing_key_status() {
+  mkdir -p "${STATE_DIR}" 2>/dev/null || return 0
+  if command -v node >/dev/null 2>&1; then
+    node -e '
+      const fs = require("fs");
+      const path = require("path");
+      const statusPath = process.argv[1];
+      const dbPath = process.argv[2];
+      let current = {};
+      try {
+        current = JSON.parse(fs.readFileSync(statusPath, "utf8"));
+      } catch {}
+      const next = {
+        ...current,
+        status: "idle",
+        source: "session_start",
+        pid: process.pid,
+        endedAt: new Date().toISOString(),
+        message: "Session-start refresh skipped because SENDLENS_INSTANTLY_API_KEY is not set. Existing local DuckDB cache remains usable; configure the key before running refresh_data.",
+        dbPath,
+      };
+      fs.mkdirSync(path.dirname(statusPath), { recursive: true });
+      fs.writeFileSync(statusPath, JSON.stringify(next, null, 2));
+    ' "${STATE_DIR}/refresh-status.json" "${DB_PATH}" 2>/dev/null || true
+  fi
+}
+
+cleanup_stale_refresh_state
+
 if [[ -z "${SENDLENS_INSTANTLY_API_KEY:-}" ]] && ! is_demo_mode; then
-  echo "[sendlens] Missing SendLens Instantly API key. Set SENDLENS_INSTANTLY_API_KEY through install config or .env." >&2
-  echo "[sendlens] For synthetic demo data without production credentials, set SENDLENS_DEMO_MODE=1 and run npm run demo:seed." >&2
-  exit 1
+  write_missing_key_status
+  echo "[sendlens] SENDLENS_INSTANTLY_API_KEY is not set; skipping session-start refresh. Existing local DuckDB cache remains available." >&2
+  echo "[sendlens] Configure the key before running refresh_data, or set SENDLENS_DEMO_MODE=1 for synthetic demo data." >&2
+  exit 0
 fi
 
 if ! command -v node >/dev/null 2>&1; then
