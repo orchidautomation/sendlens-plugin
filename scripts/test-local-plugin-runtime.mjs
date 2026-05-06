@@ -6,7 +6,9 @@ import path from "node:path";
 const require = createRequire(import.meta.url);
 const {
   getDb,
+  isUnresolvedDbPath,
   resetDbConnectionForTests,
+  resolveDbPath,
   run,
   setActiveWorkspaceId,
 } = require("../build/plugin/local-db.js");
@@ -15,9 +17,11 @@ const {
   normalizeStepAnalyticsRows,
   toPlainText,
 } = require("../build/plugin/instantly-ingest.js");
-const { loadClientEnv } = require("../build/plugin/env.js");
+const { loadClientEnv, loadSendLensEnv } = require("../build/plugin/env.js");
 const { enforceLocalWorkspaceScope } = require("../build/plugin/sql-guard.js");
 const { buildWorkspaceSummary } = require("../build/plugin/summary.js");
+const { readRefreshStatus } = require("../build/plugin/refresh-status.js");
+const { buildSetupDoctorReport } = require("../build/plugin/setup-doctor.js");
 
 process.env.SENDLENS_DB_PATH = path.join(
   os.tmpdir(),
@@ -692,6 +696,104 @@ assert.equal(
   path.join(os.homedir(), ".sendlens", "workspace-cache.duckdb"),
 );
 assert.equal(process.env.SENDLENS_CLIENT, "acme");
+
+const contextEnvRoot = await fs.mkdtemp(path.join(os.tmpdir(), "sendlens-context-env-"));
+await fs.mkdir(path.join(contextEnvRoot, ".env.clients"));
+await fs.writeFile(
+  path.join(contextEnvRoot, ".env"),
+  [
+    "INSTANTLY_API_KEY=generic-key",
+    "SENDLENS_CLIENT=bravo",
+  ].join("\n"),
+);
+await fs.writeFile(
+  path.join(contextEnvRoot, ".env.clients", "bravo.env"),
+  "SENDLENS_DB_PATH=$HOME/.sendlens/bravo.duckdb\n",
+);
+delete process.env.SENDLENS_INSTANTLY_API_KEY;
+delete process.env.SENDLENS_CLIENT;
+delete process.env.SENDLENS_CLIENTS_DIR;
+delete process.env.SENDLENS_DB_PATH;
+delete process.env.INSTANTLY_API_KEY;
+process.env.SENDLENS_CONTEXT_ROOT = contextEnvRoot;
+loadSendLensEnv();
+assert.equal(process.env.SENDLENS_INSTANTLY_API_KEY, undefined);
+assert.equal(process.env.INSTANTLY_API_KEY, "generic-key");
+assert.equal(process.env.SENDLENS_CLIENT, "bravo");
+assert.equal(process.env.SENDLENS_DB_PATH, path.join(os.homedir(), ".sendlens", "bravo.duckdb"));
+delete process.env.SENDLENS_CONTEXT_ROOT;
+
+process.env.SENDLENS_DB_PATH = path.join(
+  os.homedir(),
+  "Documents",
+  "+ name +",
+);
+assert.equal(isUnresolvedDbPath(process.env.SENDLENS_DB_PATH), true);
+assert.equal(
+  resolveDbPath(),
+  path.join(os.homedir(), ".sendlens", "workspace-cache.duckdb"),
+);
+process.env.SENDLENS_DB_PATH = "${SENDLENS_DB_PATH}";
+assert.equal(isUnresolvedDbPath(process.env.SENDLENS_DB_PATH), true);
+assert.equal(
+  resolveDbPath(),
+  path.join(os.homedir(), ".sendlens", "workspace-cache.duckdb"),
+);
+delete process.env.SENDLENS_DB_PATH;
+
+const statusRoot = await fs.mkdtemp(path.join(os.tmpdir(), "sendlens-status-"));
+process.env.SENDLENS_DB_PATH = path.join(statusRoot, "workspace-cache.duckdb");
+process.env.SENDLENS_STATE_DIR = statusRoot;
+await fs.writeFile(
+  path.join(statusRoot, "refresh-status.json"),
+  JSON.stringify({
+    status: "running",
+    source: "session_start",
+    pid: 999999,
+    dbPath: path.join(statusRoot, ".workspace-cache.duckdb.refreshing"),
+  }),
+);
+const staleStatus = await readRefreshStatus();
+assert.equal(staleStatus.status, "failed");
+assert.equal(staleStatus.dbPath, process.env.SENDLENS_DB_PATH);
+assert.match(String(staleStatus.message), /no longer active/);
+
+await fs.writeFile(
+  path.join(statusRoot, "refresh-status.json"),
+  JSON.stringify({
+    status: "failed",
+    source: "session_start",
+    pid: 123,
+    message:
+      "Session-start refresh skipped because SENDLENS_INSTANTLY_API_KEY is not set. Existing local DuckDB cache remains usable; configure the key before running refresh_data.",
+    dbPath: process.env.SENDLENS_DB_PATH,
+  }),
+);
+const missingKeyStatus = await readRefreshStatus();
+assert.equal(missingKeyStatus.status, "idle");
+assert.match(String(missingKeyStatus.message), /skipped/);
+
+await fs.writeFile(
+  path.join(statusRoot, "refresh-status.json"),
+  JSON.stringify({
+    status: "succeeded",
+    source: "manual",
+    lastSuccessAt: new Date().toISOString(),
+    campaignsTotal: 8,
+    campaignsProcessed: 8,
+    dbPath: process.env.SENDLENS_DB_PATH,
+  }),
+);
+await fs.writeFile(process.env.SENDLENS_DB_PATH, "");
+process.env.SENDLENS_INSTANTLY_API_KEY = "test-key";
+const doctorReport = await buildSetupDoctorReport();
+assert.equal(doctorReport.cache_freshness.status, "succeeded");
+assert.equal(doctorReport.cache_freshness.age_seconds < 60, true);
+assert.match(doctorReport.cache_freshness.label, /just now/);
+assert.match(String(doctorReport.next_steps[0]), /Current cache freshness: just now/);
+delete process.env.SENDLENS_INSTANTLY_API_KEY;
+delete process.env.SENDLENS_DB_PATH;
+delete process.env.SENDLENS_STATE_DIR;
 
 console.log("plugin runtime tests passed");
 

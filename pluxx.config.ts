@@ -2,7 +2,7 @@ import { definePlugin } from "pluxx";
 
 export default definePlugin({
   name: "sendlens",
-  version: "0.1.23",
+  version: "0.1.24",
   description:
     "Privacy-first outbound campaign analysis for AI workspaces.",
   author: {

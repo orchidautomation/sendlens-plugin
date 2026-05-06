@@ -7,7 +7,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 ## Use When
 
 - The user asks who responds best.
-- Segment variables such as industry, role, company size, geography, category, or custom enrichment may explain outcomes.
+- Segment variables such as industry, role, company size, geography, category, or uploaded custom metadata may explain outcomes.
 - The user needs a testable ICP hypothesis rather than a broad workspace claim.
 
 ## Primary Surfaces

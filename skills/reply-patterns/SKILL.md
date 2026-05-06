@@ -42,7 +42,8 @@ Read the evidence and hydration references before quoting, paraphrasing, or grou
 
 - Query `reply_context` first for positive, negative, and neutral outcomes, step/variant, and existing hydrated reply columns.
 - Separate human outcomes from out-of-office and automated noise using Instantly lead status and `reply_email_i_status` where available.
-- When segmenting replies by enrichment variables, stay inside one campaign and read variables from `lead_payload_kv`.
+- When segmenting replies by uploaded lead metadata or custom fields, stay inside one campaign and read variables from `lead_payload_kv`.
+- If role/title or payload coverage is thin, recommend adding richer metadata to future uploaded lead lists instead of saying Instantly failed to enrich the leads.
 
 ### Stage 3: Hydrate Only When Needed
 

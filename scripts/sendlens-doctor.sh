@@ -8,10 +8,11 @@ export PLUGIN_ROOT
 export SENDLENS_CONTEXT_ROOT
 
 # shellcheck disable=SC1091
-source "${PLUGIN_ROOT}/scripts/load-env.sh" 2>/dev/null || true
+source "${PLUGIN_ROOT}/scripts/load-env.sh" || true
 
 DB_PATH="${SENDLENS_DB_PATH:-${HOME}/.sendlens/workspace-cache.duckdb}"
 STATE_DIR="${SENDLENS_STATE_DIR:-$(dirname "${DB_PATH}")}"
+SHADOW_DB_PATH="${STATE_DIR}/.$(basename "${DB_PATH}").refreshing"
 ISSUES=0
 WARNINGS=0
 
@@ -55,6 +56,10 @@ if is_demo_mode; then
 elif [[ -n "${SENDLENS_INSTANTLY_API_KEY:-}" ]]; then
   ok "Instantly API key is configured"
   detail "Secret value suppressed"
+elif [[ -f "${DB_PATH}" ]]; then
+  warn "Instantly API key is missing; refresh is disabled"
+  detail "Existing local DuckDB cache can still be used for read-only analysis"
+  detail "Set SENDLENS_INSTANTLY_API_KEY before running refresh_data"
 else
   fail "Instantly API key is missing"
   detail "Set SENDLENS_INSTANTLY_API_KEY in host config, .env, or .env.clients/<client>.env"
@@ -116,6 +121,15 @@ fi
 section "Local State"
 check_writable_dir "$(dirname "${DB_PATH}")" "DuckDB directory"
 detail "DuckDB path: ${DB_PATH}"
+if [[ -f "${DB_PATH}" ]]; then
+  ok "Existing DuckDB cache found"
+  if command -v stat >/dev/null 2>&1; then
+    detail "$(du -h "${DB_PATH}" 2>/dev/null | awk '{print $1}') at ${DB_PATH}"
+  fi
+else
+  warn "No DuckDB cache found yet"
+  detail "Run refresh_data from the MCP tool, npm run refresh:plugin, or npm run demo:seed"
+fi
 check_writable_dir "${STATE_DIR}" "State directory"
 
 STATUS_PATH="${STATE_DIR}/refresh-status.json"
@@ -126,6 +140,21 @@ if [[ -f "${STATUS_PATH}" ]]; then
     STATUS_SUMMARY="$(node -e "const fs=require('fs'); const p=process.argv[1]; try { const s=JSON.parse(fs.readFileSync(p,'utf8')); console.log([s.status, s.source, s.lastSuccessAt || s.endedAt || 'no-success-yet'].filter(Boolean).join(' | ')); } catch (e) { process.exit(2); }" "${STATUS_PATH}" 2>/dev/null || true)"
     if [[ -n "${STATUS_SUMMARY}" ]]; then
       detail "${STATUS_SUMMARY}"
+      STATUS_FIELDS="$(node -e "const fs=require('fs'); const p=process.argv[1]; try { const s=JSON.parse(fs.readFileSync(p,'utf8')); console.log([s.status || '', s.pid || '', s.dbPath || ''].join('\t')); } catch (e) { process.exit(2); }" "${STATUS_PATH}" 2>/dev/null || true)"
+      IFS=$'\t' read -r STATUS_VALUE STATUS_PID STATUS_DB_PATH <<< "${STATUS_FIELDS}"
+      if [[ "${STATUS_VALUE}" == "running" && -n "${STATUS_PID}" ]]; then
+        if kill -0 "${STATUS_PID}" 2>/dev/null; then
+          detail "Refresh pid ${STATUS_PID} is active"
+        else
+          warn "Refresh status says running, but pid ${STATUS_PID} is not active"
+          detail "A new refresh_data or npm run refresh:plugin will replace this stale status."
+        fi
+      fi
+      if [[ -n "${STATUS_DB_PATH:-}" && "${STATUS_DB_PATH}" != "${DB_PATH}" ]]; then
+        warn "Refresh status dbPath differs from active DuckDB path"
+        detail "status dbPath: ${STATUS_DB_PATH}"
+        detail "active dbPath: ${DB_PATH}"
+      fi
     else
       warn "Refresh status file is not valid JSON"
     fi
@@ -133,6 +162,14 @@ if [[ -f "${STATUS_PATH}" ]]; then
 else
   warn "No refresh status file found yet"
   detail "Run refresh_data from the MCP tool, npm run refresh:plugin, or npm run demo:seed"
+fi
+
+if [[ -f "${SHADOW_DB_PATH}" ]]; then
+  warn "Interrupted refresh temp database exists"
+  detail "${SHADOW_DB_PATH}"
+  detail "A future refresh will remove and rebuild this temp file; the live DuckDB cache above is not replaced until refresh succeeds."
+else
+  ok "No interrupted refresh temp database"
 fi
 
 if [[ -d "${STATE_DIR}/session-start-refresh.lock" ]]; then
@@ -169,6 +206,8 @@ if [[ "${ISSUES}" -eq 0 ]]; then
   if is_demo_mode; then
     detail "Run: npm run demo:seed"
     detail "Then ask your host: Use SendLens workspace health on the demo workspace"
+  elif [[ -f "${DB_PATH}" ]]; then
+    detail "Existing cache is present. In the host, start with workspace_snapshot; use refresh_data only when you explicitly need a fresh pull."
   else
     detail "Run: npm run refresh:plugin or use refresh_data from the MCP tool"
   fi

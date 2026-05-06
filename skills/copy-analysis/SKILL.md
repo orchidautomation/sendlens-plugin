@@ -51,6 +51,7 @@ Read the evidence, output, and copy reconstruction references before making copy
 
 - If the user asks whether personalization broke, run the `personalization-leak-audit` starter before custom analysis.
 - If personalization quality depends on campaign-specific variables, inspect values through `lead_payload_kv` for that campaign rather than assuming shared payload columns.
+- If variables such as role, title, segment, or trigger are missing, describe that as thin uploaded lead metadata/custom fields. Recommend adding those fields to future lead uploads for better copy QA and segment analysis.
 - Preserve the reconstructed outbound caveat in any token leak or rendered-copy conclusion.
 
 ### Stage 4: Recommend With Cold-Email Discipline

@@ -1,11 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { loadClientEnv } from "./env";
+import { loadSendLensEnv } from "./env";
 import { resolveDbPath } from "./local-db";
 import { refreshWorkspace } from "./instantly-ingest";
 import { writeRefreshStatus } from "./refresh-status";
 
-loadClientEnv();
+loadSendLensEnv();
 
 async function main() {
   const liveDbPath = resolveDbPath();

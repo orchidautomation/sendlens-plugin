@@ -1,6 +1,6 @@
 # `sendlens-setup`
 
-Runs first-run setup and doctor checks for env, runtime dependencies, local state, host bundles, and synthetic demo mode.
+Runs first-run setup and doctor checks for env, runtime dependencies, local state, host bundle context, and synthetic demo mode.
 
 Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md), [operator setup playbook](../operator-memory/PLAYBOOKS.md), and [synthetic examples](../examples/SYNTHETIC_OUTPUTS.md).
 
@@ -15,16 +15,16 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 - Skill source: `skills/sendlens-setup/SKILL.md`
 - Command: `/sendlens-setup`
-- Script: `scripts/sendlens-doctor.sh`
-- MCP tools: none for setup itself
+- MCP tool: `setup_doctor`
+- Script fallback for source developers only: `scripts/sendlens-doctor.sh`
 
 ## Expected Flow
 
-1. Run `bash scripts/sendlens-doctor.sh` from the plugin root.
-2. Show the full doctor output.
-3. Use the script output as the source of truth for setup checks.
-4. Guide the user through the exact next command or doc link shown by the script.
-5. After setup succeeds, switch to SendLens MCP tools for analysis instead of local file or DuckDB inspection.
+1. Call the SendLens MCP `setup_doctor` tool.
+2. Show the relevant setup status, failures, warnings, and next steps.
+3. Use the tool output as the source of truth for setup checks.
+4. Guide the user through the exact next command or doc link shown by the tool.
+5. After setup succeeds, switch to SendLens MCP tools for analysis instead of local file, shell, or DuckDB inspection.
 
 ## Output Shape
 
@@ -34,7 +34,8 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 - Next command to run.
 - Relevant docs links.
 - Whether demo mode is enabled.
+- Whether demo seeding is available because credentials are missing or `SENDLENS_DEMO_MODE=1` is enabled.
 
 ## Privacy Boundaries
 
-The doctor script should never print secrets. Do not ask users to paste API keys into chat. When demo mode is enabled, keep every answer clearly labeled as synthetic demo evidence.
+The doctor tool should never print secrets. Do not ask users to paste API keys into chat. When demo mode is enabled, keep every answer clearly labeled as synthetic demo evidence. If production credentials are already configured, keep the default path on real workspace analysis and mention demo only when explicitly requested.

@@ -19,9 +19,8 @@ is_demo_mode() {
 }
 
 if [[ -z "${API_KEY}" ]] && ! is_demo_mode; then
-  echo "[sendlens] Missing SendLens Instantly API key. Set SENDLENS_INSTANTLY_API_KEY through .env / .env.clients/<client>.env." >&2
+  echo "[sendlens] SENDLENS_INSTANTLY_API_KEY is not set. Runtime can start in read-only local-cache mode; refresh_data will require the key." >&2
   echo "[sendlens] For synthetic demo data without production credentials, set SENDLENS_DEMO_MODE=1 and run npm run demo:seed." >&2
-  exit 1
 fi
 
 if ! command -v node >/dev/null 2>&1; then
@@ -41,6 +40,8 @@ fi
 
 if is_demo_mode; then
   echo "[sendlens] Runtime checks passed in demo mode. Local DuckDB path: ${DB_PATH}" >&2
+elif [[ -z "${API_KEY}" ]]; then
+  echo "[sendlens] Runtime checks passed without an Instantly API key. Local DuckDB path: ${DB_PATH}" >&2
 elif [[ -n "${SENDLENS_CLIENT:-}" ]]; then
   echo "[sendlens] Runtime checks passed for client '${SENDLENS_CLIENT}'. Local DuckDB path: ${DB_PATH}" >&2
 else

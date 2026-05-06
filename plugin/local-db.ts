@@ -39,9 +39,20 @@ export class LocalDbUnavailableError extends Error {
   }
 }
 
+export function isUnresolvedDbPath(value: string | undefined | null) {
+  const trimmed = value?.trim();
+  if (!trimmed) return false;
+  return (
+    trimmed.includes("+ name +") ||
+    trimmed.includes("${") ||
+    trimmed.includes("{{") ||
+    trimmed.includes("}}")
+  );
+}
+
 export function resolveDbPath() {
   const configured = process.env.SENDLENS_DB_PATH?.trim();
-  if (configured) {
+  if (configured && !isUnresolvedDbPath(configured)) {
     return path.isAbsolute(configured)
       ? configured
       : path.resolve(process.cwd(), configured);

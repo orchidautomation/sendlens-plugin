@@ -8,7 +8,7 @@ See also: [trust and privacy](./TRUST_AND_PRIVACY.md), [skill docs](./skills/REA
 
 | Workflow | Skills | Commands | Agents | MCP tools | Scripts and generated surfaces |
 | --- | --- | --- | --- | --- | --- |
-| Setup and refresh | [sendlens-setup](./skills/sendlens-setup.md), [workspace-health](./skills/workspace-health.md) | `/sendlens-setup`, `/workspace-health` | `workspace-triager` | `refresh_status`, `refresh_data`, `workspace_snapshot` | `sendlens-doctor.sh`, `start-mcp.sh`, `session-start.sh`, `load-env.sh`, `check-env.sh`; generated Claude Code, Cursor, Codex, and OpenCode bundles |
+| Setup and refresh | [sendlens-setup](./skills/sendlens-setup.md), [workspace-health](./skills/workspace-health.md) | `/sendlens-setup`, `/workspace-health` | `workspace-triager` | `setup_doctor`, `refresh_status`, `refresh_data`, `workspace_snapshot` | `sendlens-doctor.sh`, `start-mcp.sh`, `session-start.sh`, `load-env.sh`, `check-env.sh`; generated Claude Code, Cursor, Codex, and OpenCode bundles |
 | Workspace triage | [workspace-health](./skills/workspace-health.md), [campaign-performance](./skills/campaign-performance.md), [account-manager-brief](./skills/account-manager-brief.md) | `/workspace-health`, `/campaign-performance`, `/account-manager-brief` | `workspace-triager`, `campaign-analyst`, `synthesis-reviewer` | `workspace_snapshot`, `analysis_starters`, `analyze_data`, `search_catalog` | `benchmark-fast-refresh.sh`; host session-start refresh hook |
 | One-campaign diagnosis | [campaign-performance](./skills/campaign-performance.md), [campaign-launch-qa](./skills/campaign-launch-qa.md), [experiment-planner](./skills/experiment-planner.md) | `/campaign-performance`, `/campaign-launch-qa`, `/experiment-planner` | `campaign-analyst`, `synthesis-reviewer` | `load_campaign_data`, `analysis_starters`, `analyze_data`, `list_columns` | runtime build from `npm run build:plugin`; host bundles from `npm run build:hosts` |
 | Copy and personalization | [copy-analysis](./skills/copy-analysis.md), [cold-email-best-practices](./skills/cold-email-best-practices.md) | `/copy-analysis`, `/cold-email-best-practices` | `copy-auditor`, `synthesis-reviewer` | `load_campaign_data`, `analysis_starters`, `analyze_data`, `list_columns` | sampled/reconstructed outbound surfaces in the local cache |
@@ -42,7 +42,7 @@ Commands are host entry points in `commands/*.md`. Most route to a specialist ag
 | `/workspace-health` | `[campaign-name-or-instantly-tag]` | `workspace-triager` | First stop for broad workspace diagnosis |
 | `/campaign-performance` | `[campaign-name] [instantly-tag]` | `campaign-analyst` | Ranks campaigns, steps, variants, runway, and sequence fatigue |
 | `/copy-analysis` | `[campaign-name] [instantly-tag]` | `copy-auditor` | Scopes to one campaign before copy and personalization analysis |
-| `/icp-signals` | `[campaign-name] [instantly-tag]` | `icp-auditor` | Uses campaign payload keys instead of assuming global enrichment columns |
+| `/icp-signals` | `[campaign-name] [instantly-tag]` | `icp-auditor` | Uses campaign payload keys instead of assuming global uploaded-metadata columns |
 | `/reply-patterns` | `[campaign-name] [instantly-tag]` | `reply-auditor` | Separates human reply outcomes before theme synthesis |
 | `/cold-email-best-practices` | none | host default | Applies policy rules such as reply-rate focus, tracking caution, and bounce thresholds |
 | `/campaign-launch-qa` | `[campaign-name]` | `campaign-analyst` | Returns blockers first, then warnings, ready checks, and next actions |
@@ -68,6 +68,8 @@ MCP tools are registered by the local `sendlens` stdio server. Responses are JSO
 
 | Tool | Purpose | When to use |
 | --- | --- | --- |
+| `setup_doctor` | Read setup readiness without shell commands | First run, missing key diagnosis, local cache readiness, stale refresh state |
+| `seed_demo_workspace` | Seed synthetic proof data when demo seeding is available | No API key configured, or `SENDLENS_DEMO_MODE=1` explicitly enabled |
 | `refresh_status` | Read local refresh lifecycle state | Stale data, startup refresh, or cache-readiness questions |
 | `refresh_data` | Refresh local cache from Instantly | Explicit fresh pull, client/workspace change, or stale/failed status |
 | `workspace_snapshot` | First high-level read of a workspace, tag, or campaign-name scope | Broad triage and campaign selection |

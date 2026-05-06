@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { resolveDbPath } from "./local-db";
+import { isUnresolvedDbPath, resolveDbPath } from "./local-db";
 
 export type RefreshStatus = {
   status: "idle" | "running" | "succeeded" | "failed";
@@ -32,6 +32,52 @@ function getStatusPath() {
   return path.join(getStateDir(), "refresh-status.json");
 }
 
+function isPidActive(pid: number | undefined) {
+  if (!pid || !Number.isFinite(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeStatus(status: RefreshStatus): RefreshStatus {
+  const activeDbPath = resolveDbPath();
+  const normalized: RefreshStatus = {
+    ...status,
+    dbPath:
+      status.dbPath && !isUnresolvedDbPath(status.dbPath)
+        ? status.dbPath
+        : activeDbPath,
+  };
+
+  if (
+    normalized.status === "failed" &&
+    normalized.source === "session_start" &&
+    /SENDLENS_INSTANTLY_API_KEY is not set/i.test(normalized.message ?? "")
+  ) {
+    return {
+      ...normalized,
+      status: "idle",
+      dbPath: activeDbPath,
+    };
+  }
+
+  if (normalized.status === "running" && !isPidActive(normalized.pid)) {
+    return {
+      ...normalized,
+      status: "failed",
+      endedAt: normalized.endedAt ?? new Date().toISOString(),
+      dbPath: activeDbPath,
+      message:
+        `Refresh status was left running by pid ${normalized.pid ?? "unknown"}, but that process is no longer active. Run refresh_data when you need a fresh pull; existing local cache reads can continue if workspace_snapshot is available.`,
+    };
+  }
+
+  return normalized;
+}
+
 async function resolveWritableStatusPath() {
   const primaryDir = getStateDir();
   try {
@@ -59,7 +105,7 @@ export async function readRefreshStatus(): Promise<RefreshStatus> {
         const raw = await fs.readFile(candidate, "utf8");
         const parsed = JSON.parse(raw) as RefreshStatus & { mode?: unknown };
         const { mode: _legacyMode, ...rest } = parsed;
-        return rest as RefreshStatus;
+        return normalizeStatus(rest as RefreshStatus);
       } catch {
         continue;
       }
