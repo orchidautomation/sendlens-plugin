@@ -364,6 +364,10 @@ async function assertDemoModeContracts() {
     /read-only local-cache mode/i.test(`${readOnlyCheck.stdout}${readOnlyCheck.stderr}`),
     "scripts/check-env.sh: expected missing API key output to explain read-only local-cache mode",
   );
+  assert(
+    /\/sendlens-setup/i.test(`${readOnlyCheck.stdout}${readOnlyCheck.stderr}`),
+    "scripts/check-env.sh: expected missing API key output to point users to /sendlens-setup",
+  );
 
   for (const value of ["1", "true", "TRUE", "yes", "YES"]) {
     const check = runCheckEnv({ SENDLENS_DEMO_MODE: value });

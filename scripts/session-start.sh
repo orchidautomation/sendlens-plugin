@@ -78,7 +78,7 @@ cleanup_stale_refresh_state
 if [[ -z "${SENDLENS_INSTANTLY_API_KEY:-}" ]] && ! is_demo_mode; then
   write_missing_key_status
   echo "[sendlens] SENDLENS_INSTANTLY_API_KEY is not set; skipping session-start refresh. Existing local DuckDB cache remains available." >&2
-  echo "[sendlens] Configure the key before running refresh_data, or set SENDLENS_DEMO_MODE=1 for synthetic demo data." >&2
+  echo "[sendlens] Run /sendlens-setup in your AI host to initialize a zero-key synthetic demo workspace, or configure the key before running refresh_data." >&2
   exit 0
 fi
 

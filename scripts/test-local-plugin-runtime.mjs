@@ -194,7 +194,7 @@ assert.equal(summary.output_limits.campaign_limit, 100);
 
 const campaignOverview = await runQuery(
   db,
-  "SELECT campaign_name, emails_sent_count, reply_count_unique, bounced_count, total_opportunities, total_opportunity_value, reply_lead_rows, nonreply_rows_sampled, unique_reply_rate_pct, bounce_rate_pct FROM sendlens.campaign_overview WHERE campaign_id = 'c1'",
+  "SELECT campaign_name, emails_sent_count, reply_count_unique, bounced_count, total_opportunities, total_opportunity_value, reply_lead_rows, nonreply_rows_sampled, unique_reply_rate_pct, bounce_rate_pct, tracking_status, deliverability_settings_status FROM sendlens.campaign_overview WHERE campaign_id = 'c1'",
 );
 assert.equal(campaignOverview[0].campaign_name, "Alpha");
 assert.equal(Number(campaignOverview[0].emails_sent_count), 800);
@@ -206,6 +206,8 @@ assert.equal(Number(campaignOverview[0].reply_lead_rows), 10);
 assert.equal(Number(campaignOverview[0].nonreply_rows_sampled), 1);
 assert.equal(Number(campaignOverview[0].unique_reply_rate_pct), 3);
 assert.equal(Number(campaignOverview[0].bounce_rate_pct), 1);
+assert.equal(campaignOverview[0].tracking_status, "tracking_unknown");
+assert.equal(campaignOverview[0].deliverability_settings_status, "deliverability_settings_unknown");
 
 const leadEvidence = await runQuery(
   db,
@@ -462,6 +464,7 @@ await runQuery(
 );
 
 const campaignRecipes = getQueryRecipes("campaign-performance");
+const launchQaRecipes = getQueryRecipes("campaign-launch-qa");
 const workspaceHealthRecipes = getQueryRecipes("workspace-health");
 const tagCatalogRecipe = tagRecipes.find((recipe) => recipe.id === "tag-catalog");
 assert.ok(tagCatalogRecipe);
@@ -589,6 +592,20 @@ assert.equal(
   workspaceHealthRecipes.some((recipe) => recipe.id === "inbox-placement-auth-failures" && recipe.sql.includes("sendlens.inbox_placement_analytics")),
   true,
 );
+const launchQaChecklistRecipe = launchQaRecipes.find((recipe) => recipe.id === "campaign-launch-qa-checklist");
+assert.ok(launchQaChecklistRecipe);
+const launchQaRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(
+    launchQaChecklistRecipe.sql.replaceAll("{{campaign_name}}", "Alpha"),
+    "ws_test",
+  ),
+);
+assert.equal(launchQaRows[0].launch_qa_status, "review_settings_unknown");
+const settingsRecipe = launchQaRecipes.find((recipe) => recipe.id === "campaign-tracking-deliverability-settings");
+assert.ok(settingsRecipe);
+const settingsRows = await runQuery(db, enforceLocalWorkspaceScope(settingsRecipe.sql, "ws_test"));
+assert.equal(settingsRows[0].settings_review_status, "review_settings_unknown");
 const stepFatigueRecipe = campaignRecipes.find((recipe) => recipe.id === "step-fatigue-by-campaign");
 assert.ok(stepFatigueRecipe);
 assert.match(stepFatigueRecipe.sql, /metric_basis/);
@@ -772,6 +789,20 @@ await fs.writeFile(
 const missingKeyStatus = await readRefreshStatus();
 assert.equal(missingKeyStatus.status, "idle");
 assert.match(String(missingKeyStatus.message), /skipped/);
+
+delete process.env.SENDLENS_INSTANTLY_API_KEY;
+delete process.env.SENDLENS_DEMO_MODE;
+const noKeyNoCacheDoctorReport = await buildSetupDoctorReport();
+assert.equal(noKeyNoCacheDoctorReport.setup_status, "blocked");
+assert.equal(noKeyNoCacheDoctorReport.capabilities.demo_seed, true);
+assert.match(
+  String(noKeyNoCacheDoctorReport.next_steps[0]),
+  /Call seed_demo_workspace now/,
+);
+assert.match(
+  String(noKeyNoCacheDoctorReport.failures[0]),
+  /Instantly API key is not set and no local DuckDB cache exists/,
+);
 
 await fs.writeFile(
   path.join(statusRoot, "refresh-status.json"),

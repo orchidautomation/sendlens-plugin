@@ -103,7 +103,15 @@ SendLens reads env files in this order:
 3. `.env.clients/<client>.env`
 4. `.env.clients/<client>.local.env`
 
-For synthetic demo proof without production credentials:
+For synthetic demo proof without production credentials, run setup in your AI host:
+
+```text
+/sendlens-setup
+```
+
+If no Instantly API key and no local cache are configured, setup initializes the synthetic demo workspace.
+
+From a local source checkout, you can also seed directly:
 
 ```bash
 SENDLENS_DEMO_MODE=1 npm run demo:seed

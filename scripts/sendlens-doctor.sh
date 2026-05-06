@@ -62,8 +62,8 @@ elif [[ -f "${DB_PATH}" ]]; then
   detail "Set SENDLENS_INSTANTLY_API_KEY before running refresh_data"
 else
   fail "Instantly API key is missing"
-  detail "Set SENDLENS_INSTANTLY_API_KEY in host config, .env, or .env.clients/<client>.env"
-  detail "Or set SENDLENS_DEMO_MODE=1 for synthetic demo data"
+  detail "Run /sendlens-setup in your AI host to initialize a zero-key synthetic demo workspace"
+  detail "Set SENDLENS_INSTANTLY_API_KEY in host config, .env, or .env.clients/<client>.env when you want real workspace analysis"
 fi
 
 if [[ -n "${SENDLENS_CLIENT:-}" ]]; then
@@ -128,7 +128,7 @@ if [[ -f "${DB_PATH}" ]]; then
   fi
 else
   warn "No DuckDB cache found yet"
-  detail "Run refresh_data from the MCP tool, npm run refresh:plugin, or npm run demo:seed"
+  detail "Run /sendlens-setup in your AI host for zero-key demo data, or refresh_data when a real API key is configured"
 fi
 check_writable_dir "${STATE_DIR}" "State directory"
 
@@ -161,7 +161,7 @@ if [[ -f "${STATUS_PATH}" ]]; then
   fi
 else
   warn "No refresh status file found yet"
-  detail "Run refresh_data from the MCP tool, npm run refresh:plugin, or npm run demo:seed"
+  detail "Run /sendlens-setup in your AI host for zero-key demo data, or refresh_data when a real API key is configured"
 fi
 
 if [[ -f "${SHADOW_DB_PATH}" ]]; then
@@ -204,7 +204,7 @@ section "Next Steps"
 if [[ "${ISSUES}" -eq 0 ]]; then
   ok "SendLens setup can run"
   if is_demo_mode; then
-    detail "Run: npm run demo:seed"
+    detail "Run /sendlens-setup in your AI host, or run npm run demo:seed from source"
     detail "Then ask your host: Use SendLens workspace health on the demo workspace"
   elif [[ -f "${DB_PATH}" ]]; then
     detail "Existing cache is present. In the host, start with workspace_snapshot; use refresh_data only when you explicitly need a fresh pull."

@@ -82,11 +82,11 @@ async function seedCampaigns(db: Awaited<ReturnType<typeof getDb>>) {
   await run(
     db,
     `INSERT OR REPLACE INTO sendlens.campaigns
-     (id, workspace_id, organization_id, name, status, daily_limit, text_only, open_tracking, link_tracking, schedule_timezone, sequence_count, step_count, timestamp_created, timestamp_updated, synced_at)
+     (id, workspace_id, organization_id, name, status, daily_limit, text_only, first_email_text_only, open_tracking, link_tracking, stop_on_reply, stop_on_auto_reply, match_lead_esp, allow_risky_contacts, disable_bounce_protect, insert_unsubscribe_header, schedule_timezone, sequence_count, step_count, timestamp_created, timestamp_updated, synced_at)
      VALUES
-     ('${DEMO_CAMPAIGN_ALPHA_ID}', '${DEMO_WORKSPACE_ID}', 'demo_org', 'Demo - Healthcare Operators', 'active', 60, true, false, false, 'America/New_York', 1, 3, '2026-04-01 09:00:00'::TIMESTAMP, '2026-05-04 12:00:00'::TIMESTAMP, CURRENT_TIMESTAMP),
-     ('${DEMO_CAMPAIGN_BETA_ID}', '${DEMO_WORKSPACE_ID}', 'demo_org', 'Demo - Finance RevOps', 'active', 45, true, false, false, 'America/Chicago', 1, 2, '2026-04-08 09:00:00'::TIMESTAMP, '2026-05-04 12:00:00'::TIMESTAMP, CURRENT_TIMESTAMP),
-     ('${DEMO_CAMPAIGN_RISK_ID}', '${DEMO_WORKSPACE_ID}', 'demo_org', 'Demo - Broad SaaS Risk', 'active', 80, true, true, true, 'America/Los_Angeles', 1, 2, '2026-04-15 09:00:00'::TIMESTAMP, '2026-05-04 12:00:00'::TIMESTAMP, CURRENT_TIMESTAMP)`,
+     ('${DEMO_CAMPAIGN_ALPHA_ID}', '${DEMO_WORKSPACE_ID}', 'demo_org', 'Demo - Healthcare Operators', 'active', 60, true, true, false, false, true, true, true, false, false, true, 'America/New_York', 1, 3, '2026-04-01 09:00:00'::TIMESTAMP, '2026-05-04 12:00:00'::TIMESTAMP, CURRENT_TIMESTAMP),
+     ('${DEMO_CAMPAIGN_BETA_ID}', '${DEMO_WORKSPACE_ID}', 'demo_org', 'Demo - Finance RevOps', 'active', 45, true, true, false, false, true, true, true, false, false, true, 'America/Chicago', 1, 2, '2026-04-08 09:00:00'::TIMESTAMP, '2026-05-04 12:00:00'::TIMESTAMP, CURRENT_TIMESTAMP),
+     ('${DEMO_CAMPAIGN_RISK_ID}', '${DEMO_WORKSPACE_ID}', 'demo_org', 'Demo - Broad SaaS Risk', 'active', 80, true, false, true, true, true, false, false, true, true, false, 'America/Los_Angeles', 1, 2, '2026-04-15 09:00:00'::TIMESTAMP, '2026-05-04 12:00:00'::TIMESTAMP, CURRENT_TIMESTAMP)`,
   );
   await run(
     db,

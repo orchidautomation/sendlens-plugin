@@ -8,7 +8,7 @@ See the [component catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRI
 
 | Skill | Best first use |
 | --- | --- |
-| [sendlens-setup](./sendlens-setup.md) | First-run setup, doctor checks, host bundle verification, and demo-mode guidance |
+| [sendlens-setup](./sendlens-setup.md) | First-run setup, doctor checks, host bundle verification, and zero-key demo seeding |
 | [workspace-health](./workspace-health.md) | Broad workspace triage and next-action diagnosis |
 | [campaign-performance](./campaign-performance.md) | Campaign, step, variant, runway, and sequence performance |
 | [account-manager-brief](./account-manager-brief.md) | Client-safe update plus internal action queue |
@@ -27,7 +27,7 @@ See the [component catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRI
 ## Shared Operating Model
 
 - Start broad with `workspace_snapshot` when the user asks what is happening.
-- Use `sendlens-setup` before analysis when the install, runtime, local state, host bundle, or demo mode needs verification.
+- Use `sendlens-setup` before analysis when the install, runtime, local state, host bundle, or zero-key demo path needs verification.
 - Pick one campaign before deep copy, ICP, reply, or experiment analysis.
 - Use `analysis_starters` before custom SQL for common questions.
 - Use `load_campaign_data` before one-campaign specialist work.

@@ -70,6 +70,24 @@ try {
   );
   assert.ok(String(replyRows[0].reply_body_text).includes("referral leakage"));
 
+  const settingRows = await query(
+    db,
+    `SELECT
+       campaign_id,
+       tracking_status,
+       deliverability_settings_status
+     FROM sendlens.campaign_overview
+     ORDER BY campaign_id`,
+  );
+  assert.equal(settingRows.some((row) => row.tracking_status === "tracking_unknown"), false);
+  assert.equal(
+    settingRows.some((row) => row.deliverability_settings_status === "deliverability_settings_unknown"),
+    false,
+  );
+  const riskCampaign = settingRows.find((row) => row.campaign_id === "demo-risk");
+  assert.equal(riskCampaign.tracking_status, "open_and_link_tracking_on");
+  assert.equal(riskCampaign.deliverability_settings_status, "deliverability_guardrails_relaxed");
+
   const status = await readRefreshStatus();
   assert.equal(status.status, "succeeded");
   assert.equal(status.workspaceId, "demo_workspace");

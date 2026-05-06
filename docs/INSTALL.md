@@ -113,6 +113,14 @@ The doctor checks env loading, runtime dependencies, compiled MCP/refresh/demo e
 
 To prove the workflow before connecting a real outbound workspace:
 
+```text
+/sendlens-setup
+```
+
+If no Instantly API key and no local cache are configured, setup initializes a synthetic demo workspace through the `seed_demo_workspace` MCP tool.
+
+From a local source checkout, you can also seed directly:
+
 ```bash
 SENDLENS_DEMO_MODE=1 npm run demo:seed
 ```

@@ -707,7 +707,7 @@ if (shouldExposeDemoSeedTool()) {
       description:
         [
           "Seed and activate a synthetic SendLens demo workspace in the local DuckDB cache without Instantly credentials.",
-          "Use this only when the user explicitly wants demo, dummy, sample, synthetic, or proof data.",
+          "Use this when setup_doctor reports no Instantly API key and no local cache, or when the user explicitly wants demo, dummy, sample, synthetic, or proof data.",
           "Demo rows are public-safe fixtures, not customer data; label downstream analysis as synthetic demo evidence.",
         ].join(" "),
       inputSchema: {},

@@ -995,6 +995,7 @@ SELECT
     WHEN COALESCE(cb.leads_remaining, 0) = 0 THEN 'blocker_no_uncontacted_leads'
     WHEN COALESCE(tr.template_steps, 0) = 0 THEN 'blocker_missing_templates'
     WHEN COALESCE(tr.blank_body_templates, 0) > 0 THEN 'blocker_blank_body'
+    WHEN cb.tracking_status = 'tracking_unknown' OR cb.deliverability_settings_status = 'deliverability_settings_unknown' THEN 'review_settings_unknown'
     WHEN cb.disable_bounce_protect = TRUE OR cb.allow_risky_contacts = TRUE THEN 'review_deliverability_guardrails_relaxed'
     WHEN cb.open_tracking = TRUE OR cb.link_tracking = TRUE THEN 'review_tracking_enabled'
     WHEN COALESCE(sr.senders_over_5pct_bounce_30d, 0) > 0 THEN 'review_sender_bounce_risk'
@@ -1013,16 +1014,18 @@ ORDER BY
     WHEN 'blocker_no_uncontacted_leads' THEN 2
     WHEN 'blocker_missing_templates' THEN 3
     WHEN 'blocker_blank_body' THEN 4
-    WHEN 'review_deliverability_guardrails_relaxed' THEN 5
-    WHEN 'review_tracking_enabled' THEN 6
-    WHEN 'review_sender_bounce_risk' THEN 7
-    ELSE 7
+    WHEN 'review_settings_unknown' THEN 5
+    WHEN 'review_deliverability_guardrails_relaxed' THEN 6
+    WHEN 'review_tracking_enabled' THEN 7
+    WHEN 'review_sender_bounce_risk' THEN 8
+    ELSE 9
   END,
   cb.campaign_name;`,
     notes: [
       "Replace '{{campaign_name}}' with a campaign name fragment, or swap the WHERE clause for `c.id = '{{campaign_id}}'`.",
       "Pair this with `personalization-leak-audit` when the campaign uses template variables.",
       "Launch QA should produce blockers, warnings, and ready checks; do not bury blockers under general analysis.",
+      "Unknown tracking or deliverability settings mean the local cache lacks this field; ask for refresh_data before treating settings as ready.",
       "Open/link tracking warnings come from cold email best-practice policy, not a hard Instantly API error.",
       "Disabled bounce protection or allowed risky contacts are surfaced as deliverability guardrail review items.",
     ],
@@ -1054,6 +1057,7 @@ ORDER BY
   bounce_rate_pct,
   unique_reply_rate_pct,
   CASE
+    WHEN tracking_status = 'tracking_unknown' OR deliverability_settings_status = 'deliverability_settings_unknown' THEN 'review_settings_unknown'
     WHEN disable_bounce_protect = TRUE OR allow_risky_contacts = TRUE THEN 'review_deliverability_guardrails'
     WHEN open_tracking = TRUE OR link_tracking = TRUE THEN 'review_tracking'
     ELSE 'ready_with_settings_checked'
@@ -1061,15 +1065,17 @@ ORDER BY
 FROM sendlens.campaign_overview
 ORDER BY
   CASE settings_review_status
-    WHEN 'review_deliverability_guardrails' THEN 1
-    WHEN 'review_tracking' THEN 2
-    ELSE 3
+    WHEN 'review_settings_unknown' THEN 1
+    WHEN 'review_deliverability_guardrails' THEN 2
+    WHEN 'review_tracking' THEN 3
+    ELSE 4
   END,
   emails_sent_count DESC,
   campaign_name
 LIMIT 100;`,
     notes: [
       "Use this when a user asks whether tracking, bounce protection, risky contacts, unsubscribe headers, or ESP matching are on per campaign.",
+      "`tracking_unknown` or `deliverability_settings_unknown` means the local cache does not know the setting yet; refresh before making launch-readiness claims.",
       "`disable_bounce_protect = TRUE` and `allow_risky_contacts = TRUE` mean deliverability guardrails are relaxed and deserve launch review.",
       "`open_tracking` and `link_tracking` are exact campaign settings, not inferred from opens or clicks.",
     ],

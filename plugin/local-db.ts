@@ -808,12 +808,14 @@ async function ensureSchema(conn: DuckDBConnection) {
         c.disable_bounce_protect,
         c.insert_unsubscribe_header,
         CASE
+          WHEN c.open_tracking IS NULL OR c.link_tracking IS NULL THEN 'tracking_unknown'
           WHEN c.open_tracking = TRUE AND c.link_tracking = TRUE THEN 'open_and_link_tracking_on'
           WHEN c.open_tracking = TRUE THEN 'open_tracking_on'
           WHEN c.link_tracking = TRUE THEN 'link_tracking_on'
           ELSE 'tracking_off'
         END AS tracking_status,
         CASE
+          WHEN c.disable_bounce_protect IS NULL OR c.allow_risky_contacts IS NULL OR c.match_lead_esp IS NULL THEN 'deliverability_settings_unknown'
           WHEN c.disable_bounce_protect = TRUE OR c.allow_risky_contacts = TRUE THEN 'deliverability_guardrails_relaxed'
           WHEN c.match_lead_esp = TRUE THEN 'esp_matching_enabled'
           ELSE 'standard_deliverability_guardrails'

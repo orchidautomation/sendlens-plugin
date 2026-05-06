@@ -194,7 +194,7 @@ export async function buildSetupDoctorReport() {
       name: "Credentials",
       status: "fail",
       message: "Instantly API key is not set and no local DuckDB cache exists.",
-      detail: "Configure SENDLENS_INSTANTLY_API_KEY or enable SENDLENS_DEMO_MODE=1 before analysis.",
+      detail: "For the fastest first run, call seed_demo_workspace now to initialize synthetic demo data. Configure SENDLENS_INSTANTLY_API_KEY later for real workspace analysis.",
     });
   }
 
@@ -281,7 +281,8 @@ export async function buildSetupDoctorReport() {
     nextSteps.push("Use workspace_snapshot or analysis skills against the existing local cache.");
     nextSteps.push("Configure SENDLENS_INSTANTLY_API_KEY before running refresh_data for fresh Instantly data.");
   } else if (!apiKeyConfigured && !demoMode) {
-    nextSteps.push("Configure SENDLENS_INSTANTLY_API_KEY, or call seed_demo_workspace for synthetic demo data.");
+    nextSteps.push("Call seed_demo_workspace now for a zero-key synthetic demo workspace.");
+    nextSteps.push("Configure SENDLENS_INSTANTLY_API_KEY later when you want real Instantly workspace analysis.");
   } else if (demoMode && !dbExists) {
     nextSteps.push("Call seed_demo_workspace before analysis.");
   } else {

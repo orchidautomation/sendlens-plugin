@@ -21,7 +21,7 @@ Runtime skill files live in `skills/<skill>/SKILL.md`. Public skill docs live un
 
 | Skill | Use it for | Evidence posture |
 | --- | --- | --- |
-| [sendlens-setup](./skills/sendlens-setup.md) | First-run setup, doctor checks, host bundle verification, and demo-mode guidance | Operational checks only; suppresses secrets and labels demo evidence synthetic |
+| [sendlens-setup](./skills/sendlens-setup.md) | First-run setup, doctor checks, host bundle verification, and zero-key demo seeding | Suppresses secrets and seeds only public-safe demo evidence when no key/cache exists |
 | [workspace-health](./skills/workspace-health.md) | Broad health checks, reply-rate diagnosis, account quality, and next actions | Exact aggregate metrics first; sampled lead evidence only when called out |
 | [campaign-performance](./skills/campaign-performance.md) | Campaign comparisons, step/variant ranking, runway, and prioritization | Exact campaign/account/step metrics when available; explicit metric basis for sequence ranking |
 | [copy-analysis](./skills/copy-analysis.md) | Subject/body critique, template structure, personalization QA, and rewrite guidance | Intended templates plus locally reconstructed outbound samples; not exact delivered email text |
@@ -38,7 +38,7 @@ Commands are host entry points in `commands/*.md`. Most route to a specialist ag
 
 | Command | Argument hint | Default agent | Notes |
 | --- | --- | --- | --- |
-| `/sendlens-setup` | none | `sendlens-setup` | Runs first-run setup and doctor checks before analysis |
+| `/sendlens-setup` | none | `sendlens-setup` | Runs first-run setup, doctor checks, and zero-key demo seeding before analysis |
 | `/workspace-health` | `[campaign-name-or-instantly-tag]` | `workspace-triager` | First stop for broad workspace diagnosis |
 | `/campaign-performance` | `[campaign-name] [instantly-tag]` | `campaign-analyst` | Ranks campaigns, steps, variants, runway, and sequence fatigue |
 | `/copy-analysis` | `[campaign-name] [instantly-tag]` | `copy-auditor` | Scopes to one campaign before copy and personalization analysis |
@@ -69,7 +69,7 @@ MCP tools are registered by the local `sendlens` stdio server. Responses are JSO
 | Tool | Purpose | When to use |
 | --- | --- | --- |
 | `setup_doctor` | Read setup readiness without shell commands | First run, missing key diagnosis, local cache readiness, stale refresh state |
-| `seed_demo_workspace` | Seed synthetic proof data when demo seeding is available | No API key configured, or `SENDLENS_DEMO_MODE=1` explicitly enabled |
+| `seed_demo_workspace` | Seed synthetic proof data when demo seeding is available | No API key configured and no local cache exists, or `SENDLENS_DEMO_MODE=1` explicitly enabled |
 | `refresh_status` | Read local refresh lifecycle state | Stale data, startup refresh, or cache-readiness questions |
 | `refresh_data` | Refresh local cache from Instantly | Explicit fresh pull, client/workspace change, or stale/failed status |
 | `workspace_snapshot` | First high-level read of a workspace, tag, or campaign-name scope | Broad triage and campaign selection |

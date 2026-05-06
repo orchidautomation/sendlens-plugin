@@ -20,7 +20,7 @@ is_demo_mode() {
 
 if [[ -z "${API_KEY}" ]] && ! is_demo_mode; then
   echo "[sendlens] SENDLENS_INSTANTLY_API_KEY is not set. Runtime can start in read-only local-cache mode; refresh_data will require the key." >&2
-  echo "[sendlens] For synthetic demo data without production credentials, set SENDLENS_DEMO_MODE=1 and run npm run demo:seed." >&2
+  echo "[sendlens] Run /sendlens-setup in your AI host to initialize a zero-key synthetic demo workspace." >&2
 fi
 
 if ! command -v node >/dev/null 2>&1; then

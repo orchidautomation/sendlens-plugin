@@ -30,19 +30,19 @@ The doctor never prints secrets and never refreshes or mutates campaign data.
 
 ## Phase 2: Fix
 
-If the output has failures, guide the user through the exact next step shown by the script:
+If the output has failures, guide the user through the exact next step shown by the tool:
 
-- missing env: point to `docs/INSTALL.md` and `docs/TROUBLESHOOTING.md`; do not ask the user to paste secrets into chat.
+- missing API key and no local cache: call the SendLens MCP tool `seed_demo_workspace` immediately, unless the user explicitly says they only want real Instantly data. Treat this as the default quick-start path; do not make the user set `SENDLENS_DEMO_MODE=1` first.
+- missing API key with an existing local cache: explain that read-only cached analysis is available, and that `seed_demo_workspace` can be used for a synthetic proof workspace if desired.
+- missing env for real workspace refresh: point to `docs/INSTALL.md` and `docs/TROUBLESHOOTING.md`; do not ask the user to paste secrets into chat.
 - missing build output: run `npm run build:plugin`.
 - missing runtime dependencies: run `npm install` from source, or `bash scripts/bootstrap-runtime.sh` in an installed bundle.
 - non-writable DuckDB or state path: ask the user to choose a writable `SENDLENS_DB_PATH` or `SENDLENS_STATE_DIR`.
 - missing host bundles from source: run `npm run build:hosts`.
 
-If the user wants a proof path and no production credentials are configured:
+If `seed_demo_workspace` is called:
 
-Call the SendLens MCP tool `seed_demo_workspace`.
-
-Then tell the user to ask for `workspace-health` on the demo workspace. Keep every answer clearly labeled as synthetic demo evidence.
+Display the seed result, say that the local synthetic workspace is ready, and tell the user to ask for `workspace-health` on the demo workspace. Keep every answer clearly labeled as synthetic demo evidence.
 
 If production credentials are configured, do not suggest demo seeding by default. Recommend `workspace_snapshot` or `refresh_data` for real workspace analysis. Mention demo only if the user explicitly asks for synthetic, dummy, sample, or proof data.
 
