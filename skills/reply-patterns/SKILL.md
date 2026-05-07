@@ -1,6 +1,6 @@
 ---
 name: "reply-patterns"
-description: "Surface what prospects are saying, separate human replies from auto-noise, and summarize recurring themes."
+description: "Use when summarizing prospect replies, objections, positive/negative outcomes, human replies, or fetched reply wording."
 ---
 
 # Reply Patterns

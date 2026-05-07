@@ -1,6 +1,6 @@
 ---
 name: "icp-signals"
-description: "Infer who responds best from exact aggregates plus sampled lead evidence, while keeping coverage caveats explicit."
+description: "Use when analyzing which leads, segments, payload fields, or ICP hypotheses respond best within campaign evidence."
 ---
 
 # ICP Signals

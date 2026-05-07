@@ -1,6 +1,6 @@
 ---
 name: "account-manager-brief"
-description: "Create client-safe AM briefs, daily action queues, and risk summaries from SendLens evidence."
+description: "Use when the user needs a client-safe account update, AM action queue, risk summary, or next actions."
 ---
 
 # Account Manager Brief

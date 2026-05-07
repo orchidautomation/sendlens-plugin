@@ -58,7 +58,7 @@ Where relevant, SendLens responses should include:
 - exact `campaign_overview`
 - `human_reply_sample` grouped into positive, negative, and neutral buckets
 - optional `rendered_outbound_sample`
-- output caps and reconstruction warnings
+- output caps and reconstruction warnings; when rendered outbound samples are included, preserve that they are locally reconstructed sample evidence, not byte-for-byte delivered email text
 
 `analysis_starters`
 
@@ -79,8 +79,18 @@ Where relevant, SendLens responses should include:
 - resolves exactly one campaign by `campaign_id` or unambiguous `campaign_name`
 - writes exact inbound reply rows into `reply_emails`; default `sync_newest` mode fetches the newest page and upserts by email ID
 - preserves pagination/cache state in `reply_email_hydration_state`
-- returns `fetch_result` counts by `i_status`, new-vs-updated row counts, cursor/exhaustion state, readiness metadata, and a bounded `fetched_reply_sample`
+- returns `fetch_result` counts by `i_status`, new-vs-updated row counts, cursor/exhaustion state, readiness metadata, output limits, and a bounded `fetched_reply_sample`
 - default statuses are `1`, `-1`, and `-2`; out-of-office status `0` is excluded unless explicitly requested
+
+## Runtime Regression Coverage
+
+Run `npm run test:mcp-response-contract` when changing MCP tools, response field names, warnings, caps, or this document. The test pins the response-contract terms that agents rely on for:
+
+- `workspace_snapshot` exact metrics, campaign rows, coverage, warnings, output limits, and readiness
+- `load_campaign_data` campaign overview, reply samples, rendered outbound reconstruction caveats, and output limits
+- `analysis_starters` recipe metadata, exactness labels, SQL, and notes
+- `analyze_data` rationale, row caps, truncation state, warnings, and rows
+- `fetch_reply_text` hydration result metadata, sample caps, and bounded reply samples
 
 ## Exactness Rules
 

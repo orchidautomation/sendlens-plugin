@@ -44,6 +44,18 @@ That runs:
 - Pluxx lint
 - full multi-target host build
 
+## Behavior-Changing Release Gate
+
+Before releasing a change that affects skills, agents, MCP response shape, evidence language, privacy boundaries, or client-safe wording, verify:
+
+- the PR explains the affected SendLens workflow
+- `docs/MCP_RESPONSE_CONTRACT.md` is updated for MCP shape changes
+- prompt/package contracts cover the behavior
+- evidence classes remain exact, sampled, reconstructed, hydrated, inferred, or unsupported as appropriate
+- client-safe wording does not suppress material uncertainty
+- host portability or generated bundle issues are routed to Pluxx
+- a decision record exists for durable behavior or ownership changes
+
 ## Tag-Based Release Flow
 
 1. Update `package.json` version.

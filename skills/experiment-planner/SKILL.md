@@ -1,6 +1,6 @@
 ---
 name: "experiment-planner"
-description: "Plan the next campaign experiment with hypothesis, metric, stop condition, and evidence basis."
+description: "Use when planning the next campaign experiment, improvement test, success metric, guardrail, or stop condition."
 ---
 
 # Experiment Planner

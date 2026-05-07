@@ -293,6 +293,17 @@ server.registerTool(
         replyRows.slice(0, REPLY_CONTEXT_SCAN_LIMIT),
         reply_bucket_limit,
       );
+      const warnings: string[] = [];
+      if (replyRowsTruncated) {
+        warnings.push(
+          `Reply context scan was truncated to the ${REPLY_CONTEXT_SCAN_LIMIT} most recent rows before stratified sampling. Narrow the campaign question or use analyze_data for a tighter slice.`,
+        );
+      }
+      if (include_rendered_outbound) {
+        warnings.push(
+          "Rendered outbound rows are locally reconstructed sample evidence, not byte-for-byte delivered email text.",
+        );
+      }
       return jsonResponse({
         refreshed,
         demo_mode: isDemoMode() ? true : undefined,
@@ -302,11 +313,7 @@ server.registerTool(
           rendered_outbound_sample_limit: RENDERED_OUTBOUND_SAMPLE_LIMIT,
           response_max_chars: MCP_TEXT_RESPONSE_MAX_CHARS,
         },
-        warnings: replyRowsTruncated
-          ? [
-            `Reply context scan was truncated to the ${REPLY_CONTEXT_SCAN_LIMIT} most recent rows before stratified sampling. Narrow the campaign question or use analyze_data for a tighter slice.`,
-          ]
-          : undefined,
+        warnings: warnings.length > 0 ? warnings : undefined,
         campaign_overview: overviewRows[0] ?? null,
         human_reply_sample: replySample,
         rendered_outbound_sample: renderedRows,
@@ -491,6 +498,10 @@ server.registerTool(
         fetch_result: fetchResult,
         demo_mode: isDemoMode() ? true : undefined,
         readiness: readinessPayload(readiness),
+        output_limits: {
+          fetched_reply_sample_limit: sample_limit,
+          response_max_chars: MCP_TEXT_RESPONSE_MAX_CHARS,
+        },
         fetched_reply_sample: fetchedRows,
       });
     } catch (error) {
