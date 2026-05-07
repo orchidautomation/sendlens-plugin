@@ -1,4 +1,4 @@
-import { Inter, JetBrains_Mono, Instrument_Serif } from "next/font/google";
+import { Inter, JetBrains_Mono, Fraunces } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({
@@ -14,25 +14,25 @@ const mono = JetBrains_Mono({
   display: "swap"
 });
 
-const instrument = Instrument_Serif({
+const fraunces = Fraunces({
   subsets: ["latin"],
-  weight: ["400"],
-  style: ["normal", "italic"],
+  weight: ["400", "500", "600"],
+  style: ["italic"],
   variable: "--font-serif",
   display: "swap"
 });
 
 export const metadata = {
-  title: "SendLens — see what lands",
+  title: "SendLens · Agentic intelligence for outbound",
   description:
-    "A private plugin that grades your Instantly campaigns from outcomes. See what is working, who is responding, and what to change next."
+    "SendLens turns your Instantly account into something you can talk to. Ask in plain English inside Claude or Codex and get a clear, evidence-backed answer about your actual campaigns, senders, and replies."
 };
 
 export default function RootLayout({ children }) {
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${mono.variable} ${instrument.variable}`}
+      className={`${inter.variable} ${mono.variable} ${fraunces.variable}`}
     >
       <body>{children}</body>
     </html>

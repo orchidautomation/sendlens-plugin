@@ -77,11 +77,15 @@ export default function WaitlistForm() {
       <div className="form-card-head">
         <span className="label">Get access</span>
         <h2>
-          Install <span className="serif">SendLens.</span>
+          Install{" "}
+          <span className="brand-name brand-name--inline">
+            <span className="brand-name__send">Send</span>
+            <span className="brand-name__lens">Lens.</span>
+          </span>
         </h2>
         <p>
           Add your details to unlock the install command for your host. The
-          plugin is free — this just helps us see who&apos;s using SendLens.
+          plugin is free. This just helps us see who&apos;s using SendLens.
         </p>
       </div>
 
@@ -195,7 +199,7 @@ export default function WaitlistForm() {
         <div className="success">
           <span className="success-pill">✓ Access granted</span>
           <h3>
-            Install commands <span className="serif">ready.</span>
+            Install commands <span className="brand-name__lens">ready.</span>
           </h3>
           <p>
             You are in. The plugin stays free. The business later is shared
