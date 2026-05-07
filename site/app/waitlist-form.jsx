@@ -30,6 +30,7 @@ export default function WaitlistForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [copiedHost, setCopiedHost] = useState("");
 
   const toolSummary = useMemo(() => form.tools.join(", "), [form.tools]);
 
@@ -72,20 +73,44 @@ export default function WaitlistForm() {
     }
   }
 
+  async function copyCommand(host, command) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(command);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = command;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+      setCopiedHost(host);
+      window.setTimeout(() => setCopiedHost(""), 1400);
+    } catch {
+      setError("Could not copy that command. Select the command text and copy it manually.");
+    }
+  }
+
   return (
     <div className="form-card">
       <div className="form-card-head">
-        <span className="label">Get access</span>
+        <span className="label">Get the plugin</span>
         <h2>
-          Install{" "}
+          Show me the install command for{" "}
           <span className="brand-name brand-name--inline">
             <span className="brand-name__send">Send</span>
             <span className="brand-name__lens">Lens.</span>
           </span>
         </h2>
         <p>
-          Add your details to unlock the install command for your host. The
-          plugin is free. This just helps us see who&apos;s using SendLens.
+          The plugin is free and open source. Add your work email and outbound
+          stack, then we&apos;ll show the installer for the AI tool you use. Your
+          signup helps us learn which teams need shared reviews, cross-platform
+          analysis, and client-ready reporting next.
         </p>
       </div>
 
@@ -98,7 +123,7 @@ export default function WaitlistForm() {
                 id="name"
                 value={form.name}
                 onChange={(event) => updateField("name", event.target.value)}
-                placeholder="ObiWan Keniboi"
+                placeholder="Obi-Wan Kenobi"
               />
             </div>
             <div className="field">
@@ -180,8 +205,9 @@ export default function WaitlistForm() {
               <span className="arrow">→</span>
             </button>
             <span className="subtle">
-              Private by default. The plugin runs locally. This form only logs
-              who is evaluating SendLens and what they want help with.
+              No paid account. The OSS plugin is read-only and does not upload
+              Instantly data to a SendLens server. We only store this form
+              submission.
             </span>
           </div>
 
@@ -197,14 +223,14 @@ export default function WaitlistForm() {
 
       {submitted ? (
         <div className="success">
-          <span className="success-pill">✓ Access granted</span>
+          <span className="success-pill">✓ You are on the list</span>
           <h3>
             Install commands <span className="brand-name__lens">ready.</span>
           </h3>
           <p>
-            You are in. The plugin stays free. The business later is shared
-            workflow, agency operations, cross-provider normalization, and
-            outcome-graded outbound intelligence.
+            Copy the installer for your AI tool below. The OSS plugin stays
+            free; your signup helps prioritize shared workspaces, scheduled
+            reviews, cross-platform analysis, and team-ready reporting.
           </p>
           <p className="success-note">
             Want the source too?{" "}
@@ -217,14 +243,76 @@ export default function WaitlistForm() {
               <div className="command-card" key={entry.host}>
                 <div className="command-header">
                   <strong>{entry.host}</strong>
-                  <span>copy &amp; run</span>
+                  <button
+                    aria-label={`Copy ${entry.host} install command`}
+                    className="command-copy"
+                    onClick={() => copyCommand(entry.host, entry.command)}
+                    title={`Copy ${entry.host} install command`}
+                    type="button"
+                  >
+                    {copiedHost === entry.host ? <CheckIcon /> : <CopyIcon />}
+                  </button>
                 </div>
                 <code>{entry.command}</code>
               </div>
             ))}
           </div>
+          <div className="setup-steps">
+            <h4>After it installs</h4>
+            <ol>
+              <li>
+                Add your Instantly API key where your AI tool can read it:
+                <code>export SENDLENS_INSTANTLY_API_KEY=&quot;your_key_here&quot;</code>
+              </li>
+              <li>
+                Restart Claude Code or Codex so it picks up the environment
+                variable.
+              </li>
+              <li>
+                Ask SendLens a campaign question, like which campaigns to
+                scale, rewrite, pause, or inspect next.
+              </li>
+            </ol>
+          </div>
+          {error ? <p className="error">{error}</p> : null}
         </div>
       ) : null}
     </div>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16">
+      <rect
+        height="13"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="2"
+        width="13"
+        x="8"
+        y="8"
+      />
+      <path
+        d="M5 16H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16">
+      <path
+        d="M20 6 9 17l-5-5"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2.4"
+      />
+    </svg>
   );
 }

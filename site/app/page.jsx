@@ -1,13 +1,13 @@
 import WaitlistForm from "./waitlist-form";
 
 const QUESTIONS = [
-  "Rank every active campaign by what most needs attention: bounce risk, lead runway, or low replies.",
-  "How many days of new prospects do I have left before I run dry?",
-  "Rank my top campaigns by winning steps and copy variants, and tell me how confident you are.",
-  "Which sentence in my Step 0 email are prospects reacting to, and which is triggering objections?",
-  "Summarize positive vs. negative reply themes for this campaign. Quote representative replies.",
-  "Which custom lead fields show up more often on prospects who reply positively?",
-  "Build this week's account-manager brief: wins, risks, actions, asks, next review date."
+  "Rank every active campaign by bounce risk, lead runway, missing senders, low replies, or stopped sending.",
+  "Which campaign should I scale, kill, or rewrite this week?",
+  "Audit my sent emails for unfilled personalization tokens, blank bodies, and affected variants.",
+  "Which sentence in my Step 0 email are prospects reacting to, and which one is triggering objections?",
+  "Pull the latest replies and separate real buying signals from auto-replies and out-of-office noise.",
+  "Which lead fields show up more often on prospects who reply positively? Treat it as a hypothesis.",
+  "Build this week's account-manager brief: wins, risks, current actions, client asks, and next review date."
 ];
 
 function BrandMark({ size = 32 }) {
@@ -19,6 +19,7 @@ function BrandMark({ size = 32 }) {
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
+      className="brand-mark__svg"
     >
       <path
         d="M70 84C70 60 90 42 113 42H170"
@@ -65,20 +66,21 @@ export default function Page() {
           <div className="board__hero-inner">
             <span className="eyebrow">
               <span className="dot" />
-              Free · Open source · Local-first
+              Free OSS plugin · Instantly today · No spreadsheets
             </span>
 
             <h1 className="display">
-              Agentic intelligence
+              A senior outbound analyst
               <br />
-              for <span className="display__em">outbound.</span>
+              inside your <span className="display__em">AI tool.</span>
             </h1>
 
             <p className="lede">
-              SendLens turns your Instantly account into something you can talk
-              to. Ask in plain English inside Claude or Codex and get a clear,
-              evidence-backed answer about your actual campaigns, your actual
-              senders, and what your actual prospects are saying back.
+              SendLens turns Instantly into clear answers about which campaigns
+              to scale, kill, or rewrite, which copy is pulling replies, where
+              sender or lead risk is building, and what to test next. Ask in
+              plain language. Get evidence-backed answers without dashboards,
+              spreadsheets, or SQL.
             </p>
 
             <div className="oracle" aria-label="Example questions you can ask">
@@ -91,11 +93,6 @@ export default function Page() {
                 ))}
               </ul>
               <span className="oracle__caret" aria-hidden="true" />
-            </div>
-
-            <div className="caption">
-              <span className="caption__rule" />
-              <span>SendLens / 2026</span>
             </div>
           </div>
         </aside>
