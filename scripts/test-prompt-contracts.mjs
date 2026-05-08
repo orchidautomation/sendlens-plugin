@@ -204,6 +204,32 @@ const PROMOTION_GUARD_CONTRACTS = [
     ],
   },
   {
+    path: "agents/campaign-analyst.md",
+    patterns: [
+      /Before calling the campaign working, a winner, or ready to scale/i,
+      /reply_context/i,
+      /campaign_variants/i,
+      /reply hydration/i,
+      /mismatch or complaint replies/i,
+    ],
+  },
+  {
+    path: "agents/copy-auditor.md",
+    patterns: [
+      /hydrated reply bodies already present in `reply_context`/i,
+      /possible wrong-template delivery/i,
+      /intended copy angle was tested/i,
+    ],
+  },
+  {
+    path: "agents/reply-auditor.md",
+    patterns: [
+      /irrelevant copy, wrong industry, wrong compliance domain/i,
+      /setup\/template-resolution risk/i,
+      /wrong-template or wrong-topic complaint replies/i,
+    ],
+  },
+  {
     path: "INSTRUCTIONS.md",
     patterns: [
       /broad aggregates only shortlist candidates/i,
