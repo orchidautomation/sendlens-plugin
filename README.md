@@ -101,6 +101,50 @@ After installing, type this in your AI tool:
 
 It will walk you through connecting your account (or starting in demo mode) and confirm everything is ready.
 
+## Connect Instantly
+
+SendLens needs a read-only Instantly API key in `SENDLENS_INSTANTLY_API_KEY` for real workspace analysis. Set it before starting Claude Code, Cursor, Codex, or OpenCode.
+
+For a one-session launch:
+
+```bash
+export SENDLENS_INSTANTLY_API_KEY="your_instantly_api_key"
+claude
+```
+
+Or pass it only to the host process:
+
+```bash
+SENDLENS_INSTANTLY_API_KEY="your_instantly_api_key" claude
+```
+
+For repeat use, put it in the folder where you launch your AI tool:
+
+```bash
+# .env
+SENDLENS_INSTANTLY_API_KEY=your_instantly_api_key
+```
+
+Then start the host from that folder. SendLens loads `.env` and `.env.local` from the launch folder when the plugin starts.
+
+For multiple clients, give each client its own cache path:
+
+```bash
+# ~/clients/acme/.env
+SENDLENS_INSTANTLY_API_KEY=your_acme_instantly_api_key
+SENDLENS_DB_PATH=$HOME/.sendlens/acme.duckdb
+SENDLENS_STATE_DIR=$HOME/.sendlens/acme-state
+```
+
+Then launch from that client folder:
+
+```bash
+cd ~/clients/acme
+claude
+```
+
+Do not paste API keys into chat. If you change keys, restart or reload the host before asking SendLens to refresh.
+
 Want to try SendLens without connecting Instantly? Ask for demo data during `/sendlens-setup` only when you do not have a real Instantly key configured. When a real API key is configured, SendLens keeps the default workflow focused on your real workspace. To force demo mode anyway, set `SENDLENS_DEMO_MODE=1` before starting the host.
 
 Demo results are synthetic. They are useful for seeing the experience, not for judging a real campaign or customer. Seeding demo data does not delete real workspace rows from the local cache; it activates a synthetic workspace named `demo_workspace`, and a real `refresh_data` later switches active analysis back to live Instantly data.
@@ -149,7 +193,8 @@ cp .env.example .env
 For real workspace analysis:
 
 ```bash
-SENDLENS_INSTANTLY_API_KEY=your_key
+export SENDLENS_INSTANTLY_API_KEY="your_instantly_api_key"
+npm run refresh:plugin
 ```
 
 For synthetic local demo data instead:

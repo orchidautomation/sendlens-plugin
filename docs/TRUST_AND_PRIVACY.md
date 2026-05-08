@@ -41,6 +41,8 @@ Default local state:
 | `~/.sendlens/refresh-status.json` | Last refresh status, timestamps, source, and error context |
 | `~/.sendlens/session-start-refresh.log` | Local session-start refresh log |
 
+The DuckDB cache also stores cache-owner metadata such as schema version, active workspace id, selected client, context root, DB path, and a SHA-256 API-key fingerprint. SendLens uses this fingerprint to prevent a newly configured key from silently reading a previous client's cache. The raw API key is never stored.
+
 Optional overrides:
 
 | Env var | Effect |

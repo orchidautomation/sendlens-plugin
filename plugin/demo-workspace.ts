@@ -6,6 +6,7 @@ import {
   getDb,
   run,
   setActiveWorkspaceId,
+  stampCacheOwner,
 } from "./local-db";
 import { writeRefreshStatus } from "./refresh-status";
 
@@ -32,6 +33,7 @@ export async function seedDemoWorkspace() {
     await setActiveWorkspaceId(db, DEMO_WORKSPACE_ID, "fast");
 
     const endedAt = new Date();
+    await stampCacheOwner(db, DEMO_WORKSPACE_ID, endedAt.toISOString());
     await appendSyncLog(db, {
       id: `demo-${randomUUID()}`,
       workspaceId: DEMO_WORKSPACE_ID,

@@ -3,6 +3,14 @@ import os from "node:os";
 import path from "node:path";
 
 type EnvMap = Record<string, string>;
+export type LoadedSendLensEnv = {
+  client: string | undefined;
+  clientsDir: string;
+  contextRoot: string;
+  loaded: string[];
+};
+
+let lastLoadedSendLensEnv: LoadedSendLensEnv | null = null;
 
 function parseEnvFile(filePath: string): EnvMap {
   const content = fs.readFileSync(filePath, "utf8");
@@ -117,11 +125,14 @@ export function loadClientEnv(rootDir = process.cwd()) {
 
   sanitizeSendLensEnv();
 
-  return {
+  const result = {
     client: resolved.client,
     clientsDir: resolved.clientsDir,
+    contextRoot: path.resolve(rootDir),
     loaded,
   };
+  lastLoadedSendLensEnv = result;
+  return result;
 }
 
 export function loadSendLensEnv() {
@@ -129,4 +140,8 @@ export function loadSendLensEnv() {
     ? path.resolve(process.env.SENDLENS_CONTEXT_ROOT)
     : process.cwd();
   return loadClientEnv(rootDir);
+}
+
+export function getLastLoadedSendLensEnv() {
+  return lastLoadedSendLensEnv;
 }

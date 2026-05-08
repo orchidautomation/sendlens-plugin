@@ -5,13 +5,15 @@ import { listColumns, listTables, searchCatalog } from "./catalog";
 import { isDemoMode, seedDemoWorkspace } from "./demo-workspace";
 import { loadSendLensEnv } from "./env";
 import {
+  assertCacheReadableForCurrentEnv,
+  CacheReadinessError,
   closeDb,
   getActiveWorkspaceId,
   getDb,
   LocalDbUnavailableError,
   query,
 } from "./local-db";
-import { refreshWorkspace } from "./instantly-ingest";
+import { refreshWorkspaceAtomically } from "./instantly-ingest";
 import { hydrateReplyText } from "./instantly-ingest";
 import { getQueryRecipes, QUERY_RECIPE_TOPICS } from "./query-recipes";
 import { toReplyTextFetchResult } from "./reply-text-contract";
@@ -24,7 +26,7 @@ loadSendLensEnv();
 
 const server = new McpServer({
   name: "sendlens",
-  version: "0.1.27",
+  version: "0.1.28",
 });
 
 const SESSION_REFRESH_WAIT_TIMEOUT_MS = 15_000;
@@ -152,6 +154,32 @@ function dbUnavailableResponse(error: LocalDbUnavailableError) {
   });
 }
 
+function cacheReadinessResponse(error: CacheReadinessError) {
+  return jsonResponse({
+    error: error.message,
+    issue: error.issue,
+    cache_owner: {
+      workspace_id: error.cacheOwner.workspaceId,
+      client: error.cacheOwner.client || null,
+      owner_mode: error.cacheOwner.ownerMode,
+      schema_version: error.cacheOwner.schemaVersion,
+      api_key_fingerprint_prefix: error.ownerFingerprintPrefix,
+      context_root: error.cacheOwner.contextRoot,
+      db_path: error.cacheOwner.dbPath,
+      refreshed_at: error.cacheOwner.refreshedAt,
+    },
+    expected_api_key_fingerprint_prefix: error.expectedFingerprintPrefix,
+    hint:
+      "Run refresh_data with the currently configured Instantly key to rebuild and stamp the local cache. If you intentionally want the old cached data, unset SENDLENS_INSTANTLY_API_KEY before starting the host.",
+  });
+}
+
+async function ensureCacheReadable(db: Awaited<ReturnType<typeof getDb>>) {
+  if (isDemoMode()) return undefined;
+  const readiness = await assertCacheReadableForCurrentEnv(db);
+  return readiness.warning ? [readiness.warning] : undefined;
+}
+
 server.registerTool(
   "refresh_data",
   {
@@ -177,7 +205,7 @@ server.registerTool(
     try {
       const refreshed = isDemoMode()
         ? await seedDemoWorkspace()
-        : await refreshWorkspace({
+        : await refreshWorkspaceAtomically({
           campaignIds: campaign_ids,
           source: "manual",
         });
@@ -242,7 +270,7 @@ server.registerTool(
     try {
       const refreshed = isDemoMode()
         ? await seedDemoWorkspace()
-        : await refreshWorkspace({
+        : await refreshWorkspaceAtomically({
           campaignIds: [campaign_id],
           source: "manual",
           forceHybrid: true,
@@ -250,6 +278,7 @@ server.registerTool(
         });
 
       db = await getDb();
+      const cacheWarnings = await ensureCacheReadable(db);
       const workspaceId = refreshed.workspaceId ?? (await getActiveWorkspaceId(db));
       if (!workspaceId) {
         return jsonResponse({
@@ -304,6 +333,7 @@ server.registerTool(
           "Rendered outbound rows are locally reconstructed sample evidence, not byte-for-byte delivered email text.",
         );
       }
+      if (cacheWarnings) warnings.push(...cacheWarnings);
       return jsonResponse({
         refreshed,
         demo_mode: isDemoMode() ? true : undefined,
@@ -319,6 +349,9 @@ server.registerTool(
         rendered_outbound_sample: renderedRows,
       });
     } catch (error) {
+      if (error instanceof CacheReadinessError) {
+        return cacheReadinessResponse(error);
+      }
       if (error instanceof LocalDbUnavailableError) {
         return dbUnavailableResponse(error);
       }
@@ -394,6 +427,7 @@ server.registerTool(
     try {
       await ensureDemoWorkspaceForRead();
       db = await getDb();
+      const cacheWarnings = await ensureCacheReadable(db);
       const workspaceId = await getActiveWorkspaceId(db);
       if (!workspaceId) {
         return jsonResponse({
@@ -498,6 +532,7 @@ server.registerTool(
         fetch_result: fetchResult,
         demo_mode: isDemoMode() ? true : undefined,
         readiness: readinessPayload(readiness),
+        warnings: cacheWarnings,
         output_limits: {
           fetched_reply_sample_limit: sample_limit,
           response_max_chars: MCP_TEXT_RESPONSE_MAX_CHARS,
@@ -505,6 +540,9 @@ server.registerTool(
         fetched_reply_sample: fetchedRows,
       });
     } catch (error) {
+      if (error instanceof CacheReadinessError) {
+        return cacheReadinessResponse(error);
+      }
       if (error instanceof LocalDbUnavailableError) {
         return dbUnavailableResponse(error);
       }
@@ -542,6 +580,7 @@ server.registerTool(
     try {
       await ensureDemoWorkspaceForRead();
       db = await getDb();
+      const cacheWarnings = await ensureCacheReadable(db);
       const hasScope = Boolean(instantly_tag?.trim() || campaign_name?.trim());
       const summary = hasScope
         ? await buildScopedWorkspaceSnapshot(db, {
@@ -551,10 +590,17 @@ server.registerTool(
         : await buildWorkspaceSummary(db);
       const payload = {
         ...summary,
+        warnings: [
+          ...((summary as { warnings?: string[] }).warnings ?? []),
+          ...(cacheWarnings ?? []),
+        ],
         readiness: readinessPayload(readiness),
       };
       return jsonResponse(payload);
     } catch (error) {
+      if (error instanceof CacheReadinessError) {
+        return cacheReadinessResponse(error);
+      }
       if (error instanceof LocalDbUnavailableError) {
         return dbUnavailableResponse(error);
       }
@@ -603,13 +649,18 @@ server.registerTool(
     try {
       await ensureDemoWorkspaceForRead();
       db = await getDb();
+      const cacheWarnings = await ensureCacheReadable(db);
       const columns = await listColumns(db, table_name);
       return jsonResponse({
         table: table_name,
         readiness: readinessPayload(readiness),
+        warnings: cacheWarnings,
         columns,
       });
     } catch (error) {
+      if (error instanceof CacheReadinessError) {
+        return cacheReadinessResponse(error);
+      }
       if (error instanceof LocalDbUnavailableError) {
         return dbUnavailableResponse(error);
       }
@@ -640,13 +691,18 @@ server.registerTool(
     try {
       await ensureDemoWorkspaceForRead();
       db = await getDb();
+      const cacheWarnings = await ensureCacheReadable(db);
       const matches = await searchCatalog(db, search);
       return jsonResponse({
         query: search,
         readiness: readinessPayload(readiness),
+        warnings: cacheWarnings,
         matches,
       });
     } catch (error) {
+      if (error instanceof CacheReadinessError) {
+        return cacheReadinessResponse(error);
+      }
       if (error instanceof LocalDbUnavailableError) {
         return dbUnavailableResponse(error);
       }
@@ -789,6 +845,7 @@ server.registerTool(
     try {
       await ensureDemoWorkspaceForRead();
       db = await getDb();
+      const cacheWarnings = await ensureCacheReadable(db);
       const workspaceId = await getActiveWorkspaceId(db);
       if (!workspaceId) {
         return jsonResponse({
@@ -838,11 +895,15 @@ server.registerTool(
         warnings: resultTruncated
           ? [
             `Result set was truncated to ${ANALYZE_DATA_ROW_LIMIT} rows. Add a tighter WHERE clause, aggregate, select fewer columns, or lower LIMIT for a sharper result.`,
+            ...(cacheWarnings ?? []),
           ]
-          : undefined,
+          : cacheWarnings,
         rows: returnedRows,
       });
     } catch (err) {
+      if (err instanceof CacheReadinessError) {
+        return cacheReadinessResponse(err);
+      }
       if (err instanceof LocalDbUnavailableError) {
         return dbUnavailableResponse(err);
       }

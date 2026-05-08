@@ -1,6 +1,7 @@
 export const LOCAL_PLUGIN_NAME = "sendlens";
 export const DEFAULT_DB_DIRECTORY = ".sendlens";
 export const DEFAULT_DB_FILENAME = "workspace-cache.duckdb";
+export const CURRENT_CACHE_SCHEMA_VERSION = "sendlens.cache.v1";
 
 export const FULL_LEADS_THRESHOLD = 500;
 export const FULL_EMAILS_THRESHOLD = 1000;

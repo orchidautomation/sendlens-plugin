@@ -1,9 +1,19 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DEMO_WORKSPACE_ID } from "./demo-workspace";
-import { isUnresolvedEnvValue } from "./env";
+import { getLastLoadedSendLensEnv, isUnresolvedEnvValue } from "./env";
 import { validateApiKey } from "./instantly-client";
-import { resolveDbPath } from "./local-db";
+import {
+  CacheReadinessError,
+  type CacheOwnerMetadata,
+  closeDb,
+  currentApiKeyFingerprint,
+  fingerprintPrefix,
+  getCacheOwnerMetadata,
+  getCacheReadiness,
+  getDb,
+  resolveDbPath,
+} from "./local-db";
 import { readRefreshStatus, type RefreshStatus } from "./refresh-status";
 
 type CheckStatus = "pass" | "warn" | "fail" | "info";
@@ -174,6 +184,24 @@ export async function buildSetupDoctorReport() {
     ? await validateApiKey(apiKey!)
     : null;
   const activeCacheIsDemo = refreshStatus.workspaceId === DEMO_WORKSPACE_ID;
+  const envLoad = getLastLoadedSendLensEnv();
+  let cacheOwner: CacheOwnerMetadata | null = null;
+  let cacheReadinessError: CacheReadinessError | null = null;
+  if (dbExists) {
+    let db: Awaited<ReturnType<typeof getDb>> | null = null;
+    try {
+      db = await getDb({ timeoutMs: 1_000, retryMs: 50 });
+      cacheOwner = await getCacheOwnerMetadata(db);
+      await getCacheReadiness(db);
+    } catch (error) {
+      if (error instanceof CacheReadinessError) {
+        cacheReadinessError = error;
+        cacheOwner = error.cacheOwner;
+      }
+    } finally {
+      if (db) closeDb(db);
+    }
+  }
 
   const checks: DoctorCheck[] = [];
 
@@ -229,6 +257,26 @@ export async function buildSetupDoctorReport() {
       ? `Exists at ${dbPath}${dbSize ? ` (${dbSize})` : ""}.`
       : `No local DuckDB cache found at ${dbPath}.`,
   });
+  if (cacheOwner || cacheReadinessError) {
+    checks.push({
+      name: "Cache owner",
+      status: cacheReadinessError ? "fail" : "pass",
+      message: cacheReadinessError
+        ? cacheReadinessError.message
+        : `Cache owner is compatible with the current environment${cacheOwner?.workspaceId ? ` for workspace ${cacheOwner.workspaceId}` : ""}.`,
+      detail: JSON.stringify({
+        schema_version: cacheOwner?.schemaVersion ?? null,
+        workspace_id: cacheOwner?.workspaceId ?? null,
+        client: cacheOwner?.client || null,
+        owner_mode: cacheOwner?.ownerMode ?? null,
+        owner_api_key_fingerprint_prefix: fingerprintPrefix(cacheOwner?.apiKeyFingerprint),
+        current_api_key_fingerprint_prefix: fingerprintPrefix(currentApiKeyFingerprint()),
+        context_root: cacheOwner?.contextRoot ?? null,
+        db_path: cacheOwner?.dbPath ?? null,
+        refreshed_at: cacheOwner?.refreshedAt ?? null,
+      }),
+    });
+  }
   if (!demoMode && apiKeyConfigured && activeCacheIsDemo) {
     checks.push({
       name: "Active workspace",
@@ -315,7 +363,10 @@ export async function buildSetupDoctorReport() {
     !apiKeyConfigured ||
     credentialValidation?.status === "invalid" ||
     credentialValidation?.status === "unreachable";
-  if (!apiKeyConfigured && !demoMode && dbExists) {
+  if (cacheReadinessError) {
+    nextSteps.push("Run refresh_data now to rebuild and stamp the local cache for the currently configured Instantly API key.");
+    nextSteps.push("Unset SENDLENS_INSTANTLY_API_KEY before starting the host only if you intentionally want to inspect the preserved legacy cache.");
+  } else if (!apiKeyConfigured && !demoMode && dbExists) {
     nextSteps.push("Use workspace_snapshot or analysis skills against the existing local cache.");
     nextSteps.push("Configure SENDLENS_INSTANTLY_API_KEY before running refresh_data for fresh Instantly data.");
   } else if (!apiKeyConfigured && !demoMode) {
@@ -340,7 +391,7 @@ export async function buildSetupDoctorReport() {
     setup_status: setupStatus,
     demo_mode: demoMode,
     capabilities: {
-      local_cache_read: dbExists,
+      local_cache_read: dbExists && !cacheReadinessError,
       live_refresh: liveRefreshReady || demoMode,
       demo_seed: demoSeedReady,
       instantly_key_validated: credentialValidation?.status === "valid",
@@ -348,6 +399,10 @@ export async function buildSetupDoctorReport() {
     cache_freshness: cacheFreshness,
     paths: {
       plugin_root: root,
+      context_root: envLoad?.contextRoot ?? process.env.SENDLENS_CONTEXT_ROOT ?? process.cwd(),
+      selected_client: process.env.SENDLENS_CLIENT?.trim() || null,
+      clients_dir: envLoad?.clientsDir ?? path.resolve(process.cwd(), ".env.clients"),
+      loaded_env_files: envLoad?.loaded ?? [],
       db_path: dbPath,
       state_dir: stateDir,
     },

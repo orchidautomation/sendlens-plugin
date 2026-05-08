@@ -79,14 +79,16 @@ For a one-session launch, export the value or prefix the host command:
 
 ```bash
 export SENDLENS_INSTANTLY_API_KEY=your_key
-cc
+claude
 
-SENDLENS_INSTANTLY_API_KEY=your_key cc
+SENDLENS_INSTANTLY_API_KEY=your_key claude
 ```
 
 Running `SENDLENS_INSTANTLY_API_KEY=your_key` by itself only creates a shell variable in shells such as zsh; it does not export the key to Claude Code or other child processes.
 
 Claude Code and other hosts pass environment values to the MCP process when the host/plugin starts. After changing the key, reload plugins or restart the host before retrying `refresh_data`.
+
+If SendLens says a different API key is configured than the key that last refreshed the DuckDB cache, this is intentional stale-cache protection. Run `refresh_data` with the current key so SendLens can rebuild and stamp the cache. If Instantly is temporarily failing, the old cache is preserved but blocked for the new key. To inspect the old cached data anyway, restart the host without `SENDLENS_INSTANTLY_API_KEY`.
 
 For client-specific local overlays, use:
 

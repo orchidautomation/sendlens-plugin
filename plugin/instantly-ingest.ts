@@ -1,4 +1,6 @@
 import type { DuckDBConnection } from "@duckdb/node-api";
+import fs from "node:fs/promises";
+import path from "node:path";
 import * as instantly from "./instantly-client";
 import {
   DEFAULT_PAGE_SIZE,
@@ -21,8 +23,11 @@ import {
   clearWorkspaceMetadata,
   getDb,
   query,
+  resolveDbPath,
   run,
   setActiveWorkspaceId,
+  shouldCopyLiveCacheForRefresh,
+  stampCacheOwner,
 } from "./local-db";
 import {
   allocateVariantEmailCaps,
@@ -2482,6 +2487,83 @@ async function storeCampaignData(
   );
 }
 
+async function fileExists(filePath: string) {
+  return fs.stat(filePath).then(() => true).catch(() => false);
+}
+
+async function shouldSeedShadowFromLive(liveDbPath: string) {
+  if (!(await fileExists(liveDbPath))) return false;
+
+  const previousDbPath = process.env.SENDLENS_DB_PATH;
+  process.env.SENDLENS_DB_PATH = liveDbPath;
+  let db: Awaited<ReturnType<typeof getDb>> | null = null;
+  try {
+    db = await getDb({ timeoutMs: 1_000, retryMs: 50 });
+    const shouldCopy = await shouldCopyLiveCacheForRefresh(db);
+    if (shouldCopy) {
+      await run(db, "CHECKPOINT");
+    }
+    return shouldCopy;
+  } catch {
+    return false;
+  } finally {
+    if (db) closeDb(db);
+    if (previousDbPath == null) {
+      delete process.env.SENDLENS_DB_PATH;
+    } else {
+      process.env.SENDLENS_DB_PATH = previousDbPath;
+    }
+  }
+}
+
+export async function refreshWorkspaceAtomically(options: RefreshOptions = {}) {
+  const liveDbPath = resolveDbPath();
+  const shadowDbPath = path.join(
+    path.dirname(liveDbPath),
+    `.${path.basename(liveDbPath)}.refreshing`,
+  );
+
+  await fs.mkdir(path.dirname(liveDbPath), { recursive: true });
+  await fs.rm(shadowDbPath, { force: true });
+  await fs.rm(`${shadowDbPath}.wal`, { force: true });
+
+  if (await shouldSeedShadowFromLive(liveDbPath)) {
+    await fs.copyFile(liveDbPath, shadowDbPath);
+  }
+
+  const previousDbPath = process.env.SENDLENS_DB_PATH;
+  process.env.SENDLENS_DB_PATH = shadowDbPath;
+  let summary;
+  try {
+    summary = await refreshWorkspace(options);
+  } finally {
+    if (previousDbPath == null) {
+      delete process.env.SENDLENS_DB_PATH;
+    } else {
+      process.env.SENDLENS_DB_PATH = previousDbPath;
+    }
+  }
+
+  if (await fileExists(shadowDbPath)) {
+    await fs.rename(shadowDbPath, liveDbPath);
+    if (summary.workspaceId) {
+      const liveDb = await getDb();
+      try {
+        await stampCacheOwner(
+          liveDb,
+          summary.workspaceId,
+          summary.last_refreshed_at ?? new Date().toISOString(),
+        );
+      } finally {
+        closeDb(liveDb);
+      }
+    }
+    await writeRefreshStatus({ dbPath: liveDbPath });
+  }
+
+  return summary;
+}
+
 export async function refreshWorkspace(options: RefreshOptions = {}) {
   const apiKey = process.env.SENDLENS_INSTANTLY_API_KEY?.trim();
   if (!apiKey) {
@@ -2686,6 +2768,8 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
     }
 
     await setActiveWorkspaceId(db, workspaceId, "fast");
+    const finishedAt = new Date().toISOString();
+    await stampCacheOwner(db, workspaceId, finishedAt);
     const summary = await buildWorkspaceSummary(db, workspaceId);
     await appendTraceLog("refresh.complete", {
       workspaceId,
@@ -2694,7 +2778,6 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
       campaigns: selectedCampaigns.length,
       totalElapsedMs: Date.now() - refreshStartedAt,
     });
-    const finishedAt = new Date().toISOString();
     await appendSyncLog(db, {
       id: syncLogId,
       workspaceId,

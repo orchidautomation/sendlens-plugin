@@ -1,8 +1,10 @@
 import fs from "node:fs/promises";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { DuckDBInstance, type DuckDBConnection } from "@duckdb/node-api";
 import {
+  CURRENT_CACHE_SCHEMA_VERSION,
   DEFAULT_DB_DIRECTORY,
   DEFAULT_DB_FILENAME,
   PUBLIC_TABLES,
@@ -36,6 +38,44 @@ export class LocalDbUnavailableError extends Error {
     super(message);
     this.name = "LocalDbUnavailableError";
     this.cause = cause;
+  }
+}
+
+export type CacheOwnerMetadata = {
+  schemaVersion: string | null;
+  apiKeyFingerprint: string | null;
+  workspaceId: string | null;
+  client: string | null;
+  contextRoot: string | null;
+  dbPath: string | null;
+  ownerMode: string | null;
+  refreshedAt: string | null;
+};
+
+export type CacheReadinessIssue = "schema_mismatch" | "legacy_unowned_cache" | "api_key_mismatch";
+
+export class CacheReadinessError extends Error {
+  code = "cache_readiness_failed" as const;
+  issue: CacheReadinessIssue;
+  cacheOwner: CacheOwnerMetadata;
+  expectedFingerprintPrefix: string | null;
+  ownerFingerprintPrefix: string | null;
+
+  constructor(
+    issue: CacheReadinessIssue,
+    message: string,
+    details: {
+      cacheOwner: CacheOwnerMetadata;
+      expectedFingerprintPrefix?: string | null;
+      ownerFingerprintPrefix?: string | null;
+    },
+  ) {
+    super(message);
+    this.name = "CacheReadinessError";
+    this.issue = issue;
+    this.cacheOwner = details.cacheOwner;
+    this.expectedFingerprintPrefix = details.expectedFingerprintPrefix ?? null;
+    this.ownerFingerprintPrefix = details.ownerFingerprintPrefix ?? null;
   }
 }
 
@@ -1307,6 +1347,7 @@ async function ensureSchema(conn: DuckDBConnection) {
   for (const statement of statements) {
     await run(conn, statement);
   }
+  await stampCacheSchemaVersion(conn);
 }
 
 function esc(value: string) {
@@ -1335,6 +1376,168 @@ export async function getPluginState(
   );
   const value = rows[0]?.value;
   return typeof value === "string" ? value : null;
+}
+
+const CACHE_OWNER_KEYS = {
+  schemaVersion: "cache_schema_version",
+  apiKeyFingerprint: "cache_owner_api_key_fingerprint",
+  workspaceId: "cache_owner_workspace_id",
+  client: "cache_owner_client",
+  contextRoot: "cache_owner_context_root",
+  dbPath: "cache_owner_db_path",
+  ownerMode: "cache_owner_mode",
+  refreshedAt: "cache_owner_refreshed_at",
+} as const;
+
+function normalizeNullable(value: string | undefined | null) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+export function currentApiKeyFingerprint() {
+  const apiKey = normalizeNullable(process.env.SENDLENS_INSTANTLY_API_KEY);
+  if (!apiKey) return null;
+  return createHash("sha256").update(apiKey, "utf8").digest("hex");
+}
+
+export function fingerprintPrefix(fingerprint: string | undefined | null) {
+  return fingerprint ? fingerprint.slice(0, 12) : null;
+}
+
+function cacheOwnerMode() {
+  const demoMode = normalizeNullable(process.env.SENDLENS_DEMO_MODE)?.toLowerCase();
+  if (demoMode === "1" || demoMode === "true" || demoMode === "yes") {
+    return "demo";
+  }
+  if (normalizeNullable(process.env.SENDLENS_CLIENT)) {
+    return "client";
+  }
+  return "default";
+}
+
+export async function getCacheOwnerMetadata(
+  conn: DuckDBConnection,
+): Promise<CacheOwnerMetadata> {
+  const [
+    schemaVersion,
+    apiKeyFingerprint,
+    workspaceId,
+    client,
+    contextRoot,
+    dbPath,
+    ownerMode,
+    refreshedAt,
+  ] = await Promise.all([
+    getPluginState(conn, CACHE_OWNER_KEYS.schemaVersion),
+    getPluginState(conn, CACHE_OWNER_KEYS.apiKeyFingerprint),
+    getPluginState(conn, CACHE_OWNER_KEYS.workspaceId),
+    getPluginState(conn, CACHE_OWNER_KEYS.client),
+    getPluginState(conn, CACHE_OWNER_KEYS.contextRoot),
+    getPluginState(conn, CACHE_OWNER_KEYS.dbPath),
+    getPluginState(conn, CACHE_OWNER_KEYS.ownerMode),
+    getPluginState(conn, CACHE_OWNER_KEYS.refreshedAt),
+  ]);
+
+  return {
+    schemaVersion,
+    apiKeyFingerprint,
+    workspaceId,
+    client,
+    contextRoot,
+    dbPath,
+    ownerMode,
+    refreshedAt,
+  };
+}
+
+export async function stampCacheSchemaVersion(conn: DuckDBConnection) {
+  const current = await getPluginState(conn, CACHE_OWNER_KEYS.schemaVersion);
+  if (!current) {
+    await setPluginState(conn, CACHE_OWNER_KEYS.schemaVersion, CURRENT_CACHE_SCHEMA_VERSION);
+  }
+}
+
+export async function stampCacheOwner(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  refreshedAt = new Date().toISOString(),
+) {
+  const apiKeyFingerprint = currentApiKeyFingerprint();
+  await setPluginState(conn, CACHE_OWNER_KEYS.schemaVersion, CURRENT_CACHE_SCHEMA_VERSION);
+  await setPluginState(conn, CACHE_OWNER_KEYS.workspaceId, workspaceId);
+  await setPluginState(conn, CACHE_OWNER_KEYS.ownerMode, cacheOwnerMode());
+  await setPluginState(conn, CACHE_OWNER_KEYS.dbPath, resolveDbPath());
+  await setPluginState(conn, CACHE_OWNER_KEYS.refreshedAt, refreshedAt);
+
+  const client = normalizeNullable(process.env.SENDLENS_CLIENT);
+  await setPluginState(conn, CACHE_OWNER_KEYS.client, client ?? "");
+  const contextRoot = normalizeNullable(process.env.SENDLENS_CONTEXT_ROOT) ?? process.cwd();
+  await setPluginState(conn, CACHE_OWNER_KEYS.contextRoot, path.resolve(contextRoot));
+  await setPluginState(conn, CACHE_OWNER_KEYS.apiKeyFingerprint, apiKeyFingerprint ?? "");
+}
+
+export async function getCacheReadiness(
+  conn: DuckDBConnection,
+): Promise<{ readable: true; owner: CacheOwnerMetadata; warning?: string }> {
+  const owner = await getCacheOwnerMetadata(conn);
+  if (owner.schemaVersion && owner.schemaVersion !== CURRENT_CACHE_SCHEMA_VERSION) {
+    throw new CacheReadinessError(
+      "schema_mismatch",
+      `The local SendLens DuckDB cache was created for schema ${owner.schemaVersion}, but this plugin expects ${CURRENT_CACHE_SCHEMA_VERSION}. Run refresh_data with a valid Instantly key to rebuild the cache before reading campaign data.`,
+      { cacheOwner: owner },
+    );
+  }
+
+  const expectedFingerprint = currentApiKeyFingerprint();
+  if (!expectedFingerprint) {
+    return {
+      readable: true,
+      owner,
+      warning:
+        "No SENDLENS_INSTANTLY_API_KEY is configured, so SendLens is reading the existing local cache without live-refresh identity validation.",
+    };
+  }
+
+  if (!owner.apiKeyFingerprint) {
+    throw new CacheReadinessError(
+      "legacy_unowned_cache",
+      "A SENDLENS_INSTANTLY_API_KEY is configured, but the local DuckDB cache has no cache-owner fingerprint. Run refresh_data to rebuild and stamp the cache for this key, or unset the key if you intentionally want to inspect legacy cached data.",
+      {
+        cacheOwner: owner,
+        expectedFingerprintPrefix: fingerprintPrefix(expectedFingerprint),
+      },
+    );
+  }
+
+  if (owner.apiKeyFingerprint !== expectedFingerprint) {
+    throw new CacheReadinessError(
+      "api_key_mismatch",
+      "A different SENDLENS_INSTANTLY_API_KEY is configured than the key that last refreshed this DuckDB cache. The previous cache is preserved but will not be used for this key. Run refresh_data after Instantly is reachable to replace the cache, or set SENDLENS_DB_PATH to a client-specific database.",
+      {
+        cacheOwner: owner,
+        expectedFingerprintPrefix: fingerprintPrefix(expectedFingerprint),
+        ownerFingerprintPrefix: fingerprintPrefix(owner.apiKeyFingerprint),
+      },
+    );
+  }
+
+  return { readable: true, owner };
+}
+
+export async function assertCacheReadableForCurrentEnv(conn: DuckDBConnection) {
+  return getCacheReadiness(conn);
+}
+
+export async function shouldCopyLiveCacheForRefresh(conn: DuckDBConnection) {
+  const owner = await getCacheOwnerMetadata(conn);
+  const expectedFingerprint = currentApiKeyFingerprint();
+  if (owner.schemaVersion && owner.schemaVersion !== CURRENT_CACHE_SCHEMA_VERSION) {
+    return false;
+  }
+  if (!expectedFingerprint) {
+    return true;
+  }
+  return owner.apiKeyFingerprint === expectedFingerprint;
 }
 
 export async function clearWorkspaceData(

@@ -189,6 +189,8 @@ Supported order:
 3. `.env.clients/<client>.env`
 4. `.env.clients/<client>.local.env`
 
+The root is the folder where the host was launched. For example, `cd ~/clients/acme && claude` loads `~/clients/acme/.env` before the SendLens MCP process starts. Changing folders inside an already-running host does not restart the MCP process.
+
 Optional client selection:
 
 Use `SENDLENS_CLIENT` when you want to load a client-specific env overlay.
@@ -202,12 +204,15 @@ export SENDLENS_DB_PATH=/absolute/path/to/workspace-cache.duckdb
 export SENDLENS_STATE_DIR=/absolute/path/to/sendlens-state
 ```
 
-For a one-off host launch, `SENDLENS_INSTANTLY_API_KEY=your_key cc` passes the key only to that Claude Code process. A standalone `SENDLENS_INSTANTLY_API_KEY=your_key` assignment is not enough unless it is exported.
+For a one-off host launch, `SENDLENS_INSTANTLY_API_KEY=your_key claude` passes the key only to that Claude Code process. A standalone `SENDLENS_INSTANTLY_API_KEY=your_key` assignment is not enough unless it is exported.
 
 ## What Gets Stored Locally
 
 - DuckDB cache: `~/.sendlens/workspace-cache.duckdb`
 - refresh status: `~/.sendlens/refresh-status.json`
 - session-start log: `~/.sendlens/session-start-refresh.log`
+- cache owner metadata inside DuckDB: schema version, workspace id, selected client, context root, DB path, and a SHA-256 fingerprint of the API key that last refreshed the cache. The raw API key is never stored.
+
+If a different API key is configured than the one that last refreshed the cache, SendLens preserves the old DuckDB but blocks cached analysis until a refresh succeeds for the current key. Use per-client `SENDLENS_DB_PATH` values when you want durable separate client caches.
 
 SendLens is local-first and read-only against Instantly. See [trust and privacy](./TRUST_AND_PRIVACY.md) for the full data-handling model.
