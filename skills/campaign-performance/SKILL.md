@@ -1,6 +1,6 @@
 ---
 name: "campaign-performance"
-description: "Compare campaigns, rank variants, and explain campaign-level winners and losers."
+description: "Use when comparing campaigns, ranking steps or variants, checking runway, or deciding what to scale or kill."
 ---
 
 # Campaign Performance

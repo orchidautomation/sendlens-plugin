@@ -55,10 +55,114 @@ const PROHIBITED_AGENT_SURFACES = [
 
 const COMMAND_ROUTING_EXCEPTIONS = new Map([
   [
+    "using-sendlens",
+    "Using SendLens is an explicit operating-contract entrypoint; it is not a SendLens analysis subtask and does not route to an MCP-only specialist agent.",
+  ],
+  [
     "sendlens-setup",
     "Setup is explicit-invocation and runs the MCP setup doctor workflow; it is not a SendLens analysis subtask and should not route to an MCP-only specialist agent.",
   ],
 ]);
+
+const REQUIRED_USING_SENDLENS_TERMS = [
+  "workspace_snapshot",
+  "analysis_starters",
+  "load_campaign_data",
+  "fetch_reply_text",
+  "reload or reinstall the plugin/MCP server",
+  "exact_aggregate",
+  "sampled_evidence",
+  "reconstructed_outbound",
+  "hydrated_reply_body",
+  "unsupported",
+  "Pluxx",
+];
+
+const REQUIRED_USING_SENDLENS_DENIAL_PATTERNS = [
+  /\bDo not inspect local files\b/i,
+  /\brepository source\b/i,
+  /\braw DuckDB files\b/i,
+  /\bcached JSON\b/i,
+  /\bshell output\b/i,
+  /\bsetup scripts\b/i,
+  /\bBash\b/i,
+  /\bjq\b/i,
+];
+
+const ANALYSIS_SKILLS = [
+  "account-manager-brief",
+  "campaign-launch-qa",
+  "campaign-performance",
+  "cold-email-best-practices",
+  "copy-analysis",
+  "experiment-planner",
+  "icp-signals",
+  "reply-patterns",
+  "workspace-health",
+];
+
+const ROUTING_CONTRACT_CASES = [
+  {
+    prompt: "What is working and not working in this workspace?",
+    skill: "workspace-health",
+    firstTool: "workspace_snapshot",
+    topic: 'analysis_starters(topic="workspace-health")',
+  },
+  {
+    prompt: "Which campaign should I scale?",
+    skill: "campaign-performance",
+    firstTool: "workspace_snapshot",
+    topic: 'analysis_starters(topic="campaign-performance")',
+  },
+  {
+    prompt: "Audit this campaign before launch.",
+    skill: "campaign-launch-qa",
+    firstTool: "workspace_snapshot",
+    topic: 'analysis_starters(topic="campaign-launch-qa")',
+  },
+  {
+    prompt: "Which copy variant is winning?",
+    skill: "copy-analysis",
+    firstTool: "workspace_snapshot",
+    topic: 'analysis_starters(topic="copy-analysis")',
+  },
+  {
+    prompt: "What are prospects objecting to?",
+    skill: "reply-patterns",
+    firstTool: "workspace_snapshot",
+    topic: "fetch_reply_text",
+  },
+  {
+    prompt: "Who seems to respond best?",
+    skill: "icp-signals",
+    firstTool: "workspace_snapshot",
+    topic: 'analysis_starters(topic="icp-signals")',
+  },
+  {
+    prompt: "Write the AM brief for this account.",
+    skill: "account-manager-brief",
+    firstTool: "workspace_snapshot",
+    topic: 'analysis_starters(topic="account-manager-brief")',
+  },
+];
+
+const EVIDENCE_PRESSURE_PATTERNS = [
+  /exact ICP conclusion from sampled leads/i,
+  /reconstructed outbound is what prospects received/i,
+  /client update without caveats/i,
+  /highest reply-rate campaign must be the winner/i,
+  /inbox placement rows are missing/i,
+  /infer reply sentiment from outcome fields/i,
+];
+
+const REQUIRED_ISSUE_TEMPLATES = [
+  ".github/ISSUE_TEMPLATE/bug_report.md",
+  ".github/ISSUE_TEMPLATE/feature_request.md",
+  ".github/ISSUE_TEMPLATE/data_correctness.md",
+  ".github/ISSUE_TEMPLATE/mcp_contract_change.md",
+  ".github/ISSUE_TEMPLATE/privacy_behavior_change.md",
+  ".github/ISSUE_TEMPLATE/host_install_issue.md",
+];
 
 const failures = [];
 
@@ -184,6 +288,12 @@ function checkDescription(data, relativePath) {
     description.length <= DESCRIPTION_MAX_LENGTH,
     `${relativePath}: description is too long (${description.length}; maximum ${DESCRIPTION_MAX_LENGTH})`,
   );
+  if (relativePath.startsWith("skills/")) {
+    assert(
+      description.startsWith("Use when"),
+      `${relativePath}: skill description must start with "Use when" and describe triggering conditions`,
+    );
+  }
 }
 
 function titleFromCommandBody(body) {
@@ -435,9 +545,167 @@ async function collectCommandContracts(skillNames, agentNames) {
   }
 }
 
+async function assertUsingSendLensContract(skillNames) {
+  assert(
+    skillNames.has("using-sendlens"),
+    "skills/: missing required using-sendlens behavior contract",
+  );
+
+  const skillText = await readText("skills/using-sendlens/SKILL.md");
+  const { body, errors } = parseFrontmatter(
+    "skills/using-sendlens/SKILL.md",
+    skillText,
+  );
+  errors.forEach(fail);
+
+  for (const term of REQUIRED_USING_SENDLENS_TERMS) {
+    assert(
+      body.includes(term),
+      `skills/using-sendlens/SKILL.md: missing required contract term "${term}"`,
+    );
+  }
+
+  for (const pattern of REQUIRED_USING_SENDLENS_DENIAL_PATTERNS) {
+    assert(
+      pattern.test(body),
+      `skills/using-sendlens/SKILL.md: missing required no-fallback denial matching ${pattern}`,
+    );
+  }
+
+  assert(
+    /\bUse `analysis_starters` before custom `analyze_data`/i.test(body),
+    "skills/using-sendlens/SKILL.md: must require analysis_starters before custom analyze_data",
+  );
+  assert(
+    /\bNever upgrade sampled evidence, reconstructed outbound, or inference into an exact business claim\b/i.test(
+      body,
+    ),
+    "skills/using-sendlens/SKILL.md: must preserve exactness downgrade rule",
+  );
+  assert(
+    /\bCross-platform and cross-agent mechanics belong in Pluxx\b/i.test(body),
+    "skills/using-sendlens/SKILL.md: must keep cross-host mechanics owned by Pluxx",
+  );
+
+  for (const routingCase of ROUTING_CONTRACT_CASES) {
+    assert(
+      body.includes(routingCase.skill),
+      `skills/using-sendlens/SKILL.md: missing workflow route for "${routingCase.prompt}" -> ${routingCase.skill}`,
+    );
+    assert(
+      body.includes(routingCase.firstTool),
+      `skills/using-sendlens/SKILL.md: missing first tool "${routingCase.firstTool}" for "${routingCase.prompt}"`,
+    );
+    assert(
+      body.includes(routingCase.topic),
+      `skills/using-sendlens/SKILL.md: missing routing topic/tool "${routingCase.topic}" for "${routingCase.prompt}"`,
+    );
+  }
+
+  for (const pattern of EVIDENCE_PRESSURE_PATTERNS) {
+    assert(
+      pattern.test(body),
+      `skills/using-sendlens/SKILL.md: missing pressure-case rule matching ${pattern}`,
+    );
+  }
+
+  const instructions = await readText("INSTRUCTIONS.md");
+  assert(
+    /\busing-sendlens\b/.test(instructions),
+    "INSTRUCTIONS.md: must reference using-sendlens routing contract",
+  );
+}
+
+async function assertAnalysisSkillFallbackRules(skillNames) {
+  for (const skillName of ANALYSIS_SKILLS) {
+    assert(
+      skillNames.has(skillName),
+      `skills/: missing expected analysis skill "${skillName}"`,
+    );
+
+    const relativePath = `skills/${skillName}/SKILL.md`;
+    const text = await readText(relativePath);
+    const { body, errors } = parseFrontmatter(relativePath, text);
+    errors.forEach(fail);
+
+    assert(
+      RELOAD_OR_REINSTALL_PLUGIN_PATTERN.test(body),
+      `${relativePath}: analysis skill must stop on missing MCP tools and tell the user to reload or reinstall the plugin/MCP server`,
+    );
+    assert(
+      /Do not use Bash\b/i.test(body) || /do not use shell\b/i.test(body),
+      `${relativePath}: analysis skill must deny shell/Bash fallback analysis`,
+    );
+    assert(
+      /DuckDB/i.test(body),
+      `${relativePath}: analysis skill must explicitly deny DuckDB fallback analysis`,
+    );
+    assert(
+      /repository inspection|repo source/i.test(body),
+      `${relativePath}: analysis skill must explicitly deny repo inspection fallback analysis`,
+    );
+  }
+}
+
+async function assertContributionAndDecisionGates() {
+  const prTemplate = await readText(".github/PULL_REQUEST_TEMPLATE.md");
+  for (const pattern of [
+    /This belongs in SendLens OSS/i,
+    /routed to Pluxx/i,
+    /Evidence And Privacy Impact/i,
+    /MCP Contract/i,
+    /Behavior Verification/i,
+    /Decision record/i,
+  ]) {
+    assert(
+      pattern.test(prTemplate),
+      `.github/PULL_REQUEST_TEMPLATE.md: missing required gate matching ${pattern}`,
+    );
+  }
+
+  for (const relativePath of REQUIRED_ISSUE_TEMPLATES) {
+    await assertPathExists(relativePath);
+    const text = await readText(relativePath);
+    assert(
+      /SendLens|MCP|evidence|privacy|host|install/i.test(text),
+      `${relativePath}: template should describe its SendLens issue surface`,
+    );
+  }
+
+  const hostInstall = await readText(".github/ISSUE_TEMPLATE/host_install_issue.md");
+  assert(
+    /Pluxx-owned portability/i.test(hostInstall),
+    ".github/ISSUE_TEMPLATE/host_install_issue.md: must route portability issues to Pluxx",
+  );
+
+  const decisionReadme = await readText("docs/decisions/README.md");
+  assert(
+    /SendLens-vs-Pluxx ownership boundaries/i.test(decisionReadme),
+    "docs/decisions/README.md: must describe SendLens-vs-Pluxx decision coverage",
+  );
+
+  const boundaryRecord = await readText(
+    "docs/decisions/2026-05-07-sendlens-pluxx-ownership-boundary.md",
+  );
+  assert(
+    /SendLens owns product behavior/i.test(boundaryRecord) &&
+      /Pluxx owns portability and host mechanics/i.test(boundaryRecord),
+    "docs/decisions/2026-05-07-sendlens-pluxx-ownership-boundary.md: must preserve ownership boundary",
+  );
+
+  const releasing = await readText("docs/RELEASING.md");
+  assert(
+    /Behavior-Changing Release Gate/i.test(releasing),
+    "docs/RELEASING.md: missing behavior-changing release gate",
+  );
+}
+
 const skillNames = await collectSkillContracts();
 const agentNames = await collectAgentContracts();
 await collectCommandContracts(skillNames, agentNames);
+await assertUsingSendLensContract(skillNames);
+await assertAnalysisSkillFallbackRules(skillNames);
+await assertContributionAndDecisionGates();
 
 if (failures.length > 0) {
   console.error("Prompt/package contract failures:");

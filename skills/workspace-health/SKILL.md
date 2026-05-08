@@ -1,6 +1,6 @@
 ---
 name: "workspace-health"
-description: "Diagnose overall workspace health, reply-rate issues, bounce risk, and next actions."
+description: "Use when diagnosing workspace health, reply-rate issues, deliverability risk, sender risk, or next actions."
 ---
 
 # Workspace Health

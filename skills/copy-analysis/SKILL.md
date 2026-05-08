@@ -1,6 +1,6 @@
 ---
 name: "copy-analysis"
-description: "Analyze campaign templates, rendered outbound samples, and reply outcomes to explain copy performance."
+description: "Use when analyzing campaign copy, subject lines, templates, personalization, rendered outbound, or copy-linked replies."
 ---
 
 # Copy Analysis

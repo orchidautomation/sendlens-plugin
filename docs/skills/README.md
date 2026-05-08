@@ -8,6 +8,7 @@ See the [component catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRI
 
 | Skill | Best first use |
 | --- | --- |
+| [using-sendlens](./using-sendlens.md) | MCP-first routing, evidence calibration, fallback boundaries, and workflow selection |
 | [sendlens-setup](./sendlens-setup.md) | First-run setup, doctor checks, host bundle verification, and zero-key demo seeding |
 | [workspace-health](./workspace-health.md) | Broad workspace triage and next-action diagnosis |
 | [campaign-performance](./campaign-performance.md) | Campaign, step, variant, runway, and sequence performance |
@@ -26,6 +27,7 @@ See the [component catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRI
 
 ## Shared Operating Model
 
+- Use `using-sendlens` as the product behavior contract for SendLens routing and evidence boundaries.
 - Start broad with `workspace_snapshot` when the user asks what is happening.
 - Use `sendlens-setup` before analysis when the install, runtime, local state, host bundle, or zero-key demo path needs verification.
 - Pick one campaign before deep copy, ICP, reply, or experiment analysis.

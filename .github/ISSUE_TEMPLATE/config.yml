@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Pluxx portability or host packaging issue
+    url: https://linear.app/orchid-automation/team/PLUXX
+    about: Use Pluxx for Windows/macOS/Linux behavior, host adapters, generated bundles, install packaging, or cross-agent compatibility.

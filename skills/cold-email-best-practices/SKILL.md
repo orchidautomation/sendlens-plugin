@@ -1,6 +1,6 @@
 ---
 name: "cold-email-best-practices"
-description: "Apply SendLens cold-email rules and benchmarks when critiquing campaigns or suggesting changes."
+description: "Use when applying cold-email rules to campaign settings, copy critique, benchmarks, or evidence-backed recommendations."
 ---
 
 # Cold Email Best Practices

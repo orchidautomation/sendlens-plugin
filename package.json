@@ -1,6 +1,6 @@
 {
   "name": "sendlens",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "private": true,
   "description": "Privacy-first outbound campaign analysis for AI workspaces.",
   "license": "MIT",
@@ -26,12 +26,13 @@
     "refresh:plugin": "npm run --silent build:plugin && node ./build/plugin/refresh-cli.js",
     "start:plugin-mcp": "npm run --silent build:plugin && node ./build/plugin/server.js",
     "test:demo": "npm run --silent build:plugin && node scripts/test-demo-workspace.mjs",
+    "test:mcp-response-contract": "node scripts/test-mcp-response-contract.mjs",
     "test:prompt-contracts": "node scripts/test-prompt-contracts.mjs",
     "test:host-bundles": "node scripts/test-host-bundle-inventory.mjs",
     "test:sql-guard": "npm run --silent build:plugin && node scripts/test-sql-guard.mjs",
     "test:db-lock": "npm run --silent build:plugin && node scripts/test-db-lock-retry.mjs",
     "test:templates": "npm run --silent build:plugin && node scripts/test-ingest-template-fixtures.mjs",
-    "test:plugin": "npm run --silent build:plugin && node scripts/test-sql-guard.mjs && node scripts/test-db-lock-retry.mjs && node scripts/test-ingest-template-fixtures.mjs && node scripts/test-local-plugin-sampling.mjs && node scripts/test-local-plugin-runtime.mjs && node scripts/test-reply-hydration-db-reuse.mjs && node scripts/test-reply-fetch-contract.mjs && node scripts/test-demo-workspace.mjs && node scripts/test-prompt-contracts.mjs"
+    "test:plugin": "npm run --silent build:plugin && node scripts/test-sql-guard.mjs && node scripts/test-db-lock-retry.mjs && node scripts/test-ingest-template-fixtures.mjs && node scripts/test-local-plugin-sampling.mjs && node scripts/test-local-plugin-runtime.mjs && node scripts/test-reply-hydration-db-reuse.mjs && node scripts/test-reply-fetch-contract.mjs && node scripts/test-demo-workspace.mjs && node scripts/test-mcp-response-contract.mjs && node scripts/test-prompt-contracts.mjs"
   },
   "dependencies": {
     "@duckdb/node-api": "^1.5.1-r.1",

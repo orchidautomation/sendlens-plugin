@@ -1,6 +1,6 @@
 ---
 name: "campaign-launch-qa"
-description: "Check whether a campaign is ready to launch or scale before sending."
+description: "Use when checking whether a campaign is ready to launch, scale, resume, clone, or hand off."
 ---
 
 # Campaign Launch QA

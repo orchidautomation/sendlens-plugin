@@ -1,6 +1,6 @@
 ---
 name: "sendlens-setup"
-description: "Run SendLens first-run setup and doctor checks for env, runtime, local state, host bundles, and demo mode."
+description: "Use when installing SendLens, checking setup/runtime/cache health, host bundles, credentials, or demo mode."
 disable-model-invocation: true
 ---
 

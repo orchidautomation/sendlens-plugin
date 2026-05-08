@@ -11,6 +11,7 @@ SendLens is the reasoning layer over Instantly data. It runs read-only, stores d
 
 ## Workflow Guidance
 
+- `using-sendlens`: Use as the shared product behavior contract for MCP-first routing, evidence calibration, safe fallbacks, and workflow selection.
 - `workspace-health`: Use for broad health checks, reply-rate diagnosis, account quality, and "what changed?" questions.
 - `campaign-performance`: Use for campaign comparisons, step analysis, variant ranking, and prioritization.
 - `account-manager-brief`: Use for client-safe updates, daily AM action queues, risk summaries, and "what should I tell the client?" questions.
@@ -31,6 +32,7 @@ SendLens is the reasoning layer over Instantly data. It runs read-only, stores d
 
 ## Tool Routing
 
+- Treat `using-sendlens` as the routing contract for SendLens product behavior. Cross-platform and cross-agent startup delivery belongs in Pluxx, not in SendLens.
 - If the user mentions `SendLens`, the plugin name, the Instantly workspace, campaign performance, replies, copy health, or asks to "pull my data", do not freeform first. Start with SendLens tools immediately.
 - Session start already triggers a fresh local refresh of actively sending campaigns. That startup path is intentionally lean: exact analytics, templates, and a sampled lead evidence layer with full replied leads plus bounded non-reply leads. Call `refresh_data` again only when the user explicitly asks for another fresh pull or switches clients.
 - Use SendLens MCP tools as the whole working surface for SendLens analysis. If those tools are missing or unavailable in the host session, stop and tell the user to reload or reinstall the SendLens plugin so the MCP server mounts correctly. Do not inspect local files, run shell setup checks such as `claude mcp list`, parse cached tool outputs with `jq`, query DuckDB through shell, read `refresh-status.json`, wait with shell commands such as `sleep`, or inspect repo source as a substitute for SendLens tool calls.
