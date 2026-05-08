@@ -69,6 +69,11 @@ const REQUIRED_USING_SENDLENS_TERMS = [
   "analysis_starters",
   "load_campaign_data",
   "fetch_reply_text",
+  "reply_context",
+  "campaign_variants",
+  "rendered_outbound_context",
+  "Promotion Guard For Working Claims",
+  "metric leader requiring verification",
   "reload or reinstall the plugin/MCP server",
   "exact_aggregate",
   "sampled_evidence",
@@ -151,8 +156,61 @@ const EVIDENCE_PRESSURE_PATTERNS = [
   /reconstructed outbound is what prospects received/i,
   /client update without caveats/i,
   /highest reply-rate campaign must be the winner/i,
+  /what seems to be working for a client/i,
+  /reply bodies contradict intended outbound/i,
   /inbox placement rows are missing/i,
   /infer reply sentiment from outcome fields/i,
+];
+
+const PROMOTION_GUARD_CONTRACTS = [
+  {
+    path: "skills/using-sendlens/SKILL.md",
+    patterns: [
+      /Promotion Guard For Working Claims/i,
+      /metric leader requiring verification/i,
+      /fetch_reply_text/i,
+    ],
+  },
+  {
+    path: "skills/campaign-performance/SKILL.md",
+    patterns: [
+      /Before calling a campaign `working`/i,
+      /reply_context/i,
+      /campaign_variants/i,
+      /wrong-template or wrong-topic mismatch/i,
+    ],
+  },
+  {
+    path: "skills/reply-patterns/SKILL.md",
+    patterns: [
+      /surprising reply-rate findings/i,
+      /wrong topic, wrong industry, or irrelevant copy/i,
+      /Do not count complaint replies/i,
+    ],
+  },
+  {
+    path: "skills/copy-analysis/SKILL.md",
+    patterns: [
+      /possible wrong-template or wrong-topic delivery issue/i,
+      /intended copy angle was tested/i,
+    ],
+  },
+  {
+    path: "agents/synthesis-reviewer.md",
+    patterns: [
+      /working, winner, scale, or client-safe recommendation/i,
+      /copy-path validation/i,
+      /setup\/template-resolution risk/i,
+    ],
+  },
+  {
+    path: "INSTRUCTIONS.md",
+    patterns: [
+      /broad aggregates only shortlist candidates/i,
+      /Validate `reply_context` and `campaign_variants`/i,
+      /fetch_reply_text` has returned exact reply bodies/i,
+    ],
+  },
 ];
 
 const REQUIRED_ISSUE_TEMPLATES = [
@@ -647,6 +705,18 @@ async function assertAnalysisSkillFallbackRules(skillNames) {
   }
 }
 
+async function assertPromotionGuardContracts() {
+  for (const contract of PROMOTION_GUARD_CONTRACTS) {
+    const text = await readText(contract.path);
+    for (const pattern of contract.patterns) {
+      assert(
+        pattern.test(text),
+        `${contract.path}: missing promotion guard language matching ${pattern}`,
+      );
+    }
+  }
+}
+
 async function assertContributionAndDecisionGates() {
   const prTemplate = await readText(".github/PULL_REQUEST_TEMPLATE.md");
   for (const pattern of [
@@ -705,6 +775,7 @@ const agentNames = await collectAgentContracts();
 await collectCommandContracts(skillNames, agentNames);
 await assertUsingSendLensContract(skillNames);
 await assertAnalysisSkillFallbackRules(skillNames);
+await assertPromotionGuardContracts();
 await assertContributionAndDecisionGates();
 
 if (failures.length > 0) {

@@ -6,6 +6,7 @@
 
 - Fetch only after the campaign is narrowed to exactly one campaign by ID or unambiguous name.
 - Fetch when the user asks what prospects actually said, asks for objections in their own words, or when reply-body wording materially changes the recommendation.
+- Fetch when a campaign appears to be working from aggregate replies but the quality, relevance, or copy path of those replies could change the recommendation.
 - Do not fetch during broad workspace triage or routine campaign ranking.
 
 ## Defaults
@@ -21,6 +22,7 @@
 - Rows with `reply_email_id` and `reply_body_text` are `hydrated_reply_body` for the fetched pages/statuses.
 - `reply_context` without hydrated body text is reply outcome/context evidence, not exact wording.
 - Hydrated reply bodies can be quoted briefly when asked; unfetched replies must be described from outcome labels only.
+- If hydrated replies show prospects reacting to the wrong topic, wrong industry, or wrong template, treat the finding as setup/template-resolution risk before normal sentiment analysis.
 
 ## Fallback Behavior
 

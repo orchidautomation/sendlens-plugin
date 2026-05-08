@@ -35,6 +35,7 @@ Use only SendLens MCP tools for SendLens analysis.
 5. Include out-of-office status `0` only when the user explicitly asks for OOO handling.
 6. When segmenting by uploaded lead metadata or custom fields, query `lead_payload_kv` only after the campaign is fixed.
 7. If title, role, or segment metadata is missing, describe it as thin uploaded lead metadata and recommend adding richer fields to future lead uploads.
+8. If hydrated replies complain about irrelevant copy, wrong industry, wrong compliance domain, or a template that does not match the intended campaign, report setup/template-resolution risk before normal sentiment themes.
 
 ## Fallback And Suppression
 
@@ -42,6 +43,7 @@ Use only SendLens MCP tools for SendLens analysis.
 - Do not inspect local files or repo source; do not use Bash, `sleep`, filesystem inspection, raw DuckDB files, cached JSON, or setup scripts as a fallback.
 - Do not imply exact reply-body language unless `reply_body_text` or `reply_content_preview` is present.
 - Do not treat reconstructed outbound as exact delivered email text.
+- Do not count wrong-template or wrong-topic complaint replies as proof that the intended campaign angle worked.
 - If any required SendLens MCP tool is unavailable, stop and tell the user to reload or reinstall the plugin/MCP server.
 
 ## Return Shape

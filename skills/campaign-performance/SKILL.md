@@ -55,19 +55,27 @@ Read the evidence and metric-basis references before ranking campaigns, steps, v
 - Explicitly state whether a ranking uses `unique_reply_rate`, `opportunity_rate`, exact reply outcomes, sampled evidence, or reconstructed outbound.
 - Use `campaign_variants` to connect step/variant metrics back to actual intended templates.
 
-### Stage 4: Handle Runway Correctly
+### Stage 4: Apply The Working-Claim Guard
+
+- Use broad aggregates to shortlist candidates, not to prove what is working.
+- Before calling a campaign `working`, a `winner`, or ready to scale, run `load_campaign_data` for that campaign and inspect `reply_context` plus `campaign_variants`.
+- Check whether replies are positive business signal, negative/neutral complaints, wrong-person responses, out-of-office noise, or low-volume artifacts before treating reply rate as success.
+- If the campaign looks good by aggregate rate but reply outcomes or reply wording may change the recommendation, switch to `reply-patterns` and hydrate reply text before making the claim.
+- If reconstructed outbound, intended templates, or hydrated replies point to a wrong-template or wrong-topic mismatch, frame the result as setup/template-resolution risk and say the intended angle is unverified.
+
+### Stage 5: Handle Runway Correctly
 
 - For runway, exhaustion, "out of leads", capacity, or throttle questions, do not answer from leads remaining alone.
 - Report new-lead runway, volume runway, schedule-adjusted pace, and real capacity when relevant.
 - Distinguish "out of new prospects" from "out of send volume"; follow-up steps can continue after step 0 is exhausted.
 
-### Stage 5: Narrow Specialist Questions
+### Stage 6: Narrow Specialist Questions
 
 - For copy conclusions, narrow to one campaign and switch to `copy-analysis`.
 - For lead-variable breakdowns, narrow to one campaign and switch to `icp-signals`.
 - For actual reply wording, narrow to one campaign and switch to `reply-patterns`.
 
-### Stage 6: Answer With Evidence Calibration
+### Stage 7: Answer With Evidence Calibration
 
 - Call out whether conclusions are `exact_aggregate`, `sampled_evidence`, `reconstructed_outbound`, `hydrated_reply_body`, or `inference`.
 - Do not overstate sampled lead or reconstructed outbound evidence.

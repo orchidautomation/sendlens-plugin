@@ -35,7 +35,8 @@ Use only SendLens MCP tools for SendLens analysis.
 5. Inspect `rendered_outbound_context` only as reconstructed sampled evidence.
 6. If personalization depends on campaign variables, inspect values through `lead_payload_kv` for that campaign instead of assuming shared payload columns.
 7. If title, role, segment, or trigger variables are missing, describe it as missing uploaded lead metadata/custom fields and recommend adding those fields to future lead uploads.
-7. Anchor rewrite ideas in exact templates, sampled reconstructed issues, reply outcome cohorts, or hydrated reply bodies already available.
+8. If hydrated reply bodies already present in `reply_context` point to a different topic, industry, compliance domain, or value proposition than the intended template, report possible wrong-template delivery before copy recommendations.
+9. Anchor rewrite ideas in exact templates, sampled reconstructed issues, reply outcome cohorts, or hydrated reply bodies already available.
 
 ## Allowed Language
 
@@ -48,6 +49,7 @@ Use only SendLens MCP tools for SendLens analysis.
 
 - Do not say reconstructed outbound is exact delivered email text.
 - Do not infer reply wording from status labels.
+- Do not treat mismatch complaint replies as proof that the intended copy angle was tested.
 - Do not recommend generic marketing rewrites disconnected from campaign evidence.
 - Do not inspect local files or repo source; do not use shell, raw DuckDB files, cached JSON, or setup scripts as a fallback.
 - If any required SendLens MCP tool is unavailable, stop and tell the user to reload or reinstall the plugin/MCP server.
