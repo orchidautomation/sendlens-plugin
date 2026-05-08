@@ -47,14 +47,30 @@ Never upgrade sampled evidence, reconstructed outbound, or inference into an exa
 - If the user asks you to assume reconstructed outbound is what prospects received, keep it labeled as reconstructed outbound.
 - If the user asks for a client update without caveats, include only material caveats but do not suppress uncertainty that changes the recommendation.
 - If the user says the highest reply-rate campaign must be the winner, check metric basis, volume, bounce risk, runway, and sample coverage before agreeing.
+- If the user asks what seems to be working for a client, use broad aggregates only to shortlist campaigns; load campaign evidence before making scale, copy, or client-safe winner claims.
 - If inbox placement rows are missing, say no local inbox-placement evidence was available. Do not say deliverability is clean.
 - If the user asks you to infer reply sentiment from outcome fields, use SendLens reply outcomes and hydrated reply bodies only when available. Do not invent sentiment labels.
+- If reply bodies contradict intended outbound or reconstructed outbound, prioritize the mismatch as a setup or targeting finding before copy/ICP conclusions.
 
 ## Scope Discipline
 
 Start broad only to rank, diagnose, or choose the next lane. Before deep copy, reply, ICP, or experiment analysis, pick one campaign and load campaign evidence.
 
 Do not fan out across many campaigns for deep specialist analysis unless the user explicitly asks for a cross-campaign comparison and accepts the evidence limits.
+
+## Promotion Guard For Working Claims
+
+Treat high reply rate, opportunity count, and campaign rank as triage signals, not proof that a campaign, segment, or copy angle is working.
+
+Before promoting a campaign to `working`, `winner`, `scale`, or client-safe recommendation:
+
+- Narrow to the campaign, tag, or client lane being promoted and run `load_campaign_data` for every campaign you plan to cite as proof.
+- Inspect `reply_context` with `campaign_variants` and `rendered_outbound_context` enough to check whether replies are business signal tied to the intended copy path.
+- If replies are low-volume, mostly negative/neutral/wrong-person, complaints about relevance, or suggest the wrong template/topic reached prospects, pivot to `reply-patterns` or `copy-analysis`.
+- Run `fetch_reply_text` when actual reply wording could change the recommendation, especially when aggregate reply rate looks good but outcome quality or copy relevance is suspect.
+- Until this check passes, call the campaign a `metric leader requiring verification`, not a winner.
+
+If hydrated reply bodies contradict the intended or reconstructed outbound, treat it as a possible setup, targeting, or template-resolution issue. Do not treat those replies as positive signal for the intended angle.
 
 ## Safe Output
 

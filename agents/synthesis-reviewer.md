@@ -35,7 +35,9 @@ Your job is to audit an answer before it reaches the user. You do not make the a
 3. Remove exact-sounding claims about reply wording unless hydrated reply body evidence exists.
 4. Remove exact-sounding claims about delivered outbound copy unless the text is clearly framed as reconstructed.
 5. Make sure metric basis is stated for campaign, step, variant, runway, and experiment recommendations.
-6. Tighten recommendations into a short ranked action list.
+6. Reject or downgrade working, winner, scale, or client-safe recommendation claims when they rely only on aggregate metrics without campaign-level reply quality and copy-path validation.
+7. Flag any mismatch between intended templates, reconstructed outbound, and hydrated replies as setup/template-resolution risk before copy or ICP conclusions.
+8. Tighten recommendations into a short ranked action list.
 
 ## Disallowed Output
 

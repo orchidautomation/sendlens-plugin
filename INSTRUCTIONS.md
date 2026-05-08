@@ -39,6 +39,7 @@ SendLens is the reasoning layer over Instantly data. It runs read-only, stores d
 - `workspace_snapshot`: First read after refresh or for broad workspace questions. This is the default first call for "pull my data", "what's happening?", "what's working?", and "give me the snapshot".
 - `refresh_status`: Use when the user asks what startup refresh is doing, whether the cache is current, or why data looks incomplete or stale.
 - `load_campaign_data`: Use when the user narrows to one campaign and wants copy analysis, ICP analysis, reply outcome analysis, or reconstructed outbound for that campaign. Prefer this over a workspace-wide `refresh_data` call.
+- For "what seems to be working", "winner", "scale", or client recommendation questions, broad aggregates only shortlist candidates. Before promoting a campaign as working, run `load_campaign_data` for the campaign and inspect reply quality plus the intended/reconstructed copy path.
 - `analysis_starters`: First stop for common workspace-health, campaign, copy, reply, ICP, or tag-filter questions before writing custom analysis.
 - For AM operating workflows, use `analysis_starters(topic="account-manager-brief")`, `analysis_starters(topic="campaign-launch-qa")`, or `analysis_starters(topic="experiment-planner")` before custom analysis.
 - `list_tables`, `list_columns`, `search_catalog`: Use when the user asks for custom breakdowns and you need schema discovery.
@@ -77,6 +78,8 @@ If the host does not expose native delegated agents, preserve the same one-campa
 
 - Treat campaign and account headline metrics as exact only when they come from `campaign_analytics`, `step_analytics`, `campaigns`, or `account_daily_metrics`.
 - Keep campaign-level ranking on `campaign_analytics.reply_count_unique` and derived campaign reply rate when available. Do not assume step-level `unique_replies` has the same coverage.
+- Treat high reply rate, opp count, or rank as a metric lead, not proof that the campaign is working. Validate `reply_context` and `campaign_variants` before making scale, copy, or client-safe winner claims.
+- If hydrated reply bodies show prospects objecting to the wrong topic, industry, compliance domain, or template, prioritize that as setup/template-resolution risk. Do not count those replies as signal that the intended angle worked.
 - For step or sequence ranking, use `step_analytics.unique_replies` only when coverage is clearly present for that campaign. If step-level reply counts are sparse or null, switch the ranking basis to `step_analytics.opportunities` and derived opportunity rate, and say so explicitly.
 - For AM briefs, separate internal action priority from client-safe wording. Include an action queue when the user asks what to do next.
 - For launch QA, blockers come first. Do not mark a campaign ready when sender inventory, lead supply, or templates are missing.
@@ -85,7 +88,7 @@ If the host does not expose native delegated agents, preserve the same one-campa
 - Treat `lead_evidence`, `lead_payload_kv`, `reply_context`, and `rendered_outbound_context` as the preferred semantic evidence layer.
 - Treat `sampled_leads` and `sampled_outbound_emails` as storage tables behind that layer. Never project full-population totals from sampled raw rows.
 - Reply outcome labels come from Instantly lead state, primarily `lt_interest_status` and related lead metadata. Do not invent sentiment labels from reply text in V1.
-- In V1, do not imply we have exact inbound reply text. Default to Instantly reply outcomes and reconstructed outbound copy unless a future SendLens MCP surface explicitly returns exact reply bodies.
+- Default to Instantly reply outcomes and reconstructed outbound copy unless `fetch_reply_text` has returned exact reply bodies.
 - Use `campaign_variants` as the source of truth for intended copy templates and `rendered_outbound_context` to verify how those templates render against stored lead variables.
 - Replied leads are intentionally kept in full whenever they can be resolved from the campaign lead feed. Non-reply leads are bounded locally.
 - `custom_payload` is preserved per lead as raw JSON text, but campaign-variable analysis should use `lead_payload_kv` and the ICP payload recipes. Do not assume payload keys are shared across campaigns or customers.

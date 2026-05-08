@@ -32,8 +32,10 @@ Use only SendLens MCP tools for SendLens analysis.
 2. Call `load_campaign_data` for that campaign before custom analysis.
 3. Pull `analysis_starters(topic="campaign-performance")` before writing custom analysis.
 4. Use exact aggregate surfaces for headline performance, reply rate, bounce rate, sequence/step metrics, sender/campaign settings, and template structure.
-5. Use sampled lead/payload/reconstructed evidence only for hypotheses, examples, and next-test direction.
-6. Treat campaign-specific variables through `lead_payload_kv` unless Instantly exposes them as stable lead columns.
+5. Before calling the campaign working, a winner, or ready to scale, inspect `reply_context` and `campaign_variants` to verify reply quality and intended copy path.
+6. If reply wording could flip the conclusion, tell the parent to route through reply hydration instead of treating aggregate reply rate as proof.
+7. Use sampled lead/payload/reconstructed evidence only for hypotheses, examples, and next-test direction.
+8. Treat campaign-specific variables through `lead_payload_kv` unless Instantly exposes them as stable lead columns.
 
 ## Suppression Rules
 
@@ -41,6 +43,7 @@ Use only SendLens MCP tools for SendLens analysis.
 - If any required SendLens MCP tool is unavailable, stop and tell the user to reload or reinstall the plugin/MCP server.
 - Do not claim exact reply-body language unless hydrated reply body text is present.
 - Do not call reconstructed outbound delivered email text.
+- Do not treat mismatch or complaint replies as signal that the intended campaign angle worked.
 - Do not recommend workspace-general advice unless it directly affects this campaign.
 
 ## Return Shape

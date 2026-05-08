@@ -48,15 +48,18 @@ Read the evidence and hydration references before quoting, paraphrasing, or grou
 ### Stage 3: Hydrate Only When Needed
 
 - If the user needs actual reply wording, run `fetch_reply_text` for exactly one campaign in default `mode="sync_newest"`, then query `reply_context` again.
+- Treat "pull the replies", "what did they say", and surprising reply-rate findings as wording requests when they could change the recommendation.
 - Prefer default statuses `[1, -1, -2]`. Do not include out-of-office status `0` unless the user explicitly asks for OOO replies.
 - Use `mode="continue"` only when the user asks for older rows beyond the saved cursor.
 - Avoid `mode="auto"` when the user expects fresh reply bodies.
+- After hydration, compare reply wording to `campaign_variants` and reconstructed outbound context. If prospects complain about the wrong topic, wrong industry, or irrelevant copy, make that the headline instead of summarizing it as normal negative sentiment.
 
 ### Stage 4: Answer With Evidence Calibration
 
 - Quote or characterize exact reply-body language only from hydrated `reply_body_text`/`reply_content_preview`.
 - If reply bodies have not been fetched, use Instantly reply outcomes and say that exact bodies have not been hydrated.
 - Label each material theme as hydrated reply body, exact reply outcome aggregate, sampled evidence, or inference.
+- Do not count complaint replies caused by wrong-template or wrong-topic mismatch as signal that the intended campaign angle worked.
 
 ## Fallback Behavior
 
