@@ -2491,29 +2491,115 @@ async function fileExists(filePath: string) {
   return fs.stat(filePath).then(() => true).catch(() => false);
 }
 
-async function shouldSeedShadowFromLive(liveDbPath: string) {
-  if (!(await fileExists(liveDbPath))) return false;
+function duckDbWalPath(dbPath: string) {
+  return `${dbPath}.wal`;
+}
 
-  const previousDbPath = process.env.SENDLENS_DB_PATH;
-  process.env.SENDLENS_DB_PATH = liveDbPath;
-  let db: Awaited<ReturnType<typeof getDb>> | null = null;
+function isMissingFileError(error: unknown) {
+  return typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT";
+}
+
+async function renameIfExists(fromPath: string, toPath: string) {
   try {
-    db = await getDb({ timeoutMs: 1_000, retryMs: 50 });
-    const shouldCopy = await shouldCopyLiveCacheForRefresh(db);
-    if (shouldCopy) {
-      await run(db, "CHECKPOINT");
-    }
-    return shouldCopy;
-  } catch {
-    return false;
+    await fs.rename(fromPath, toPath);
+    return true;
+  } catch (error) {
+    if (isMissingFileError(error)) return false;
+    throw error;
+  }
+}
+
+async function removeDuckDbFileSet(dbPath: string) {
+  await fs.rm(dbPath, { force: true });
+  await fs.rm(duckDbWalPath(dbPath), { force: true });
+}
+
+async function withDbPath<T>(dbPath: string, operation: () => Promise<T>) {
+  const previousDbPath = process.env.SENDLENS_DB_PATH;
+  process.env.SENDLENS_DB_PATH = dbPath;
+  try {
+    return await operation();
   } finally {
-    if (db) closeDb(db);
     if (previousDbPath == null) {
       delete process.env.SENDLENS_DB_PATH;
     } else {
       process.env.SENDLENS_DB_PATH = previousDbPath;
     }
   }
+}
+
+async function checkpointDbFile(dbPath: string) {
+  if (!(await fileExists(dbPath))) return;
+  await withDbPath(dbPath, async () => {
+    const db = await getDb({ timeoutMs: 1_000, retryMs: 50 });
+    try {
+      await run(db, "CHECKPOINT");
+    } finally {
+      closeDb(db);
+    }
+  });
+  await fs.rm(duckDbWalPath(dbPath), { force: true });
+}
+
+async function promoteShadowDb(shadowDbPath: string, liveDbPath: string) {
+  const backupDbPath = path.join(
+    path.dirname(liveDbPath),
+    `.${path.basename(liveDbPath)}.previous-${process.pid}-${Date.now()}`,
+  );
+  let movedLiveDb = false;
+  let movedLiveWal = false;
+  let promoted = false;
+
+  await removeDuckDbFileSet(backupDbPath);
+  try {
+    movedLiveWal = await renameIfExists(
+      duckDbWalPath(liveDbPath),
+      duckDbWalPath(backupDbPath),
+    );
+    movedLiveDb = await renameIfExists(liveDbPath, backupDbPath);
+    await fs.rename(shadowDbPath, liveDbPath);
+    promoted = true;
+  } catch (error) {
+    if (!promoted) {
+      if (movedLiveDb && !(await fileExists(liveDbPath))) {
+        await renameIfExists(backupDbPath, liveDbPath);
+      }
+      if (movedLiveWal && !(await fileExists(duckDbWalPath(liveDbPath)))) {
+        await renameIfExists(
+          duckDbWalPath(backupDbPath),
+          duckDbWalPath(liveDbPath),
+        );
+      }
+    }
+    throw error;
+  } finally {
+    if (promoted) {
+      await removeDuckDbFileSet(backupDbPath);
+    }
+  }
+}
+
+async function shouldSeedShadowFromLive(liveDbPath: string) {
+  if (!(await fileExists(liveDbPath))) return false;
+
+  return withDbPath(liveDbPath, async () => {
+    let db: Awaited<ReturnType<typeof getDb>> | null = null;
+    try {
+      db = await getDb({ timeoutMs: 1_000, retryMs: 50 });
+      const shouldCopy = await shouldCopyLiveCacheForRefresh(db);
+      if (shouldCopy) {
+        await run(db, "CHECKPOINT");
+      }
+      return shouldCopy;
+    } catch {
+      return false;
+    } finally {
+      if (db) closeDb(db);
+    }
+  });
 }
 
 export async function refreshWorkspaceAtomically(options: RefreshOptions = {}) {
@@ -2524,8 +2610,7 @@ export async function refreshWorkspaceAtomically(options: RefreshOptions = {}) {
   );
 
   await fs.mkdir(path.dirname(liveDbPath), { recursive: true });
-  await fs.rm(shadowDbPath, { force: true });
-  await fs.rm(`${shadowDbPath}.wal`, { force: true });
+  await removeDuckDbFileSet(shadowDbPath);
 
   if (await shouldSeedShadowFromLive(liveDbPath)) {
     await fs.copyFile(liveDbPath, shadowDbPath);
@@ -2545,7 +2630,8 @@ export async function refreshWorkspaceAtomically(options: RefreshOptions = {}) {
   }
 
   if (await fileExists(shadowDbPath)) {
-    await fs.rename(shadowDbPath, liveDbPath);
+    await checkpointDbFile(shadowDbPath);
+    await promoteShadowDb(shadowDbPath, liveDbPath);
     if (summary.workspaceId) {
       const liveDb = await getDb();
       try {
@@ -2554,10 +2640,12 @@ export async function refreshWorkspaceAtomically(options: RefreshOptions = {}) {
           summary.workspaceId,
           summary.last_refreshed_at ?? new Date().toISOString(),
         );
+        await run(liveDb, "CHECKPOINT");
       } finally {
         closeDb(liveDb);
       }
     }
+    await fs.rm(duckDbWalPath(liveDbPath), { force: true });
     await writeRefreshStatus({ dbPath: liveDbPath });
   }
 

@@ -23,7 +23,8 @@ const { refreshWorkspaceAtomically } = require("../build/plugin/instantly-ingest
 const { readRefreshStatus } = require("../build/plugin/refresh-status.js");
 
 const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sendlens-cache-identity-"));
-process.env.SENDLENS_DB_PATH = path.join(tempDir, "workspace-cache.duckdb");
+const dbPath = path.join(tempDir, "workspace-cache.duckdb");
+process.env.SENDLENS_DB_PATH = dbPath;
 process.env.SENDLENS_STATE_DIR = tempDir;
 delete process.env.SENDLENS_DEMO_MODE;
 delete process.env.SENDLENS_CLIENT;
@@ -170,6 +171,10 @@ async function openDb() {
   return getDb({ timeoutMs: 1_000, retryMs: 25 });
 }
 
+async function pathExists(filePath) {
+  return fs.stat(filePath).then(() => true).catch(() => false);
+}
+
 try {
   process.env.SENDLENS_INSTANTLY_API_KEY = "old-key-secret";
   let db = await openDb();
@@ -237,9 +242,14 @@ try {
     closeDb(db);
   }
 
+  await fs.writeFile(
+    `${dbPath}.wal`,
+    "stale WAL from a previous cache identity must not survive promotion",
+  );
   installSuccessfulRefresh("ws_new", "new-campaign", "New Campaign");
   const refreshed = await refreshWorkspaceAtomically({ source: "manual" });
   assert.equal(refreshed.workspaceId, "ws_new");
+  assert.equal(await pathExists(`${dbPath}.wal`), false);
   db = await openDb();
   try {
     const owner = await getCacheOwnerMetadata(db);

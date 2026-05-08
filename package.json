@@ -1,6 +1,6 @@
 {
   "name": "sendlens",
-  "version": "0.1.28",
+  "version": "0.1.29",
   "private": true,
   "description": "Privacy-first outbound campaign analysis for AI workspaces.",
   "license": "MIT",
