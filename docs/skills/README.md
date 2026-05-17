@@ -33,5 +33,6 @@ See the [component catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRI
 - Pick one campaign before deep copy, ICP, reply, or experiment analysis.
 - Use `analysis_starters` before custom SQL for common questions.
 - Use `load_campaign_data` before one-campaign specialist work.
-- Use `fetch_reply_text` only when actual reply body text is needed.
+- Use `prepare_campaign_analysis` when one-campaign working/not-working analysis needs enough exact reply body evidence.
+- Use `fetch_reply_text` only when a low-level manual reply body fetch is enough.
 - Preserve evidence boundaries: exact, sampled, hybrid, reconstructed, and fetched.

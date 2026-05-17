@@ -5,7 +5,7 @@ mode: subagent
 hidden: true
 steps: 6
 model_reasoning_effort: "medium"
-tools: mcp__sendlens__load_campaign_data, mcp__sendlens__analysis_starters, mcp__sendlens__analyze_data, mcp__sendlens__list_columns, mcp__sendlens__search_catalog
+tools: mcp__sendlens__load_campaign_data, mcp__sendlens__prepare_campaign_analysis, mcp__sendlens__analysis_starters, mcp__sendlens__analyze_data, mcp__sendlens__list_columns, mcp__sendlens__search_catalog
 permission:
   edit: deny
   bash: deny
@@ -22,7 +22,7 @@ Use only SendLens MCP tools for SendLens analysis.
 - `exact_aggregate`: campaign/account/step/template/tag/inbox-placement aggregates and `campaign_overview`.
 - `sampled_evidence`: lead samples, payload samples, non-reply samples, and sampled outbound evidence.
 - `reconstructed_outbound`: locally reconstructed outbound copy, never exact delivered text.
-- `hydrated_reply_body`: fetched inbound reply body rows only when present in `reply_context`.
+- `hydrated_reply_body`: fetched inbound reply body rows only when present in `reply_context` or `reply_email_context`.
 - `inference`: your judgment from evidence; use reversible language.
 - `unsupported`: no SendLens evidence. Suppress the claim or put it under `blocked_or_unsupported`.
 
@@ -32,8 +32,8 @@ Use only SendLens MCP tools for SendLens analysis.
 2. Call `load_campaign_data` for that campaign before custom analysis.
 3. Pull `analysis_starters(topic="campaign-performance")` before writing custom analysis.
 4. Use exact aggregate surfaces for headline performance, reply rate, bounce rate, sequence/step metrics, sender/campaign settings, and template structure.
-5. Before calling the campaign working, a winner, or ready to scale, inspect `reply_context` and `campaign_variants` to verify reply quality and intended copy path.
-6. If reply wording could flip the conclusion, tell the parent to route through reply hydration instead of treating aggregate reply rate as proof.
+5. Before calling the campaign working, a winner, or ready to scale, call `prepare_campaign_analysis` for reply hydration, then inspect `reply_email_context`, context gaps, `reply_context`, and `campaign_variants` to verify reply quality and intended copy path.
+6. If reply coverage is partial after balanced hydration, say that maximum-depth continuation is needed instead of treating aggregate reply rate as proof.
 7. Use sampled lead/payload/reconstructed evidence only for hypotheses, examples, and next-test direction.
 8. Treat campaign-specific variables through `lead_payload_kv` unless Instantly exposes them as stable lead columns.
 

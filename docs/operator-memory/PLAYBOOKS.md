@@ -63,7 +63,7 @@ do:
   - Call campaign/account/step/tag/inbox-placement aggregates exact only when they come from exact local surfaces.
   - Call non-reply lead evidence sampled.
   - Call rendered outbound copy reconstructed.
-  - Call reply body text fetched only after `fetch_reply_text`.
+  - Call reply body text fetched only after `prepare_campaign_analysis` or `fetch_reply_text`.
   - Include caveats only when they affect the recommendation.
 avoid:
   - Do not project full-population totals from sampled lead rows.
@@ -209,7 +209,7 @@ evidence_basis:
   operator_judgment:
     - theme grouping after evidence is loaded
 caveats:
-  - `fetch_reply_text` is intentionally one-campaign and rate-conscious.
+  - `prepare_campaign_analysis` and `fetch_reply_text` are intentionally one-campaign and rate-conscious.
 safe_examples:
   - "Demo replies skew positive around workflow pain but negative around timing."
 related_docs:

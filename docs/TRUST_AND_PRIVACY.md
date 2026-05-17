@@ -10,7 +10,7 @@ This page is intentionally precise. It describes the OSS plugin's data handling 
 - The core cache is local DuckDB, defaulting to `~/.sendlens/workspace-cache.duckdb`.
 - SendLens does not require an Orchid-hosted cloud warehouse for the core workflow.
 - Tool results are returned to the user's AI host. The host/model provider may process that context according to its own settings and policies.
-- Exact reply body text is not fetched during the normal startup refresh. It is fetched only when `fetch_reply_text` is used for one campaign.
+- Exact reply body text is not fetched during the normal startup refresh. It is fetched only when `prepare_campaign_analysis` or `fetch_reply_text` is used for one campaign.
 
 ## Instantly Access
 
@@ -21,6 +21,7 @@ The shipped tools are analysis and refresh tools:
 - `refresh_data`
 - `workspace_snapshot`
 - `load_campaign_data`
+- `prepare_campaign_analysis`
 - `fetch_reply_text`
 - `analysis_starters`
 - `list_tables`
@@ -60,12 +61,12 @@ The local DuckDB cache can contain:
 - exact campaign metadata and aggregate analytics from Instantly
 - exact step, variant, account, tag, and inbox-placement surfaces when available from Instantly
 - semantic rollups such as `campaign_overview`, `sender_deliverability_health`, and `inbox_placement_test_overview`
-- full replied lead records where they can be resolved from campaign lead feeds
+- reply-signal lead records found during bounded campaign lead scans or explicit reply-email lead backfills
 - bounded non-reply lead samples
 - campaign-specific lead `custom_payload` JSON and the `lead_payload_kv` view derived from it
 - campaign templates from `campaign_variants`
 - locally reconstructed outbound copy built from templates plus stored lead variables
-- fetched inbound reply email rows and body text only after `fetch_reply_text` runs
+- fetched inbound reply email rows and body text only after `prepare_campaign_analysis` or `fetch_reply_text` runs
 - refresh metadata and sampling coverage metadata
 
 Sampled and reconstructed surfaces are analysis evidence, not a complete warehouse export.
@@ -125,6 +126,6 @@ Public docs and example outputs should use the same evidence language as the pro
 - Sampled: non-reply lead evidence and sampled payload variables.
 - Hybrid: semantic views that combine exact aggregates with sampled evidence.
 - Reconstructed: outbound copy rendered locally from templates and stored variables.
-- Fetched: exact inbound reply body text only after `fetch_reply_text` writes it into local DuckDB.
+- Fetched: exact inbound reply body text only after `prepare_campaign_analysis` or `fetch_reply_text` writes it into local DuckDB.
 
 When evidence is missing, say what is missing. For example, empty inbox-placement tables mean no local inbox-placement evidence was available; they do not prove sender health is clean.

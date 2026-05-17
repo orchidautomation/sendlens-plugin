@@ -82,6 +82,15 @@ Where relevant, SendLens responses should include:
 - returns `fetch_result` counts by `i_status`, new-vs-updated row counts, cursor/exhaustion state, readiness metadata, output limits, and a bounded `fetched_reply_sample`
 - default statuses are `1`, `-1`, and `-2`; out-of-office status `0` is excluded unless explicitly requested
 
+`prepare_campaign_analysis`
+
+- `schema_version: "campaign_analysis_preparation.v1"`
+- resolves exactly one campaign by `campaign_id` or unambiguous `campaign_name`
+- default `analysis_depth` is balanced: statuses `1`, `-1`, and `-2`, up to 3 email pages/status, and target 30 stored non-auto reply bodies/status
+- calls the same rate-conscious email lane as `fetch_reply_text`; it is not part of session-start refresh
+- backfills lead context through `/leads/list` contacts/ids after reply bodies are stored
+- returns `fetch_result`, `lead_context_backfill`, `hydration_coverage`, `context_gap_counts`, exact `campaign_overview`, bounded `reply_email_context_sample`, recommended next recipes, warnings, and output limits
+
 ## Runtime Regression Coverage
 
 Run `npm run test:mcp-response-contract` when changing MCP tools, response field names, warnings, caps, or this document. The test pins the response-contract terms that agents rely on for:
@@ -91,6 +100,7 @@ Run `npm run test:mcp-response-contract` when changing MCP tools, response field
 - `analysis_starters` recipe metadata, exactness labels, SQL, and notes
 - `analyze_data` rationale, row caps, truncation state, warnings, and rows
 - `fetch_reply_text` hydration result metadata, sample caps, and bounded reply samples
+- `prepare_campaign_analysis` premium-depth coverage, context gaps, backfill metadata, warnings, output limits, and bounded reply-email samples
 
 ## Exactness Rules
 
@@ -99,9 +109,10 @@ Run `npm run test:mcp-response-contract` when changing MCP tools, response field
 - `inbox_placement_test_overview` and `sender_deliverability_health` are exact semantic rollups over Instantly inbox placement analytics when those API surfaces are available.
 - `reply_emails` contains exact inbound email rows fetched on demand from Instantly List email. It is intentionally not part of the session-start fast refresh.
 - `reply_email_hydration_state` is exact local pagination state for continuing older reply fetches by campaign/status/thread mode. Use `sync_newest` or `restart` to check newly arrived replies above the saved cursor.
-- `lead_evidence` contains full replied leads where available and bounded non-reply samples.
+- `lead_evidence` contains reply-signal leads found during bounded lead scans, explicit reply-email backfills, and bounded non-reply samples.
 - `lead_payload_kv` expands sampled lead `custom_payload` into campaign-scoped key/value rows so ICP analysis can stay inside SendLens tools without raw JSON table functions.
 - `reply_context` is lead outcome evidence joined to fetched inbound reply text when available, templates, and reconstructed outbound context.
+- `reply_email_context` is email-anchored fetched reply context; use it after premium hydration because exact reply bodies remain visible even when lead/template context is missing.
 - `rendered_outbound_context` is locally reconstructed copy, not byte-for-byte delivered email text.
 
 ## Structured Content Strategy

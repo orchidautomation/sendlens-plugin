@@ -54,6 +54,7 @@ Read the evidence and output references before making a diagnostic claim. These 
 ### Stage 4: Narrow Before Deep Analysis
 
 - If the diagnosis turns into copy, ICP, reply-body, or sequence analysis, pick one campaign and switch to the relevant specialist skill.
+- Do not hydrate replies broadly during workspace triage. If broad health analysis points to reply-quality or working/not-working uncertainty, name the single best campaign to inspect next and recommend `prepare_campaign_analysis` for that campaign.
 - If the user asks for lead segmentation, pivot to one campaign and inspect `lead_payload_kv` there rather than normalizing payload fields workspace-wide.
 - If segment fields are sparse, recommend improving future uploaded lead metadata/custom fields before expecting deeper ICP analysis. Do not blame Instantly enrichment for blank role/title fields.
 - If the user asks for current reply wording, pivot to `reply-patterns`; do not hydrate replies during workspace triage.

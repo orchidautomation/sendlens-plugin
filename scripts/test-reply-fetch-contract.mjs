@@ -13,6 +13,7 @@ const fetchResult = toReplyTextFetchResult({
   statuses: [1, -1, -2],
   latest_of_thread: true,
   max_pages_per_status: 1,
+  target_stored_rows_per_status: 30,
   total_fetched: 3,
   total_stored: 3,
   total_inserted_new: 2,
@@ -28,6 +29,7 @@ assert.equal(fetchResult.total_stored, 3);
 assert.equal(fetchResult.total_inserted_new, 2);
 assert.equal(fetchResult.total_updated_existing, 1);
 assert.equal(fetchResult.total_skipped_auto_replies, 0);
+assert.equal(fetchResult.target_stored_rows_per_status, 30);
 assert.deepEqual(fetchResult.statuses, [1, -1, -2]);
 
 console.log("reply fetch contract tests passed");

@@ -58,6 +58,7 @@ type ReplyEmailRecord = {
   campaignId: string;
   threadId: string;
   leadEmail: string;
+  leadId: string | null;
   messageId: string | null;
   eaccount: string | null;
   fromEmail: string;
@@ -1357,6 +1358,7 @@ async function fetchReplyEmails(
         emailOrNull(email.lead) ??
         emailOrNull(email.from_address_email) ??
         "",
+      leadId: typeof email.lead_id === "string" ? email.lead_id : null,
       messageId: typeof email.message_id === "string" ? email.message_id : null,
       eaccount: typeof email.eaccount === "string" ? email.eaccount : null,
       fromEmail: String(email.from_address_email ?? ""),
@@ -1406,6 +1408,7 @@ function emailRecordFromInstantly(
       emailOrNull(email.lead) ??
       emailOrNull(email.from_address_email) ??
       "",
+    leadId: typeof email.lead_id === "string" ? email.lead_id : null,
     messageId: typeof email.message_id === "string" ? email.message_id : null,
     eaccount: typeof email.eaccount === "string" ? email.eaccount : null,
     fromEmail: String(email.from_address_email ?? ""),
@@ -1442,6 +1445,7 @@ async function storeReplyEmails(
       "campaign_id",
       "thread_id",
       "lead_email",
+      "lead_id",
       "message_id",
       "eaccount",
       "from_email",
@@ -1467,6 +1471,7 @@ async function storeReplyEmails(
         '${esc(email.campaignId)}',
         ${sqlString(email.threadId)},
         ${sqlString(email.leadEmail)},
+        ${sqlString(email.leadId)},
         ${sqlString(email.messageId)},
         ${sqlString(email.eaccount)},
         ${sqlString(email.fromEmail)},
@@ -1508,6 +1513,201 @@ async function countExistingReplyEmailIds(
   return Number(rows[0]?.count ?? 0) || 0;
 }
 
+function chunkItems<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let start = 0; start < items.length; start += size) {
+    chunks.push(items.slice(start, start + size));
+  }
+  return chunks;
+}
+
+export function buildReplyLeadBackfillBatches(
+  rows: Array<Record<string, unknown>>,
+  batchSize = DEFAULT_PAGE_SIZE,
+) {
+  const ids = [...new Set(
+    rows
+      .map((row) => String(row.lead_id ?? "").trim())
+      .filter(Boolean),
+  )];
+  const contacts = [...new Set(
+    rows
+      .flatMap((row) => [row.lead_email, row.from_email, row.reply_from_email])
+      .map(emailOrNull)
+      .filter((email): email is string => email != null),
+  )];
+
+  return {
+    ids,
+    contacts,
+    idBatches: chunkItems(ids, batchSize),
+    contactBatches: chunkItems(contacts, batchSize),
+  };
+}
+
+async function storeBackfilledReplyLeads(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  campaignId: string,
+  leads: LeadRecord[],
+) {
+  await insertRows(
+    conn,
+    "sampled_leads",
+    [
+      "workspace_id",
+      "campaign_id",
+      "id",
+      "email",
+      "first_name",
+      "last_name",
+      "company_name",
+      "company_domain",
+      "status",
+      "email_open_count",
+      "email_reply_count",
+      "email_click_count",
+      "lt_interest_status",
+      "email_opened_step",
+      "email_opened_variant",
+      "email_replied_step",
+      "email_replied_variant",
+      "email_clicked_step",
+      "email_clicked_variant",
+      "esp_code",
+      "verification_status",
+      "enrichment_status",
+      "timestamp_last_contact",
+      "timestamp_last_reply",
+      "job_title",
+      "website",
+      "phone",
+      "personalization",
+      "status_summary",
+      "subsequence_id",
+      "list_id",
+      "custom_payload",
+      "sample_source",
+      "sampled_at",
+    ],
+    leads
+      .filter((lead) => String(lead.email ?? ""))
+      .map((lead) => {
+        const payload = extractPayload(lead);
+        return `(
+          '${esc(workspaceId)}',
+          '${esc(campaignId)}',
+          ${sqlString(lead.id)},
+          ${sqlString(lead.email)},
+          ${sqlString(lead.first_name)},
+          ${sqlString(lead.last_name)},
+          ${sqlString(lead.company_name)},
+          ${sqlString(lead.company_domain)},
+          ${sqlString(lead.status)},
+          ${sqlInt(lead.email_open_count)},
+          ${sqlInt(lead.email_reply_count)},
+          ${sqlInt(lead.email_click_count)},
+          ${sqlInt(lead.lt_interest_status)},
+          ${sqlInt(lead.email_opened_step)},
+          ${sqlInt(lead.email_opened_variant)},
+          ${sqlInt(lead.email_replied_step)},
+          ${sqlInt(lead.email_replied_variant)},
+          ${sqlInt(lead.email_clicked_step)},
+          ${sqlInt(lead.email_clicked_variant)},
+          ${sqlInt(lead.esp_code)},
+          ${sqlInt(lead.verification_status)},
+          ${sqlInt(lead.enrichment_status)},
+          ${sqlTimestamp(lead.timestamp_last_contact)},
+          ${sqlTimestamp(lead.timestamp_last_reply)},
+          ${sqlString(lead.job_title)},
+          ${sqlString(lead.website ?? payload.website)},
+          ${sqlString(lead.phone)},
+          ${sqlString(lead.personalization ?? payload.personalization)},
+          ${sqlJson(lead.status_summary)},
+          ${sqlString(lead.subsequence_id)},
+          ${sqlString(lead.list_id)},
+          ${sqlJson(payload)},
+          'reply_email_contact_backfill',
+          CURRENT_TIMESTAMP
+        )`;
+      }),
+  );
+}
+
+export async function backfillReplyLeadContext(options: {
+  workspaceId: string;
+  campaignId: string;
+  statuses: number[];
+  db: DuckDBConnection;
+}) {
+  const apiKey = process.env.SENDLENS_INSTANTLY_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error("Missing SENDLENS_INSTANTLY_API_KEY.");
+  }
+
+  const workspaceSafe = esc(options.workspaceId);
+  const campaignSafe = esc(options.campaignId);
+  const statusFilter = options.statuses.length
+    ? `AND i_status IN (${options.statuses.map(sqlInt).join(", ")})`
+    : "";
+  const rows = await query(
+    options.db,
+    `SELECT lead_id, lead_email, from_email
+     FROM sendlens.reply_emails
+     WHERE workspace_id = '${workspaceSafe}'
+       AND campaign_id = '${campaignSafe}'
+       AND direction = 'inbound'
+       ${statusFilter}`,
+  );
+  const batches = buildReplyLeadBackfillBatches(rows);
+  const leadsByKey = new Map<string, LeadRecord>();
+
+  const collectLead = (lead: LeadRecord) => {
+    const key = normalizeEmail(lead.email) || String(lead.id ?? "").trim();
+    if (!key) return;
+    leadsByKey.set(key, lead);
+  };
+
+  for (const idBatch of batches.idBatches) {
+    const response = await instantly.listLeadsPage(apiKey, options.campaignId, undefined, {
+      ids: idBatch,
+      limit: DEFAULT_PAGE_SIZE,
+    });
+    for (const lead of response.items) collectLead(lead);
+  }
+
+  for (const contactBatch of batches.contactBatches) {
+    const response = await instantly.listLeadsPage(apiKey, options.campaignId, undefined, {
+      contacts: contactBatch,
+      limit: DEFAULT_PAGE_SIZE,
+    });
+    for (const lead of response.items) collectLead(lead);
+  }
+
+  const leads = [...leadsByKey.values()];
+  await storeBackfilledReplyLeads(
+    options.db,
+    options.workspaceId,
+    options.campaignId,
+    leads,
+  );
+
+  return {
+    schema_version: "reply_lead_backfill.v1",
+    workspace_id: options.workspaceId,
+    campaign_id: options.campaignId,
+    statuses: options.statuses,
+    candidate_reply_rows: rows.length,
+    ids_requested: batches.ids.length,
+    contacts_requested: batches.contacts.length,
+    id_batches: batches.idBatches.length,
+    contact_batches: batches.contactBatches.length,
+    lead_rows_fetched: leads.length,
+    stored_rows: leads.length,
+    source: "leads_list_contacts_ids",
+  };
+}
+
 type HydrateReplyTextOptions = {
   workspaceId: string;
   campaignId: string;
@@ -1515,6 +1715,7 @@ type HydrateReplyTextOptions = {
   maxPagesPerStatus: number;
   latestOfThread: boolean;
   mode: ReplyTextHydrationMode;
+  targetStoredRowsPerStatus?: number;
   db?: DuckDBConnection;
 };
 
@@ -1567,10 +1768,10 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
     const missingBodyRows = await query(
       db,
       `SELECT COUNT(*) AS count
-       FROM sendlens.reply_context
+       FROM sendlens.reply_email_context
        WHERE workspace_id = '${workspaceSafe}'
          AND campaign_id = '${campaignSafe}'
-         AND lt_interest_status = ${sqlInt(status)}
+         AND reply_email_i_status = ${sqlInt(status)}
          AND (
            reply_email_id IS NULL
            OR reply_body_text IS NULL
@@ -1598,7 +1799,30 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
         skipped: true,
         reason: "cached_rows_exist",
         existing_rows: existingCount,
+        existing_rows_before: existingCount,
         missing_reply_body_rows: missingBodyCount,
+        target_stored_rows: options.targetStoredRowsPerStatus ?? null,
+        stored_rows_after: existingCount,
+        target_met: options.targetStoredRowsPerStatus != null
+          ? existingCount >= options.targetStoredRowsPerStatus
+          : null,
+      });
+      continue;
+    }
+    if (
+      options.targetStoredRowsPerStatus != null &&
+      existingCount >= options.targetStoredRowsPerStatus
+    ) {
+      statusResults.push({
+        i_status: status,
+        skipped: true,
+        reason: "target_already_cached",
+        existing_rows: existingCount,
+        existing_rows_before: existingCount,
+        missing_reply_body_rows: missingBodyCount,
+        target_stored_rows: options.targetStoredRowsPerStatus,
+        stored_rows_after: existingCount,
+        target_met: true,
       });
       continue;
     }
@@ -1608,6 +1832,12 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
         skipped: true,
         reason: "pagination_exhausted",
         existing_rows: existingCount,
+        existing_rows_before: existingCount,
+        target_stored_rows: options.targetStoredRowsPerStatus ?? null,
+        stored_rows_after: existingCount,
+        target_met: options.targetStoredRowsPerStatus != null
+          ? existingCount >= options.targetStoredRowsPerStatus
+          : null,
       });
       continue;
     }
@@ -1689,7 +1919,15 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
       rowsUpdatedExisting += existingFetchedIds;
       rowsInsertedNew += Math.max(0, emails.length - existingFetchedIds);
 
-      if (options.mode === "sync_newest") {
+      const reachedTarget = options.targetStoredRowsPerStatus != null
+        && existingCount + rowsStored >= options.targetStoredRowsPerStatus;
+      if (reachedTarget) {
+        break;
+      }
+      if (
+        options.mode === "sync_newest" &&
+        options.targetStoredRowsPerStatus == null
+      ) {
         break;
       }
       if (!cursor || response.items.length < DEFAULT_PAGE_SIZE) {
@@ -1766,6 +2004,11 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
       rows_inserted_new: rowsInsertedNew,
       rows_updated_existing: rowsUpdatedExisting,
       skipped_auto_replies: skippedAutoReplies,
+      target_stored_rows: options.targetStoredRowsPerStatus ?? null,
+      target_met: options.targetStoredRowsPerStatus != null
+        ? existingCount + rowsStored >= options.targetStoredRowsPerStatus
+        : null,
+      stored_rows_after: existingCount + rowsStored,
       next_starting_after: cursor,
       saved_next_starting_after: stateNextStartingAfter,
       exhausted,
@@ -1797,6 +2040,7 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
     statuses,
     latest_of_thread: options.latestOfThread,
     max_pages_per_status: options.maxPagesPerStatus,
+    target_stored_rows_per_status: options.targetStoredRowsPerStatus ?? null,
     total_fetched: totalFetched,
     total_stored: totalStored,
     total_inserted_new: totalInsertedNew,
@@ -2296,6 +2540,7 @@ async function storeCampaignData(
       "campaign_id",
       "thread_id",
       "lead_email",
+      "lead_id",
       "message_id",
       "eaccount",
       "from_email",
@@ -2321,6 +2566,7 @@ async function storeCampaignData(
         '${esc(campaignId)}',
         ${sqlString(email.threadId)},
         ${sqlString(email.leadEmail)},
+        ${sqlString(email.leadId)},
         ${sqlString(email.messageId)},
         ${sqlString(email.eaccount)},
         ${sqlString(email.fromEmail)},
@@ -2468,7 +2714,7 @@ async function storeCampaignData(
   const note =
     ingestMode === "full"
       ? "Full lead ingest because campaign volume is below the local threshold."
-      : "Hybrid ingest: exact aggregates plus full reply-lead profiles and a bounded non-reply lead sample.";
+      : "Hybrid ingest: exact aggregates plus reply-signal leads found during bounded lead scan and a bounded non-reply lead sample.";
   const outboundSampleTarget =
     ingestMode === "full"
       ? outboundSample.emails.length

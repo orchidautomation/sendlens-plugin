@@ -54,6 +54,7 @@ export const PUBLIC_TABLES = [
   "sender_deliverability_health",
   "reply_emails",
   "reply_email_hydration_state",
+  "reply_email_context",
   "sampled_leads",
   "sampled_outbound_emails",
   "sampling_runs",
@@ -123,8 +124,10 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Exact inbound reply email rows fetched on demand from Instantly email search, including body text, body HTML, thread IDs, and interest status.",
   reply_email_hydration_state:
     "Pagination and cache state for on-demand reply text fetching by campaign, interest status, and thread mode.",
+  reply_email_context:
+    "Email-anchored fetched reply context that keeps exact inbound reply bodies visible even when sampled lead context is missing.",
   sampled_leads:
-    "Campaign-scoped lead evidence with full replied leads and a bounded non-reply sample. Do not use for population totals.",
+    "Campaign-scoped lead evidence with reply-signal leads found during bounded scans, explicit reply-email backfills, and bounded non-reply samples. Do not use for population totals.",
   sampled_outbound_emails:
     "Locally reconstructed outbound copy built from campaign templates plus lead variables. Do not treat it as exact delivered email text.",
   sampling_runs:
