@@ -1,6 +1,6 @@
 ---
 name: "workspace-health"
-description: "Use when diagnosing workspace health, reply-rate issues, deliverability risk, sender risk, or next actions."
+description: "Use when diagnosing workspace health, reply-rate issues, deliverability risk, sender risk, or next actions; not for simple inventory or freshness checks."
 ---
 
 # Workspace Health

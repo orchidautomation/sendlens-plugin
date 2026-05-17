@@ -287,6 +287,14 @@ async function assertExplicitHostDegradation() {
     ),
     "dist/codex/AGENTS.md: expected explicit Codex command degradation guidance",
   );
+  assert(
+    /always-on SendLens operating contract/i.test(codexAgentGuidance),
+    "dist/codex/AGENTS.md: expected Codex always-on SendLens guidance",
+  );
+  assert(
+    /do not load SendLens skills first/i.test(codexAgentGuidance),
+    "dist/codex/AGENTS.md: expected simple inventory questions to stay on the MCP fast path",
+  );
 
   const codexCommands = await readJson(
     "dist/codex/.codex/commands.generated.json",
@@ -326,6 +334,31 @@ async function assertExplicitHostDegradation() {
   assert(
     /codex_hooks[^.]*deprecated/i.test(codexHooks.note ?? ""),
     "dist/codex/.codex/hooks.generated.json: expected deprecated codex_hooks note",
+  );
+
+  const codexSkills = await readJson("dist/codex/.codex/skills.generated.json");
+  const generatedSkills = Array.isArray(codexSkills.skills)
+    ? codexSkills.skills
+    : [];
+  const usingSendLensSkill = generatedSkills.find(
+    (skill) => skill.id === "using-sendlens",
+  );
+  assert(
+    usingSendLensSkill?.disableModelInvocation === true,
+    "dist/codex/.codex/skills.generated.json: using-sendlens must not auto-invoke for routine SendLens questions",
+  );
+  assert(
+    /simple inventory or freshness/i.test(usingSendLensSkill?.description ?? ""),
+    "dist/codex/.codex/skills.generated.json: using-sendlens description must preserve the routine inventory fast path",
+  );
+  const workspaceHealthSkill = generatedSkills.find(
+    (skill) => skill.id === "workspace-health",
+  );
+  assert(
+    /simple inventory or freshness/i.test(
+      workspaceHealthSkill?.description ?? "",
+    ),
+    "dist/codex/.codex/skills.generated.json: workspace-health description must avoid simple inventory auto-routing",
   );
 
   const installDocs = await readText("docs/INSTALL.md");

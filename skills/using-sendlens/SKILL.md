@@ -1,6 +1,7 @@
 ---
 name: "using-sendlens"
-description: "Use when a SendLens question needs MCP-first routing, evidence calibration, workflow selection, or fallback boundaries."
+description: "Use when the user asks how to use SendLens, evidence classes, workflow selection, routing, or fallback boundaries; not for simple inventory or freshness checks."
+disable-model-invocation: true
 ---
 
 # Using SendLens

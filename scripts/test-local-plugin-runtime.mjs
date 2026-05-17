@@ -639,11 +639,39 @@ assert.equal(Boolean(leakRows[0].subject_has_unresolved_token), true);
 assert.equal(Boolean(leakRows[0].body_has_unresolved_token), true);
 
 const normalizedStepAnalytics = normalizeStepAnalyticsRows([
+  {
+    step: null,
+    variant: null,
+    sent: 0,
+    opened: 0,
+    unique_opened: 0,
+    replies: 0,
+    unique_replies: 0,
+    replies_automatic: 6,
+    unique_replies_automatic: 6,
+    clicks: 0,
+    unique_clicks: 0,
+    opportunities: 0,
+    unique_opportunities: 0,
+  },
+  {
+    step: "null",
+    variant: null,
+    sent: 0,
+    opened: 0,
+    replies: 0,
+    unique_replies: 0,
+    replies_automatic: 1,
+    unique_replies_automatic: 1,
+    clicks: 0,
+    opportunities: 0,
+  },
   { step: null, variant: 2, sent: 10 },
   { step: "Step 1", variant: "", sent: 20, opens: 5 },
   { step: 2, variant: 3, sent: 30, opened: 8 },
 ]);
 assert.equal(normalizedStepAnalytics.skippedRows, 1);
+assert.equal(normalizedStepAnalytics.ignoredUnattributedRows, 2);
 assert.deepEqual(normalizedStepAnalytics.validRows, [
   {
     step: 1,

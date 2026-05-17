@@ -682,10 +682,15 @@ export function resolveLeadTemplate(
 export function normalizeStepAnalyticsRows(stepAnalytics: Array<Record<string, unknown>>) {
   const validRows: NormalizedStepAnalyticsRow[] = [];
   let skippedRows = 0;
+  let ignoredUnattributedRows = 0;
 
   for (const row of stepAnalytics) {
     const step = parseInteger(row.step);
     if (step == null) {
+      if (isUnattributedStepAnalyticsBucket(row)) {
+        ignoredUnattributedRows += 1;
+        continue;
+      }
       skippedRows += 1;
       continue;
     }
@@ -705,7 +710,30 @@ export function normalizeStepAnalyticsRows(stepAnalytics: Array<Record<string, u
     });
   }
 
-  return { validRows, skippedRows };
+  return { validRows, skippedRows, ignoredUnattributedRows };
+}
+
+function isUnattributedStepAnalyticsBucket(row: Record<string, unknown>) {
+  const variant = parseInteger(row.variant);
+  if (variant != null) return false;
+
+  const attributedCounters = [
+    row.sent,
+    row.opened ?? row.opens,
+    row.unique_opened,
+    row.replies,
+    row.unique_replies,
+    row.clicks,
+    row.unique_clicks,
+    row.bounced ?? row.bounces,
+    row.opportunities,
+    row.unique_opportunities,
+  ];
+
+  return attributedCounters.every((value) => {
+    const parsed = Number(value ?? 0);
+    return Number.isFinite(parsed) && parsed === 0;
+  });
 }
 
 async function insertRows(
