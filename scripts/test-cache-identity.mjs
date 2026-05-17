@@ -44,6 +44,7 @@ for (const key of [
   "getCampaignDetails",
   "getStepAnalytics",
   "getDailyAnalytics",
+  "listAllLeads",
   "listLeadsPage",
 ]) {
   originals[key] = instantly[key];
@@ -145,24 +146,26 @@ function installSuccessfulRefresh(workspaceId, campaignId, campaignName) {
       unique_opportunities: 0,
     },
   ];
+  const leadRows = [
+    {
+      id: `lead-${campaignId}`,
+      email: `${campaignId}-reply@example.com`,
+      first_name: "Riley",
+      last_name: "Reply",
+      company_name: "Reply Co",
+      company_domain: "reply.test",
+      status: "active",
+      email_reply_count: 1,
+      lt_interest_status: 1,
+      email_replied_step: 0,
+      email_replied_variant: 0,
+      timestamp_last_reply: "2026-05-03T20:00:00Z",
+      payload: { campaign: campaignId, firstName: "Riley" },
+    },
+  ];
+  instantly.listAllLeads = async () => leadRows;
   instantly.listLeadsPage = async () => ({
-    items: [
-      {
-        id: `lead-${campaignId}`,
-        email: `${campaignId}-reply@example.com`,
-        first_name: "Riley",
-        last_name: "Reply",
-        company_name: "Reply Co",
-        company_domain: "reply.test",
-        status: "active",
-        email_reply_count: 1,
-        lt_interest_status: 1,
-        email_replied_step: 0,
-        email_replied_variant: 0,
-        timestamp_last_reply: "2026-05-03T20:00:00Z",
-        payload: { campaign: campaignId, firstName: "Riley" },
-      },
-    ],
+    items: leadRows,
     nextCursor: null,
   });
 }

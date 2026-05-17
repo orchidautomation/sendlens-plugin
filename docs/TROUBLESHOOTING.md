@@ -52,6 +52,15 @@ If the SendLens tools are missing after install:
 - run `pluxx install --target <host> --trust` again during local development
 - check whether an older `sendlens-local` plugin is still installed and disable it
 
+For Codex, plugin-bundled hooks have a separate opt-in. The release `install-codex.sh` prompts to enable it. If tools appear but the session-start refresh never runs, or if you installed from a raw bundle or skipped the prompt, add this to `~/.codex/config.toml` and restart Codex:
+
+```toml
+[features]
+plugin_hooks = true
+```
+
+The general `hooks` feature defaults on; `codex_hooks` is deprecated and is not the plugin-bundled hook gate.
+
 Expected core tools:
 
 - `workspace_snapshot`

@@ -29,6 +29,12 @@ Codex
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | bash
 ```
 
+The Codex installer checks for plugin-bundled hooks and prompts to enable `[features].plugin_hooks = true` when needed. To approve that in a noninteractive install:
+
+```bash
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | PLUXX_CODEX_ENABLE_PLUGIN_HOOKS=1 bash
+```
+
 OpenCode
 
 ```bash
@@ -65,7 +71,13 @@ Set at least:
 SENDLENS_INSTANTLY_API_KEY=your_key
 ```
 
-If `SENDLENS_INSTANTLY_API_KEY` is already exported in your shell, current Pluxx installers reuse it and skip the secret prompt. Users without the env var are still prompted during install.
+Release installers ask for `SENDLENS_INSTANTLY_API_KEY` once and persist it into the installed plugin config. If the key is already exported in your shell, current Pluxx installers reuse it and skip the secret prompt. They also prepare runtime dependencies and run the first workspace refresh during install.
+
+When you rerun the same curl command to update SendLens, the installer reuses the saved plugin config and does not ask for the Instantly key again. To force a new prompt:
+
+```bash
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | PLUXX_RECONFIGURE=1 bash
+```
 
 Then build and install:
 
@@ -111,7 +123,7 @@ The doctor checks env loading, runtime dependencies, compiled MCP/refresh/demo e
 
 ## Demo Mode Without Production Credentials
 
-To prove the workflow before connecting a real outbound workspace:
+The public release curl installers optimize for real workspace analysis and ask for an Instantly API key up front. To prove the workflow without connecting a real outbound workspace, use a local/source install or an already-installed plugin with no API key configured, then run:
 
 ```text
 /sendlens-setup
@@ -144,9 +156,19 @@ Reload your host:
 
 Expected startup behavior:
 
+- the release installer runs the first foreground refresh after the API key is saved
 - every new session triggers a fresh background refresh
 - the local cache updates in a few seconds
 - `refresh_status` reports the current session-start refresh
+
+Codex only runs hooks bundled by installed plugins when plugin hooks are enabled. The release `install-codex.sh` checks this and prompts to set it for you. If you install from a raw bundle, skip the prompt, or need to repair it manually, add this to `~/.codex/config.toml` and restart Codex:
+
+```toml
+[features]
+plugin_hooks = true
+```
+
+Regular Codex hooks are enabled by default through `hooks`; the older `codex_hooks` flag is deprecated and does not replace `plugin_hooks` for plugin-bundled hooks.
 
 If tools do not appear, the API key is missing, refresh is still running, or the cache is empty, see the [troubleshooting guide](./TROUBLESHOOTING.md).
 

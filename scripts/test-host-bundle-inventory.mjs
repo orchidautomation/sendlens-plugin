@@ -158,6 +158,8 @@ async function assertHostFiles({ skills, commands, agents }) {
       "AGENTS.md",
       ".codex/commands.generated.json",
       ".codex/hooks.generated.json",
+      "hooks/hooks.json",
+      "hooks/pluxx-hook-command-1.sh",
       "scripts/start-mcp.sh",
       "build/plugin/server.js",
       ...commonSkillFiles,
@@ -290,7 +292,7 @@ async function assertExplicitHostDegradation() {
     "dist/codex/.codex/commands.generated.json",
   );
   assert(
-    /does not currently document plugin-packaged slash commands/i.test(
+    /does not currently document plugin-packaged slash-command parity/i.test(
       codexCommands.note ?? "",
     ),
     "dist/codex/.codex/commands.generated.json: expected slash-command degradation note",
@@ -298,17 +300,64 @@ async function assertExplicitHostDegradation() {
 
   const codexHooks = await readJson("dist/codex/.codex/hooks.generated.json");
   assert(
-    codexHooks.enforcedByPluginBundle === false,
-    "dist/codex/.codex/hooks.generated.json: expected hooks to be marked external to plugin bundle",
+    codexHooks.enforcedByPluginBundle === true,
+    "dist/codex/.codex/hooks.generated.json: expected hooks to be marked as bundled by Pluxx",
   );
   assert(
-    codexHooks.featureFlag === "codex_hooks",
-    "dist/codex/.codex/hooks.generated.json: expected Codex hooks feature flag guidance",
+    codexHooks.pluginBundleFeatureFlag === "plugin_hooks",
+    "dist/codex/.codex/hooks.generated.json: expected plugin-bundled hook activation to use plugin_hooks",
   );
   assert(
-    /outside the plugin bundle/i.test(codexHooks.note ?? ""),
-    "dist/codex/.codex/hooks.generated.json: expected explicit external-hook note",
+    codexHooks.generalFeatureFlag === "hooks",
+    "dist/codex/.codex/hooks.generated.json: expected general hooks flag to remain separate",
   );
+  assert(
+    codexHooks.deprecatedGeneralFeatureFlag === "codex_hooks",
+    "dist/codex/.codex/hooks.generated.json: expected deprecated codex_hooks metadata to stay explicit",
+  );
+  assert(
+    /bundled at hooks\/hooks\.json/i.test(codexHooks.note ?? ""),
+    "dist/codex/.codex/hooks.generated.json: expected explicit bundled-hook note",
+  );
+  assert(
+    /plugin_hooks\s*=\s*true/i.test(codexHooks.note ?? ""),
+    "dist/codex/.codex/hooks.generated.json: expected plugin_hooks enablement note",
+  );
+  assert(
+    /codex_hooks[^.]*deprecated/i.test(codexHooks.note ?? ""),
+    "dist/codex/.codex/hooks.generated.json: expected deprecated codex_hooks note",
+  );
+
+  const installDocs = await readText("docs/INSTALL.md");
+  const troubleshootingDocs = await readText("docs/TROUBLESHOOTING.md");
+  const readme = await readText("README.md");
+  for (const [relativePath, text] of [
+    ["docs/INSTALL.md", installDocs],
+    ["docs/TROUBLESHOOTING.md", troubleshootingDocs],
+  ]) {
+    assert(
+      /\[features\][\s\S]*plugin_hooks\s*=\s*true/.test(text),
+      `${relativePath}: expected Codex plugin-bundled hook opt-in guidance`,
+    );
+    assert(
+      /codex_hooks[^.]*deprecated/i.test(text),
+      `${relativePath}: expected deprecated codex_hooks guidance`,
+    );
+  }
+
+  for (const [relativePath, text] of [
+    ["README.md", readme],
+    ["docs/INSTALL.md", installDocs],
+  ]) {
+    assert(
+      /reuses? the saved plugin config/i.test(text),
+      `${relativePath}: expected release update flow to mention saved plugin config reuse`,
+    );
+    assert(
+      /PLUXX_RECONFIGURE=1/.test(text),
+      `${relativePath}: expected release update flow to document forced reconfiguration`,
+    );
+  }
 }
 
 async function assertNoCredentialsRequired() {
@@ -335,8 +384,8 @@ async function assertNoCredentialsRequired() {
 async function assertDemoModeContracts() {
   const config = await readText("pluxx.config.ts");
   assert(
-    /key:\s*"instantly-api-key"[\s\S]*?required:\s*false/.test(config),
-    "pluxx.config.ts: Instantly API key userConfig must remain optional so demo mode can install without production credentials",
+    /key:\s*"instantly-api-key"[\s\S]*?required:\s*true/.test(config),
+    "pluxx.config.ts: Instantly API key userConfig must be required so release curl installers prompt once and persist it",
   );
   assert(
     /repository:\s*"https:\/\/github\.com\/orchidautomation\/sendlens-plugin"/.test(
@@ -404,6 +453,34 @@ async function assertDemoModeContracts() {
   }
 }
 
+async function assertInstallerFirstRefreshContract() {
+  const bootstrap = await readText("scripts/bootstrap-runtime.sh");
+  assert(
+    /PLUXX_INSTALL_DIR/.test(bootstrap),
+    "scripts/bootstrap-runtime.sh: installer-only first refresh must be gated on PLUXX_INSTALL_DIR",
+  );
+  assert(
+    /SENDLENS_SKIP_INSTALL_REFRESH/.test(bootstrap),
+    "scripts/bootstrap-runtime.sh: expected installer first refresh opt-out",
+  );
+  assert(
+    /\^0\.1\.20/.test(packageJson.devDependencies?.["@orchid-labs/pluxx"] ?? ""),
+    "package.json: expected Pluxx 0.1.20+ so generated installers preserve saved userConfig on updates",
+  );
+  assert(
+    /build\/plugin\/refresh-cli\.js/.test(bootstrap),
+    "scripts/bootstrap-runtime.sh: expected installer first refresh to use the bundled refresh CLI",
+  );
+  assert(
+    /First refresh completed/i.test(bootstrap),
+    "scripts/bootstrap-runtime.sh: expected clear successful first-refresh message",
+  );
+  assert(
+    /run \/sendlens-setup/i.test(bootstrap),
+    "scripts/bootstrap-runtime.sh: expected failed first refresh to guide users to /sendlens-setup",
+  );
+}
+
 const inventory = await sourceInventory();
 
 let buildOutput = "";
@@ -420,7 +497,7 @@ if (shouldBuild) {
     "build:hosts output must call out Codex command degradation",
   );
   assert(
-    /hooks on codex: re-expressed via \.codex\/hooks\.json/i.test(buildOutput),
+    /hooks on codex: re-expressed via hooks\/hooks\.json/i.test(buildOutput),
     "build:hosts output must call out Codex hook degradation",
   );
 
@@ -439,6 +516,7 @@ await assertHostCommandInventory(inventory.commands);
 await assertExplicitHostDegradation();
 await assertNoCredentialsRequired();
 await assertDemoModeContracts();
+await assertInstallerFirstRefreshContract();
 
 if (failures.length > 0) {
   console.error("Host bundle inventory failures:");

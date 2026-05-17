@@ -2,7 +2,7 @@ import { definePlugin } from "pluxx";
 
 export default definePlugin({
   name: "sendlens",
-  version: "0.1.29",
+  version: "0.1.32",
   description:
     "Privacy-first outbound campaign analysis for AI workspaces.",
   author: {
@@ -57,9 +57,9 @@ export default definePlugin({
       key: "instantly-api-key",
       title: "Instantly API Key",
       description:
-        "Bearer token for read-only Instantly workspace access. Required for real workspace analysis; optional when SENDLENS_DEMO_MODE=1 is enabled.",
+        "Bearer token for read-only Instantly workspace access. The release installer prompts once and persists it into the installed plugin.",
       type: "secret",
-      required: false,
+      required: true,
       envVar: "SENDLENS_INSTANTLY_API_KEY",
       targets: ["claude-code", "cursor", "codex", "opencode"],
     },

@@ -10,6 +10,9 @@ const MAX_CONCURRENT = 8;
 const RETRY_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 1000;
 const EMAILS_MIN_INTERVAL_MS = 3000; // 20 req/min
+const LIST_PAGE_LIMIT = 100;
+const LIST_MAX_PAGES = 200;
+const WARMUP_ANALYTICS_EMAIL_LIMIT = 100;
 
 export interface InstantlyLead extends Record<string, unknown> {
   id?: string;
@@ -58,6 +61,32 @@ export interface InstantlyLead extends Record<string, unknown> {
   personalization?: string;
   payload?: Record<string, unknown>;
 }
+
+export type WarmupAnalyticsResponse = {
+  email_date_data?: Record<
+    string,
+    Record<
+      string,
+      {
+        sent?: number;
+        received?: number;
+        landed_inbox?: number;
+        landed_spam?: number;
+      }
+    >
+  >;
+  aggregate_data?: Record<
+    string,
+    {
+      sent?: number;
+      received?: number;
+      landed_inbox?: number;
+      landed_spam?: number;
+      health_score?: number;
+      health_score_label?: string;
+    }
+  >;
+};
 
 // Simple semaphore for concurrency control
 let activeRequests = 0;
@@ -173,15 +202,60 @@ function headers(apiKey: string) {
   };
 }
 
+function parseItemsAndCursor(data: unknown) {
+  const record = data as Record<string, unknown>;
+  const items = (
+    Array.isArray(record?.items)
+      ? record.items
+      : Array.isArray(data)
+        ? data
+        : []
+  ) as Array<Record<string, unknown>>;
+  const nextCursor =
+    (record?.next_starting_after as string | undefined)
+    ?? (record?.next_cursor as string | undefined)
+    ?? (record?.starting_after as string | undefined)
+    ?? null;
+
+  return { items, nextCursor };
+}
+
+function chunks<T>(items: T[], size: number) {
+  const groups: T[][] = [];
+  for (let start = 0; start < items.length; start += size) {
+    groups.push(items.slice(start, start + size));
+  }
+  return groups;
+}
+
 // ── API Methods ──
 
-export async function listCampaigns(apiKey: string) {
+export async function listCampaignsPage(apiKey: string, cursor?: string) {
+  const params = new URLSearchParams();
+  params.set("limit", String(LIST_PAGE_LIMIT));
+  if (cursor) params.set("starting_after", cursor);
   const res = await fetchWithRetry(
-    `${API_BASE}/campaigns?limit=100`,
+    `${API_BASE}/campaigns?${params.toString()}`,
     { headers: headers(apiKey) },
   );
   const data = await res.json() as Record<string, unknown>;
-  return (data.items || []) as Array<Record<string, unknown>>;
+  return parseItemsAndCursor(data);
+}
+
+export async function listCampaigns(apiKey: string, maxPages = LIST_MAX_PAGES) {
+  const campaigns: Array<Record<string, unknown>> = [];
+  let cursor: string | null = null;
+  const seenCursors = new Set<string>();
+
+  for (let page = 0; page < maxPages; page++) {
+    const { items, nextCursor } = await listCampaignsPage(apiKey, cursor || undefined);
+    campaigns.push(...items);
+    cursor = nextCursor;
+    if (!cursor || seenCursors.has(cursor)) break;
+    seenCursors.add(cursor);
+  }
+
+  return campaigns;
 }
 
 export type InstantlyApiKeyValidation = {
@@ -334,12 +408,28 @@ export async function getDailyAnalytics(
 }
 
 export async function listAccounts(apiKey: string) {
-  const res = await fetchWithRetry(
-    `${API_BASE}/accounts?limit=100`,
-    { headers: headers(apiKey) },
-  );
-  const data = await res.json() as Record<string, unknown>;
-  return (data.items || []) as Array<Record<string, unknown>>;
+  const accounts: Array<Record<string, unknown>> = [];
+  let cursor: string | null = null;
+  const seenCursors = new Set<string>();
+
+  for (let page = 0; page < LIST_MAX_PAGES; page++) {
+    const params = new URLSearchParams();
+    params.set("limit", String(LIST_PAGE_LIMIT));
+    if (cursor) params.set("starting_after", cursor);
+
+    const res = await fetchWithRetry(
+      `${API_BASE}/accounts?${params.toString()}`,
+      { headers: headers(apiKey) },
+    );
+    const data = await res.json() as Record<string, unknown>;
+    const { items, nextCursor } = parseItemsAndCursor(data);
+    accounts.push(...items);
+    cursor = nextCursor;
+    if (!cursor || seenCursors.has(cursor)) break;
+    seenCursors.add(cursor);
+  }
+
+  return accounts;
 }
 
 export async function listLeadLists(
@@ -641,62 +731,27 @@ export async function listAllCustomTagMappings(
 export async function getWarmupAnalytics(
   apiKey: string,
   emails: string[],
-): Promise<{
-  email_date_data?: Record<
-    string,
-    Record<
-      string,
-      {
-        sent?: number;
-        received?: number;
-        landed_inbox?: number;
-        landed_spam?: number;
-      }
-    >
-  >;
-  aggregate_data?: Record<
-    string,
-    {
-      sent?: number;
-      received?: number;
-      landed_inbox?: number;
-      landed_spam?: number;
-      health_score?: number;
-      health_score_label?: string;
-    }
-  >;
-}> {
-  if (emails.length === 0) return {};
-  const res = await fetchWithRetry(`${API_BASE}/accounts/warmup-analytics`, {
-    method: "POST",
-    headers: headers(apiKey),
-    body: JSON.stringify({ emails }),
-  });
-  return (await res.json()) as {
-    email_date_data?: Record<
-      string,
-      Record<
-        string,
-        {
-          sent?: number;
-          received?: number;
-          landed_inbox?: number;
-          landed_spam?: number;
-        }
-      >
-    >;
-    aggregate_data?: Record<
-      string,
-      {
-        sent?: number;
-        received?: number;
-        landed_inbox?: number;
-        landed_spam?: number;
-        health_score?: number;
-        health_score_label?: string;
-      }
-    >;
+): Promise<WarmupAnalyticsResponse> {
+  const uniqueEmails = [...new Set(emails.map((email) => email.trim()).filter(Boolean))];
+  if (uniqueEmails.length === 0) return {};
+
+  const merged: WarmupAnalyticsResponse = {
+    email_date_data: {},
+    aggregate_data: {},
   };
+
+  for (const emailChunk of chunks(uniqueEmails, WARMUP_ANALYTICS_EMAIL_LIMIT)) {
+    const res = await fetchWithRetry(`${API_BASE}/accounts/warmup-analytics`, {
+      method: "POST",
+      headers: headers(apiKey),
+      body: JSON.stringify({ emails: emailChunk }),
+    });
+    const data = (await res.json()) as WarmupAnalyticsResponse;
+    Object.assign(merged.email_date_data!, data.email_date_data ?? {});
+    Object.assign(merged.aggregate_data!, data.aggregate_data ?? {});
+  }
+
+  return merged;
 }
 
 // ── Per-account per-day analytics ──

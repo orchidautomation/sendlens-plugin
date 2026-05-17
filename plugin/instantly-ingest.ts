@@ -36,6 +36,7 @@ import {
   calculateNonReplyLeadSampleSize,
   inferSamplingMode,
   reservoirSample,
+  shouldUseFullRawIngest,
 } from "./sampling";
 import { writeRefreshStatus } from "./refresh-status";
 import { buildWorkspaceSummary } from "./summary";
@@ -1959,7 +1960,9 @@ async function hydrateCampaignRefreshBundle(
   const totalLeads = Number(analyticsRow?.leads_count ?? 0) || 0;
   const totalSent = Number(analyticsRow?.emails_sent_count ?? 0) || 0;
   const totalUniqueReplies = Number(analyticsRow?.reply_count_unique ?? 0) || 0;
-  const fullRaw = options.forceHybrid ? false : false;
+  const fullRaw = options.forceHybrid
+    ? false
+    : shouldUseFullRawIngest(totalLeads, totalSent);
 
   const leadSampleStartedAt = Date.now();
   const leadSample = await fetchLeadSample(

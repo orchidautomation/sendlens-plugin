@@ -84,6 +84,12 @@ curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/d
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-all.sh | bash
 ```
 
+The Codex installer checks whether plugin-bundled hooks are enabled and prompts to add `[features].plugin_hooks = true` when needed, so session-start refreshes can run after Codex is restarted. For noninteractive installs, use:
+
+```bash
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | PLUXX_CODEX_ENABLE_PLUGIN_HOOKS=1 bash
+```
+
 Direct downloads:
 
 - [Claude Code](https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/sendlens-claude-code-latest.tar.gz)
@@ -100,10 +106,13 @@ After installing, type this in your AI tool:
 ```
 
 It will walk you through connecting your account (or starting in demo mode) and confirm everything is ready.
+The release curl installers ask for your Instantly API key during install and store it with the installed plugin, so you do not need to export it every time you start Codex, Claude Code, Cursor, or OpenCode.
+They also prepare local runtime dependencies and run the first workspace refresh before asking you to restart or reload the host.
+When you rerun the same curl command to update SendLens, the installer reuses the saved plugin config instead of asking for the API key again. To force a fresh prompt, run the installer with `PLUXX_RECONFIGURE=1`.
 
 ## Connect Instantly
 
-SendLens needs a read-only Instantly API key in `SENDLENS_INSTANTLY_API_KEY` for real workspace analysis. Set it before starting Claude Code, Cursor, Codex, or OpenCode.
+SendLens needs a read-only Instantly API key for real workspace analysis. The release installer stores it for you; use `SENDLENS_INSTANTLY_API_KEY` directly only for local development, custom launch scripts, or one-off overrides.
 
 For a one-session launch:
 
@@ -145,7 +154,7 @@ claude
 
 Do not paste API keys into chat. If you change keys, restart or reload the host before asking SendLens to refresh.
 
-Want to try SendLens without connecting Instantly? Ask for demo data during `/sendlens-setup` only when you do not have a real Instantly key configured. When a real API key is configured, SendLens keeps the default workflow focused on your real workspace. To force demo mode anyway, set `SENDLENS_DEMO_MODE=1` before starting the host.
+Want to try SendLens without connecting Instantly? Demo mode is still available from a local/source install or an already-installed plugin with no API key configured. The public release curl installers optimize for real workspace analysis and ask for the Instantly API key up front.
 
 Demo results are synthetic. They are useful for seeing the experience, not for judging a real campaign or customer. Seeding demo data does not delete real workspace rows from the local cache; it activates a synthetic workspace named `demo_workspace`, and a real `refresh_data` later switches active analysis back to live Instantly data.
 
