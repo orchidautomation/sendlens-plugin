@@ -292,6 +292,10 @@ async function assertExplicitHostDegradation() {
     "dist/codex/AGENTS.md: expected Codex always-on SendLens guidance",
   );
   assert(
+    /host startup bias for SendLens/i.test(codexAgentGuidance),
+    "dist/codex/AGENTS.md: expected SendLens startup operating contract",
+  );
+  assert(
     /do not load SendLens skills first/i.test(codexAgentGuidance),
     "dist/codex/AGENTS.md: expected simple inventory questions to stay on the MCP fast path",
   );
@@ -348,8 +352,8 @@ async function assertExplicitHostDegradation() {
     "dist/codex/.codex/skills.generated.json: using-sendlens must not auto-invoke for routine SendLens questions",
   );
   assert(
-    /simple inventory or freshness/i.test(usingSendLensSkill?.description ?? ""),
-    "dist/codex/.codex/skills.generated.json: using-sendlens description must preserve the routine inventory fast path",
+    /operating contract/i.test(usingSendLensSkill?.description ?? ""),
+    "dist/codex/.codex/skills.generated.json: using-sendlens description must remain available as an explicit operating-contract reference",
   );
   const workspaceHealthSkill = generatedSkills.find(
     (skill) => skill.id === "workspace-health",

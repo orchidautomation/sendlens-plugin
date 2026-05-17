@@ -22,6 +22,17 @@ SendLens is the reasoning layer over Instantly data. It runs read-only, stores d
 - `icp-signals`: Use for lead-segment hypotheses, campaign-variable patterns, and "who responds?" questions.
 - `cold-email-best-practices`: Use as the policy layer when recommending changes or critiquing copy and setup.
 
+## Startup Operating Contract
+
+Treat this file as the host startup bias for SendLens. The user should not need to invoke `/using-sendlens` or ask for a SendLens skill before campaign, reply, copy, ICP, deliverability, or Instantly workspace questions route through SendLens.
+
+- For simple inventory, freshness, and status questions, call `workspace_snapshot` and `refresh_status` directly, then answer without loading extra SendLens skills.
+- For diagnostic or recommendation questions, start from `workspace_snapshot`, then use `analysis_starters` for the matching topic before custom SQL.
+- For winner, scale, kill, working, or client-safe claims, treat broad aggregates as triage only. Load the campaign with `load_campaign_data` before making the claim.
+- For copy, reply, ICP, launch QA, and experiment planning, narrow to one campaign before deep analysis.
+- Keep evidence labels honest: `exact_aggregate`, `sampled_evidence`, `reconstructed_outbound`, `hydrated_reply_body`, `inference`, or `unsupported`.
+- Do not expose internal routing, skill-selection, or setup mechanics in the final answer unless the user asks. Show the evidence and answer the business question.
+
 ## Linear Planning
 
 - For SendLens Linear board, roadmap, project, issue, subissue, label, milestone, dependency, pricing, cloud, services, or enterprise planning work, use the `sendlens-linear-planning` skill first.

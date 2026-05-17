@@ -1,6 +1,6 @@
 ---
 name: "using-sendlens"
-description: "Use when the user asks how to use SendLens, evidence classes, workflow selection, routing, or fallback boundaries; not for simple inventory or freshness checks."
+description: "Use when the user asks for the SendLens operating contract, evidence classes, workflow selection, routing, or fallback boundaries."
 disable-model-invocation: true
 ---
 
