@@ -15,15 +15,16 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 - Skill source: `skills/reply-patterns/SKILL.md`
 - Command: `/reply-patterns`
 - Default agent: `reply-auditor`
-- MCP tools: `workspace_snapshot`, `fetch_reply_text`, `analysis_starters`, `analyze_data`, plus `load_campaign_data` for one-campaign work
+- MCP tools: `workspace_snapshot`, `prepare_campaign_analysis`, `fetch_reply_text`, `analysis_starters`, `analyze_data`, plus `load_campaign_data` for one-campaign work
 
 ## Expected Flow
 
 1. Scope to one campaign unless the user explicitly asks for a workspace-wide comparison.
 2. Pull `analysis_starters(topic="reply-patterns")`.
 3. Query `reply_context` first for reply outcome evidence.
-4. Run `fetch_reply_text` for exactly one campaign only when actual reply wording is needed.
-5. Separate positive, negative, and neutral outcomes from Instantly lead status before grouping by step or variant.
+4. Run `prepare_campaign_analysis` when enough exact reply wording is needed for working/not-working or reply-quality diagnosis.
+5. Run `fetch_reply_text` for exactly one campaign only when a low-level manual fetch is enough.
+6. Separate positive, negative, and neutral outcomes from Instantly lead status before grouping by step or variant.
 
 ## Output Shape
 
@@ -36,4 +37,4 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 ## Evidence Boundaries
 
-By default, reply labels come from Instantly lead state. Only quote or characterize actual reply-body language from `reply_body_text` after `fetch_reply_text` has written exact reply rows into local DuckDB. Out-of-office status `0` is excluded by default unless the user asks for OOO replies.
+By default, reply labels come from Instantly lead state. Only quote or characterize actual reply-body language from `reply_body_text` after `prepare_campaign_analysis` or `fetch_reply_text` has written exact reply rows into local DuckDB. Prefer `reply_email_context` after premium hydration because it preserves fetched bodies even when lead context is missing. Out-of-office status `0` is excluded by default unless the user asks for OOO replies.

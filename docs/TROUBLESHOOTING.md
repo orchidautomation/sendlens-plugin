@@ -67,6 +67,7 @@ Expected core tools:
 - `refresh_status`
 - `refresh_data`
 - `load_campaign_data`
+- `prepare_campaign_analysis`
 - `fetch_reply_text`
 - `analysis_starters`
 - `list_tables`

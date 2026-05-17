@@ -68,6 +68,7 @@ const REQUIRED_USING_SENDLENS_TERMS = [
   "workspace_snapshot",
   "analysis_starters",
   "load_campaign_data",
+  "prepare_campaign_analysis",
   "fetch_reply_text",
   "reply_context",
   "campaign_variants",
@@ -135,7 +136,7 @@ const ROUTING_CONTRACT_CASES = [
     prompt: "What are prospects objecting to?",
     skill: "reply-patterns",
     firstTool: "workspace_snapshot",
-    topic: "fetch_reply_text",
+    topic: "prepare_campaign_analysis",
   },
   {
     prompt: "Who seems to respond best?",
@@ -175,6 +176,7 @@ const PROMOTION_GUARD_CONTRACTS = [
     path: "skills/campaign-performance/SKILL.md",
     patterns: [
       /Before calling a campaign `working`/i,
+      /prepare_campaign_analysis/i,
       /reply_context/i,
       /campaign_variants/i,
       /wrong-template or wrong-topic mismatch/i,

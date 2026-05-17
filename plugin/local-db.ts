@@ -494,6 +494,7 @@ async function ensureSchema(conn: DuckDBConnection) {
       campaign_id VARCHAR NOT NULL,
       thread_id VARCHAR,
       lead_email VARCHAR,
+      lead_id VARCHAR,
       message_id VARCHAR,
       eaccount VARCHAR,
       from_email VARCHAR,
@@ -637,6 +638,7 @@ async function ensureSchema(conn: DuckDBConnection) {
     "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS disable_bounce_protect BOOLEAN",
     "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS insert_unsubscribe_header BOOLEAN",
     "ALTER TABLE sendlens.reply_emails ADD COLUMN IF NOT EXISTS lead_email VARCHAR",
+    "ALTER TABLE sendlens.reply_emails ADD COLUMN IF NOT EXISTS lead_id VARCHAR",
     "ALTER TABLE sendlens.reply_emails ADD COLUMN IF NOT EXISTS message_id VARCHAR",
     "ALTER TABLE sendlens.reply_emails ADD COLUMN IF NOT EXISTS eaccount VARCHAR",
     "ALTER TABLE sendlens.reply_emails ADD COLUMN IF NOT EXISTS body_html VARCHAR",
@@ -861,11 +863,14 @@ async function ensureSchema(conn: DuckDBConnection) {
           ELSE 'standard_deliverability_guardrails'
         END AS deliverability_settings_status,
         COALESCE(ca.leads_count, 0) AS leads_count,
-        COALESCE(ca.new_leads_contacted_count, 0) AS contacted_count,
+        COALESCE(ca.contacted_count, 0) AS contacted_count,
+        COALESCE(ca.new_leads_contacted_count, 0) AS new_leads_contacted_count,
         COALESCE(ca.emails_sent_count, 0) AS emails_sent_count,
         COALESCE(ca.reply_count_unique, 0) AS reply_count_unique,
         COALESCE(ca.reply_count_automatic, 0) AS reply_count_automatic,
         COALESCE(ca.bounced_count, 0) AS bounced_count,
+        COALESCE(ca.unsubscribed_count, 0) AS unsubscribed_count,
+        COALESCE(ca.completed_count, 0) AS completed_count,
         COALESCE(ca.total_opportunities, 0) AS total_opportunities,
         COALESCE(ca.total_opportunity_value, 0) AS total_opportunity_value,
         COALESCE(sr.ingest_mode, 'missing') AS ingest_mode,
@@ -1317,6 +1322,114 @@ async function ensureSchema(conn: DuckDBConnection) {
        AND le.email_replied_step = cv.step
        AND COALESCE(le.email_replied_variant, 0) = cv.variant
       WHERE le.has_reply_signal = TRUE`,
+    `CREATE OR REPLACE VIEW sendlens.reply_email_context AS
+      SELECT
+        re.workspace_id,
+        re.campaign_id,
+        c.name AS campaign_name,
+        re.id AS reply_email_id,
+        re.thread_id AS reply_thread_id,
+        re.lead_id,
+        CASE
+          WHEN re.lead_email LIKE '%@%' THEN re.lead_email
+          ELSE re.from_email
+        END AS lead_email,
+        re.from_email AS reply_from_email,
+        re.to_email AS reply_to_email,
+        re.subject AS reply_subject,
+        re.body_text AS reply_body_text,
+        re.body_html AS reply_body_html,
+        re.sent_at AS reply_received_at,
+        re.i_status AS reply_email_i_status,
+        re.is_auto_reply AS reply_is_auto_reply,
+        re.content_preview AS reply_content_preview,
+        re.hydrated_at AS reply_hydrated_at,
+        CASE re.i_status
+          WHEN 4 THEN 'won'
+          WHEN 3 THEN 'meeting_completed'
+          WHEN 2 THEN 'meeting_booked'
+          WHEN 1 THEN 'interested'
+          WHEN 0 THEN 'out_of_office'
+          WHEN -1 THEN 'not_interested'
+          WHEN -2 THEN 'wrong_person'
+          WHEN -3 THEN 'lost'
+          WHEN -4 THEN 'no_show'
+          ELSE 'unclassified'
+        END AS reply_email_i_status_label,
+        COALESCE(le.lt_interest_status, re.i_status) AS lt_interest_status,
+        COALESCE(le.lt_interest_label,
+          CASE re.i_status
+            WHEN 4 THEN 'won'
+            WHEN 3 THEN 'meeting_completed'
+            WHEN 2 THEN 'meeting_booked'
+            WHEN 1 THEN 'interested'
+            WHEN 0 THEN 'out_of_office'
+            WHEN -1 THEN 'not_interested'
+            WHEN -2 THEN 'wrong_person'
+            WHEN -3 THEN 'lost'
+            WHEN -4 THEN 'no_show'
+            ELSE 'unclassified'
+          END
+        ) AS lt_interest_label,
+        COALESCE(le.reply_outcome_label,
+          CASE
+            WHEN re.i_status IN (1, 2, 3, 4) THEN 'positive'
+            WHEN re.i_status IN (-1, -2, -3, -4) THEN 'negative'
+            WHEN re.i_status = 0 THEN 'out_of_office'
+            ELSE 'neutral'
+          END
+        ) AS reply_outcome_label,
+        le.company_name,
+        le.company_domain,
+        le.job_title,
+        le.custom_payload,
+        COALESCE(CAST(le.email_replied_step AS VARCHAR), re.step_resolved) AS step_resolved,
+        COALESCE(CAST(le.email_replied_variant AS VARCHAR), re.variant_resolved, '0') AS variant_resolved,
+        so.subject AS rendered_subject,
+        so.body_text AS rendered_body_text,
+        so.sample_source AS rendered_sample_source,
+        cv.subject AS template_subject,
+        cv.body_text AS template_body_text,
+        CASE WHEN le.email IS NOT NULL THEN TRUE ELSE FALSE END AS has_lead_context,
+        CASE WHEN cv.campaign_id IS NOT NULL THEN TRUE ELSE FALSE END AS has_template_context,
+        CASE WHEN re.body_text IS NOT NULL AND trim(re.body_text) <> '' THEN TRUE ELSE FALSE END AS hydrated_reply_body,
+        CASE
+          WHEN re.body_text IS NULL OR trim(re.body_text) = '' THEN 'missing_reply_body'
+          WHEN le.email IS NULL AND cv.campaign_id IS NULL THEN 'missing_lead_and_template_context'
+          WHEN le.email IS NULL THEN 'missing_lead_context'
+          WHEN cv.campaign_id IS NULL THEN 'missing_template_context'
+          ELSE 'covered'
+        END AS context_gap_reason
+      FROM sendlens.reply_emails re
+      LEFT JOIN sendlens.campaigns c
+        ON re.workspace_id = c.workspace_id
+       AND re.campaign_id = c.id
+      LEFT JOIN sendlens.lead_evidence le
+        ON re.workspace_id = le.workspace_id
+       AND re.campaign_id = le.campaign_id
+       AND lower(
+         CASE
+           WHEN re.lead_email LIKE '%@%' THEN re.lead_email
+           ELSE re.from_email
+         END
+       ) = lower(le.email)
+      LEFT JOIN sendlens.sampled_outbound_emails so
+        ON re.workspace_id = so.workspace_id
+       AND re.campaign_id = so.campaign_id
+       AND lower(
+         CASE
+           WHEN re.lead_email LIKE '%@%' THEN re.lead_email
+           ELSE re.from_email
+         END
+       ) = lower(so.to_email)
+       AND COALESCE(CAST(le.email_replied_step AS VARCHAR), re.step_resolved) = so.step_resolved
+       AND COALESCE(CAST(le.email_replied_variant AS VARCHAR), re.variant_resolved, '0') = so.variant_resolved
+      LEFT JOIN sendlens.campaign_variants cv
+        ON re.workspace_id = cv.workspace_id
+       AND re.campaign_id = cv.campaign_id
+       AND TRY_CAST(COALESCE(CAST(le.email_replied_step AS VARCHAR), re.step_resolved) AS INTEGER) = cv.step
+       AND TRY_CAST(COALESCE(CAST(le.email_replied_variant AS VARCHAR), re.variant_resolved, '0') AS INTEGER) = cv.variant
+      WHERE re.direction = 'inbound'`,
     `CREATE OR REPLACE VIEW sendlens.rendered_outbound_context AS
       SELECT
         so.workspace_id,

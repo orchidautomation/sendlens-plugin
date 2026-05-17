@@ -188,7 +188,7 @@ export async function buildWorkspaceSummary(
       `Exact headline rates: ${replyRate.toFixed(2)}% unique reply rate and ${bounceRate.toFixed(2)}% bounce rate.`,
       `Best campaign: ${bestCampaignLine}`,
       bestCampaign
-        ? `Coverage on the current leader: ${num(bestCampaign.reply_lead_rows)} full reply leads, ${num(bestCampaign.nonreply_rows_sampled)} sampled non-reply leads, ${num(bestCampaign.reply_outbound_rows)} locally reconstructed reply-copy rows.`
+        ? `Coverage on the current leader: ${num(bestCampaign.reply_lead_rows)} reply-signal leads found during bounded lead scan, ${num(bestCampaign.nonreply_rows_sampled)} sampled non-reply leads, ${num(bestCampaign.reply_outbound_rows)} locally reconstructed reply-copy rows.`
         : "Coverage on the current leader is not available yet.",
       `Coverage across active campaigns: ${repliedLeadCount} replied leads, ${sampledLeadCount} sampled leads, and ${tagCount} custom tags stored locally.`,
       `Deliverability evidence: ${inboxPlacementTestCount} inbox placement tests and ${inboxPlacementAnalyticsCount} inbox placement analytics rows stored locally.`,

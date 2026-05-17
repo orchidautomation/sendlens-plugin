@@ -179,7 +179,7 @@ assert.equal(summary.exact_metrics.total_unique_replies, 24);
 assert.ok(summary.summary.includes("2 custom tags stored locally"));
 assert.ok(summary.summary.includes("1 inbox placement tests and 4 inbox placement analytics rows"));
 assert.ok(summary.summary.includes("Sampled raw tables are evidence support only"));
-assert.ok(summary.summary.includes("full reply leads"));
+assert.ok(summary.summary.includes("reply-signal leads found during bounded lead scan"));
 assert.equal(summary.exact_metrics.inbox_placement_test_count, 1);
 assert.equal(summary.exact_metrics.inbox_placement_analytics_rows, 4);
 assert.equal(summary.coverage.length, 1);
@@ -272,6 +272,47 @@ assert.equal(alphaReplyContext.reply_body_text, "Actual positive reply text");
 assert.equal(Number(alphaReplyContext.reply_email_i_status), 1);
 assert.equal(alphaReplyContext.template_subject, "Alpha intro");
 assert.equal(alphaReplyContext.rendered_subject, "Alpha intro");
+
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.reply_emails
+   (workspace_id, id, campaign_id, thread_id, lead_email, lead_id, message_id, eaccount, from_email, to_email, subject, body_text, body_html, sent_at, is_auto_reply, ai_interest_value, i_status, content_preview, direction, step_resolved, variant_resolved, hydrated_at, synced_at)
+   VALUES ('ws_test', 're_missed', 'c1', 'thread-missed', 'missed@example.com', 'lead-missed', '<missed@example.com>', 'sender@example.com', 'missed@example.com', 'sender@example.com', 'Re: Alpha intro', 'Fetched body for missed lead sample', '<p>Fetched body for missed lead sample</p>', CURRENT_TIMESTAMP, false, 0.1, -1, 'Fetched body for missed lead sample', 'inbound', '0', '0', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+);
+const emailAnchoredGap = await runQuery(
+  db,
+  `SELECT lead_email, reply_body_text, has_lead_context, has_template_context, hydrated_reply_body, context_gap_reason
+   FROM sendlens.reply_email_context
+   WHERE campaign_id = 'c1'
+     AND reply_email_id = 're_missed'`,
+);
+assert.equal(emailAnchoredGap.length, 1);
+assert.equal(emailAnchoredGap[0].reply_body_text, "Fetched body for missed lead sample");
+assert.equal(Boolean(emailAnchoredGap[0].has_lead_context), false);
+assert.equal(Boolean(emailAnchoredGap[0].has_template_context), true);
+assert.equal(Boolean(emailAnchoredGap[0].hydrated_reply_body), true);
+assert.equal(emailAnchoredGap[0].context_gap_reason, "missing_lead_context");
+
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.sampled_leads
+   (workspace_id, campaign_id, id, email, first_name, last_name, company_name, company_domain, status, email_reply_count, lt_interest_status, email_replied_step, email_replied_variant, timestamp_last_reply, job_title, custom_payload, sample_source, sampled_at)
+   VALUES ('ws_test', 'c1', 'lead-missed', 'missed@example.com', 'Mira', 'Missed', 'Missed Co', 'missed.test', 'active', 1, -1, 0, 0, CURRENT_TIMESTAMP, 'VP Marketing', '{"campaign":"c1","stage":"backfilled"}', 'reply_email_contact_backfill', CURRENT_TIMESTAMP)`,
+);
+const emailAnchoredBackfilled = await runQuery(
+  db,
+  `SELECT company_name, job_title, has_lead_context, has_template_context, hydrated_reply_body, context_gap_reason
+   FROM sendlens.reply_email_context
+   WHERE campaign_id = 'c1'
+     AND reply_email_id = 're_missed'`,
+);
+assert.equal(emailAnchoredBackfilled.length, 1);
+assert.equal(emailAnchoredBackfilled[0].company_name, "Missed Co");
+assert.equal(emailAnchoredBackfilled[0].job_title, "VP Marketing");
+assert.equal(Boolean(emailAnchoredBackfilled[0].has_lead_context), true);
+assert.equal(Boolean(emailAnchoredBackfilled[0].has_template_context), true);
+assert.equal(Boolean(emailAnchoredBackfilled[0].hydrated_reply_body), true);
+assert.equal(emailAnchoredBackfilled[0].context_gap_reason, "covered");
 
 const renderedOutboundContext = await runQuery(
   db,
@@ -421,6 +462,23 @@ assert.equal(
   true,
 );
 const icpRecipes = getQueryRecipes("icp-signals");
+const leadListSourceRecipe = icpRecipes.find((recipe) => recipe.id === "lead-list-source-quality");
+assert.ok(leadListSourceRecipe);
+const leadListSourceRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(leadListSourceRecipe.sql.replaceAll("{{campaign_id}}", "c1"), "ws_test"),
+);
+assert.equal(leadListSourceRows.length > 0, true);
+const companyDomainQualityRecipe = icpRecipes.find((recipe) => recipe.id === "company-domain-quality");
+assert.ok(companyDomainQualityRecipe);
+const companyDomainQualityRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(companyDomainQualityRecipe.sql.replaceAll("{{campaign_id}}", "c1"), "ws_test"),
+);
+assert.equal(companyDomainQualityRows.length > 0, true);
+const duplicateExposureRecipe = icpRecipes.find((recipe) => recipe.id === "duplicate-contact-company-exposure");
+assert.ok(duplicateExposureRecipe);
+assert.match(duplicateExposureRecipe.sql, /campaigns_seen/);
 const payloadKeySignalsRecipe = icpRecipes.find((recipe) => recipe.id === "campaign-payload-key-signals");
 assert.ok(payloadKeySignalsRecipe);
 assert.match(payloadKeySignalsRecipe.sql, /sendlens\.lead_payload_kv/);
@@ -448,9 +506,9 @@ const payloadPresenceRows = await runQuery(
 );
 const countryPresence = payloadPresenceRows.find((row) => row.payload_key === "Country");
 assert.ok(countryPresence);
-assert.equal(Number(countryPresence.sampled_leads), 11);
+assert.equal(Number(countryPresence.sampled_leads), 12);
 assert.equal(Number(countryPresence.leads_with_key), 3);
-assert.equal(Number(countryPresence.leads_without_key), 8);
+assert.equal(Number(countryPresence.leads_without_key), 9);
 assert.equal(Number(countryPresence.replying_leads_with_key), 1);
 assert.equal(Number(countryPresence.positive_leads_with_key), 1);
 await runQuery(
@@ -563,6 +621,37 @@ assert.equal(Number(utilizationRows[0].resolved_account_daily_limit_total), 50);
 assert.equal(Number(utilizationRows[0].deduped_sender_sent), 15);
 assert.equal(Number(utilizationRows[0].campaign_limit_utilization_pct), 27.27);
 assert.equal(Number(utilizationRows[0].account_limit_utilization_pct), 30);
+const tagAccountRunwayRecipe = campaignRecipes.find((recipe) => recipe.id === "campaign-tag-account-tag-capacity-runway");
+assert.ok(tagAccountRunwayRecipe);
+const tagAccountRunwayRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(
+    tagAccountRunwayRecipe.sql
+      .replaceAll("{{campaign_tag_name}}", "Priority")
+      .replaceAll("{{account_tag_name}}", "Sender Pool"),
+    "ws_test",
+  ),
+);
+assert.equal(tagAccountRunwayRows.length, 2);
+const alphaTagAccountRunway = tagAccountRunwayRows.find((row) => row.campaign_id === "c1");
+assert.ok(alphaTagAccountRunway);
+assert.equal(Number(alphaTagAccountRunway.tagged_sender_accounts), 1);
+assert.equal(Number(alphaTagAccountRunway.tagged_sender_daily_limit_total), 20);
+assert.equal(Number(alphaTagAccountRunway.effective_configured_daily_capacity_for_tagged_inboxes), 20);
+assert.equal(Number(alphaTagAccountRunway.completed_count), 0);
+const leadStateSampleRecipe = campaignRecipes.find((recipe) => recipe.id === "campaign-lead-state-sample-by-step");
+assert.ok(leadStateSampleRecipe);
+const leadStateSampleRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(
+    leadStateSampleRecipe.sql.replaceAll("{{campaign_id}}", "c1"),
+    "ws_test",
+  ),
+);
+assert.equal(leadStateSampleRows.length > 0, true);
+const campaignMoversRecipe = campaignRecipes.find((recipe) => recipe.id === "workspace-campaign-recent-movers");
+assert.ok(campaignMoversRecipe);
+assert.match(campaignMoversRecipe.sql, /sent_delta_vs_prior_7d/);
 const trendRecipe = campaignRecipes.find((recipe) => recipe.id === "campaign-tag-daily-volume-trend");
 assert.ok(trendRecipe);
 const trendRows = await runQuery(
@@ -580,6 +669,21 @@ assert.equal(
   workspaceHealthRecipes.some((recipe) => recipe.id === "campaign-sender-inventory-by-tag" && recipe.sql.includes("sendlens.campaign_accounts")),
   true,
 );
+const senderLoadBalanceRecipe = workspaceHealthRecipes.find((recipe) => recipe.id === "sender-load-balance-by-campaign-tag");
+assert.ok(senderLoadBalanceRecipe);
+const senderLoadBalanceRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(
+    senderLoadBalanceRecipe.sql.replaceAll("{{tag_name}}", "Priority"),
+    "ws_test",
+  ),
+);
+assert.equal(senderLoadBalanceRows.length, 2);
+assert.equal(senderLoadBalanceRows.some((row) => row.account_email === "direct@example.com"), true);
+assert.equal(senderLoadBalanceRows.some((row) => row.account_email === "tagged@example.com"), true);
+const negativeConcentrationRecipe = workspaceHealthRecipes.find((recipe) => recipe.id === "negative-unsubscribe-concentration");
+assert.ok(negativeConcentrationRecipe);
+assert.match(negativeConcentrationRecipe.sql, /unsubscribed_count/);
 assert.equal(
   workspaceHealthRecipes.some((recipe) => recipe.id === "inbox-placement-test-overview" && recipe.sql.includes("sendlens.inbox_placement_test_overview")),
   true,

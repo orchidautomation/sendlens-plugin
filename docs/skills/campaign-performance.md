@@ -15,7 +15,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 - Skill source: `skills/campaign-performance/SKILL.md`
 - Command: `/campaign-performance`
 - Default agent: `campaign-analyst`
-- MCP tools: `workspace_snapshot`, `analysis_starters`, `list_tables`, `list_columns`, `analyze_data`
+- MCP tools: `workspace_snapshot`, `analysis_starters`, `list_tables`, `list_columns`, `analyze_data`, `load_campaign_data`, `prepare_campaign_analysis`
 
 ## Expected Flow
 
@@ -24,6 +24,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 3. Use `workspace_snapshot.campaigns` for the first ranking pass.
 4. Use exact campaign and account aggregate tables for headline comparisons.
 5. If the user narrows to one campaign and needs fresher evidence, run `load_campaign_data`.
+6. Before one-campaign working/not-working, winner, scale, or kill claims, run `prepare_campaign_analysis`.
 
 ## Output Shape
 

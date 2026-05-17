@@ -19,15 +19,21 @@ If required SendLens MCP tools are missing, stop and tell the user to reload or 
 | User asks | Workflow | Start with | Then |
 | --- | --- | --- | --- |
 | What is happening, what is working, reply-rate issues, sender risk | `workspace-health` | `workspace_snapshot` | `analysis_starters(topic="workspace-health")` |
-| Campaign winners, step/variant performance, runway, scale/kill decisions | `campaign-performance` | `workspace_snapshot` | `analysis_starters(topic="campaign-performance")` |
+| Campaign winners, step/variant performance, runway, scale/kill decisions | `campaign-performance` | `workspace_snapshot` | `analysis_starters(topic="campaign-performance")`; use `prepare_campaign_analysis` before one-campaign working/winner/scale/kill claims |
 | Launch, scale, resume, clone, or handoff readiness | `campaign-launch-qa` | `workspace_snapshot` | `analysis_starters(topic="campaign-launch-qa")`, then `load_campaign_data` for the selected campaign |
 | Copy, subject lines, templates, personalization, rendered outbound | `copy-analysis` | `workspace_snapshot` if scope is broad | `analysis_starters(topic="copy-analysis")`, then `load_campaign_data` |
-| What prospects are saying, objections, positive/negative replies | `reply-patterns` | `workspace_snapshot` if campaign is ambiguous | `load_campaign_data`, then `fetch_reply_text` only when actual reply wording is needed |
+| What prospects are saying, objections, positive/negative replies | `reply-patterns` | `workspace_snapshot` if campaign is ambiguous | `load_campaign_data`, then `prepare_campaign_analysis` for enough reply wording or `fetch_reply_text` for a low-level manual fetch |
 | Who responds best, lead fields, payload variables, ICP signals | `icp-signals` | `workspace_snapshot` if scope is broad | `analysis_starters(topic="icp-signals")`, then one-campaign payload analysis |
 | What should we test next | `experiment-planner` | `workspace_snapshot` | choose one campaign/lane before proposing the experiment |
 | Client-safe update or AM action queue | `account-manager-brief` | `workspace_snapshot` | `analysis_starters(topic="account-manager-brief")` |
 
 Use `analysis_starters` before custom `analyze_data` for common questions. Use `load_campaign_data` before deep one-campaign copy, reply, ICP, or experiment analysis.
+
+## Fast Startup Vs Premium Depth
+
+Startup keeps SendLens fast: no Instantly List Email calls, no broad reply-body hydration, and no workspace-wide email body pulls. Session-start refresh stores exact aggregates, account/sender health, tags, inbox-placement data, daily metrics, step analytics, campaign templates, bounded lead samples, and reconstructed outbound samples.
+
+Premium depth is deliberate and one campaign at a time. For working/not-working, serious reply-quality, copy, ICP, or scale/kill diagnosis, call `prepare_campaign_analysis`; it uses the rate-limited email endpoint for exact reply bodies, then uses `/leads/list` contact/id backfill for lead context.
 
 ## Evidence Discipline
 
@@ -36,7 +42,7 @@ Label material claims with the weakest relevant evidence class:
 - `exact_aggregate`: Instantly-derived campaign/account/tag/inbox-placement aggregates and semantic rollups.
 - `sampled_evidence`: bounded lead, payload, non-reply, or outbound samples.
 - `reconstructed_outbound`: locally reconstructed copy from templates plus lead variables; not delivered email text.
-- `hydrated_reply_body`: exact inbound reply text fetched through `fetch_reply_text`.
+- `hydrated_reply_body`: exact inbound reply text fetched through `prepare_campaign_analysis` or `fetch_reply_text`.
 - `inference`: analyst judgment tied to evidence.
 - `unsupported`: claim cannot be made from available SendLens evidence.
 
@@ -67,6 +73,7 @@ Before promoting a campaign to `working`, `winner`, `scale`, or client-safe reco
 
 - Narrow to the campaign, tag, or client lane being promoted and run `load_campaign_data` for every campaign you plan to cite as proof.
 - Inspect `reply_context` with `campaign_variants` and `rendered_outbound_context` enough to check whether replies are business signal tied to the intended copy path.
+- For one-campaign working/not-working, winner, scale, kill, or client-safe recommendations, call `prepare_campaign_analysis` so the analysis has enough fetched reply bodies, `reply_email_context`, and context-gap counts.
 - If replies are low-volume, mostly negative/neutral/wrong-person, complaints about relevance, or suggest the wrong template/topic reached prospects, pivot to `reply-patterns` or `copy-analysis`.
 - Run `fetch_reply_text` when actual reply wording could change the recommendation, especially when aggregate reply rate looks good but outcome quality or copy relevance is suspect.
 - Until this check passes, call the campaign a `metric leader requiring verification`, not a winner.

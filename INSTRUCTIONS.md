@@ -46,7 +46,7 @@ Treat this file as the host startup bias for SendLens. The user should not need 
 - Treat `using-sendlens` as the routing contract for SendLens product behavior. Cross-platform and cross-agent startup delivery belongs in Pluxx, not in SendLens.
 - If the user mentions `SendLens`, the plugin name, the Instantly workspace, campaign performance, replies, copy health, or asks to "pull my data", do not freeform first. Start with SendLens tools immediately.
 - In Codex, this `AGENTS.md` file is the always-on SendLens operating contract. For simple inventory and freshness questions such as "what campaigns do you see?" or "when was SendLens last refreshed?", do not load SendLens skills first. Call `workspace_snapshot` and `refresh_status` directly, then answer concisely. Use SendLens skills only for deeper diagnosis, copy/reply/ICP analysis, launch QA, experiment planning, setup checks, or when the user explicitly asks how to use SendLens.
-- Session start already triggers a fresh local refresh of actively sending campaigns. That startup path is intentionally lean: exact analytics, templates, and a sampled lead evidence layer with full replied leads plus bounded non-reply leads. Call `refresh_data` again only when the user explicitly asks for another fresh pull or switches clients.
+- Session start already triggers a fresh local refresh of actively sending campaigns. That startup path is intentionally lean: exact analytics, templates, and a sampled lead evidence layer with reply-signal leads found during bounded lead scans plus bounded non-reply leads. Call `refresh_data` again only when the user explicitly asks for another fresh pull or switches clients.
 - Use SendLens MCP tools as the whole working surface for SendLens analysis. If those tools are missing or unavailable in the host session, stop and tell the user to reload or reinstall the SendLens plugin so the MCP server mounts correctly. Do not inspect local files, run shell setup checks such as `claude mcp list`, parse cached tool outputs with `jq`, query DuckDB through shell, read `refresh-status.json`, wait with shell commands such as `sleep`, or inspect repo source as a substitute for SendLens tool calls.
 - `workspace_snapshot`: First read after refresh or for broad workspace questions. This is the default first call for "pull my data", "what's happening?", "what's working?", and "give me the snapshot".
 - `refresh_status`: Use when the user asks what startup refresh is doing, whether the cache is current, or why data looks incomplete or stale.
@@ -80,8 +80,8 @@ If the host does not expose native delegated agents, preserve the same one-campa
 
 - Prefer `campaign_overview` for campaign ranking, health, sample coverage, and "what is working?" analysis. It is the main semantic rollup.
 - Broad workspace and tag-scoped reads should default to active campaigns only. Only include inactive, paused, completed, or purely historical campaigns when the user explicitly asks for them.
-- For deep analysis, prefer one campaign at a time. Use workspace-level views only to rank or choose campaigns, then move to `load_campaign_data(campaign_id=...)` before doing detailed copy, reply, or ICP analysis.
-- Prefer `reply_context` for positive/negative cohort analysis and "what copy got responses?" because it joins replied leads back to template context and locally reconstructed copy.
+- For deep analysis, prefer one campaign at a time. Use workspace-level views only to rank or choose campaigns, then move to `load_campaign_data(campaign_id=...)` before doing detailed copy, reply, or ICP analysis. Use `prepare_campaign_analysis` before one-campaign working/not-working, reply-quality, winner, scale, or kill claims.
+- Prefer `reply_context` for positive/negative cohort analysis and "what copy got responses?" because it joins replied leads back to template context and locally reconstructed copy. Prefer `reply_email_context` after `prepare_campaign_analysis` because it is anchored on fetched reply emails and preserves bodies even when lead context is missing.
 - Prefer `rendered_outbound_context` when the user wants to inspect reconstructed lead-level copy or personalization QA. It is not exact delivered email text.
 - Prefer `lead_evidence` for lead-level ICP context and `lead_payload_kv` for campaign payload key/value analysis.
 - Prefer `campaign_tags` and `account_tags` over raw tag joins when the user wants client/tag scoping.
@@ -100,9 +100,9 @@ If the host does not expose native delegated agents, preserve the same one-campa
 - Treat `lead_evidence`, `lead_payload_kv`, `reply_context`, and `rendered_outbound_context` as the preferred semantic evidence layer.
 - Treat `sampled_leads` and `sampled_outbound_emails` as storage tables behind that layer. Never project full-population totals from sampled raw rows.
 - Reply outcome labels come from Instantly lead state, primarily `lt_interest_status` and related lead metadata. Do not invent sentiment labels from reply text in V1.
-- Default to Instantly reply outcomes and reconstructed outbound copy unless `fetch_reply_text` has returned exact reply bodies.
+- Default to Instantly reply outcomes and reconstructed outbound copy unless `prepare_campaign_analysis` or `fetch_reply_text` has returned exact reply bodies.
 - Use `campaign_variants` as the source of truth for intended copy templates and `rendered_outbound_context` to verify how those templates render against stored lead variables.
-- Replied leads are intentionally kept in full whenever they can be resolved from the campaign lead feed. Non-reply leads are bounded locally.
+- Reply-signal leads are found during bounded lead scans and can be supplemented by reply-email contact/id backfill. Non-reply leads are bounded locally.
 - `custom_payload` is preserved per lead as raw JSON text, but campaign-variable analysis should use `lead_payload_kv` and the ICP payload recipes. Do not assume payload keys are shared across campaigns or customers.
 - Call out coverage limitations explicitly when raw evidence was sampled.
 
@@ -112,7 +112,8 @@ The expected flow is:
 
 1. use `workspace-triager` or `campaign_overview` to pick the campaign
 2. load one campaign with `load_campaign_data`
-3. use `campaign-analyst`, `copy-auditor`, `icp-auditor`, or `reply-auditor` as needed
+3. run `prepare_campaign_analysis` before premium working/not-working or reply-quality claims
+4. use `campaign-analyst`, `copy-auditor`, `icp-auditor`, or `reply-auditor` as needed
 4. use `synthesis-reviewer` to compress the result if the analysis is broad
 
 Do not fan out multiple campaign specialists until the workspace-level triage identifies which campaigns are worth the extra work.

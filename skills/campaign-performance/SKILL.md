@@ -16,6 +16,7 @@ Compare campaigns, rank variants, and explain campaign-level winners and losers.
 - `search_catalog`
 - `analyze_data`
 - `load_campaign_data`
+- `prepare_campaign_analysis`
 
 ## References
 
@@ -59,6 +60,7 @@ Read the evidence and metric-basis references before ranking campaigns, steps, v
 
 - Use broad aggregates to shortlist candidates, not to prove what is working.
 - Before calling a campaign `working`, a `winner`, or ready to scale, run `load_campaign_data` for that campaign and inspect `reply_context` plus `campaign_variants`.
+- For one-campaign working/not-working, winner, scale, or kill claims, call `prepare_campaign_analysis` before the final recommendation so exact reply bodies and reply-email context gaps are visible.
 - Check whether replies are positive business signal, negative/neutral complaints, wrong-person responses, out-of-office noise, or low-volume artifacts before treating reply rate as success.
 - If the campaign looks good by aggregate rate but reply outcomes or reply wording may change the recommendation, switch to `reply-patterns` and hydrate reply text before making the claim.
 - If reconstructed outbound, intended templates, or hydrated replies point to a wrong-template or wrong-topic mismatch, frame the result as setup/template-resolution risk and say the intended angle is unverified.

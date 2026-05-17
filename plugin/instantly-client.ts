@@ -495,6 +495,8 @@ export async function listAllCustomTags(
 type LeadPageOptions = {
   filter?: string;
   queries?: unknown[];
+  ids?: string[];
+  contacts?: string[];
   limit?: number;
 };
 
@@ -511,6 +513,8 @@ export async function listLeadsPage(
   if (cursor) body.starting_after = cursor;
   if (opts.filter) body.filter = opts.filter;
   if (opts.queries) body.queries = opts.queries;
+  if (opts.ids?.length) body.ids = opts.ids;
+  if (opts.contacts?.length) body.contacts = opts.contacts;
 
   const res = await fetchWithRetry(`${API_BASE}/leads/list`, {
     method: "POST",

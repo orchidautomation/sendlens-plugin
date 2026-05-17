@@ -25,7 +25,8 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 3. Keep broad reads active-only unless the user asks for inactive or historical campaigns.
 4. For deliverability questions, combine account health and inbox-placement evidence before blaming copy or targeting.
 5. Use `inbox_placement_analytics_labeled` when provider, recipient geography, or recipient type labels matter.
-6. End with specific actions ordered by likely impact.
+6. Do not hydrate replies broadly during workspace triage; choose one campaign and hand off to `prepare_campaign_analysis` when depth is needed.
+7. End with specific actions ordered by likely impact.
 
 ## Output Shape
 

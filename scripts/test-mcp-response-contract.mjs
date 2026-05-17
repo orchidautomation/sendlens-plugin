@@ -60,6 +60,7 @@ for (const toolName of [
   "analysis_starters",
   "analyze_data",
   "fetch_reply_text",
+  "prepare_campaign_analysis",
 ]) {
   assertRegisteredTool(source.server, toolName);
   assertIncludes(source.docs, `\`${toolName}\``, "docs/MCP_RESPONSE_CONTRACT.md");
@@ -185,6 +186,39 @@ for (const term of [
     `${source.server}\n${source.replyTextContract}\n${source.replyFetchTest}`,
     term,
     "fetch_reply_text runtime/test",
+  );
+}
+
+for (const term of [
+  'schema_version: "campaign_analysis_preparation.v1"',
+  "default `analysis_depth` is balanced",
+  "`lead_context_backfill`",
+  "`hydration_coverage`",
+  "`context_gap_counts`",
+  "`reply_email_context_sample`",
+  "recommended next recipes",
+  "warnings, and output limits",
+]) {
+  assertIncludes(source.docs, term, "prepare_campaign_analysis docs");
+}
+for (const term of [
+  "prepare_campaign_analysis",
+  "campaign_analysis_preparation.v1",
+  "analysis_depth",
+  "hydration_budget",
+  "fetch_result",
+  "lead_context_backfill",
+  "hydration_coverage",
+  "context_gap_counts",
+  "reply_email_context_sample",
+  "reply_email_context_sample_limit",
+  "reply-hydration-coverage",
+  "reply-email-context-feed",
+]) {
+  assertIncludes(
+    `${source.server}\n${source.recipes}`,
+    term,
+    "prepare_campaign_analysis runtime/recipes",
   );
 }
 

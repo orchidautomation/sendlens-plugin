@@ -13,8 +13,17 @@ import {
   LocalDbUnavailableError,
   query,
 } from "./local-db";
-import { refreshWorkspaceAtomically } from "./instantly-ingest";
-import { hydrateReplyText } from "./instantly-ingest";
+import {
+  backfillReplyLeadContext,
+  hydrateReplyText,
+  refreshWorkspaceAtomically,
+} from "./instantly-ingest";
+import {
+  classifyHydrationCoverage,
+  normalizeCampaignAnalysisStatuses,
+  resolveCampaignAnalysisDepth,
+  type CampaignAnalysisDepth,
+} from "./campaign-analysis-depth";
 import { getQueryRecipes, QUERY_RECIPE_TOPICS } from "./query-recipes";
 import { toReplyTextFetchResult } from "./reply-text-contract";
 import { readRefreshStatus } from "./refresh-status";
@@ -116,6 +125,132 @@ function jsonResponse(payload: unknown) {
 
 function stripTrailingSemicolon(sql: string) {
   return sql.trim().replace(/;+\s*$/, "");
+}
+
+function sqlSafe(value: string) {
+  return value.replace(/'/g, "''");
+}
+
+function sqlNumberList(values: number[]) {
+  return values.map((value) => String(Math.trunc(value))).join(", ");
+}
+
+type CampaignResolution =
+  | { ok: true; campaign_id: string; campaign_name: string | null }
+  | { ok: false; payload: Record<string, unknown> };
+
+async function resolveCampaignSelector(
+  db: Awaited<ReturnType<typeof getDb>>,
+  workspaceId: string,
+  selector: { campaign_id?: string; campaign_name?: string },
+): Promise<CampaignResolution> {
+  const hasCampaignId = Boolean(selector.campaign_id?.trim());
+  const hasCampaignName = Boolean(selector.campaign_name?.trim());
+  if (hasCampaignId === hasCampaignName) {
+    return {
+      ok: false,
+      payload: {
+        error: "Provide exactly one campaign selector: campaign_id or campaign_name.",
+      },
+    };
+  }
+
+  const workspaceSafe = sqlSafe(workspaceId);
+  let campaignRows;
+  if (hasCampaignId) {
+    const campaignSafe = sqlSafe(selector.campaign_id!.trim());
+    campaignRows = await query(
+      db,
+      `SELECT id, name
+       FROM sendlens.campaigns
+       WHERE workspace_id = '${workspaceSafe}'
+         AND id = '${campaignSafe}'
+       LIMIT 2`,
+    );
+  } else {
+    const nameSafe = sqlSafe(selector.campaign_name!.trim());
+    campaignRows = await query(
+      db,
+      `SELECT id, name
+       FROM sendlens.campaigns
+       WHERE workspace_id = '${workspaceSafe}'
+         AND lower(name) LIKE lower('%${nameSafe}%')
+       ORDER BY
+         CASE WHEN lower(name) = lower('${nameSafe}') THEN 0 ELSE 1 END,
+         name
+       LIMIT 6`,
+    );
+  }
+
+  if (campaignRows.length === 0) {
+    return {
+      ok: false,
+      payload: {
+        error: "No campaign matched the provided selector in the local cache.",
+        selector: hasCampaignId
+          ? { campaign_id: selector.campaign_id }
+          : { campaign_name: selector.campaign_name },
+      },
+    };
+  }
+  if (!hasCampaignId && campaignRows.length > 1) {
+    return {
+      ok: false,
+      payload: {
+        error:
+          "Campaign name matched multiple campaigns. Retry with campaign_id or a more exact campaign_name.",
+        matches: campaignRows.slice(0, 5),
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    campaign_id: String(campaignRows[0].id),
+    campaign_name: typeof campaignRows[0].name === "string"
+      ? campaignRows[0].name
+      : null,
+  };
+}
+
+function numberFromRow(row: Record<string, unknown>, key: string) {
+  const parsed = Number(row[key] ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function buildHydrationCoverage(
+  fetchResult: Record<string, unknown>,
+  targetStoredRows: number,
+) {
+  const statusResults = Array.isArray(fetchResult.status_results)
+    ? fetchResult.status_results as Array<Record<string, unknown>>
+    : [];
+
+  return statusResults.map((row) => {
+    const rowsStored = numberFromRow(row, "rows_stored");
+    const rowsAfter = numberFromRow(row, "stored_rows_after") || rowsStored;
+    const exhausted = row.exhausted === true || row.saved_exhausted === true;
+    return {
+      i_status: numberFromRow(row, "i_status"),
+      skipped: row.skipped === true,
+      reason: row.reason ?? null,
+      pages_fetched: numberFromRow(row, "pages_fetched"),
+      rows_fetched: numberFromRow(row, "rows_fetched"),
+      rows_stored: rowsStored,
+      rows_inserted_new: numberFromRow(row, "rows_inserted_new"),
+      rows_updated_existing: numberFromRow(row, "rows_updated_existing"),
+      skipped_auto_replies: numberFromRow(row, "skipped_auto_replies"),
+      existing_rows_before: numberFromRow(row, "existing_rows_before"),
+      stored_rows_after: rowsAfter,
+      target_stored_rows: targetStoredRows,
+      exhausted,
+      coverage_status: row.reason === "target_already_cached"
+        ? "target_met"
+        : row.skipped === true
+          ? row.reason ?? "skipped"
+          : classifyHydrationCoverage(rowsAfter, targetStoredRows, exhausted),
+    };
+  });
 }
 
 function readinessPayload(
@@ -363,6 +498,304 @@ server.registerTool(
 );
 
 server.registerTool(
+  "prepare_campaign_analysis",
+  {
+    description:
+      [
+        "Prepare one campaign for premium working/not-working diagnosis by hydrating enough exact inbound reply evidence before the agent makes scale, kill, copy, ICP, or reply-quality claims.",
+        "Use this for questions like why a campaign is performing, what is working, what is not working, or how reply quality breaks down for one selected campaign.",
+        "Default balanced depth fetches interested, not interested, and wrong-person replies with up to 3 List email pages per status, through the 3-second email lane, stopping when each status has enough stored non-auto reply bodies or pagination is exhausted.",
+        "After reply fetch, it backfills lead context through Instantly /leads/list contacts/ids so reply bodies stay visible even when the bounded lead scan missed those leads.",
+      ].join(" "),
+    inputSchema: {
+      campaign_id: z
+        .string()
+        .optional()
+        .describe("Exact Instantly campaign ID. Provide either campaign_id or campaign_name, not both."),
+      campaign_name: z
+        .string()
+        .optional()
+        .describe("Case-insensitive campaign name fragment. Must resolve to exactly one campaign."),
+      analysis_depth: z
+        .enum(["fast", "balanced", "maximum"])
+        .optional()
+        .describe("Hydration depth. Defaults to balanced: 3 pages/status and target 30 stored non-auto reply rows/status."),
+      statuses: z
+        .array(z.number().int())
+        .optional()
+        .describe("Instantly i_status values to hydrate. Defaults to [1, -1, -2]: interested, not interested, wrong person."),
+      include_ooo: z
+        .boolean()
+        .optional()
+        .describe("Include out-of-office status 0 in addition to requested/default statuses. Defaults to false."),
+    },
+  },
+  async ({
+    campaign_id,
+    campaign_name,
+    analysis_depth,
+    statuses,
+    include_ooo = false,
+  }) => {
+    const readiness = await waitForSessionSnapshot();
+    if (readiness.timedOut) {
+      return sessionRefreshBusyResponse(readiness);
+    }
+
+    let db: Awaited<ReturnType<typeof getDb>> | null = null;
+    try {
+      await ensureDemoWorkspaceForRead();
+      db = await getDb();
+      const cacheWarnings = await ensureCacheReadable(db);
+      const workspaceId = await getActiveWorkspaceId(db);
+      if (!workspaceId) {
+        return jsonResponse({
+          error: "No active workspace is loaded. Run refresh_data() first.",
+        });
+      }
+
+      const resolved = await resolveCampaignSelector(db, workspaceId, {
+        campaign_id,
+        campaign_name,
+      });
+      if (!resolved.ok) {
+        return jsonResponse(resolved.payload);
+      }
+
+      const depth = resolveCampaignAnalysisDepth(
+        analysis_depth as CampaignAnalysisDepth | undefined,
+      );
+      const resolvedStatuses = normalizeCampaignAnalysisStatuses(
+        statuses,
+        include_ooo,
+      );
+      const warnings: string[] = [
+        "Instantly List Email is rate-limited to 20 requests/minute; this workflow spends that limited lane on exactly one campaign.",
+        "Rendered outbound context is locally reconstructed from templates plus lead variables, not byte-for-byte delivered email.",
+      ];
+      if (cacheWarnings) warnings.push(...cacheWarnings);
+      if (isDemoMode()) {
+        warnings.push(
+          "Demo mode uses pre-seeded synthetic reply bodies and does not call Instantly.",
+        );
+      }
+
+      let fetchResult: Record<string, unknown>;
+      let leadContextBackfill: Record<string, unknown> | null = null;
+      if (isDemoMode()) {
+        fetchResult = toReplyTextFetchResult({
+          mode: "demo",
+          status: "skipped_live_fetch",
+          workspace_id: workspaceId,
+          campaign_id: resolved.campaign_id,
+          campaign_name: resolved.campaign_name,
+          statuses: resolvedStatuses,
+          max_pages_per_status: depth.maxPagesPerStatus,
+          target_stored_rows_per_status: depth.targetStoredRowsPerStatus,
+          message:
+            "Demo mode uses pre-seeded synthetic reply bodies and does not call Instantly.",
+          status_results: [],
+        });
+      } else {
+        fetchResult = toReplyTextFetchResult(await hydrateReplyText({
+          workspaceId,
+          campaignId: resolved.campaign_id,
+          statuses: resolvedStatuses,
+          maxPagesPerStatus: depth.maxPagesPerStatus,
+          latestOfThread: true,
+          mode: "restart",
+          targetStoredRowsPerStatus: depth.targetStoredRowsPerStatus,
+          db,
+        }));
+
+        try {
+          leadContextBackfill = await backfillReplyLeadContext({
+            workspaceId,
+            campaignId: resolved.campaign_id,
+            statuses: resolvedStatuses,
+            db,
+          });
+        } catch (error) {
+          leadContextBackfill = {
+            schema_version: "reply_lead_backfill.v1",
+            status: "failed",
+            error: error instanceof Error ? error.message : String(error),
+          };
+          warnings.push(
+            "Reply bodies were fetched, but lead context backfill failed. Use reply_email_context and treat missing lead fields as context gaps.",
+          );
+        }
+      }
+
+      const workspaceSafe = sqlSafe(workspaceId);
+      const campaignSafe = sqlSafe(resolved.campaign_id);
+      const statusesSql = sqlNumberList(resolvedStatuses);
+      const statusFilter = statusesSql
+        ? `AND reply_email_i_status IN (${statusesSql})`
+        : "";
+
+      const overviewRows = await query(
+        db,
+        `SELECT *
+         FROM sendlens.campaign_overview
+         WHERE workspace_id = '${workspaceSafe}'
+           AND campaign_id = '${campaignSafe}'
+         LIMIT 1`,
+      );
+      const contextRows = await query(
+        db,
+        `SELECT
+           campaign_id,
+           campaign_name,
+           reply_email_id,
+           reply_thread_id,
+           lead_id,
+           lead_email,
+           reply_from_email,
+           reply_to_email,
+           reply_subject,
+           reply_received_at,
+           reply_email_i_status,
+           reply_email_i_status_label,
+           reply_outcome_label,
+           reply_body_text,
+           reply_content_preview,
+           company_name,
+           company_domain,
+           job_title,
+           step_resolved,
+           variant_resolved,
+           rendered_subject,
+           template_subject,
+           has_lead_context,
+           has_template_context,
+           hydrated_reply_body,
+           context_gap_reason
+         FROM sendlens.reply_email_context
+         WHERE workspace_id = '${workspaceSafe}'
+           AND campaign_id = '${campaignSafe}'
+           ${statusFilter}
+         ORDER BY reply_received_at DESC NULLS LAST, lead_email
+         LIMIT ${depth.contextSampleLimit}`,
+      );
+      const contextCoverageRows = await query(
+        db,
+        `SELECT
+           reply_email_i_status,
+           reply_email_i_status_label,
+           COUNT(*) AS fetched_reply_rows,
+           SUM(CASE WHEN hydrated_reply_body THEN 1 ELSE 0 END) AS hydrated_reply_body_rows,
+           SUM(CASE WHEN reply_is_auto_reply THEN 1 ELSE 0 END) AS auto_reply_rows,
+           SUM(CASE WHEN has_lead_context THEN 1 ELSE 0 END) AS rows_with_lead_context,
+           SUM(CASE WHEN has_template_context THEN 1 ELSE 0 END) AS rows_with_template_context,
+           MIN(reply_received_at) AS oldest_reply_received_at,
+           MAX(reply_received_at) AS newest_reply_received_at
+         FROM sendlens.reply_email_context
+         WHERE workspace_id = '${workspaceSafe}'
+           AND campaign_id = '${campaignSafe}'
+           ${statusFilter}
+         GROUP BY 1, 2
+         ORDER BY reply_email_i_status DESC`,
+      );
+      const contextGapCounts = await query(
+        db,
+        `SELECT
+           context_gap_reason,
+           COUNT(*) AS rows
+         FROM sendlens.reply_email_context
+         WHERE workspace_id = '${workspaceSafe}'
+           AND campaign_id = '${campaignSafe}'
+           ${statusFilter}
+         GROUP BY 1
+         ORDER BY rows DESC, context_gap_reason`,
+      );
+      const hydrationStateRows = await query(
+        db,
+        `SELECT
+           i_status,
+           latest_of_thread,
+           email_type,
+           next_starting_after,
+           pages_hydrated,
+           emails_hydrated,
+           exhausted,
+           last_hydrated_at
+         FROM sendlens.reply_email_hydration_state
+         WHERE workspace_id = '${workspaceSafe}'
+           AND campaign_id = '${campaignSafe}'
+           AND i_status IN (${statusesSql})
+         ORDER BY i_status DESC`,
+      );
+
+      const fetchCoverage = buildHydrationCoverage(
+        fetchResult,
+        depth.targetStoredRowsPerStatus,
+      );
+      const partialCoverage = fetchCoverage.filter((row) =>
+        row.coverage_status === "partial_cap_reached"
+      );
+      if (partialCoverage.length > 0) {
+        warnings.push(
+          "At least one reply status hit the page cap before meeting the target. Treat status themes as partial coverage and continue at maximum depth before making strong claims.",
+        );
+      }
+
+      return jsonResponse({
+        schema_version: "campaign_analysis_preparation.v1",
+        campaign: {
+          campaign_id: resolved.campaign_id,
+          campaign_name: resolved.campaign_name,
+        },
+        analysis_depth: depth.depth,
+        statuses: resolvedStatuses,
+        include_ooo,
+        hydration_budget: {
+          max_pages_per_status: depth.maxPagesPerStatus,
+          rows_per_page: 100,
+          target_stored_non_auto_reply_bodies_per_status:
+            depth.targetStoredRowsPerStatus,
+          email_lane_spacing_seconds: 3,
+        },
+        fetch_result: fetchResult,
+        lead_context_backfill: leadContextBackfill,
+        hydration_coverage: {
+          fetch_by_status: fetchCoverage,
+          stored_context_by_status: contextCoverageRows,
+          hydration_state: hydrationStateRows,
+        },
+        context_gap_counts: contextGapCounts,
+        campaign_overview: overviewRows[0] ?? null,
+        reply_email_context_sample: contextRows,
+        recommended_next_analysis_recipes: [
+          "reply-hydration-coverage",
+          "reply-email-context-feed",
+          "campaign-evidence-coverage-audit",
+          "campaign-daily-health-trend",
+          "campaign-funnel-quality",
+        ],
+        warnings: warnings.length > 0 ? warnings : undefined,
+        output_limits: {
+          reply_email_context_sample_limit: depth.contextSampleLimit,
+          response_max_chars: MCP_TEXT_RESPONSE_MAX_CHARS,
+        },
+        readiness: readinessPayload(readiness),
+        demo_mode: isDemoMode() ? true : undefined,
+      });
+    } catch (error) {
+      if (error instanceof CacheReadinessError) {
+        return cacheReadinessResponse(error);
+      }
+      if (error instanceof LocalDbUnavailableError) {
+        return dbUnavailableResponse(error);
+      }
+      throw error;
+    } finally {
+      if (db) closeDb(db);
+    }
+  },
+);
+
+server.registerTool(
   "fetch_reply_text",
   {
     description:
@@ -514,12 +947,18 @@ server.registerTool(
              reply_email_id,
              reply_thread_id,
              reply_email_i_status,
+             reply_email_i_status_label,
+             reply_outcome_label,
              reply_subject,
              reply_from_email,
              reply_received_at,
              reply_body_text,
-             reply_content_preview
-           FROM sendlens.reply_context
+             reply_content_preview,
+             has_lead_context,
+             has_template_context,
+             hydrated_reply_body,
+             context_gap_reason
+           FROM sendlens.reply_email_context
            WHERE workspace_id = '${workspaceSafe}'
              AND campaign_id = '${campaignSafe}'
              AND reply_email_id IS NOT NULL

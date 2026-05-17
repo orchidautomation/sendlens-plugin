@@ -10,10 +10,10 @@ See also: [trust and privacy](./TRUST_AND_PRIVACY.md), [skill docs](./skills/REA
 | --- | --- | --- | --- | --- | --- |
 | Setup and refresh | [sendlens-setup](./skills/sendlens-setup.md), [workspace-health](./skills/workspace-health.md) | `/sendlens-setup`, `/workspace-health` | `workspace-triager` | `setup_doctor`, `refresh_status`, `refresh_data`, `workspace_snapshot` | `sendlens-doctor.sh`, `start-mcp.sh`, `session-start.sh`, `load-env.sh`, `check-env.sh`; generated Claude Code, Cursor, Codex, and OpenCode bundles |
 | Workspace triage | [workspace-health](./skills/workspace-health.md), [campaign-performance](./skills/campaign-performance.md), [account-manager-brief](./skills/account-manager-brief.md) | `/workspace-health`, `/campaign-performance`, `/account-manager-brief` | `workspace-triager`, `campaign-analyst`, `synthesis-reviewer` | `workspace_snapshot`, `analysis_starters`, `analyze_data`, `search_catalog` | `benchmark-fast-refresh.sh`; host session-start refresh hook |
-| One-campaign diagnosis | [campaign-performance](./skills/campaign-performance.md), [campaign-launch-qa](./skills/campaign-launch-qa.md), [experiment-planner](./skills/experiment-planner.md) | `/campaign-performance`, `/campaign-launch-qa`, `/experiment-planner` | `campaign-analyst`, `synthesis-reviewer` | `load_campaign_data`, `analysis_starters`, `analyze_data`, `list_columns` | runtime build from `npm run build:plugin`; host bundles from `npm run build:hosts` |
+| One-campaign diagnosis | [campaign-performance](./skills/campaign-performance.md), [campaign-launch-qa](./skills/campaign-launch-qa.md), [experiment-planner](./skills/experiment-planner.md) | `/campaign-performance`, `/campaign-launch-qa`, `/experiment-planner` | `campaign-analyst`, `synthesis-reviewer` | `load_campaign_data`, `prepare_campaign_analysis`, `analysis_starters`, `analyze_data`, `list_columns` | runtime build from `npm run build:plugin`; host bundles from `npm run build:hosts` |
 | Copy and personalization | [copy-analysis](./skills/copy-analysis.md), [cold-email-best-practices](./skills/cold-email-best-practices.md) | `/copy-analysis`, `/cold-email-best-practices` | `copy-auditor`, `synthesis-reviewer` | `load_campaign_data`, `analysis_starters`, `analyze_data`, `list_columns` | sampled/reconstructed outbound surfaces in the local cache |
 | ICP and segmentation | [icp-signals](./skills/icp-signals.md) | `/icp-signals` | `icp-auditor`, `synthesis-reviewer` | `load_campaign_data`, `analysis_starters`, `analyze_data`, `search_catalog` | `lead_payload_kv` view for campaign-scoped payload analysis |
-| Reply outcomes | [reply-patterns](./skills/reply-patterns.md) | `/reply-patterns` | `reply-auditor`, `synthesis-reviewer` | `fetch_reply_text`, `load_campaign_data`, `analysis_starters`, `analyze_data` | on-demand reply hydration into local DuckDB |
+| Reply outcomes | [reply-patterns](./skills/reply-patterns.md) | `/reply-patterns` | `reply-auditor`, `synthesis-reviewer` | `prepare_campaign_analysis`, `fetch_reply_text`, `load_campaign_data`, `analysis_starters`, `analyze_data` | on-demand reply hydration into local DuckDB |
 
 ## Skills
 
@@ -26,7 +26,7 @@ Runtime skill files live in `skills/<skill>/SKILL.md`. Public skill docs live un
 | [campaign-performance](./skills/campaign-performance.md) | Campaign comparisons, step/variant ranking, runway, and prioritization | Exact campaign/account/step metrics when available; explicit metric basis for sequence ranking |
 | [copy-analysis](./skills/copy-analysis.md) | Subject/body critique, template structure, personalization QA, and rewrite guidance | Intended templates plus locally reconstructed outbound samples; not exact delivered email text |
 | [icp-signals](./skills/icp-signals.md) | Campaign-scoped segment hypotheses and payload-variable patterns | Exact campaign baselines plus sampled lead/payload evidence |
-| [reply-patterns](./skills/reply-patterns.md) | Positive, negative, neutral, and fetched reply-body pattern analysis | Instantly reply outcomes by default; exact reply body text only after `fetch_reply_text` |
+| [reply-patterns](./skills/reply-patterns.md) | Positive, negative, neutral, and fetched reply-body pattern analysis | Instantly reply outcomes by default; exact reply body text only after `prepare_campaign_analysis` or `fetch_reply_text` |
 | [cold-email-best-practices](./skills/cold-email-best-practices.md) | Policy and benchmark lens for campaign recommendations | Operator rules; not a substitute for workspace evidence |
 | [campaign-launch-qa](./skills/campaign-launch-qa.md) | Launch, scale, resume, clone, and handoff readiness | Checklist over sender inventory, lead supply, templates, tracking, schedule, and health |
 | [experiment-planner](./skills/experiment-planner.md) | Next test selection, hypothesis, metrics, guardrails, and stop conditions | Requires evidence basis: exact, sampled, fetched, reconstructed, or operator judgment |
@@ -74,6 +74,7 @@ MCP tools are registered by the local `sendlens` stdio server. Responses are JSO
 | `refresh_data` | Refresh local cache from Instantly | Explicit fresh pull, client/workspace change, or stale/failed status |
 | `workspace_snapshot` | First high-level read of a workspace, tag, or campaign-name scope | Broad triage and campaign selection |
 | `load_campaign_data` | Hydrate one campaign for copy, ICP, reply, or next-test analysis | After selecting a campaign |
+| `prepare_campaign_analysis` | Hydrate enough exact reply bodies and backfilled lead context for premium one-campaign diagnosis | Before working/not-working, reply-quality, winner, scale, or kill claims |
 | `fetch_reply_text` | Fetch exact inbound reply body text for one campaign into local DuckDB | Only when actual reply wording is needed |
 | `analysis_starters` | Return curated SQL recipes and exactness notes | Before custom analysis for common questions |
 | `list_tables` | List public SendLens tables/views and descriptions | Schema orientation |
@@ -94,7 +95,7 @@ The local schema exposes exact aggregate tables and semantic analysis views. Com
 | `inbox_placement_test_overview`, `sender_deliverability_health` | Semantic rollups over inbox placement data | Deliverability diagnosis with availability caveats |
 | `campaign_overview` | Semantic campaign rollup | Default campaign ranking, tracking/deliverability settings, and health view |
 | `lead_evidence`, `lead_payload_kv` | Sampled lead and campaign-payload evidence | ICP and lead-variable hypotheses |
-| `reply_context`, `reply_emails` | Reply outcome context and fetched exact reply rows | Reply cohort analysis and exact reply-body analysis when hydrated |
+| `reply_context`, `reply_email_context`, `reply_emails` | Reply outcome context, email-anchored fetched reply context, and fetched exact reply rows | Reply cohort analysis and exact reply-body analysis when hydrated |
 | `rendered_outbound_context` | Locally reconstructed outbound context | Personalization QA and copy analysis, not byte-for-byte delivered email |
 
 ## Scripts

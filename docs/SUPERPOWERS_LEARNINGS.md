@@ -69,7 +69,7 @@ The content should be short and stable. It should teach the agent:
 - `workspace_snapshot` is the default first read for broad workspace questions.
 - `analysis_starters` should be used before custom SQL.
 - `load_campaign_data` is required before deep one-campaign copy, reply, or ICP analysis.
-- `fetch_reply_text` is the exact reply-text hydration path when current reply wording matters.
+- `prepare_campaign_analysis` is the premium one-campaign reply-text hydration path; `fetch_reply_text` remains the low-level manual path when current reply wording matters.
 - Missing MCP tools are a stop condition, not permission to inspect local files.
 - Exact, sampled, hybrid, and reconstructed evidence must be labeled in final answers.
 - Broad workspace diagnosis should narrow before deep campaign analysis.

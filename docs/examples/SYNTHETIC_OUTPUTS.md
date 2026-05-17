@@ -102,7 +102,7 @@ Next action
 Test a routing line that lets recipients forward the note to the finance-ops owner without creating a hard bounce in the conversation.
 
 Caveat
-This example uses synthetic reply outcome labels. Do not quote actual reply wording unless `fetch_reply_text` has fetched `reply_body_text`.
+This example uses synthetic reply outcome labels. Do not quote actual reply wording unless `prepare_campaign_analysis` or `fetch_reply_text` has fetched `reply_body_text`.
 ```
 
 ## Campaign Launch QA

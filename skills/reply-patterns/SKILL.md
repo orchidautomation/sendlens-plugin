@@ -12,6 +12,7 @@ Surface what prospects are saying, separate human replies from auto-noise, and s
 - `workspace_snapshot`
 - `load_campaign_data`
 - `fetch_reply_text`
+- `prepare_campaign_analysis`
 - `analysis_starters`
 - `analyze_data`
 - `refresh_status`
@@ -48,6 +49,7 @@ Read the evidence and hydration references before quoting, paraphrasing, or grou
 ### Stage 3: Hydrate Only When Needed
 
 - If the user needs actual reply wording, run `fetch_reply_text` for exactly one campaign in default `mode="sync_newest"`, then query `reply_context` again.
+- If the user needs enough reply wording to explain what is working, not working, or why reply quality differs, run `prepare_campaign_analysis` instead of only `fetch_reply_text`; it hydrates balanced status coverage and then use `reply_email_context`.
 - Treat "pull the replies", "what did they say", and surprising reply-rate findings as wording requests when they could change the recommendation.
 - Prefer default statuses `[1, -1, -2]`. Do not include out-of-office status `0` unless the user explicitly asks for OOO replies.
 - Use `mode="continue"` only when the user asks for older rows beyond the saved cursor.
@@ -58,6 +60,7 @@ Read the evidence and hydration references before quoting, paraphrasing, or grou
 
 - Quote or characterize exact reply-body language only from hydrated `reply_body_text`/`reply_content_preview`.
 - If reply bodies have not been fetched, use Instantly reply outcomes and say that exact bodies have not been hydrated.
+- Prefer `reply_email_context` after premium hydration because it is anchored on fetched email rows and preserves bodies even when lead context is missing.
 - Label each material theme as hydrated reply body, exact reply outcome aggregate, sampled evidence, or inference.
 - Do not count complaint replies caused by wrong-template or wrong-topic mismatch as signal that the intended campaign angle worked.
 
