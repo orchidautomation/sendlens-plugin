@@ -262,7 +262,7 @@ function isOptionalInboxPlacementError(error: unknown) {
   if (!/Instantly API (400|401|402|403|404):/i.test(message)) {
     return false;
   }
-  return /inbox|placement|permission|scope|plan|subscription|forbidden|not found|invalid/i.test(message);
+  return /inbox[_ -]?placement.*(permission|scope|plan|subscription|forbidden|not found|access)|permission|scope|plan|subscription|forbidden|not found/i.test(message);
 }
 
 function isInvalidEmailCursorError(error: unknown) {

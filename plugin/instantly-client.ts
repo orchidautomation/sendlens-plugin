@@ -789,7 +789,6 @@ export async function listInboxPlacementTestsPage(
 ) {
   const params = new URLSearchParams();
   params.set("limit", "100");
-  params.set("with_metadata", "true");
   if (cursor) params.set("starting_after", cursor);
 
   const res = await fetchWithRetry(
@@ -797,13 +796,7 @@ export async function listInboxPlacementTestsPage(
     { headers: headers(apiKey) },
   );
   const data = await res.json() as Record<string, unknown>;
-  const items = (data.items || (Array.isArray(data) ? data : [])) as Array<Record<string, unknown>>;
-  const nextCursor =
-    (data.next_starting_after as string | undefined)
-    ?? (data.next_cursor as string | undefined)
-    ?? (data.starting_after as string | undefined)
-    ?? null;
-  return { items, nextCursor };
+  return parseItemsAndCursor(data);
 }
 
 export async function listAllInboxPlacementTests(
@@ -846,13 +839,7 @@ export async function listInboxPlacementAnalyticsPage(
     { headers: headers(apiKey) },
   );
   const data = await res.json() as Record<string, unknown>;
-  const items = (data.items || (Array.isArray(data) ? data : [])) as Array<Record<string, unknown>>;
-  const nextCursor =
-    (data.next_starting_after as string | undefined)
-    ?? (data.next_cursor as string | undefined)
-    ?? (data.starting_after as string | undefined)
-    ?? null;
-  return { items, nextCursor };
+  return parseItemsAndCursor(data);
 }
 
 export async function listAllInboxPlacementAnalyticsForTest(
