@@ -1,6 +1,8 @@
 ---
 name: "campaign-performance"
 description: "Use when comparing campaigns, ranking steps or variants, checking runway, or deciding what to scale or kill."
+context: fork
+agent: campaign-analyst
 ---
 
 # Campaign Performance

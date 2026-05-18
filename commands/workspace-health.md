@@ -3,6 +3,7 @@ description: "SendLens: triage workspace health and choose the next campaign to 
 argument-hint: "[campaign-name-or-instantly-tag]"
 agent: workspace-triager
 subtask: true
+context: fork
 ---
 
 # Workspace Health

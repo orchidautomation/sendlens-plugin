@@ -95,17 +95,19 @@ const REQUIRED_USING_SENDLENS_DENIAL_PATTERNS = [
   /\bjq\b/i,
 ];
 
-const ANALYSIS_SKILLS = [
-  "account-manager-brief",
-  "campaign-launch-qa",
-  "campaign-performance",
-  "cold-email-best-practices",
-  "copy-analysis",
-  "experiment-planner",
-  "icp-signals",
-  "reply-patterns",
-  "workspace-health",
-];
+const ANALYSIS_SKILL_AGENTS = new Map([
+  ["account-manager-brief", "workspace-triager"],
+  ["campaign-launch-qa", "campaign-analyst"],
+  ["campaign-performance", "campaign-analyst"],
+  ["cold-email-best-practices", "campaign-analyst"],
+  ["copy-analysis", "copy-auditor"],
+  ["experiment-planner", "campaign-analyst"],
+  ["icp-signals", "icp-auditor"],
+  ["reply-patterns", "reply-auditor"],
+  ["workspace-health", "workspace-triager"],
+]);
+
+const ANALYSIS_SKILLS = [...ANALYSIS_SKILL_AGENTS.keys()];
 
 const ROUTING_CONTRACT_CASES = [
   {
@@ -605,6 +607,10 @@ async function collectCommandContracts(skillNames, agentNames) {
         `${relativePath}: command agent "${agent}" must map to an existing specialist agent`,
       );
       assert(
+        commandData.context === "fork",
+        `${relativePath}: analysis command must set context: fork so host clients keep heavy SendLens analysis out of the parent conversation`,
+      );
+      assert(
         commandData.subtask === true,
         `${relativePath}: command routing metadata must set subtask: true`,
       );
@@ -711,8 +717,18 @@ async function assertAnalysisSkillFallbackRules(skillNames) {
 
     const relativePath = `skills/${skillName}/SKILL.md`;
     const text = await readText(relativePath);
-    const { body, errors } = parseFrontmatter(relativePath, text);
+    const { data, body, errors } = parseFrontmatter(relativePath, text);
     errors.forEach(fail);
+    const expectedAgent = ANALYSIS_SKILL_AGENTS.get(skillName);
+
+    assert(
+      data?.context === "fork",
+      `${relativePath}: analysis skill must set context: fork so Claude-style skill invocation runs in a delegated subagent context`,
+    );
+    assert(
+      data?.agent === expectedAgent,
+      `${relativePath}: analysis skill must route to agent "${expectedAgent}"`,
+    );
 
     assert(
       RELOAD_OR_REINSTALL_PLUGIN_PATTERN.test(body),

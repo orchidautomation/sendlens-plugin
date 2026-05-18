@@ -10,6 +10,17 @@ const root = path.resolve(__dirname, "..");
 
 const failures = [];
 const packageJson = await readJson("package.json");
+const ANALYSIS_SKILL_AGENTS = new Map([
+  ["account-manager-brief", "workspace-triager"],
+  ["campaign-launch-qa", "campaign-analyst"],
+  ["campaign-performance", "campaign-analyst"],
+  ["cold-email-best-practices", "campaign-analyst"],
+  ["copy-analysis", "copy-auditor"],
+  ["experiment-planner", "campaign-analyst"],
+  ["icp-signals", "icp-auditor"],
+  ["reply-patterns", "reply-auditor"],
+  ["workspace-health", "workspace-triager"],
+]);
 const shouldBuild =
   !process.argv.includes("--assume-dist") &&
   process.env.SENDLENS_HOST_INVENTORY_ASSUME_DIST !== "1";
@@ -34,6 +45,11 @@ async function readJson(relativePath) {
     fail(`${relativePath}: could not parse JSON: ${error.message}`);
     return {};
   }
+}
+
+function frontmatterValue(text, key) {
+  const match = new RegExp(`^${key}:\\s*"?([^"\\n]+)"?\\s*$`, "m").exec(text);
+  return match?.[1]?.trim();
 }
 
 async function exists(relativePath) {
@@ -269,6 +285,71 @@ async function assertHostCommandInventory(commands) {
     assert(
       opencodeIndex.includes(`"${command}"`),
       `dist/opencode/index.ts: expected TUI command "${command}"`,
+    );
+  }
+}
+
+async function assertGeneratedSubagentRouting() {
+  for (const host of ["claude-code", "cursor", "opencode"]) {
+    for (const [skill, agent] of ANALYSIS_SKILL_AGENTS) {
+      const skillText = await readText(`dist/${host}/skills/${skill}/SKILL.md`);
+      assert(
+        frontmatterValue(skillText, "context") === "fork",
+        `dist/${host}/skills/${skill}/SKILL.md: expected context: fork`,
+      );
+      assert(
+        frontmatterValue(skillText, "agent") === agent,
+        `dist/${host}/skills/${skill}/SKILL.md: expected agent: ${agent}`,
+      );
+
+      const commandText = await readText(`dist/${host}/commands/${skill}.md`);
+      assert(
+        frontmatterValue(commandText, "context") === "fork",
+        `dist/${host}/commands/${skill}.md: expected context: fork`,
+      );
+      assert(
+        frontmatterValue(commandText, "agent") === agent,
+        `dist/${host}/commands/${skill}.md: expected agent: ${agent}`,
+      );
+    }
+  }
+
+  const codexSkills = await readJson("dist/codex/.codex/skills.generated.json");
+  const generatedSkills = Array.isArray(codexSkills.skills)
+    ? codexSkills.skills
+    : [];
+  const codexCommands = await readJson(
+    "dist/codex/.codex/commands.generated.json",
+  );
+  const generatedCommands = Array.isArray(codexCommands.commands)
+    ? codexCommands.commands
+    : [];
+
+  for (const [skill, agent] of ANALYSIS_SKILL_AGENTS) {
+    const generatedSkill = generatedSkills.find((entry) => entry.id === skill);
+    assert(
+      generatedSkill?.context === "fork",
+      `dist/codex/.codex/skills.generated.json: skill "${skill}" must preserve context: fork`,
+    );
+    assert(
+      generatedSkill?.agent === agent,
+      `dist/codex/.codex/skills.generated.json: skill "${skill}" must preserve agent "${agent}"`,
+    );
+
+    const generatedCommand = generatedCommands.find(
+      (entry) => entry.id === skill,
+    );
+    assert(
+      generatedCommand?.context === "fork",
+      `dist/codex/.codex/commands.generated.json: command "${skill}" must preserve context: fork`,
+    );
+    assert(
+      generatedCommand?.agent === agent,
+      `dist/codex/.codex/commands.generated.json: command "${skill}" must preserve agent "${agent}"`,
+    );
+    assert(
+      generatedCommand?.subtask === true,
+      `dist/codex/.codex/commands.generated.json: command "${skill}" must preserve subtask: true`,
     );
   }
 }
@@ -550,6 +631,7 @@ if (shouldBuild) {
 await assertHostFiles(inventory);
 await assertManifestMetadata();
 await assertHostCommandInventory(inventory.commands);
+await assertGeneratedSubagentRouting();
 await assertExplicitHostDegradation();
 await assertNoCredentialsRequired();
 await assertDemoModeContracts();

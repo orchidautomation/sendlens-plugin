@@ -106,9 +106,22 @@ After installing, type this in your AI tool:
 ```
 
 It will walk you through connecting your account (or starting in demo mode) and confirm everything is ready.
-The release curl installers ask for your Instantly API key during install and store it with the installed plugin, so you do not need to export it every time you start Codex, Claude Code, Cursor, or OpenCode.
+The release curl installers ask for your Instantly API key during install and store it with the installed plugin, so you do not need to export it every time you start Codex, Claude Code, Cursor, or OpenCode. If `SENDLENS_INSTANTLY_API_KEY` is already exported in your shell, the installer uses that value and skips the secret prompt.
 They also prepare local runtime dependencies and run the first workspace refresh before asking you to restart or reload the host.
-When you rerun the same curl command to update SendLens, the installer reuses the saved plugin config instead of asking for the API key again. To force a fresh prompt, run the installer with `PLUXX_RECONFIGURE=1`.
+When you rerun the same curl command to update SendLens, the installer reuses the saved plugin config instead of asking for the API key again.
+
+For noninteractive installs, export the key first:
+
+```bash
+export SENDLENS_INSTANTLY_API_KEY="your_instantly_api_key"
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | bash
+```
+
+To force a fresh prompt and replace saved install config, set `PLUXX_RECONFIGURE=1` on the installer process:
+
+```bash
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | PLUXX_RECONFIGURE=1 bash
+```
 
 ## Connect Instantly
 

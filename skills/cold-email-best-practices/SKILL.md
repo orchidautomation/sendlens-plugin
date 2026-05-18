@@ -1,6 +1,8 @@
 ---
 name: "cold-email-best-practices"
 description: "Use when applying cold-email rules to campaign settings, copy critique, benchmarks, or evidence-backed recommendations."
+context: fork
+agent: campaign-analyst
 ---
 
 # Cold Email Best Practices

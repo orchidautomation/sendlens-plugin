@@ -1,6 +1,8 @@
 ---
 name: "account-manager-brief"
 description: "Use when the user needs a client-safe account update, AM action queue, risk summary, or next actions."
+context: fork
+agent: workspace-triager
 ---
 
 # Account Manager Brief

@@ -3,6 +3,7 @@ description: "SendLens: plan the next campaign experiment"
 argument-hint: "[campaign-name-or-instantly-tag]"
 agent: campaign-analyst
 subtask: true
+context: fork
 ---
 
 # Experiment Planner

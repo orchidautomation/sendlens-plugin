@@ -3,6 +3,7 @@ description: "SendLens: apply cold-email rules and benchmarks to campaign recomm
 argument-hint: "[campaign-or-question]"
 agent: campaign-analyst
 subtask: true
+context: fork
 ---
 
 # Cold Email Best Practices

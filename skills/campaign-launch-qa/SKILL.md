@@ -1,6 +1,8 @@
 ---
 name: "campaign-launch-qa"
 description: "Use when checking whether a campaign is ready to launch, scale, resume, clone, or hand off."
+context: fork
+agent: campaign-analyst
 ---
 
 # Campaign Launch QA
