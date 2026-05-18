@@ -5,6 +5,8 @@ const require = createRequire(import.meta.url);
 const {
   getWarmupAnalytics,
   listAccounts,
+  listAllInboxPlacementAnalyticsForTest,
+  listAllInboxPlacementTests,
   listCampaigns,
 } = require("../build/plugin/instantly-client.js");
 
@@ -70,6 +72,36 @@ globalThis.fetch = async (url, options = {}) => {
     });
   }
 
+  if (parsed.pathname.endsWith("/inbox-placement-tests")) {
+    if (parsed.searchParams.has("with_metadata")) {
+      return responseJson({ error: "invalid query parameter: with_metadata" }, 400);
+    }
+    const cursor = parsed.searchParams.get("starting_after");
+    if (!cursor) {
+      return responseJson({ items: rows("ipt", 0, 100), next_starting_after: "ipt100" });
+    }
+    if (cursor === "ipt100") {
+      return responseJson({ items: rows("ipt", 100, 1), next_starting_after: null });
+    }
+  }
+
+  if (parsed.pathname.endsWith("/inbox-placement-analytics")) {
+    assert.equal(parsed.searchParams.get("test_id"), "ipt-0");
+    const cursor = parsed.searchParams.get("starting_after");
+    if (!cursor) {
+      return responseJson({
+        items: rows("ipa", 0, 100).map((row) => ({ ...row, test_id: "ipt-0" })),
+        next_starting_after: "ipa100",
+      });
+    }
+    if (cursor === "ipa100") {
+      return responseJson({
+        items: rows("ipa", 100, 3).map((row) => ({ ...row, test_id: "ipt-0" })),
+        next_starting_after: null,
+      });
+    }
+  }
+
   return responseJson({ error: `unhandled ${parsed.pathname}` }, 404);
 };
 
@@ -111,6 +143,29 @@ try {
       .filter((call) => call.pathname.endsWith("/accounts/warmup-analytics"))
       .map((call) => JSON.parse(String(call.body)).emails.length),
     [100, 100, 5],
+  );
+
+  const inboxPlacementTests = await listAllInboxPlacementTests("test-key");
+  assert.equal(inboxPlacementTests.length, 101);
+  assert.equal(inboxPlacementTests[100].id, "ipt-100");
+  assert.deepEqual(
+    calls
+      .filter((call) => call.pathname.endsWith("/inbox-placement-tests"))
+      .map((call) => call.search),
+    ["limit=100", "limit=100&starting_after=ipt100"],
+  );
+
+  const inboxPlacementAnalytics = await listAllInboxPlacementAnalyticsForTest("test-key", "ipt-0");
+  assert.equal(inboxPlacementAnalytics.length, 103);
+  assert.equal(inboxPlacementAnalytics[102].id, "ipa-102");
+  assert.deepEqual(
+    calls
+      .filter((call) => call.pathname.endsWith("/inbox-placement-analytics"))
+      .map((call) => call.search),
+    [
+      "limit=100&test_id=ipt-0",
+      "limit=100&test_id=ipt-0&starting_after=ipa100",
+    ],
   );
 } finally {
   globalThis.fetch = originalFetch;
