@@ -1,6 +1,8 @@
 ---
 name: "reply-patterns"
 description: "Use when summarizing prospect replies, objections, positive/negative outcomes, human replies, or fetched reply wording."
+context: fork
+agent: reply-auditor
 ---
 
 # Reply Patterns

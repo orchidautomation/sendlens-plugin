@@ -1,6 +1,8 @@
 ---
 name: "icp-signals"
 description: "Use when analyzing which leads, segments, payload fields, or ICP hypotheses respond best within campaign evidence."
+context: fork
+agent: icp-auditor
 ---
 
 # ICP Signals

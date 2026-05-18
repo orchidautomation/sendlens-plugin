@@ -3,6 +3,7 @@ description: "SendLens: analyze one campaign's performance and step or variant w
 argument-hint: "[campaign-name] [instantly-tag]"
 agent: campaign-analyst
 subtask: true
+context: fork
 ---
 
 # Campaign Performance

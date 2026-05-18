@@ -3,6 +3,7 @@ description: "SendLens: QA a campaign before launch, scale, or resume"
 argument-hint: "[campaign-name]"
 agent: campaign-analyst
 subtask: true
+context: fork
 ---
 
 # Campaign Launch QA

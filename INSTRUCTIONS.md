@@ -59,7 +59,7 @@ Treat this file as the host startup bias for SendLens. The user should not need 
 
 ## Agent Map
 
-When the host supports native delegated agents, use these specialist reviewers:
+Analysis skills and command wrappers carry `context: fork` plus the mapped `agent` so heavy SendLens analysis runs in a delegated context when the host supports it. When the host supports native delegated agents, use these specialist reviewers:
 
 - `workspace-triager`
   rank the workspace and choose the next one campaign to analyze
@@ -74,7 +74,7 @@ When the host supports native delegated agents, use these specialist reviewers:
 - `synthesis-reviewer`
   compress and pressure-test the final answer before returning it
 
-If the host does not expose native delegated agents, preserve the same one-campaign-at-a-time separation in the working plan.
+If the host degrades command or skill routing to guidance, explicitly invoke the mapped specialist before deep MCP analysis when native delegated agents are available. If the host does not expose native delegated agents, preserve the same one-campaign-at-a-time separation in the working plan.
 
 ## Preferred Query Surfaces
 

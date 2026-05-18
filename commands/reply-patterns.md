@@ -3,6 +3,7 @@ description: "SendLens: inspect one campaign's positive, negative, and neutral r
 argument-hint: "[campaign-name] [instantly-tag]"
 agent: reply-auditor
 subtask: true
+context: fork
 ---
 
 # Reply Patterns

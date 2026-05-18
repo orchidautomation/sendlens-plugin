@@ -1,6 +1,8 @@
 ---
 name: "experiment-planner"
 description: "Use when planning the next campaign experiment, improvement test, success metric, guardrail, or stop condition."
+context: fork
+agent: campaign-analyst
 ---
 
 # Experiment Planner

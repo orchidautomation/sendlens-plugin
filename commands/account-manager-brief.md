@@ -3,6 +3,7 @@ description: "SendLens: prepare a client-safe AM brief and action queue"
 argument-hint: "[campaign-name-or-instantly-tag]"
 agent: workspace-triager
 subtask: true
+context: fork
 ---
 
 # Account Manager Brief

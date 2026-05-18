@@ -1,6 +1,8 @@
 ---
 name: "copy-analysis"
 description: "Use when analyzing campaign copy, subject lines, templates, personalization, rendered outbound, or copy-linked replies."
+context: fork
+agent: copy-auditor
 ---
 
 # Copy Analysis
