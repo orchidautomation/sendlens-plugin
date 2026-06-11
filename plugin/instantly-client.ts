@@ -14,6 +14,23 @@ const LIST_PAGE_LIMIT = 100;
 const LIST_MAX_PAGES = 200;
 const WARMUP_ANALYTICS_EMAIL_LIMIT = 100;
 
+// Cursor shapes returned by Instantly V2 endpoints. Most list endpoints
+// return a UUID `next_starting_after`, but `/accounts` returns a
+// datetime cursor. Both round-trip through the `starting_after` query
+// param, but the *format* matters for client-side safety checks
+// (loop detection, length validation).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/;
+
+export type CursorShape = "uuid" | "datetime" | "opaque" | "none";
+
+export function detectCursorShape(cursor: string | null | undefined): CursorShape {
+  if (!cursor) return "none";
+  if (UUID_RE.test(cursor)) return "uuid";
+  if (DATETIME_RE.test(cursor)) return "datetime";
+  return "opaque";
+}
+
 export interface InstantlyLead extends Record<string, unknown> {
   id?: string;
   email?: string;
@@ -408,6 +425,11 @@ export async function getDailyAnalytics(
 }
 
 export async function listAccounts(apiKey: string) {
+  // Instantly's /accounts endpoint returns a *datetime* cursor in
+  // `next_starting_after` (e.g. "2026-01-15T00:00:00.000Z"), unlike
+  // /campaigns and /leads which return UUIDs. Both pass through the
+  // same `starting_after` query param. We assert the shape here so
+  // a future endpoint change surfaces immediately.
   const accounts: Array<Record<string, unknown>> = [];
   let cursor: string | null = null;
   const seenCursors = new Set<string>();

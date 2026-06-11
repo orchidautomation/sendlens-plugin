@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const {
+  detectCursorShape,
   getWarmupAnalytics,
   listAccounts,
   listAllInboxPlacementAnalyticsForTest,
@@ -51,10 +52,18 @@ globalThis.fetch = async (url, options = {}) => {
   if (parsed.pathname.endsWith("/accounts")) {
     const cursor = parsed.searchParams.get("starting_after");
     if (!cursor) {
-      return responseJson({ items: rows("account", 0, 99), next_cursor: "a99" });
+      // Instantly's /accounts returns a *datetime* cursor in
+      // `next_starting_after`, unlike /campaigns which returns a UUID.
+      return responseJson({
+        items: rows("account", 0, 99),
+        next_starting_after: "2026-01-15T00:00:00.000Z",
+      });
     }
-    if (cursor === "a99") {
-      return responseJson({ items: rows("account", 99, 2), next_cursor: null });
+    if (cursor === "2026-01-15T00:00:00.000Z") {
+      return responseJson({
+        items: rows("account", 99, 2),
+        next_starting_after: null,
+      });
     }
   }
 
@@ -123,8 +132,30 @@ try {
     calls
       .filter((call) => call.pathname.endsWith("/accounts"))
       .map((call) => call.search),
-    ["limit=100", "limit=100&starting_after=a99"],
+    [
+      "limit=100",
+      "limit=100&starting_after=2026-01-15T00%3A00%3A00.000Z",
+    ],
   );
+
+  assert.equal(
+    detectCursorShape("2026-01-15T00:00:00.000Z"),
+    "datetime",
+    "ISO datetime cursor must be detected as 'datetime'",
+  );
+  assert.equal(
+    detectCursorShape("a99"),
+    "opaque",
+    "Non-UUID, non-datetime cursor must fall through to 'opaque'",
+  );
+  assert.equal(
+    detectCursorShape("11111111-2222-3333-4444-555555555555"),
+    "uuid",
+    "Canonical UUID must be detected as 'uuid'",
+  );
+  assert.equal(detectCursorShape(null), "none");
+  assert.equal(detectCursorShape(undefined), "none");
+  assert.equal(detectCursorShape(""), "none");
 
   const warmupEmails = [
     ...Array.from({ length: 205 }, (_, index) => `user-${index}@example.com`),
