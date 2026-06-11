@@ -20,6 +20,10 @@ function responseJson(payload, status = 200) {
   });
 }
 
+function responseStatus(status, headers = {}) {
+  return new Response(null, { status, headers });
+}
+
 function rows(prefix, start, count) {
   return Array.from({ length: count }, (_, index) => ({
     id: `${prefix}-${start + index}`,
@@ -105,6 +109,43 @@ globalThis.fetch = async (url, options = {}) => {
   return responseJson({ error: `unhandled ${parsed.pathname}` }, 404);
 };
 
+// Dedicated 429-retry test suite: build a fresh globalThis.fetch so
+// we can verify Retry-After is honored.
+async function testRetryAfterHonored() {
+  const calls2 = [];
+  const originalFetch2 = globalThis.fetch;
+  let phase = 0;
+  globalThis.fetch = async (url) => {
+    calls2.push({ url: String(url), at: Date.now() });
+    if (phase === 0) {
+      phase = 1;
+      return responseStatus(429, { "retry-after": "1" });
+    }
+    const parsed = new URL(String(url));
+    if (parsed.pathname.endsWith("/campaigns")) {
+      return responseJson({ items: rows("campaign", 0, 1), next_starting_after: null });
+    }
+    return responseJson({ error: `unhandled ${parsed.pathname}` }, 404);
+  };
+  try {
+    const before = Date.now();
+    const out = await listCampaigns("test-key");
+    const elapsed = Date.now() - before;
+    assert.equal(out.length, 1, "listCampaigns should succeed after one 429");
+    assert.equal(calls2.length, 2, "Should be exactly 2 calls (1 retry)");
+    assert.ok(
+      elapsed >= 900,
+      `Should wait ~1000ms for Retry-After: 1, got ${elapsed}ms`,
+    );
+    assert.ok(
+      elapsed < 5000,
+      `Should not wait the 1s+2s+4s exponential chain, got ${elapsed}ms`,
+    );
+  } finally {
+    globalThis.fetch = originalFetch2;
+  }
+}
+
 try {
   const campaigns = await listCampaigns("test-key");
   assert.equal(campaigns.length, 205);
@@ -167,6 +208,8 @@ try {
       "limit=100&test_id=ipt-0&starting_after=ipa100",
     ],
   );
+
+  await testRetryAfterHonored();
 } finally {
   globalThis.fetch = originalFetch;
 }

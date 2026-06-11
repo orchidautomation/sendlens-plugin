@@ -14,6 +14,105 @@ const LIST_PAGE_LIMIT = 100;
 const LIST_MAX_PAGES = 200;
 const WARMUP_ANALYTICS_EMAIL_LIMIT = 100;
 
+// Instantly V2 workspace-wide rate limits. Empirically the published
+// ceiling is 100 req/10s and 600 req/min (also noted by the
+// instantly-cli reference at bcharleson/instantly-cli CLAUDE.md).
+// The previous header claimed 100 req/sec / 6000 req/min, which
+// overstates the limit. The sliding-window limiter below enforces
+// the conservative pair.
+const RATE_LIMIT_10S = 100;
+const RATE_LIMIT_60S = 600;
+
+// Per-process request log used by the sliding-window limiter.
+// Stores epoch-ms timestamps; entries older than 60s are pruned
+// on every read so memory stays bounded.
+const requestLog: number[] = [];
+
+export interface RateLimitStats {
+  window_10s_count: number;
+  window_60s_count: number;
+  limit_10s: number;
+  limit_60s: number;
+  throttled_count: number;
+}
+
+let throttledCount = 0;
+
+function pruneRequestLog(now: number) {
+  const cutoff = now - 60_000;
+  while (requestLog.length > 0 && requestLog[0] < cutoff) {
+    requestLog.shift();
+  }
+}
+
+function countInWindow(now: number, windowMs: number): number {
+  const cutoff = now - windowMs;
+  let count = 0;
+  for (let i = requestLog.length - 1; i >= 0; i--) {
+    if (requestLog[i] >= cutoff) count++;
+    else break;
+  }
+  return count;
+}
+
+async function waitForRateLimit(): Promise<void> {
+  const now = Date.now();
+  pruneRequestLog(now);
+
+  const in10s = countInWindow(now, 10_000);
+  const in60s = countInWindow(now, 60_000);
+
+  const waitFor10s = in10s >= RATE_LIMIT_10S
+    ? 10_000 - (now - requestLog[requestLog.length - (in10s - RATE_LIMIT_10S + 1)])
+    : 0;
+  const waitFor60s = in60s >= RATE_LIMIT_60S
+    ? 60_000 - (now - requestLog[requestLog.length - (in60s - RATE_LIMIT_60S + 1)])
+    : 0;
+  const waitMs = Math.max(waitFor10s, waitFor60s, 0);
+
+  if (waitMs > 0) {
+    throttledCount++;
+    await appendTraceLog("http.throttled", {
+      waitMs,
+      in10s,
+      in60s,
+      limit10s: RATE_LIMIT_10S,
+      limit60s: RATE_LIMIT_60S,
+    });
+    await new Promise((r) => setTimeout(r, waitMs));
+  }
+
+  requestLog.push(Date.now());
+}
+
+export function getRateLimitStats(): RateLimitStats {
+  const now = Date.now();
+  pruneRequestLog(now);
+  return {
+    window_10s_count: countInWindow(now, 10_000),
+    window_60s_count: countInWindow(now, 60_000),
+    limit_10s: RATE_LIMIT_10S,
+    limit_60s: RATE_LIMIT_60S,
+    throttled_count: throttledCount,
+  };
+}
+
+function parseRetryAfter(value: string | null): number | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  // Seconds form: "Retry-After: 120"
+  const asNumber = Number(trimmed);
+  if (Number.isFinite(asNumber) && asNumber >= 0) {
+    return Math.min(asNumber * 1000, 60_000);
+  }
+  // HTTP-date form: "Retry-After: Wed, 21 Oct 2015 07:28:00 GMT"
+  const asDate = Date.parse(trimmed);
+  if (!Number.isNaN(asDate)) {
+    return Math.max(0, Math.min(asDate - Date.now(), 60_000));
+  }
+  return null;
+}
+
 export interface InstantlyLead extends Record<string, unknown> {
   id?: string;
   email?: string;
@@ -128,6 +227,8 @@ async function fetchWithRetry(
   });
   if (lane === "emails") {
     await waitForEmailsLane();
+  } else {
+    await waitForRateLimit();
   }
 
   await acquireSlot();
@@ -147,16 +248,25 @@ async function fetchWithRetry(
   releaseSlot();
 
   if (res.status === 429 && attempt <= RETRY_ATTEMPTS) {
-    const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+    // Honor Retry-After (seconds OR HTTP-date) per RFC 9110.
+    // Fall back to exponential backoff when the header is absent.
+    const retryAfter = parseRetryAfter(res.headers.get("retry-after"));
+    const fallback = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+    const delay = retryAfter ?? fallback;
     await appendTraceLog("http.retry", {
       lane,
       attempt,
       status: res.status,
       delayMs: delay,
+      retryAfterMs: retryAfter,
       path: parsedUrl.pathname,
       elapsedMs: Date.now() - startedAt,
     });
-    console.log(`[instantly] 429 rate limited, retry ${attempt}/${RETRY_ATTEMPTS} in ${delay}ms`);
+    console.log(
+      `[instantly] 429 rate limited, retry ${attempt}/${RETRY_ATTEMPTS} in ${delay}ms${
+        retryAfter ? " (Retry-After)" : ""
+      }`,
+    );
     await new Promise((r) => setTimeout(r, delay));
     return fetchWithRetry(url, options, lane, attempt + 1);
   }
