@@ -8,6 +8,7 @@ node_modules
 scripts/out/
 build/
 dist/
+plugin/_generated/
 .sendlens/
 .sendlens-state/
 .sendlens-local/
