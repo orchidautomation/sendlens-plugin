@@ -38,6 +38,14 @@ export interface RateLimitStats {
 
 let throttledCount = 0;
 
+// Serialization mutex for the rate-limit gate. Without this,
+// concurrent callers each read the same window state, all wait
+// similar delays, then all resume and push to requestLog in
+// rapid succession, allowing a burst above the 100/10s or
+// 600/min ceiling. The mutex makes the read-wait-record sequence
+// atomic across all concurrent callers.
+let limiterChain: Promise<void> = Promise.resolve();
+
 function pruneRequestLog(now: number) {
   const cutoff = now - 60_000;
   while (requestLog.length > 0 && requestLog[0] < cutoff) {
@@ -55,34 +63,50 @@ function countInWindow(now: number, windowMs: number): number {
   return count;
 }
 
-async function waitForRateLimit(): Promise<void> {
-  const now = Date.now();
-  pruneRequestLog(now);
+// Find the timestamp of the (windowSize - limit + 1)-th newest
+// request in the log. When that timestamp is older than
+// (now - windowMs), the window has room.
+function findWindowFreeTime(now: number, windowMs: number, limit: number): number {
+  if (requestLog.length < limit) return 0;
+  const idx = requestLog.length - limit;
+  // The oldest request still inside the limit needs to fall out
+  // of the window. Free time = that timestamp + windowMs.
+  return Math.max(0, requestLog[idx] + windowMs - now);
+}
 
-  const in10s = countInWindow(now, 10_000);
-  const in60s = countInWindow(now, 60_000);
+async function acquireLimiterSlot(): Promise<void> {
+  // Chain onto the previous limiter operation so that the entire
+  // read-wait-record sequence is serialized across callers.
+  let release!: () => void;
+  const next = new Promise<void>((resolve) => { release = resolve; });
+  const wait = limiterChain;
+  limiterChain = next;
+  await wait;
 
-  const waitFor10s = in10s >= RATE_LIMIT_10S
-    ? 10_000 - (now - requestLog[requestLog.length - (in10s - RATE_LIMIT_10S + 1)])
-    : 0;
-  const waitFor60s = in60s >= RATE_LIMIT_60S
-    ? 60_000 - (now - requestLog[requestLog.length - (in60s - RATE_LIMIT_60S + 1)])
-    : 0;
-  const waitMs = Math.max(waitFor10s, waitFor60s, 0);
-
-  if (waitMs > 0) {
-    throttledCount++;
-    await appendTraceLog("http.throttled", {
-      waitMs,
-      in10s,
-      in60s,
-      limit10s: RATE_LIMIT_10S,
-      limit60s: RATE_LIMIT_60S,
-    });
-    await new Promise((r) => setTimeout(r, waitMs));
+  try {
+    const now = Date.now();
+    pruneRequestLog(now);
+    const waitMs = Math.max(
+      findWindowFreeTime(now, 10_000, RATE_LIMIT_10S),
+      findWindowFreeTime(now, 60_000, RATE_LIMIT_60S),
+    );
+    if (waitMs > 0) {
+      throttledCount++;
+      await appendTraceLog("http.throttled", {
+        waitMs,
+        in10s: countInWindow(now, 10_000),
+        in60s: countInWindow(now, 60_000),
+        limit10s: RATE_LIMIT_10S,
+        limit60s: RATE_LIMIT_60S,
+      });
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+    // Record the request timestamp *after* the wait, so a caller
+    // who waited N ms does not consume a slot from the past.
+    requestLog.push(Date.now());
+  } finally {
+    release();
   }
-
-  requestLog.push(Date.now());
 }
 
 export function getRateLimitStats(): RateLimitStats {
@@ -97,7 +121,7 @@ export function getRateLimitStats(): RateLimitStats {
   };
 }
 
-function parseRetryAfter(value: string | null): number | null {
+export function parseRetryAfter(value: string | null): number | null {
   if (!value) return null;
   const trimmed = value.trim();
   // Seconds form: "Retry-After: 120"
@@ -226,9 +250,16 @@ async function fetchWithRetry(
     query: parsedUrl.searchParams.toString(),
   });
   if (lane === "emails") {
+    // Emails go through BOTH the workspace limiter (so they
+    // count toward 100/10s and 600/min) AND the email-specific
+    // 3s interval (so they count toward the separate 20 req/min
+    // /emails cap). The order matters: workspace first, then
+    // email interval, so a request that the workspace can
+    // admit still has to wait for the email interval.
+    await acquireLimiterSlot();
     await waitForEmailsLane();
   } else {
-    await waitForRateLimit();
+    await acquireLimiterSlot();
   }
 
   await acquireSlot();

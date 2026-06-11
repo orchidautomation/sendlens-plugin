@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isUnresolvedDbPath, resolveDbPath } from "./local-db";
+import { getRateLimitStats, type RateLimitStats } from "./instantly-client";
 
 export type RefreshStatus = {
   status: "idle" | "running" | "succeeded" | "failed";
@@ -16,6 +17,7 @@ export type RefreshStatus = {
   currentCampaignName?: string | null;
   message?: string | null;
   dbPath?: string;
+  rateLimit?: RateLimitStats;
 };
 
 function getStateDir() {
@@ -51,6 +53,10 @@ function normalizeStatus(status: RefreshStatus): RefreshStatus {
         ? status.dbPath
         : activeDbPath,
   };
+
+  // Always attach a fresh rate-limit snapshot so callers can see
+  // the current limiter state without re-querying the client.
+  normalized.rateLimit = getRateLimitStats();
 
   if (
     normalized.status === "failed" &&
@@ -130,6 +136,10 @@ export async function writeRefreshStatus(
     ...currentSansLegacyMode,
     ...patch,
     dbPath: patch.dbPath ?? resolveDbPath(),
+    // Always refresh the rate-limit snapshot at write time so the
+    // persisted file shows the limiter state at the moment the
+    // status was updated, not the moment it was first read.
+    rateLimit: getRateLimitStats(),
   };
   const statusPath = await resolveWritableStatusPath();
   await fs.writeFile(statusPath, JSON.stringify(next, null, 2));

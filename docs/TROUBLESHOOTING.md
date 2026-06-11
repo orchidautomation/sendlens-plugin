@@ -200,6 +200,21 @@ refresh_data
 
 If you use client-specific env files, confirm `SENDLENS_CLIENT` is set to the client you intended before starting the host.
 
+## Frequent 429s During Refresh
+
+If `refresh_status` shows repeated 429 responses or the refresh never completes, SendLens is hitting Instantly's workspace-wide rate limit (100 req/10s, 600 req/min). The plugin has two layers of mitigation:
+
+1. A per-process sliding-window limiter proactively throttles requests before the limit is reached. `refresh_status.rateLimit.throttled_count` reports the cumulative number of times the limiter had to pause a request.
+2. On 429 responses, SendLens honors the `Retry-After` header (both seconds and HTTP-date form) instead of using a fixed exponential backoff.
+
+What to check:
+
+- If `window_10s_count` is consistently at or near 100, your refresh is making more than 100 requests per 10 seconds. This is expected for a full workspace refresh; the limiter will spread them out automatically.
+- If `throttled_count` grows rapidly, an external process (another host, a CI job, a separate script) is also calling the same Instantly workspace. Coordinate timing, or run the refreshes sequentially.
+- If a 429 is *not* being retried, check `session-start-refresh.log` for the latest `http.retry` entries and the actual `Retry-After` value the server returned.
+
+If the limiter is the cause of unexpected slowness, reduce concurrent host processes (each host process gets its own limiter — but they all count toward the workspace total).
+
 ## Reset Local Cache
 
 If you need a clean local cache during development:
