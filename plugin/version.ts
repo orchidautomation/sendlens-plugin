@@ -1,34 +1,12 @@
-import { readFileSync, existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-
-function findPackageJson(startDir: string): string | null {
-  let dir = startDir;
-  for (let i = 0; i < 6; i++) {
-    const candidate = resolve(dir, "package.json");
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
-}
-
-function readPackageVersion(): string {
-  const packageJsonPath = findPackageJson(__dirname);
-  if (packageJsonPath) {
-    try {
-      const raw = readFileSync(packageJsonPath, "utf8");
-      const parsed = JSON.parse(raw) as { version?: unknown };
-      if (typeof parsed.version === "string" && parsed.version.length > 0) {
-        return parsed.version;
-      }
-    } catch {
-      // unreadable — fall through to fallback
-    }
-  }
-  return "0.0.0-unknown";
-}
-
-export const PLUGIN_VERSION: string = readPackageVersion();
+// PLUGIN_VERSION is generated at build time by scripts/generate-version.mjs
+// from package.json. The generated module lives at
+// plugin/_generated/version.generated.ts and is git-ignored.
+//
+// Why a generated module instead of a runtime read:
+// - Installed host bundles (dist/codex, dist/cursor, dist/claude-code)
+//   do not include package.json in the published tree.
+// - A runtime read against __dirname would walk up the filesystem
+//   and resolve to "0.0.0-unknown" for real installed users.
+//
+// See scripts/generate-version.mjs for the source of truth.
+export { PLUGIN_VERSION } from "./_generated/version.generated";
