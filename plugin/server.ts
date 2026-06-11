@@ -30,12 +30,13 @@ import { readRefreshStatus } from "./refresh-status";
 import { buildSetupDoctorReport } from "./setup-doctor";
 import { enforceLocalWorkspaceScope, LocalSqlGuardError } from "./sql-guard";
 import { buildWorkspaceSummary } from "./summary";
+import { PLUGIN_VERSION } from "./version";
 
 loadSendLensEnv();
 
 const server = new McpServer({
   name: "sendlens",
-  version: "0.1.36",
+  version: PLUGIN_VERSION,
 });
 
 const SESSION_REFRESH_WAIT_TIMEOUT_MS = 15_000;

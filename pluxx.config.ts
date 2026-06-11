@@ -1,8 +1,14 @@
 import { definePlugin } from "pluxx";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+const pkg = JSON.parse(
+  readFileSync(resolve(__dirname, "package.json"), "utf8"),
+) as { version: string };
 
 export default definePlugin({
   name: "sendlens",
-  version: "0.1.37",
+  version: pkg.version,
   description:
     "Privacy-first outbound campaign analysis for AI workspaces.",
   author: {
