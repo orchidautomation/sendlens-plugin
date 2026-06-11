@@ -117,3 +117,14 @@ The expected flow is:
 4. use `synthesis-reviewer` to compress the result if the analysis is broad
 
 Do not fan out multiple campaign specialists until the workspace-level triage identifies which campaigns are worth the extra work.
+
+## Test Tiers (contributors)
+
+When iterating on plugin code, use the tiered test pipeline in `package.json`. Each tier composes the one above it.
+
+- `npm run test:plugin:smoke` — sql-guard + prompt-contracts. ~1s. Use during a 1-2 minute inner loop.
+- `npm run test:plugin:fast` — smoke + campaign-analysis-depth + reply-fetch-contract. ~1-2s. Use before pushing a branch.
+- `npm run test:plugin` — fast + 7 heavier tests (db lock, ingest templates, instantly client pagination, sampling, runtime, cache identity, reply hydration, demo workspace, MCP response contract). ~4-5s. Required for `ci:plugin`.
+- `npm run ci:plugin` — `test:plugin` + `validate:plugin` + `lint:plugin` + `test:host-bundles`. Run before opening a PR.
+
+The full chain used to call `npm run --silent build:plugin` 12 times (once per test script). The new tiers call it once per tier, saving 11 redundant `tsc` runs.
