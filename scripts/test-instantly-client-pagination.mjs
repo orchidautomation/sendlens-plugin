@@ -202,4 +202,55 @@ try {
   globalThis.fetch = originalFetch;
 }
 
+// Separate suite: listAccounts must STOP paginating when the cursor
+// shape changes away from datetime. Without this, a future Instantly
+// API change would silently skip rows.
+{
+  const originalFetch2 = globalThis.fetch;
+  const accountsCalls = [];
+  globalThis.fetch = async (url) => {
+    accountsCalls.push(String(url));
+    const parsed = new URL(String(url));
+    if (parsed.pathname.endsWith("/accounts")) {
+      const cursor = parsed.searchParams.get("starting_after");
+      if (!cursor) {
+        // First page is fine, returns a datetime cursor.
+        return responseJson({
+          items: rows("account", 0, 5),
+          next_starting_after: "2026-01-15T00:00:00.000Z",
+        });
+      }
+      if (cursor === "2026-01-15T00:00:00.000Z") {
+        // Second page returns a UUID (unexpected!). The client
+        // should detect this and stop.
+        return responseJson({
+          items: rows("account", 5, 5),
+          next_starting_after: "11111111-2222-3333-4444-555555555555",
+        });
+      }
+      if (cursor === "11111111-2222-3333-4444-555555555555") {
+        // If the client doesn't stop, this third page would
+        // return more data. The test below asserts we never get
+        // here.
+        return responseJson({
+          items: rows("account", 10, 100),
+          next_starting_after: null,
+        });
+      }
+    }
+    return responseJson({ error: "unhandled" }, 404);
+  };
+  try {
+    const accounts = await listAccounts("test-key");
+    assert.equal(accounts.length, 10, "listAccounts should stop after detecting wrong cursor shape");
+    assert.equal(
+      accountsCalls.length,
+      2,
+      `Expected exactly 2 fetch calls (1st page + 2nd page that returned the bad cursor), got ${accountsCalls.length}`,
+    );
+  } finally {
+    globalThis.fetch = originalFetch2;
+  }
+}
+
 console.log("Instantly client pagination tests passed");

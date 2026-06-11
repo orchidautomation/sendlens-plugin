@@ -428,8 +428,12 @@ export async function listAccounts(apiKey: string) {
   // Instantly's /accounts endpoint returns a *datetime* cursor in
   // `next_starting_after` (e.g. "2026-01-15T00:00:00.000Z"), unlike
   // /campaigns and /leads which return UUIDs. Both pass through the
-  // same `starting_after` query param. We assert the shape here so
-  // a future endpoint change surfaces immediately.
+  // same `starting_after` query param.
+  //
+  // The cursor shape is asserted on every page via detectCursorShape.
+  // If Instantly ever changes /accounts to return a different cursor
+  // type, the assertion logs the unexpected shape and stops
+  // paginating (so we never silently loop or skip rows).
   const accounts: Array<Record<string, unknown>> = [];
   let cursor: string | null = null;
   const seenCursors = new Set<string>();
@@ -447,6 +451,22 @@ export async function listAccounts(apiKey: string) {
     const { items, nextCursor } = parseItemsAndCursor(data);
     accounts.push(...items);
     cursor = nextCursor;
+    if (cursor) {
+      const shape = detectCursorShape(cursor);
+      if (shape !== "datetime" && shape !== "none") {
+        await appendTraceLog("cursor.shape.unexpected", {
+          endpoint: "/accounts",
+          expected: "datetime",
+          actual: shape,
+          cursor,
+        });
+        // Stop paginating: the API behavior has changed and we
+        // don't want to loop or skip silently. The pages already
+        // collected are still returned; ingest will just be
+        // short and the operator sees the warning in the trace.
+        break;
+      }
+    }
     if (!cursor || seenCursors.has(cursor)) break;
     seenCursors.add(cursor);
   }
