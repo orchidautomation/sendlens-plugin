@@ -1,7 +1,11 @@
 /**
  * Instantly API v2 client with rate limiting and retry.
- * Workspace-wide limit: 100 req/sec and 6000 req/min.
+ * Workspace-wide limit: 100 req/10s and 600 req/min.
  * The /emails listing endpoint is separately capped at 20 req/min.
+ *
+ * Per-endpoint cursor shapes vary: most list endpoints return a UUID
+ * `next_starting_after`, but `/accounts` returns a datetime cursor.
+ * See `detectCursorShape` and the `listAccounts` runtime guard.
  */
 import { appendTraceLog } from "./debug-log";
 
@@ -29,6 +33,129 @@ export function detectCursorShape(cursor: string | null | undefined): CursorShap
   if (UUID_RE.test(cursor)) return "uuid";
   if (DATETIME_RE.test(cursor)) return "datetime";
   return "opaque";
+}
+
+// Instantly V2 workspace-wide rate limits. Empirically the published
+// ceiling is 100 req/10s and 600 req/min (also noted by the
+// instantly-cli reference at bcharleson/instantly-cli CLAUDE.md).
+// The previous header claimed 100 req/sec / 6000 req/min, which
+// overstates the limit. The sliding-window limiter below enforces
+// the conservative pair.
+const RATE_LIMIT_10S = 100;
+const RATE_LIMIT_60S = 600;
+
+// Per-process request log used by the sliding-window limiter.
+// Stores epoch-ms timestamps; entries older than 60s are pruned
+// on every read so memory stays bounded.
+const requestLog: number[] = [];
+
+export interface RateLimitStats {
+  window_10s_count: number;
+  window_60s_count: number;
+  limit_10s: number;
+  limit_60s: number;
+  throttled_count: number;
+}
+
+let throttledCount = 0;
+
+// Serialization mutex for the rate-limit gate. Without this,
+// concurrent callers each read the same window state, all wait
+// similar delays, then all resume and push to requestLog in
+// rapid succession, allowing a burst above the 100/10s or
+// 600/min ceiling. The mutex makes the read-wait-record sequence
+// atomic across all concurrent callers.
+let limiterChain: Promise<void> = Promise.resolve();
+
+function pruneRequestLog(now: number) {
+  const cutoff = now - 60_000;
+  while (requestLog.length > 0 && requestLog[0] < cutoff) {
+    requestLog.shift();
+  }
+}
+
+function countInWindow(now: number, windowMs: number): number {
+  const cutoff = now - windowMs;
+  let count = 0;
+  for (let i = requestLog.length - 1; i >= 0; i--) {
+    if (requestLog[i] >= cutoff) count++;
+    else break;
+  }
+  return count;
+}
+
+// Find the timestamp of the (windowSize - limit + 1)-th newest
+// request in the log. When that timestamp is older than
+// (now - windowMs), the window has room.
+function findWindowFreeTime(now: number, windowMs: number, limit: number): number {
+  if (requestLog.length < limit) return 0;
+  const idx = requestLog.length - limit;
+  // The oldest request still inside the limit needs to fall out
+  // of the window. Free time = that timestamp + windowMs.
+  return Math.max(0, requestLog[idx] + windowMs - now);
+}
+
+async function acquireLimiterSlot(): Promise<void> {
+  // Chain onto the previous limiter operation so that the entire
+  // read-wait-record sequence is serialized across callers.
+  let release!: () => void;
+  const next = new Promise<void>((resolve) => { release = resolve; });
+  const wait = limiterChain;
+  limiterChain = next;
+  await wait;
+
+  try {
+    const now = Date.now();
+    pruneRequestLog(now);
+    const waitMs = Math.max(
+      findWindowFreeTime(now, 10_000, RATE_LIMIT_10S),
+      findWindowFreeTime(now, 60_000, RATE_LIMIT_60S),
+    );
+    if (waitMs > 0) {
+      throttledCount++;
+      await appendTraceLog("http.throttled", {
+        waitMs,
+        in10s: countInWindow(now, 10_000),
+        in60s: countInWindow(now, 60_000),
+        limit10s: RATE_LIMIT_10S,
+        limit60s: RATE_LIMIT_60S,
+      });
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+    // Record the request timestamp *after* the wait, so a caller
+    // who waited N ms does not consume a slot from the past.
+    requestLog.push(Date.now());
+  } finally {
+    release();
+  }
+}
+
+export function getRateLimitStats(): RateLimitStats {
+  const now = Date.now();
+  pruneRequestLog(now);
+  return {
+    window_10s_count: countInWindow(now, 10_000),
+    window_60s_count: countInWindow(now, 60_000),
+    limit_10s: RATE_LIMIT_10S,
+    limit_60s: RATE_LIMIT_60S,
+    throttled_count: throttledCount,
+  };
+}
+
+export function parseRetryAfter(value: string | null): number | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  // Seconds form: "Retry-After: 120"
+  const asNumber = Number(trimmed);
+  if (Number.isFinite(asNumber) && asNumber >= 0) {
+    return Math.min(asNumber * 1000, 60_000);
+  }
+  // HTTP-date form: "Retry-After: Wed, 21 Oct 2015 07:28:00 GMT"
+  const asDate = Date.parse(trimmed);
+  if (!Number.isNaN(asDate)) {
+    return Math.max(0, Math.min(asDate - Date.now(), 60_000));
+  }
+  return null;
 }
 
 export interface InstantlyLead extends Record<string, unknown> {
@@ -144,7 +271,16 @@ async function fetchWithRetry(
     query: parsedUrl.searchParams.toString(),
   });
   if (lane === "emails") {
+    // Emails go through BOTH the workspace limiter (so they
+    // count toward 100/10s and 600/min) AND the email-specific
+    // 3s interval (so they count toward the separate 20 req/min
+    // /emails cap). The order matters: workspace first, then
+    // email interval, so a request that the workspace can
+    // admit still has to wait for the email interval.
+    await acquireLimiterSlot();
     await waitForEmailsLane();
+  } else {
+    await acquireLimiterSlot();
   }
 
   await acquireSlot();
@@ -164,16 +300,25 @@ async function fetchWithRetry(
   releaseSlot();
 
   if (res.status === 429 && attempt <= RETRY_ATTEMPTS) {
-    const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+    // Honor Retry-After (seconds OR HTTP-date) per RFC 9110.
+    // Fall back to exponential backoff when the header is absent.
+    const retryAfter = parseRetryAfter(res.headers.get("retry-after"));
+    const fallback = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+    const delay = retryAfter ?? fallback;
     await appendTraceLog("http.retry", {
       lane,
       attempt,
       status: res.status,
       delayMs: delay,
+      retryAfterMs: retryAfter,
       path: parsedUrl.pathname,
       elapsedMs: Date.now() - startedAt,
     });
-    console.log(`[instantly] 429 rate limited, retry ${attempt}/${RETRY_ATTEMPTS} in ${delay}ms`);
+    console.log(
+      `[instantly] 429 rate limited, retry ${attempt}/${RETRY_ATTEMPTS} in ${delay}ms${
+        retryAfter ? " (Retry-After)" : ""
+      }`,
+    );
     await new Promise((r) => setTimeout(r, delay));
     return fetchWithRetry(url, options, lane, attempt + 1);
   }
