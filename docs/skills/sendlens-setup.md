@@ -40,4 +40,4 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 ## Privacy Boundaries
 
-The doctor tool should never print secrets. Do not ask users to paste API keys into chat. Smartlead uses query-string access, so preserve the doctor's redacted wording for Smartlead setup errors. When demo mode is enabled, keep every answer clearly labeled as synthetic demo evidence. If production credentials are already configured, keep the default path on real workspace analysis and mention demo only when explicitly requested.
+The doctor tool should never print secrets. Do not ask users to paste API keys into chat. Smartlead uses query-string API keys, so redact them from URLs, logs, traces, setup output, errors, and fixtures/tests. When demo mode is enabled, keep every answer clearly labeled as synthetic demo evidence. If production credentials are already configured, keep the default path on real workspace analysis and mention demo only when explicitly requested.

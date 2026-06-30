@@ -439,8 +439,12 @@ export async function buildSetupDoctorReport() {
   const nextSteps: string[] = [];
   const liveRefreshReady = credentialValidation?.status === "valid";
   const smartleadConfigReady = smartleadCredentialValidation?.status === "valid";
+  const noReadableCache = !dbExists || Boolean(cacheReadinessError);
+  const smartleadReadOnlyDemoSeedReady =
+    smartleadSelected && !instantlySelected && smartleadConfigReady && noReadableCache;
   const demoSeedReady =
     demoMode ||
+    smartleadReadOnlyDemoSeedReady ||
     (!apiKeyConfigured && !smartleadApiKeyConfigured) ||
     credentialValidation?.status === "invalid" ||
     credentialValidation?.status === "unreachable" ||
@@ -456,6 +460,9 @@ export async function buildSetupDoctorReport() {
     nextSteps.push("Do not paste the Smartlead key into chat or logs; it is a query-string access value.");
   } else if (smartleadSelected && smartleadCredentialValidation?.status === "unreachable") {
     nextSteps.push("Retry /sendlens-setup after Smartlead connectivity is healthy; the configured Smartlead value was suppressed from the probe output.");
+  } else if (smartleadReadOnlyDemoSeedReady) {
+    nextSteps.push("Smartlead provider configuration is ready. Smartlead data refresh lands in follow-up ingest work; call seed_demo_workspace now for a synthetic first-run workspace.");
+    nextSteps.push("Use an existing readable cache if you need real analysis before the Smartlead refresh path lands.");
   } else if (cacheReadinessError) {
     nextSteps.push("Run refresh_data now to rebuild and stamp the local cache for the currently configured Instantly API key.");
     nextSteps.push("Unset SENDLENS_INSTANTLY_API_KEY before starting the host only if you intentionally want to inspect the preserved legacy cache.");

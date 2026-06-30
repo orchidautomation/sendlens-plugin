@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SOURCE_PROVIDER="$(printf '%s' "${SENDLENS_PROVIDER:-instantly}" | tr '[:upper:]' '[:lower:]')"
-API_KEY="${SENDLENS_INSTANTLY_API_KEY:-}"
-SMARTLEAD_API_KEY="${SENDLENS_SMARTLEAD_API_KEY:-}"
 DB_PATH="${SENDLENS_DB_PATH:-${HOME}/.sendlens/workspace-cache.duckdb}"
 PLUGIN_ROOT="${PLUGIN_ROOT:-$(pwd)}"
 BUILD_ENTRY="${PLUGIN_ROOT}/build/plugin/server.js"

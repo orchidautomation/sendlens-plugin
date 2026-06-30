@@ -111,10 +111,20 @@ try {
   assertNoSensitiveValue(unreachableSmartlead, smartleadValue);
   assert.ok(unreachableSmartlead.message.includes("[REDACTED]"));
 
-  let tempDir = resetEnv("smartlead-missing");
+  let tempDir = resetEnv("instantly-default-no-cache");
+  await fs.mkdir(tempDir, { recursive: true });
+  let report = await buildSetupDoctorReport();
+  assert.equal(report.capabilities.source_provider_mode, "instantly");
+  assert.equal(report.capabilities.source_providers.join(","), "instantly");
+  assert.equal(report.capabilities.local_cache_read, false);
+  assert.equal(report.capabilities.demo_seed, true);
+  assert.equal(findCheck(report, "Credentials")?.status, "fail");
+  assert.ok(report.next_steps.some((step) => step.includes("seed_demo_workspace")));
+
+  tempDir = resetEnv("smartlead-missing");
   await fs.mkdir(tempDir, { recursive: true });
   process.env.SENDLENS_PROVIDER = "smartlead";
-  let report = await buildSetupDoctorReport();
+  report = await buildSetupDoctorReport();
   assert.equal(report.setup_status, "blocked");
   assert.equal(report.capabilities.source_provider_mode, "smartlead");
   assert.equal(report.capabilities.smartlead_key_configured, false);
@@ -134,12 +144,16 @@ try {
   report = await buildSetupDoctorReport();
   assert.equal(report.capabilities.source_provider_mode, "smartlead");
   assert.equal(report.capabilities.source_providers.join(","), "smartlead");
+  assert.equal(report.capabilities.local_cache_read, false);
+  assert.equal(report.capabilities.live_refresh, false);
+  assert.equal(report.capabilities.demo_seed, true);
   assert.equal(report.capabilities.smartlead_key_validated, true);
   assert.equal(findCheck(report, "Smartlead credentials")?.status, "pass");
   assertNoSensitiveValue(report, smartleadValue);
   assert.ok(
     report.next_steps.some((step) => step.includes("Smartlead provider configuration is ready")),
   );
+  assert.ok(report.next_steps.some((step) => step.includes("seed_demo_workspace")));
 
   tempDir = resetEnv("all-valid");
   await fs.mkdir(tempDir, { recursive: true });
