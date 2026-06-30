@@ -1,0 +1,18 @@
+{
+  "total": 5,
+  "offset": 4,
+  "limit": 2,
+  "leads": [
+    {
+      "id": 1005,
+      "email": "lead-1005@example.co",
+      "first_name": "Mary",
+      "status": "STOPPED",
+      "email_stats": {
+        "is_opened": false,
+        "is_replied": true
+      },
+      "custom_fields": {}
+    }
+  ]
+}

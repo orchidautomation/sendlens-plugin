@@ -1,0 +1,29 @@
+{
+  "total": 5,
+  "offset": 2,
+  "limit": 2,
+  "leads": [
+    {
+      "id": 1003,
+      "email": "lead-1003@example.net",
+      "first_name": "Katherine",
+      "status": "COMPLETED",
+      "email_stats": {
+        "is_opened": false,
+        "is_replied": false
+      },
+      "custom_fields": {}
+    },
+    {
+      "id": 1004,
+      "email": "lead-1004@example.net",
+      "first_name": "Dorothy",
+      "status": "COMPLETED",
+      "email_stats": {
+        "is_opened": true,
+        "is_replied": false
+      },
+      "custom_fields": {}
+    }
+  ]
+}

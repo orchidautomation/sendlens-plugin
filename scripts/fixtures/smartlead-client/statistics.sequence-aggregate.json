@@ -1,0 +1,25 @@
+{
+  "total": 2,
+  "offset": 0,
+  "limit": 1000,
+  "statistics": [
+    {
+      "sequence_number": 1,
+      "sent": 50,
+      "opened": 20,
+      "clicked": 3,
+      "replied": 5,
+      "unsubscribed": 1,
+      "bounced": 2
+    },
+    {
+      "sequence_number": 2,
+      "sent": 40,
+      "opened": 12,
+      "clicked": 1,
+      "replied": 2,
+      "unsubscribed": 0,
+      "bounced": 1
+    }
+  ]
+}

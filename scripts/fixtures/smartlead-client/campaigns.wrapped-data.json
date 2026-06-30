@@ -1,0 +1,16 @@
+{
+  "data": {
+    "campaigns": [
+      {
+        "id": 201,
+        "name": "Wrapped Fixture Campaign A",
+        "status": "ACTIVE"
+      },
+      {
+        "id": 202,
+        "name": "Wrapped Fixture Campaign B",
+        "status": "DRAFTED"
+      }
+    ]
+  }
+}

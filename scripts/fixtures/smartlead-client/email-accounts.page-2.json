@@ -1,0 +1,18 @@
+[
+  {
+    "id": 303,
+    "from_email": "sender-303@example.com",
+    "from_name": "Sender 303",
+    "type": "gmail",
+    "message_per_day": 20,
+    "campaign_ids": [102]
+  },
+  {
+    "id": 304,
+    "from_email": "sender-304@example.com",
+    "from_name": "Sender 304",
+    "type": "smtp",
+    "message_per_day": 20,
+    "campaign_ids": []
+  }
+]

@@ -1,0 +1,296 @@
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const {
+  SmartleadApiError,
+  SmartleadClient,
+  SMARTLEAD_ACCESS_PARAM,
+  buildSmartleadUrl,
+  parseRetryAfter,
+  parseRetryDelayFromBody,
+  parseSmartleadItems,
+  parseSmartleadOffsetPage,
+  redactSmartleadText,
+  redactSmartleadUrl,
+} = require("../build/plugin/smartlead-client.js");
+
+const accessValue = "fixture-access-value";
+const fixtureRoot = new URL("./fixtures/smartlead-client/", import.meta.url);
+
+async function fixture(name) {
+  return JSON.parse(await fs.readFile(new URL(name, fixtureRoot), "utf8"));
+}
+
+function responseJson(payload, status = 200, headers = {}) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { "Content-Type": "application/json", ...headers },
+  });
+}
+
+function responseText(text, status = 200, headers = {}) {
+  return new Response(text, { status, headers });
+}
+
+function makeClient(fetchImpl, options = {}) {
+  return new SmartleadClient({
+    accessValue,
+    fetchImpl,
+    rateLimit: options.rateLimit ?? { disabled: true },
+    retry: {
+      attempts: 2,
+      baseDelayMs: 10,
+      maxDelayMs: 60_000,
+      jitterRatio: 0,
+      ...(options.retry ?? {}),
+    },
+    sleep: options.sleep,
+    now: options.now,
+  });
+}
+
+function assertAccessQuery(url) {
+  const parsed = new URL(String(url));
+  assert.equal(parsed.searchParams.get(SMARTLEAD_ACCESS_PARAM), accessValue);
+  return parsed;
+}
+
+{
+  const url = buildSmartleadUrl("/campaigns/", accessValue, { include_tags: true });
+  assert.equal(url.origin, "https://server.smartlead.ai");
+  assert.equal(url.pathname, "/api/v1/campaigns/");
+  assert.equal(url.searchParams.get(SMARTLEAD_ACCESS_PARAM), accessValue);
+  assert.equal(url.searchParams.get("include_tags"), "true");
+
+  const redacted = redactSmartleadUrl(url, [accessValue]);
+  assert.doesNotMatch(redacted, new RegExp(accessValue));
+  assert.match(redacted, new RegExp(`${SMARTLEAD_ACCESS_PARAM}=`));
+  assert.match(redactSmartleadText(`url?${SMARTLEAD_ACCESS_PARAM}=${accessValue}`, [accessValue]), /\[REDACTED\]/);
+}
+
+{
+  const directCampaigns = await fixture("campaigns.direct-array.json");
+  const wrappedCampaigns = await fixture("campaigns.wrapped-data.json");
+  assert.equal(parseSmartleadItems(directCampaigns, ["campaigns"]).length, 2);
+  assert.equal(parseSmartleadItems(wrappedCampaigns, ["campaigns"]).length, 2);
+
+  const directClient = makeClient(async (url) => {
+    const parsed = assertAccessQuery(url);
+    assert.equal(parsed.pathname, "/api/v1/campaigns/");
+    assert.equal(parsed.searchParams.get("include_tags"), "true");
+    return responseJson(directCampaigns);
+  });
+  const directOut = await directClient.listCampaigns();
+  assert.equal(directOut.length, 2);
+  assert.equal(directOut[0].id, 101);
+
+  const wrappedClient = makeClient(async (url) => {
+    const parsed = assertAccessQuery(url);
+    assert.equal(parsed.pathname, "/api/v1/campaigns/");
+    return responseJson(wrappedCampaigns);
+  });
+  const wrappedOut = await wrappedClient.listCampaigns();
+  assert.equal(wrappedOut.length, 2);
+  assert.equal(wrappedOut[1].id, 202);
+}
+
+{
+  const pages = new Map([
+    ["0", await fixture("campaign-leads.page-0.json")],
+    ["2", await fixture("campaign-leads.page-2.json")],
+    ["4", await fixture("campaign-leads.page-4.json")],
+  ]);
+  const calls = [];
+  const client = makeClient(async (url) => {
+    const parsed = assertAccessQuery(url);
+    assert.equal(parsed.pathname, "/api/v1/campaigns/101/leads");
+    const offset = parsed.searchParams.get("offset") ?? "0";
+    calls.push(parsed.searchParams.toString());
+    return responseJson(pages.get(offset) ?? { total: 5, offset: Number(offset), limit: 2, leads: [] });
+  });
+
+  const leads = await client.listAllCampaignLeads(101, { limit: 2 });
+  assert.equal(leads.length, 5);
+  assert.equal(leads[4].id, 1005);
+  assert.deepEqual(
+    calls.map((query) => new URLSearchParams(query).get("offset")),
+    ["0", "2", "4"],
+  );
+
+  const parsedPage = parseSmartleadOffsetPage(await fixture("campaign-leads.page-0.json"), {
+    offset: 0,
+    limit: 2,
+    itemKeys: ["leads"],
+  });
+  assert.equal(parsedPage.hasMore, true);
+  assert.equal(parsedPage.nextOffset, 2);
+  assert.equal(parsedPage.total, 5);
+}
+
+{
+  const pages = new Map([
+    ["0", await fixture("email-accounts.page-0.json")],
+    ["2", await fixture("email-accounts.page-2.json")],
+    ["4", await fixture("email-accounts.page-4-empty.json")],
+  ]);
+  const offsets = [];
+  const client = makeClient(async (url) => {
+    const parsed = assertAccessQuery(url);
+    assert.equal(parsed.pathname, "/api/v1/email-accounts/");
+    offsets.push(parsed.searchParams.get("offset"));
+    return responseJson(pages.get(parsed.searchParams.get("offset") ?? "0") ?? []);
+  });
+  const accounts = await client.listAllEmailAccounts({ limit: 2, fetchCampaigns: true });
+  assert.equal(accounts.length, 4);
+  assert.equal(accounts[3].from_email, "sender-304@example.com");
+  assert.deepEqual(offsets, ["0", "2", "4"]);
+}
+
+{
+  const sequenceAggregate = await fixture("statistics.sequence-aggregate.json");
+  const emailDetail = await fixture("statistics.email-detail.json");
+  const sequencePage = parseSmartleadOffsetPage(sequenceAggregate, {
+    offset: 0,
+    limit: 1000,
+    itemKeys: ["statistics"],
+  });
+  assert.equal(sequencePage.items.length, 2);
+  assert.equal(sequencePage.items[0].sequence_number, 1);
+
+  const detailPage = parseSmartleadOffsetPage(emailDetail, {
+    offset: 0,
+    limit: 1000,
+    itemKeys: ["email_statistics"],
+  });
+  assert.equal(detailPage.items.length, 2);
+  assert.equal(detailPage.items[0].lead_email, "lead-1001@example.com");
+}
+
+{
+  const sleeps = [];
+  let calls = 0;
+  const client = makeClient(
+    async (url) => {
+      assertAccessQuery(url);
+      calls++;
+      if (calls === 1) {
+        return responseJson({ message: "wait" }, 429, { "Retry-After": "2" });
+      }
+      return responseJson(await fixture("campaigns.direct-array.json"));
+    },
+    { sleep: async (ms) => { sleeps.push(ms); } },
+  );
+  const out = await client.listCampaigns();
+  assert.equal(out.length, 2);
+  assert.equal(calls, 2);
+  assert.deepEqual(sleeps, [2000]);
+}
+
+{
+  const sleeps = [];
+  let calls = 0;
+  const client = makeClient(
+    async () => {
+      calls++;
+      if (calls === 1) {
+        return responseJson({ retry_after: 1 }, 429);
+      }
+      return responseJson(await fixture("campaigns.direct-array.json"));
+    },
+    { sleep: async (ms) => { sleeps.push(ms); } },
+  );
+  await client.listCampaigns();
+  assert.equal(calls, 2);
+  assert.deepEqual(sleeps, [1000]);
+  assert.equal(parseRetryDelayFromBody("retry after 250 ms"), 250);
+  assert.equal(parseRetryAfter("0"), 0);
+  assert.equal(parseRetryAfter("120"), 60_000);
+}
+
+{
+  let virtualNow = 0;
+  const sleeps = [];
+  let calls = 0;
+  const client = makeClient(
+    async () => {
+      calls++;
+      return responseJson(await fixture("campaigns.direct-array.json"));
+    },
+    {
+      rateLimit: { perMinute: 100, burstPerSecond: 1, maxConcurrent: 8 },
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        virtualNow += ms;
+      },
+      now: () => virtualNow,
+    },
+  );
+  await client.requestJson("/campaigns/");
+  await client.requestJson("/campaigns/");
+  assert.equal(calls, 2);
+  assert.ok(sleeps.some((ms) => ms >= 1000), `expected burst gate sleep, got ${sleeps}`);
+  assert.equal(client.getRateLimitStats().throttled_count, 1);
+}
+
+{
+  const traceDir = await fs.mkdtemp(path.join(os.tmpdir(), "sendlens-smartlead-trace-"));
+  const previousTrace = process.env.SENDLENS_TRACE_REFRESH;
+  const previousState = process.env.SENDLENS_STATE_DIR;
+  process.env.SENDLENS_TRACE_REFRESH = "1";
+  process.env.SENDLENS_STATE_DIR = traceDir;
+
+  const client = makeClient(async (url) => {
+    assertAccessQuery(url);
+    return responseText(
+      JSON.stringify({
+        message: `bad ${SMARTLEAD_ACCESS_PARAM}=${accessValue}`,
+        [SMARTLEAD_ACCESS_PARAM]: accessValue,
+      }),
+      400,
+    );
+  });
+
+  try {
+    await assert.rejects(
+      () => client.requestJson("/campaigns/", { query: { include_tags: true } }),
+      (error) => {
+        assert.ok(error instanceof SmartleadApiError);
+        const text = String(error);
+        assert.doesNotMatch(text, new RegExp(accessValue));
+        assert.match(text, /\[REDACTED\]/);
+        return true;
+      },
+    );
+    const trace = await fs.readFile(path.join(traceDir, "refresh-trace.log"), "utf8");
+    assert.doesNotMatch(trace, new RegExp(accessValue));
+    assert.match(trace, /\[REDACTED\]/);
+  } finally {
+    if (previousTrace == null) delete process.env.SENDLENS_TRACE_REFRESH;
+    else process.env.SENDLENS_TRACE_REFRESH = previousTrace;
+    if (previousState == null) delete process.env.SENDLENS_STATE_DIR;
+    else process.env.SENDLENS_STATE_DIR = previousState;
+  }
+}
+
+{
+  let captured = null;
+  const client = makeClient(async (url, options = {}) => {
+    const parsed = assertAccessQuery(url);
+    captured = { pathname: parsed.pathname, method: options.method, body: options.body };
+    return responseJson({ data: { "1001": [{ id: "message-1", direction: "inbound" }] } });
+  });
+  const out = await client.getBulkMessageHistory(101, [1001]);
+  assert.deepEqual(Object.keys(out.data), ["1001"]);
+  assert.equal(
+    captured.pathname,
+    "/api/v1/campaigns/101/message-history-for-leads/bbfbdsFGHlBr76ruhjvh6fhHL",
+  );
+  assert.equal(captured.method, "POST");
+  assert.deepEqual(JSON.parse(String(captured.body)), { lead_ids: [1001] });
+}
+
+console.log("Smartlead client fixture tests passed");

@@ -1,0 +1,33 @@
+{
+  "total": 5,
+  "offset": 0,
+  "limit": 2,
+  "leads": [
+    {
+      "id": 1001,
+      "email": "lead-1001@example.com",
+      "first_name": "Ada",
+      "status": "STARTED",
+      "email_stats": {
+        "is_opened": true,
+        "is_replied": false
+      },
+      "custom_fields": {
+        "company_domain": "example.com"
+      }
+    },
+    {
+      "id": 1002,
+      "email": "lead-1002@example.com",
+      "first_name": "Grace",
+      "status": "INPROGRESS",
+      "email_stats": {
+        "is_opened": true,
+        "is_replied": true
+      },
+      "custom_fields": {
+        "company_domain": "example.org"
+      }
+    }
+  ]
+}
