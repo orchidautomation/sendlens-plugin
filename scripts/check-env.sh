@@ -19,6 +19,11 @@ is_demo_mode() {
   [[ "${raw}" == "1" || "${raw}" == "true" || "${raw}" == "yes" ]]
 }
 
+if [[ "${SOURCE_PROVIDER}" != "instantly" && "${SOURCE_PROVIDER}" != "smartlead" && "${SOURCE_PROVIDER}" != "all" ]]; then
+  echo "[sendlens] Invalid SENDLENS_PROVIDER value '${SENDLENS_PROVIDER}'. Set SENDLENS_PROVIDER to instantly, smartlead, or all." >&2
+  exit 1
+fi
+
 if [[ -z "${API_KEY}" ]] && ! is_demo_mode; then
   if [[ "${SOURCE_PROVIDER}" == "instantly" || "${SOURCE_PROVIDER}" == "all" ]]; then
     echo "[sendlens] SENDLENS_INSTANTLY_API_KEY is not set for SENDLENS_PROVIDER=${SOURCE_PROVIDER}. Runtime can start in read-only local-cache mode; refresh_data will require the key." >&2
