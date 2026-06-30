@@ -21,9 +21,14 @@
       "email": "lead-1002@example.com",
       "first_name": "Grace",
       "status": "INPROGRESS",
+      "category_id": 11,
+      "category_name": "Interested",
       "email_stats": {
         "is_opened": true,
-        "is_replied": true
+        "is_replied": true,
+        "replied_step": 0,
+        "replied_variant": 0,
+        "replied_at": "2026-06-03T11:15:00.000Z"
       },
       "custom_fields": {
         "company_domain": "example.org"

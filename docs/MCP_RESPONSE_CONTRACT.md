@@ -79,7 +79,7 @@ Where relevant, SendLens responses should include:
 `fetch_reply_text`
 
 - resolves exactly one campaign by `campaign_id` or unambiguous `campaign_name`
-- writes exact inbound reply rows into `reply_emails`; default `sync_newest` mode fetches the newest page and upserts by email ID
+- for Instantly, writes exact inbound reply rows into `reply_emails`; default `sync_newest` mode fetches the newest page and upserts by email ID
 - preserves pagination/cache state in `reply_email_hydration_state`
 - returns `fetch_result` counts by `i_status`, new-vs-updated row counts, cursor/exhaustion state, readiness metadata, output limits, and a bounded `fetched_reply_sample`
 - default statuses are `1`, `-1`, and `-2`; out-of-office status `0` is excluded unless explicitly requested
@@ -109,13 +109,13 @@ Run `npm run test:mcp-response-contract` when changing MCP tools, response field
 - `campaigns`, `campaign_analytics`, `step_analytics`, `campaign_variants`, `accounts`, `account_daily_metrics`, `custom_tags`, tag mapping views, `inbox_placement_tests`, and `inbox_placement_analytics` are exact local copies of Instantly-derived surfaces.
 - `campaign_overview` is the preferred exact campaign rollup plus tracking settings, deliverability guardrail settings, and sample coverage metadata.
 - `inbox_placement_test_overview` and `sender_deliverability_health` are exact semantic rollups over Instantly inbox placement analytics when those API surfaces are available.
-- `reply_emails` contains exact inbound email rows fetched on demand from Instantly List email. It is intentionally not part of the session-start fast refresh.
+- `reply_emails` contains exact inbound email rows fetched from provider reply surfaces. Instantly rows are fetched on demand through List email; Smartlead rows can come from bounded message-history hydration during campaign refresh. Exact body text is present only when the provider returned body fields.
 - `reply_email_hydration_state` is exact local pagination state for continuing older reply fetches by campaign/status/thread mode. Use `sync_newest` or `restart` to check newly arrived replies above the saved cursor.
 - `lead_evidence` contains reply-signal leads found during bounded lead scans, explicit reply-email backfills, and bounded non-reply samples.
 - `lead_payload_kv` expands sampled lead `custom_payload` into campaign-scoped key/value rows so ICP analysis can stay inside SendLens tools without raw JSON table functions.
 - `reply_context` is lead outcome evidence joined to fetched inbound reply text when available, templates, and reconstructed outbound context.
 - `reply_email_context` is email-anchored fetched reply context; use it after premium hydration because exact reply bodies remain visible even when lead/template context is missing.
-- `rendered_outbound_context` is locally reconstructed copy, not byte-for-byte delivered email text.
+- `rendered_outbound_context` is locally reconstructed copy, not byte-for-byte delivered email text. Smartlead outbound message-history rows are counted in coverage, but rendered outbound bodies stay reconstructed from templates plus lead variables unless a future exact outbound surface is added.
 
 ## Structured Content Strategy
 

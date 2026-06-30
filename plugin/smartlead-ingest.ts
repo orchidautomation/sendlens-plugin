@@ -14,10 +14,16 @@ import {
   createSmartleadClient,
   type SmartleadClient,
 } from "./smartlead-client";
+import {
+  renderTemplateValue,
+  resolveLeadTemplate,
+} from "./instantly-ingest";
 import { buildWorkspaceSummary } from "./summary";
 
 const SOURCE_PROVIDER = "smartlead";
 const DEFAULT_LOOKBACK_DAYS = 30;
+const MESSAGE_HISTORY_LEAD_LIMIT = 50;
+const BULK_MESSAGE_HISTORY_BATCH_SIZE = 50;
 const SENSITIVE_RAW_KEYS = new Set([
   "api_key",
   "apikey",
@@ -46,7 +52,7 @@ type SmartleadIngestClient = Pick<
   | "listAllEmailAccounts"
   | "getEmailAccountWarmupStats"
   | "listAllCampaignLeads"
->;
+> & Partial<Pick<SmartleadClient, "getMessageHistory" | "getBulkMessageHistory">>;
 
 export type SmartleadRefreshOptions = {
   campaignIds?: string[];
@@ -62,6 +68,7 @@ type CampaignBundle = {
   dailyRows: SmartleadRow[];
   statisticsRows: SmartleadRow[];
   leads: SmartleadRow[];
+  messageHistory: SmartleadMessageHistoryHydration;
   campaignAccounts: SmartleadRow[];
   mailboxStats: SmartleadRow[];
 };
@@ -75,6 +82,33 @@ type CampaignVariantTemplate = {
   delayUnit: string | null;
   subject: string | null;
   bodyText: string | null;
+};
+
+type SmartleadMessageHistoryRow = {
+  lead: SmartleadRow;
+  providerLeadId: string;
+  leadEmail: string | null;
+  message: SmartleadRow;
+  index: number;
+};
+
+type SmartleadMessageHistoryHydration = {
+  rows: SmartleadMessageHistoryRow[];
+  coverage: {
+    eligibleLeads: number;
+    leadLimit: number;
+    fetchedLeads: number;
+    skippedLeads: number;
+    unsupportedLeads: number;
+    messagesFetched: number;
+    inboundMessages: number;
+    outboundMessages: number;
+    inboundRowsStored: number;
+    inboundBodyExactRows: number;
+    inboundBodyMissingRows: number;
+    outboundRowsReconstructed: number;
+    outboundExactBodyRowsSkipped: number;
+  };
 };
 
 function esc(value: string) {
@@ -425,6 +459,12 @@ async function clearSmartleadData(
     }
     await run(
       conn,
+      `DELETE FROM sendlens.reply_emails
+       WHERE workspace_id = '${workspace}'
+         AND campaign_id LIKE '${SOURCE_PROVIDER}:%'`,
+    );
+    await run(
+      conn,
       `DELETE FROM sendlens.provider_capabilities
        WHERE workspace_id = '${workspace}'
          AND source_provider = '${SOURCE_PROVIDER}'`,
@@ -452,6 +492,12 @@ async function clearSmartleadData(
          AND ${idColumn} IN (${ids})`,
     );
   }
+  await run(
+    conn,
+    `DELETE FROM sendlens.reply_emails
+     WHERE workspace_id = '${workspace}'
+       AND campaign_id IN (${ids})`,
+  );
 }
 
 function extractSequences(sequences: SmartleadRow[]) {
@@ -577,6 +623,288 @@ function countFromBooleanOrNumber(value: unknown) {
   return parsed ?? null;
 }
 
+function countIndicatesPositive(value: unknown) {
+  if (typeof value === "string" && ["true", "yes", "replied"].includes(value.trim().toLowerCase())) {
+    return true;
+  }
+  const parsed = countFromBooleanOrNumber(value);
+  return parsed != null && parsed > 0;
+}
+
+function smartleadLeadHasReplySignal(lead: SmartleadRow) {
+  const emailStats = leadEmailStats(lead);
+  return (
+    countIndicatesPositive(emailStats.is_replied) ||
+    countIndicatesPositive(emailStats.replied) ||
+    countIndicatesPositive(emailStats.reply_count) ||
+    countIndicatesPositive(lead.is_replied) ||
+    countIndicatesPositive(lead.email_reply_count) ||
+    smartleadLeadInterestStatus(lead) != null ||
+    Boolean(emailStats.replied_at ?? lead.last_replied_at ?? lead.timestamp_last_reply)
+  );
+}
+
+function smartleadLeadInterestStatus(lead: SmartleadRow) {
+  const direct = parseInteger(lead.lt_interest_status);
+  if (direct != null) return direct;
+
+  const categoryText = [
+    lead.lead_category_name,
+    lead.category_name,
+    lead.category,
+    lead.category_type,
+    lead.status_summary,
+  ]
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+
+  if (!categoryText) return null;
+  if (/wrong[\s_-]?person|not[\s_-]?right[\s_-]?person|redirect|referral/.test(categoryText)) return -2;
+  if (/out[\s_-]?of[\s_-]?office|\booo\b|auto[\s_-]?reply|automatic/.test(categoryText)) return 0;
+  if (/not[\s_-]?interested|negative|bad[\s_-]?fit|unsubscribe|do[\s_-]?not[\s_-]?contact/.test(categoryText)) return -1;
+  if (/meeting[\s_-]?completed|completed[\s_-]?meeting/.test(categoryText)) return 3;
+  if (/meeting[\s_-]?booked|booked|scheduled|\bdemo\b/.test(categoryText)) return 2;
+  if (/won|closed/.test(categoryText)) return 4;
+  if (/interested|positive|opportunit/.test(categoryText)) return 1;
+  return null;
+}
+
+function messageDirection(message: SmartleadRow, leadEmail: string | null): "inbound" | "outbound" | "unknown" {
+  const directionText = [
+    message.direction,
+    message.type,
+    message.message_type,
+    message.email_type,
+    message.event_type,
+    message.status,
+  ]
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+
+  if (/\binbound\b|\breceived\b|\bincoming\b|\breply\b/.test(directionText)) return "inbound";
+  if (/\boutbound\b|\bsent\b|\bsend\b|\boutgoing\b/.test(directionText)) return "outbound";
+
+  const fromEmail = pickEmail(message, ["from_email", "from", "sender_email", "lead_email"]);
+  if (leadEmail && fromEmail === leadEmail) return "inbound";
+  return "unknown";
+}
+
+function firstMessageValue(message: SmartleadRow, keys: string[]) {
+  for (const key of keys) {
+    const value = message[key];
+    if (value != null && String(value).trim() !== "") return value;
+  }
+  return null;
+}
+
+function messagePlainBody(message: SmartleadRow) {
+  const value = firstMessageValue(message, [
+    "body_text",
+    "plain_text",
+    "plainText",
+    "text",
+    "message_text",
+    "message_body",
+    "body",
+    "email_body",
+    "content",
+  ]);
+  const text = toSmartleadPlainText(value);
+  return text || null;
+}
+
+function messageHtmlBody(message: SmartleadRow) {
+  const value = firstMessageValue(message, ["body_html", "html", "message_html", "email_body_html"]);
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function messageSubject(message: SmartleadRow) {
+  return pickString(message, ["subject", "email_subject", "message_subject"]) ?? "";
+}
+
+function messageSentAt(message: SmartleadRow, direction: "inbound" | "outbound" | "unknown") {
+  const directionKeys = direction === "inbound"
+    ? ["received_at", "reply_received_at", "replied_at", "event_time", "created_at"]
+    : ["sent_at", "sent_time", "email_sent_at", "event_time", "created_at"];
+  return firstMessageValue(message, directionKeys) ?? firstMessageValue(message, [
+    "timestamp",
+    "created_at",
+    "updated_at",
+  ]);
+}
+
+function messageStep(message: SmartleadRow) {
+  const sequenceNumber = parseInteger(
+    message.email_sequence_number ??
+    message.sequence_number ??
+    message.seq_number ??
+    message.step_number,
+  );
+  if (sequenceNumber != null) return Math.max(0, sequenceNumber - 1);
+  const step = parseInteger(message.step);
+  return step == null ? null : step;
+}
+
+function smartleadLeadRecord(lead: SmartleadRow) {
+  const email = normalizeEmail(lead.email ?? lead.lead_email);
+  const customFields = asRecord(lead.custom_fields ?? lead.customFields);
+  const emailStats = leadEmailStats(lead);
+  return {
+    email,
+    first_name: lead.first_name ?? lead.firstName,
+    last_name: lead.last_name ?? lead.lastName,
+    company_name: lead.company_name ?? lead.companyName ?? customFields.company_name,
+    company_domain: leadCompanyDomain(lead, email),
+    job_title: lead.job_title ?? lead.jobTitle ?? customFields.job_title,
+    website: lead.website ?? customFields.website,
+    phone: lead.phone ?? customFields.phone,
+    personalization: lead.personalization ?? customFields.personalization,
+    custom_payload: customPayloadForLead(lead),
+    email_replied_step: emailStats.replied_step ?? lead.email_replied_step,
+    email_replied_variant: emailStats.replied_variant ?? lead.email_replied_variant,
+    email_clicked_step: emailStats.clicked_step ?? lead.email_clicked_step,
+    email_clicked_variant: emailStats.clicked_variant ?? lead.email_clicked_variant,
+    email_opened_step: emailStats.opened_step ?? lead.email_opened_step,
+    email_opened_variant: emailStats.opened_variant ?? lead.email_opened_variant,
+  };
+}
+
+function messagesForLeadFromBulkPayload(payload: unknown, leadId: string) {
+  const collect = (value: unknown): SmartleadRow[] => arraysFromPayload(value, [
+    "messages",
+    "message_history",
+    "messageHistory",
+    "history",
+    "data",
+  ]);
+  const record = asRecord(payload);
+  const data = record.data ?? record.leads ?? record.message_history ?? payload;
+
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const row = asRecord(item);
+      const rowLeadId = pickString(row, ["lead_id", "leadId", "id"]);
+      if (rowLeadId && rowLeadId === leadId) return collect(row);
+    }
+    return [];
+  }
+
+  const dataRecord = asRecord(data);
+  const direct = dataRecord[leadId] ?? dataRecord[`smartlead:lead:${leadId}`];
+  if (direct != null) return collect(direct);
+  return [];
+}
+
+function emptyMessageHistoryHydration(eligibleLeads = 0): SmartleadMessageHistoryHydration {
+  return {
+    rows: [],
+    coverage: {
+      eligibleLeads,
+      leadLimit: MESSAGE_HISTORY_LEAD_LIMIT,
+      fetchedLeads: 0,
+      skippedLeads: 0,
+      unsupportedLeads: eligibleLeads,
+      messagesFetched: 0,
+      inboundMessages: 0,
+      outboundMessages: 0,
+      inboundRowsStored: 0,
+      inboundBodyExactRows: 0,
+      inboundBodyMissingRows: 0,
+      outboundRowsReconstructed: 0,
+      outboundExactBodyRowsSkipped: 0,
+    },
+  };
+}
+
+async function fetchSmartleadMessageHistory(
+  client: SmartleadIngestClient,
+  campaignId: string,
+  leads: SmartleadRow[],
+): Promise<SmartleadMessageHistoryHydration> {
+  const eligibleLeads = leads
+    .filter(smartleadLeadHasReplySignal)
+    .slice(0, MESSAGE_HISTORY_LEAD_LIMIT);
+  const coverage = emptyMessageHistoryHydration(eligibleLeads.length).coverage;
+  coverage.unsupportedLeads = 0;
+
+  if (eligibleLeads.length === 0) {
+    return { rows: [], coverage };
+  }
+  if (typeof client.getBulkMessageHistory !== "function" && typeof client.getMessageHistory !== "function") {
+    coverage.unsupportedLeads = eligibleLeads.length;
+    return { rows: [], coverage };
+  }
+
+  const rows: SmartleadMessageHistoryRow[] = [];
+  const recordFetchedLead = (lead: SmartleadRow, providerLeadId: string, messages: SmartleadRow[]) => {
+    coverage.fetchedLeads += 1;
+    coverage.messagesFetched += messages.length;
+    const leadEmail = normalizeEmail(lead.email ?? lead.lead_email);
+    messages.forEach((message, index) => {
+      const direction = messageDirection(message, leadEmail);
+      if (direction === "inbound") coverage.inboundMessages += 1;
+      if (direction === "outbound") coverage.outboundMessages += 1;
+      rows.push({ lead, providerLeadId, leadEmail, message, index });
+    });
+  };
+
+  const fetchSingleLead = async (lead: SmartleadRow, providerLeadId: string) => {
+    if (typeof client.getMessageHistory !== "function") {
+      coverage.skippedLeads += 1;
+      return;
+    }
+    try {
+      const messages = arrayFrom(await client.getMessageHistory(campaignId, providerLeadId, {
+        showPlainTextResponse: true,
+      }));
+      recordFetchedLead(lead, providerLeadId, messages);
+    } catch {
+      coverage.unsupportedLeads += 1;
+    }
+  };
+
+  const leadsWithIds = eligibleLeads
+    .map((lead) => ({ lead, providerLeadId: pickString(lead, ["id", "lead_id", "leadId"]) }))
+    .filter((row): row is { lead: SmartleadRow; providerLeadId: string } => {
+      if (row.providerLeadId) return true;
+      coverage.skippedLeads += 1;
+      return false;
+    });
+
+  if (typeof client.getBulkMessageHistory === "function") {
+    for (let start = 0; start < leadsWithIds.length; start += BULK_MESSAGE_HISTORY_BATCH_SIZE) {
+      const batch = leadsWithIds.slice(start, start + BULK_MESSAGE_HISTORY_BATCH_SIZE);
+      try {
+        const payload = await client.getBulkMessageHistory(
+          campaignId,
+          batch.map((row) => row.providerLeadId),
+          { showPlainTextResponse: true },
+        );
+        for (const { lead, providerLeadId } of batch) {
+          const messages = messagesForLeadFromBulkPayload(payload, providerLeadId);
+          if (messages.length === 0) {
+            coverage.skippedLeads += 1;
+            continue;
+          }
+          recordFetchedLead(lead, providerLeadId, messages);
+        }
+      } catch {
+        for (const { lead, providerLeadId } of batch) {
+          await fetchSingleLead(lead, providerLeadId);
+        }
+      }
+    }
+  } else {
+    for (const { lead, providerLeadId } of leadsWithIds) {
+      await fetchSingleLead(lead, providerLeadId);
+    }
+  }
+
+  return { rows, coverage };
+}
+
 function campaignAnalytics(analytics: SmartleadRow, campaign: SmartleadRow, leads: SmartleadRow[]) {
   const opened = pickNumber(analytics, ["open_count", "opened", "total_opened", "opens"]);
   const replied = pickNumber(analytics, ["reply_count", "replied", "total_replied", "replies"]);
@@ -603,6 +931,205 @@ function campaignAnalytics(analytics: SmartleadRow, campaign: SmartleadRow, lead
   };
 }
 
+function messageNativeId(message: SmartleadRow, fallback: number) {
+  return pickString(message, ["id", "message_id", "email_id", "mail_id"]) ?? `row-${fallback}`;
+}
+
+function messageVariant(message: SmartleadRow) {
+  return parseInteger(
+    message.variant ??
+    message.variant_id ??
+    message.email_variant ??
+    message.email_variant_number,
+  );
+}
+
+function templateForOutboundMessage(
+  message: SmartleadRow,
+  lead: SmartleadRow,
+  templates: CampaignVariantTemplate[],
+) {
+  const step = messageStep(message);
+  const variant = messageVariant(message) ?? 0;
+  if (step != null) {
+    const exact = templates.find((template) => template.step === step && template.variant === variant);
+    if (exact) return { template: exact, stepResolved: String(step), variantResolved: String(variant) };
+    const stepFallback = templates.find((template) => template.step === step && template.variant === 0);
+    if (stepFallback) {
+      return {
+        template: stepFallback,
+        stepResolved: String(step),
+        variantResolved: String(stepFallback.variant),
+      };
+    }
+  }
+  const resolved = resolveLeadTemplate(
+    smartleadLeadRecord(lead) as never,
+    templates as never,
+  );
+  return {
+    template: resolved.template as CampaignVariantTemplate | null,
+    stepResolved: resolved.stepResolved,
+    variantResolved: resolved.variantResolved,
+  };
+}
+
+async function storeMessageHistoryEvidence(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  campaignId: string,
+  providerCampaignIdValue: string,
+  bundle: CampaignBundle,
+  templates: CampaignVariantTemplate[],
+) {
+  const inboundRows: string[] = [];
+  const outboundRows: string[] = [];
+  const coverage = bundle.messageHistory.coverage;
+
+  for (const row of bundle.messageHistory.rows) {
+    const direction = messageDirection(row.message, row.leadEmail);
+    const nativeMessageId = messageNativeId(row.message, row.index);
+    const messageId = `${SOURCE_PROVIDER}:${providerCampaignIdValue}:${row.providerLeadId}:${nativeMessageId}`;
+    const threadId = pickString(row.message, ["thread_id", "conversation_id", "thread", "conversation"]) ??
+      `${SOURCE_PROVIDER}:${providerCampaignIdValue}:${row.providerLeadId}`;
+    const bodyText = messagePlainBody(row.message);
+    const bodyHtml = messageHtmlBody(row.message);
+    const subject = messageSubject(row.message);
+    const sentAt = messageSentAt(row.message, direction);
+    const step = messageStep(row.message);
+    const variant = messageVariant(row.message);
+    const status = smartleadLeadInterestStatus(row.lead);
+    const contentPreview = pickString(row.message, ["content_preview", "preview", "snippet"]) ??
+      (bodyText ? bodyText.slice(0, 280) : null);
+
+    if (direction === "inbound") {
+      coverage.inboundRowsStored += 1;
+      if (bodyText || bodyHtml) coverage.inboundBodyExactRows += 1;
+      else coverage.inboundBodyMissingRows += 1;
+
+      const fromEmail = pickEmail(row.message, ["from_email", "from", "sender_email", "lead_email"]) ??
+        row.leadEmail ??
+        "";
+      const toEmail = pickEmail(row.message, ["to_email", "to", "recipient_email", "sender_email"]);
+      inboundRows.push(`(
+        '${esc(workspaceId)}',
+        '${esc(`${SOURCE_PROVIDER}:reply:${messageId}`)}',
+        '${esc(campaignId)}',
+        ${sqlString(threadId)},
+        ${sqlString(row.leadEmail)},
+        ${sqlString(`${SOURCE_PROVIDER}:lead:${row.providerLeadId}`)},
+        ${sqlString(messageId)},
+        ${sqlString(pickString(row.message, ["email_account_id", "sender_email_account_id", "eaccount"]))},
+        ${sqlString(fromEmail)},
+        ${sqlString(toEmail)},
+        ${sqlString(subject)},
+        ${sqlString(bodyText)},
+        ${sqlString(bodyHtml)},
+        ${sqlTimestamp(sentAt)},
+        ${sqlBool(status === 0 ? true : row.message.is_auto_reply)},
+        NULL,
+        ${sqlInt(status)},
+        ${sqlString(contentPreview)},
+        'inbound',
+        ${sqlString(step == null ? null : String(step))},
+        ${sqlString(variant == null ? null : String(variant))},
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )`);
+      continue;
+    }
+
+    if (direction !== "outbound") continue;
+    if (bodyText || bodyHtml) coverage.outboundExactBodyRowsSkipped += 1;
+
+    const resolved = templateForOutboundMessage(row.message, row.lead, templates);
+    if (!resolved.template) continue;
+    const leadRecord = smartleadLeadRecord(row.lead);
+    const renderedSubject = renderTemplateValue(resolved.template.subject, leadRecord as never);
+    const renderedBody = renderTemplateValue(resolved.template.bodyText, leadRecord as never);
+    const toEmail = row.leadEmail ?? pickEmail(row.message, ["to_email", "to", "recipient_email"]);
+    if (!toEmail) continue;
+    coverage.outboundRowsReconstructed += 1;
+    outboundRows.push(`(
+      '${esc(workspaceId)}',
+      '${esc(campaignId)}',
+      '${SOURCE_PROVIDER}',
+      '${esc(providerCampaignIdValue)}',
+      '${esc(campaignId)}',
+      '${esc(`${SOURCE_PROVIDER}:outbound:${messageId}`)}',
+      ${sqlString(toEmail)},
+      ${sqlString(pickEmail(row.message, ["from_email", "from", "sender_email"]))},
+      ${sqlString(renderedSubject ?? resolved.template.subject ?? subject)},
+      ${sqlString(renderedBody ?? resolved.template.bodyText)},
+      ${sqlTimestamp(sentAt)},
+      ${sqlString(resolved.stepResolved)},
+      ${sqlString(resolved.variantResolved ?? "0")},
+      ${sqlString((renderedBody ?? resolved.template.bodyText ?? "").slice(0, 280))},
+      'smartlead_sequence_template_reconstructed',
+      CURRENT_TIMESTAMP
+    )`);
+  }
+
+  await insertRows(
+    conn,
+    "reply_emails",
+    [
+      "workspace_id",
+      "id",
+      "campaign_id",
+      "thread_id",
+      "lead_email",
+      "lead_id",
+      "message_id",
+      "eaccount",
+      "from_email",
+      "to_email",
+      "subject",
+      "body_text",
+      "body_html",
+      "sent_at",
+      "is_auto_reply",
+      "ai_interest_value",
+      "i_status",
+      "content_preview",
+      "direction",
+      "step_resolved",
+      "variant_resolved",
+      "hydrated_at",
+      "synced_at",
+    ],
+    inboundRows,
+  );
+
+  await insertRows(
+    conn,
+    "sampled_outbound_emails",
+    [
+      "workspace_id",
+      "campaign_id",
+      "source_provider",
+      "provider_campaign_id",
+      "campaign_source_id",
+      "id",
+      "to_email",
+      "from_email",
+      "subject",
+      "body_text",
+      "sent_at",
+      "step_resolved",
+      "variant_resolved",
+      "content_preview",
+      "sample_source",
+      "sampled_at",
+    ],
+    outboundRows,
+  );
+}
+
+function messageHistoryCoverageNote(coverage: SmartleadMessageHistoryHydration["coverage"]) {
+  return `message_history eligible_leads=${coverage.eligibleLeads}; lead_limit=${coverage.leadLimit}; fetched_leads=${coverage.fetchedLeads}; skipped_leads=${coverage.skippedLeads}; unsupported_leads=${coverage.unsupportedLeads}; fetched_messages=${coverage.messagesFetched}; inbound_messages=${coverage.inboundMessages}; inbound_stored=${coverage.inboundRowsStored}; inbound_exact_body_rows=${coverage.inboundBodyExactRows}; inbound_missing_body_rows=${coverage.inboundBodyMissingRows}; outbound_messages=${coverage.outboundMessages}; outbound_reconstructed_rows=${coverage.outboundRowsReconstructed}; outbound_exact_body_rows_skipped=${coverage.outboundExactBodyRowsSkipped}; outbound_context=smartlead_sequence_template_reconstructed`;
+}
+
 async function storeProviderCapabilities(conn: DuckDBConnection, workspaceId: string) {
   const capabilities = [
     ["campaign_directory", "supported", "high", "Smartlead campaigns endpoint normalizes into campaigns."],
@@ -615,6 +1142,8 @@ async function storeProviderCapabilities(conn: DuckDBConnection, workspaceId: st
     ["account_campaign_assignments", "supported", "high", "Smartlead campaign email account membership normalizes into campaign_account_assignments."],
     ["account_daily_campaign_metrics", "partial", "medium", "Smartlead mailbox statistics normalize only when date-grained rows include sender email."],
     ["lead_evidence", "supported", "high", "Smartlead campaign leads normalize into sampled_leads."],
+    ["reply_message_history", "supported", "medium", "Smartlead message history hydrates bounded reply-signal leads; body fields are optional and live shape remains unverified."],
+    ["exact_outbound_history", "partial", "medium", "Smartlead outbound history is counted for coverage, but rendered outbound context remains reconstructed from templates."],
     ["custom_tags", "partial", "medium", "Smartlead tags are preserved when present on campaign/account payloads."],
     ["inbox_placement", "unsupported", "high", "Smartlead inbox placement parity is not exposed in the read-only client foundation."],
   ];
@@ -1253,6 +1782,7 @@ async function storeCampaignFacts(
         const opened = countFromBooleanOrNumber(emailStats.is_opened ?? emailStats.opened ?? lead.is_opened);
         const replied = countFromBooleanOrNumber(emailStats.is_replied ?? emailStats.replied ?? lead.is_replied);
         const clicked = countFromBooleanOrNumber(emailStats.is_clicked ?? emailStats.clicked ?? lead.is_clicked);
+        const interestStatus = smartleadLeadInterestStatus(lead);
         return `(
           '${esc(workspaceId)}',
           '${esc(id)}',
@@ -1272,7 +1802,7 @@ async function storeCampaignFacts(
           ${sqlInt(opened)},
           ${sqlInt(replied)},
           ${sqlInt(clicked)},
-          NULL,
+          ${sqlInt(interestStatus)},
           ${sqlInt(emailStats.opened_step ?? lead.email_opened_step)},
           ${sqlInt(emailStats.opened_variant ?? lead.email_opened_variant)},
           ${sqlInt(emailStats.replied_step ?? lead.email_replied_step)},
@@ -1303,6 +1833,21 @@ async function storeCampaignFacts(
       })
       .filter((row): row is string => row != null),
   );
+
+  await storeMessageHistoryEvidence(
+    conn,
+    workspaceId,
+    id,
+    nativeId,
+    bundle,
+    templates,
+  );
+
+  const replySignalLeadCount = bundle.leads.filter(smartleadLeadHasReplySignal).length;
+  const coverageNote = [
+    `Smartlead read-only ingest: ${bundle.leads.length} lead rows, ${templates.length} sequence variants, ${stepRows.length} step rows, ${bundle.dailyRows.length} date-grained campaign rows.`,
+    messageHistoryCoverageNote(bundle.messageHistory.coverage),
+  ].join(" ");
 
   await insertRows(
     conn,
@@ -1337,14 +1882,14 @@ async function storeCampaignFacts(
       ${sqlInt(analytics.leadsCount)},
       ${sqlInt(analytics.sentCount)},
       ${sqlInt(analytics.uniqueReplyCount)},
-      ${sqlInt(bundle.leads.filter((lead) => (leadEmailStats(lead).is_replied ?? lead.is_replied) === true).length)},
+      ${sqlInt(replySignalLeadCount)},
       ${sqlInt(bundle.leads.length)},
       ${sqlInt(bundle.leads.length)},
+      ${sqlInt(bundle.messageHistory.coverage.eligibleLeads)},
+      ${sqlInt(bundle.messageHistory.coverage.outboundRowsReconstructed)},
+      ${sqlInt(bundle.messageHistory.coverage.outboundRowsReconstructed)},
       0,
-      0,
-      0,
-      0,
-      ${sqlString(`Smartlead read-only ingest: ${bundle.leads.length} lead rows, ${templates.length} sequence variants, ${stepRows.length} step rows, ${bundle.dailyRows.length} date-grained campaign rows.`)},
+      ${sqlString(coverageNote)},
       CURRENT_TIMESTAMP
     )`],
   );
@@ -1463,7 +2008,7 @@ async function fetchCampaignBundle(
 ) {
   const nativeId = providerCampaignId(campaign);
   if (!nativeId) throw new Error("Smartlead campaign row is missing id.");
-  const [detail, sequences, analytics, dailyPayload, statisticsRows, campaignAccounts, leads, mailboxStats] =
+  const [detail, sequences, analytics, dailyPayload, statisticsRows, campaignAccounts, leadPayload, mailboxStats] =
     await Promise.all([
       client.getCampaign(nativeId),
       client.getCampaignSequences(nativeId),
@@ -1479,6 +2024,8 @@ async function fetchCampaignBundle(
         endDate: endDate(),
       }),
     ]);
+  const leads = arrayFrom(leadPayload);
+  const messageHistory = await fetchSmartleadMessageHistory(client, nativeId, leads);
 
   return {
     directory: campaign,
@@ -1488,7 +2035,8 @@ async function fetchCampaignBundle(
     dailyRows: normalizeDailyRows(dailyPayload),
     statisticsRows: arrayFrom(statisticsRows),
     campaignAccounts: arrayFrom(campaignAccounts),
-    leads: arrayFrom(leads),
+    leads,
+    messageHistory,
     mailboxStats: arrayFrom(mailboxStats),
   };
 }
