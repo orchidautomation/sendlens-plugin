@@ -55,7 +55,7 @@ Where relevant, SendLens responses should include:
 
 `load_campaign_data`
 
-- accepts a provider-qualified or native campaign ID
+- accepts a provider-qualified or native campaign ID; `SENDLENS_PROVIDER=all` requires a provider-qualified campaign ID
 - refresh result for the requested campaign
 - exact `campaign_overview`
 - `human_reply_sample` grouped into positive, negative, and neutral buckets

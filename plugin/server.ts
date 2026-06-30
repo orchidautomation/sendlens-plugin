@@ -165,17 +165,27 @@ function storedCampaignIdForProvider(provider: SourceProvider, nativeId: string)
   return provider === "smartlead" ? `smartlead:${nativeId}` : nativeId;
 }
 
-function nativeCampaignLoadProvider() {
-  const providerMode = resolveSourceProviderMode();
-  if (!providerMode.valid || providerMode.mode === "all") return null;
-  return providerMode.mode;
+class CampaignIdScopeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CampaignIdScopeError";
+  }
 }
 
 function loadCampaignScope(campaignId: string) {
   const requestedId = campaignId.trim();
   const parsed = parseProviderQualifiedCampaignId(requestedId);
+  const providerMode = resolveSourceProviderMode();
+  if (!parsed && providerMode.valid && providerMode.mode === "all") {
+    throw new CampaignIdScopeError(
+      "load_campaign_data requires a provider-qualified campaign_id when SENDLENS_PROVIDER=all. Use instantly:<id> or smartlead:<id> so colliding native campaign IDs cannot load the wrong provider.",
+    );
+  }
+
   const nativeId = parsed?.nativeId ?? requestedId;
-  const provider = parsed?.provider ?? nativeCampaignLoadProvider();
+  const provider = parsed?.provider ?? (
+    providerMode.valid && providerMode.mode !== "all" ? providerMode.mode : null
+  );
   const queryCampaignIds = provider
     ? uniqueStrings([storedCampaignIdForProvider(provider, nativeId), requestedId])
     : uniqueStrings([requestedId, storedCampaignIdForProvider("smartlead", nativeId)]);
@@ -563,6 +573,13 @@ server.registerTool(
         rendered_outbound_sample: renderedRows,
       });
     } catch (error) {
+      if (error instanceof CampaignIdScopeError) {
+        return jsonResponse({
+          error: error.message,
+          hint:
+            "Use the provider-qualified campaign_id from workspace_snapshot, for example instantly:<id> or smartlead:<id>.",
+        });
+      }
       if (error instanceof CacheReadinessError) {
         return cacheReadinessResponse(error);
       }
