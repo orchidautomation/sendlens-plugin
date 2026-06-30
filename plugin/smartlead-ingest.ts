@@ -688,6 +688,8 @@ function messageDirection(message: SmartleadRow, leadEmail: string | null): "inb
 
   const fromEmail = pickEmail(message, ["from_email", "from", "sender_email", "lead_email"]);
   if (leadEmail && fromEmail === leadEmail) return "inbound";
+  const toEmail = pickEmail(message, ["to_email", "to", "recipient_email"]);
+  if (leadEmail && toEmail === leadEmail) return "outbound";
   return "unknown";
 }
 
@@ -885,7 +887,7 @@ async function fetchSmartleadMessageHistory(
         for (const { lead, providerLeadId } of batch) {
           const messages = messagesForLeadFromBulkPayload(payload, providerLeadId);
           if (messages.length === 0) {
-            coverage.skippedLeads += 1;
+            await fetchSingleLead(lead, providerLeadId);
             continue;
           }
           recordFetchedLead(lead, providerLeadId, messages);

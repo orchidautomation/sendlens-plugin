@@ -216,6 +216,20 @@ const fakeClient = {
       },
     };
   },
+  async getMessageHistory(campaignId, leadId) {
+    assert.equal(String(campaignId), "101");
+    assert.equal(String(leadId), "1005");
+    return [
+      {
+        id: "out-1005-1",
+        email_sequence_number: 1,
+        subject: "Wrong person follow-up",
+        sent_at: "2026-06-04T10:00:00.000Z",
+        from_email: "sender-301@example.com",
+        to_email: "lead-1005@example.co",
+      },
+    ];
+  },
 };
 
 const summary = await refreshSmartleadWorkspace({
@@ -485,12 +499,12 @@ assert.equal(Number(coverage[0].total_leads), 5);
 assert.equal(Number(coverage[0].total_sent), 90);
 assert.equal(Number(coverage[0].reply_rows), 7);
 assert.equal(Number(coverage[0].reply_lead_rows), 2);
-assert.equal(Number(coverage[0].outbound_rows_sampled), 1);
-assert.equal(Number(coverage[0].reply_outbound_rows), 1);
+assert.equal(Number(coverage[0].outbound_rows_sampled), 2);
+assert.equal(Number(coverage[0].reply_outbound_rows), 2);
 assert.match(String(coverage[0].coverage_note), /Smartlead read-only ingest/);
 assert.match(String(coverage[0].coverage_note), /message_history eligible_leads=2/);
-assert.match(String(coverage[0].coverage_note), /fetched_leads=1/);
-assert.match(String(coverage[0].coverage_note), /skipped_leads=1/);
+assert.match(String(coverage[0].coverage_note), /fetched_leads=2/);
+assert.match(String(coverage[0].coverage_note), /skipped_leads=0/);
 assert.match(String(coverage[0].coverage_note), /inbound_exact_body_rows=1/);
 assert.match(String(coverage[0].coverage_note), /outbound_exact_body_rows_skipped=1/);
 } finally {
