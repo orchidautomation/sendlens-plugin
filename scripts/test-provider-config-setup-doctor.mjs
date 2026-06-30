@@ -154,6 +154,8 @@ try {
     report.next_steps.some((step) => step.includes("Smartlead provider configuration is ready")),
   );
   assert.ok(report.next_steps.some((step) => step.includes("seed_demo_workspace")));
+  assert.ok(report.next_steps.some((step) => step.includes("No readable cache was found")));
+  assert.ok(!report.next_steps.some((step) => step.includes("existing readable cache")));
 
   tempDir = resetEnv("all-valid");
   await fs.mkdir(tempDir, { recursive: true });
