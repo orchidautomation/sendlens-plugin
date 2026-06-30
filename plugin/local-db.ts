@@ -1627,11 +1627,136 @@ async function ensureSchema(conn: DuckDBConnection) {
   for (const statement of statements) {
     await run(conn, statement);
   }
+  await migrateProviderQualifiedAccountKeys(conn);
   await stampCacheSchemaVersion(conn);
 }
 
 function esc(value: string) {
   return value.replace(/'/g, "''");
+}
+
+async function primaryKeyColumns(conn: DuckDBConnection, tableName: string) {
+  const rows = await query(conn, `PRAGMA table_info('sendlens.${esc(tableName)}')`);
+  return rows
+    .filter((row) => Number(row.pk ?? 0) > 0)
+    .sort((left, right) => Number(left.pk ?? 0) - Number(right.pk ?? 0))
+    .map((row) => String(row.name));
+}
+
+async function migrateProviderQualifiedAccountKeys(conn: DuckDBConnection) {
+  const migrations = [
+    {
+      table: "accounts",
+      key: ["workspace_id", "source_provider", "email"],
+      columns: [
+        "workspace_id",
+        "email",
+        "source_provider",
+        "provider_account_id",
+        "account_source_id",
+        "organization_id",
+        "status",
+        "warmup_status",
+        "warmup_score",
+        "provider",
+        "daily_limit",
+        "sending_gap",
+        "first_name",
+        "last_name",
+        "total_sent_30d",
+        "total_replies_30d",
+        "total_bounces_30d",
+        "source_raw_json",
+        "synced_at",
+      ],
+      ddl: `CREATE TABLE sendlens.accounts__provider_key_migration (
+        workspace_id VARCHAR NOT NULL,
+        email VARCHAR NOT NULL,
+        source_provider VARCHAR DEFAULT 'instantly',
+        provider_account_id VARCHAR,
+        account_source_id VARCHAR,
+        organization_id VARCHAR,
+        status VARCHAR,
+        warmup_status VARCHAR,
+        warmup_score DOUBLE,
+        provider VARCHAR,
+        daily_limit INTEGER,
+        sending_gap INTEGER,
+        first_name VARCHAR,
+        last_name VARCHAR,
+        total_sent_30d INTEGER,
+        total_replies_30d INTEGER,
+        total_bounces_30d INTEGER,
+        source_raw_json VARCHAR,
+        synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (workspace_id, source_provider, email)
+      )`,
+    },
+    {
+      table: "account_daily_metrics",
+      key: ["workspace_id", "source_provider", "email", "date"],
+      columns: [
+        "workspace_id",
+        "email",
+        "source_provider",
+        "provider_account_id",
+        "account_source_id",
+        "date",
+        "sent",
+        "bounced",
+        "contacted",
+        "new_leads_contacted",
+        "opened",
+        "unique_opened",
+        "replies",
+        "unique_replies",
+        "replies_automatic",
+        "unique_replies_automatic",
+        "clicks",
+        "unique_clicks",
+        "synced_at",
+      ],
+      ddl: `CREATE TABLE sendlens.account_daily_metrics__provider_key_migration (
+        workspace_id VARCHAR NOT NULL,
+        email VARCHAR NOT NULL,
+        source_provider VARCHAR DEFAULT 'instantly',
+        provider_account_id VARCHAR,
+        account_source_id VARCHAR,
+        date DATE NOT NULL,
+        sent INTEGER,
+        bounced INTEGER,
+        contacted INTEGER,
+        new_leads_contacted INTEGER,
+        opened INTEGER,
+        unique_opened INTEGER,
+        replies INTEGER,
+        unique_replies INTEGER,
+        replies_automatic INTEGER,
+        unique_replies_automatic INTEGER,
+        clicks INTEGER,
+        unique_clicks INTEGER,
+        synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (workspace_id, source_provider, email, date)
+      )`,
+    },
+  ];
+
+  for (const migration of migrations) {
+    const keyColumns = await primaryKeyColumns(conn, migration.table);
+    if (keyColumns.join(",") === migration.key.join(",")) continue;
+
+    const tempTable = `${migration.table}__provider_key_migration`;
+    await run(conn, `DROP TABLE IF EXISTS sendlens.${tempTable}`);
+    await run(conn, migration.ddl);
+    await run(
+      conn,
+      `INSERT INTO sendlens.${tempTable} (${migration.columns.join(", ")})
+       SELECT ${migration.columns.join(", ")}
+       FROM sendlens.${migration.table}`,
+    );
+    await run(conn, `DROP TABLE sendlens.${migration.table}`);
+    await run(conn, `ALTER TABLE sendlens.${tempTable} RENAME TO ${migration.table}`);
+  }
 }
 
 export async function setPluginState(
@@ -1675,9 +1800,18 @@ function normalizeNullable(value: string | undefined | null) {
 }
 
 export function currentApiKeyFingerprint() {
-  const apiKey = normalizeNullable(process.env.SENDLENS_INSTANTLY_API_KEY);
-  if (!apiKey) return null;
-  return createHash("sha256").update(apiKey, "utf8").digest("hex");
+  const credentialFingerprints = [
+    ["instantly", normalizeNullable(process.env.SENDLENS_INSTANTLY_API_KEY)],
+    ["smartlead", normalizeNullable(process.env.SENDLENS_SMARTLEAD_API_KEY)],
+  ]
+    .filter((entry): entry is [string, string] => Boolean(entry[1]))
+    .map(([provider, value]) => {
+      const providerFingerprint = createHash("sha256").update(value, "utf8").digest("hex");
+      return `${provider}:${providerFingerprint}`;
+    });
+
+  if (credentialFingerprints.length === 0) return null;
+  return createHash("sha256").update(credentialFingerprints.join("|"), "utf8").digest("hex");
 }
 
 export function fingerprintPrefix(fingerprint: string | undefined | null) {
@@ -1774,14 +1908,14 @@ export async function getCacheReadiness(
       readable: true,
       owner,
       warning:
-        "No SENDLENS_INSTANTLY_API_KEY is configured, so SendLens is reading the existing local cache without live-refresh identity validation.",
+        "No SENDLENS_INSTANTLY_API_KEY or SENDLENS_SMARTLEAD_API_KEY is configured, so SendLens is reading the existing local cache without live-refresh identity validation.",
     };
   }
 
   if (!owner.apiKeyFingerprint) {
     throw new CacheReadinessError(
       "legacy_unowned_cache",
-      "A SENDLENS_INSTANTLY_API_KEY is configured, but the local DuckDB cache has no cache-owner fingerprint. Run refresh_data to rebuild and stamp the cache for this key, or unset the key if you intentionally want to inspect legacy cached data.",
+      "A SendLens provider API key is configured, but the local DuckDB cache has no cache-owner fingerprint. Run refresh_data to rebuild and stamp the cache for the configured provider key, or unset provider keys if you intentionally want to inspect legacy cached data.",
       {
         cacheOwner: owner,
         expectedFingerprintPrefix: fingerprintPrefix(expectedFingerprint),
@@ -1792,7 +1926,7 @@ export async function getCacheReadiness(
   if (owner.apiKeyFingerprint !== expectedFingerprint) {
     throw new CacheReadinessError(
       "api_key_mismatch",
-      "A different SENDLENS_INSTANTLY_API_KEY is configured than the key that last refreshed this DuckDB cache. The previous cache is preserved but will not be used for this key. Run refresh_data after Instantly is reachable to replace the cache, or set SENDLENS_DB_PATH to a client-specific database.",
+      "A different SendLens provider API key is configured than the key that last refreshed this DuckDB cache. The previous cache is preserved but will not be used for this provider key. Run refresh_data after the provider is reachable to replace the cache, or set SENDLENS_DB_PATH to a client-specific database.",
       {
         cacheOwner: owner,
         expectedFingerprintPrefix: fingerprintPrefix(expectedFingerprint),

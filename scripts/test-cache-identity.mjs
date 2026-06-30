@@ -311,11 +311,26 @@ try {
   } finally {
     closeDb(db);
   }
+
+  process.env.SENDLENS_SMARTLEAD_API_KEY = "smartlead-new-key-secret";
+  db = await openDb();
+  try {
+    await assert.rejects(
+      assertCacheReadableForCurrentEnv(db),
+      (error) =>
+        error instanceof CacheReadinessError &&
+        error.issue === "api_key_mismatch" &&
+        !String(error.message).includes("smartlead-new-key-secret"),
+    );
+  } finally {
+    closeDb(db);
+  }
 } finally {
   for (const [key, value] of Object.entries(originals)) {
     instantly[key] = value;
   }
   delete process.env.SENDLENS_INSTANTLY_API_KEY;
+  delete process.env.SENDLENS_SMARTLEAD_API_KEY;
   delete process.env.SENDLENS_DB_PATH;
   delete process.env.SENDLENS_STATE_DIR;
   delete process.env.SENDLENS_CONTEXT_ROOT;

@@ -200,6 +200,7 @@ assert.equal(summary.campaigns[0].campaign_source_id, "smartlead:101");
 
 const db = await getDb();
 
+try {
 const preservedInstantly = await query(
   db,
   `SELECT source_provider, name
@@ -413,6 +414,9 @@ assert.equal(Number(coverage[0].total_sent), 90);
 assert.equal(Number(coverage[0].reply_rows), 7);
 assert.equal(Number(coverage[0].reply_lead_rows), 2);
 assert.match(String(coverage[0].coverage_note), /Smartlead read-only ingest/);
+} finally {
+  closeDb(db);
+}
 
 const regressionMailboxStats = {
   101: [
@@ -573,14 +577,13 @@ function regressionClient({ includeTags }) {
   };
 }
 
-closeDb(db);
-
 await refreshSmartleadWorkspace({
   client: regressionClient({ includeTags: true }),
   source: "manual",
 });
 
 const regressionDb = await getDb();
+try {
 const accountTotalsBeforeScoped = await query(
   regressionDb,
   `SELECT total_sent_30d, total_replies_30d, total_bounces_30d
@@ -626,8 +629,9 @@ const accountTagsBeforeScoped = await query(
      AND account_email = 'sender-301@example.com'`,
 );
 assert.deepEqual(accountTagsBeforeScoped.map((row) => row.tag_id), ["smartlead:tag:20"]);
-
-closeDb(regressionDb);
+} finally {
+  closeDb(regressionDb);
+}
 
 await refreshSmartleadWorkspace({
   client: regressionClient({ includeTags: false }),
@@ -636,6 +640,7 @@ await refreshSmartleadWorkspace({
 });
 
 const scopedDb = await getDb();
+try {
 const accountTotalsAfterScoped = await query(
   scopedDb,
   `SELECT total_sent_30d, total_replies_30d, total_bounces_30d
@@ -681,6 +686,7 @@ const accountTagsAfterScoped = await query(
      AND account_email = 'sender-301@example.com'`,
 );
 assert.equal(accountTagsAfterScoped.length, 0);
-
-closeDb(scopedDb);
+} finally {
+  closeDb(scopedDb);
+}
 await resetDbConnectionForTests();
