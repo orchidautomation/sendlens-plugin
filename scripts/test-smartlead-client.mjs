@@ -251,6 +251,34 @@ function assertAccessQuery(url) {
 }
 
 {
+  let virtualNow = 0;
+  const sleeps = [];
+  let calls = 0;
+  const client = new SmartleadClient({
+    accessValue,
+    fetchImpl: async () => {
+      calls++;
+      return responseJson(await fixture("campaigns.direct-array.json"));
+    },
+    sleep: async (ms) => {
+      sleeps.push(ms);
+      virtualNow += ms;
+    },
+    now: () => virtualNow,
+    retry: { attempts: 0, jitterRatio: 0 },
+  });
+
+  for (let index = 0; index < 6; index++) {
+    await client.requestJson("/campaigns/");
+  }
+
+  assert.equal(calls, 6);
+  assert.deepEqual(sleeps, [1000]);
+  assert.equal(client.getRateLimitStats().limit_1s, 5);
+  assert.equal(client.getRateLimitStats().limit_60s, 300);
+}
+
+{
   const traceDir = await fs.mkdtemp(path.join(os.tmpdir(), "sendlens-smartlead-trace-"));
   const previousTrace = process.env.SENDLENS_TRACE_REFRESH;
   const previousState = process.env.SENDLENS_STATE_DIR;
@@ -314,6 +342,69 @@ function assertAccessQuery(url) {
   assert.equal(result.status, "unreachable");
   assert.equal(calls, 1);
   assert.deepEqual(sleeps, []);
+}
+
+{
+  let virtualNow = 0;
+  const sleeps = [];
+  let calls = 0;
+  const controller = new AbortController();
+  const client = makeClient(
+    async () => {
+      calls++;
+      return responseJson(await fixture("campaigns.direct-array.json"));
+    },
+    {
+      rateLimit: { perMinute: 100, burstPerSecond: 1, maxConcurrent: 8 },
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        return new Promise(() => {});
+      },
+      now: () => virtualNow,
+      retry: { attempts: 0 },
+    },
+  );
+
+  await client.requestJson("/campaigns/");
+  const blocked = client.requestJson("/campaigns/", { signal: controller.signal });
+  while (sleeps.length === 0) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  controller.abort();
+
+  await assert.rejects(blocked, { name: "AbortError" });
+  assert.equal(calls, 1);
+  assert.deepEqual(sleeps, [1000]);
+}
+
+{
+  const controller = new AbortController();
+  let calls = 0;
+  const client = makeClient(
+    async () => {
+      calls++;
+      return new Promise(() => {});
+    },
+    {
+      rateLimit: { disabled: false, perMinute: 100, burstPerSecond: 100, maxConcurrent: 1 },
+      retry: { attempts: 0 },
+    },
+  );
+
+  void client.requestJson("/campaigns/");
+  while (calls === 0) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  const queued = client.requestJson("/campaigns/", { signal: controller.signal });
+  while (client.getRateLimitStats().queued_requests === 0) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.equal(client.getRateLimitStats().queued_requests, 1);
+  controller.abort();
+
+  await assert.rejects(queued, { name: "AbortError" });
+  assert.equal(calls, 1);
+  assert.equal(client.getRateLimitStats().queued_requests, 0);
 }
 
 {

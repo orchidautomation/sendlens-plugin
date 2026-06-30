@@ -7,8 +7,8 @@ const DEFAULT_RETRY_ATTEMPTS = 3;
 const DEFAULT_RETRY_BASE_DELAY_MS = 1000;
 const DEFAULT_RETRY_MAX_DELAY_MS = 60_000;
 const DEFAULT_RETRY_JITTER_RATIO = 0.2;
-const DEFAULT_RATE_LIMIT_PER_MINUTE = 50;
-const DEFAULT_BURST_LIMIT_PER_SECOND = 10;
+const DEFAULT_RATE_LIMIT_PER_MINUTE = 300;
+const DEFAULT_BURST_LIMIT_PER_SECOND = 5;
 const DEFAULT_MAX_CONCURRENT = 8;
 const DEFAULT_PAGE_LIMIT = 100;
 const DEFAULT_MAX_PAGES = 200;
@@ -106,6 +106,37 @@ function defaultSleep(ms: number) {
 
 function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError";
+}
+
+function abortError(signal?: AbortSignal | null) {
+  const reason = signal?.reason;
+  if (reason instanceof Error) return reason;
+  const error = new Error(reason == null ? "The operation was aborted." : String(reason));
+  error.name = "AbortError";
+  return error;
+}
+
+function throwIfAborted(signal?: AbortSignal | null) {
+  if (signal?.aborted) throw abortError(signal);
+}
+
+function abortable<T>(promise: Promise<T>, signal?: AbortSignal | null): Promise<T> {
+  if (!signal) return promise;
+  throwIfAborted(signal);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(abortError(signal));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
 }
 
 function normalizeBaseUrl(baseUrl: string) {
@@ -340,14 +371,16 @@ class SlidingWindowLimiter {
     this.now = now;
   }
 
-  async acquire() {
+  async acquire(signal?: AbortSignal | null) {
     if (this.config.disabled) return;
+    throwIfAborted(signal);
     let release!: () => void;
     const next = new Promise<void>((resolve) => { release = resolve; });
     const wait = this.chain;
-    this.chain = next;
-    await wait;
+    this.chain = wait.catch(() => undefined).then(() => next);
     try {
+      await abortable(wait, signal);
+      throwIfAborted(signal);
       const waitMs = this.computeWaitMs();
       if (waitMs > 0) {
         this.throttledCount++;
@@ -358,8 +391,9 @@ class SlidingWindowLimiter {
           limit1s: this.config.burstPerSecond,
           limit60s: this.config.perMinute,
         });
-        await this.sleep(waitMs);
+        await abortable(this.sleep(waitMs), signal);
       }
+      throwIfAborted(signal);
       this.prune();
       this.timestamps.push(this.now());
     } finally {
@@ -415,26 +449,42 @@ class SlidingWindowLimiter {
 class Semaphore {
   private readonly maxConcurrent: number;
   private active = 0;
-  private readonly queue: Array<() => void> = [];
+  private readonly queue: Array<{
+    resolve: () => void;
+    reject: (error: Error) => void;
+    signal?: AbortSignal | null;
+    onAbort?: () => void;
+  }> = [];
 
   constructor(maxConcurrent: number) {
     this.maxConcurrent = Math.max(1, maxConcurrent);
   }
 
-  async acquire() {
+  async acquire(signal?: AbortSignal | null) {
+    throwIfAborted(signal);
     if (this.active < this.maxConcurrent) {
       this.active++;
       return;
     }
-    await new Promise<void>((resolve) => this.queue.push(resolve));
+    await new Promise<void>((resolve, reject) => {
+      const entry = { resolve, reject, signal, onAbort: undefined as (() => void) | undefined };
+      entry.onAbort = () => {
+        const index = this.queue.indexOf(entry);
+        if (index >= 0) this.queue.splice(index, 1);
+        reject(abortError(signal));
+      };
+      signal?.addEventListener("abort", entry.onAbort, { once: true });
+      this.queue.push(entry);
+    });
   }
 
   release() {
     this.active--;
     const next = this.queue.shift();
     if (next) {
+      if (next.onAbort) next.signal?.removeEventListener("abort", next.onAbort);
       this.active++;
-      next();
+      next.resolve();
     }
   }
 
@@ -535,10 +585,11 @@ export class SmartleadClient {
         query: this.redactUrl(url).split("?")[1] ?? "",
       });
 
-      await this.limiter.acquire();
-      await this.semaphore.acquire();
+      await this.limiter.acquire(init.signal);
+      await this.semaphore.acquire(init.signal);
       let response: Response;
       try {
+        throwIfAborted(init.signal);
         response = await this.fetchImpl(url, init);
       } catch (error) {
         this.semaphore.release();
