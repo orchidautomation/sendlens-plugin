@@ -73,6 +73,8 @@ SENDLENS_INSTANTLY_API_KEY=your_key
 
 Release installers ask for `SENDLENS_INSTANTLY_API_KEY` once and persist it into the installed plugin config. If the key is already exported in your shell, current Pluxx installers reuse it and skip the secret prompt. They also prepare runtime dependencies and run the first workspace refresh during install.
 
+SendLens defaults to `SENDLENS_PROVIDER=instantly`. For Smartlead setup diagnosis, set `SENDLENS_PROVIDER=smartlead` or `SENDLENS_PROVIDER=all` and provide `SENDLENS_SMARTLEAD_API_KEY`. Smartlead uses a query-string access value, and setup output suppresses it. Smartlead read-only ingest is provider-parity work in progress; Instantly remains the shipped refresh path in this release.
+
 When you rerun the same curl command to update SendLens, the installer reuses the saved plugin config and does not ask for the Instantly key again. To force a new prompt:
 
 ```bash
@@ -119,7 +121,7 @@ From a local checkout:
 npm run doctor
 ```
 
-The doctor checks env loading, runtime dependencies, compiled MCP/refresh/demo entries, DuckDB and state writability, refresh status, stale session-start locks, and host bundle presence. It does not print secret values.
+The doctor checks provider mode, provider credentials, env loading, runtime dependencies, compiled MCP/refresh/demo entries, DuckDB and state writability, refresh status, stale session-start locks, and host bundle presence. It does not print secret values.
 
 ## Demo Mode Without Production Credentials
 

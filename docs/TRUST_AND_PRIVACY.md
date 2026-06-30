@@ -16,6 +16,8 @@ This page is intentionally precise. It describes the OSS plugin's data handling 
 
 SendLens uses `SENDLENS_INSTANTLY_API_KEY` for Instantly API access. The key should be scoped and managed in Instantly according to the workspace owner's policy.
 
+Smartlead setup diagnosis can use `SENDLENS_PROVIDER=smartlead` or `SENDLENS_PROVIDER=all` plus `SENDLENS_SMARTLEAD_API_KEY`. Smartlead uses query-string access, so SendLens suppresses the value in setup output, logs, errors, and tests. Smartlead read-only ingest is provider-parity work in progress; Instantly remains the shipped refresh path in this release.
+
 The shipped tools are analysis and refresh tools:
 
 - `refresh_data`
@@ -53,6 +55,8 @@ Optional overrides:
 | `SENDLENS_CLIENT` | Selects client-specific env overlays |
 | `SENDLENS_CLIENTS_DIR` | Changes the directory used for client env overlays |
 | `SENDLENS_DEMO_MODE` | Enables synthetic demo-mode setup paths when supported by the installed bundle |
+| `SENDLENS_PROVIDER` | Selects source provider setup mode: `instantly`, `smartlead`, or `all`; defaults to `instantly` |
+| `SENDLENS_SMARTLEAD_API_KEY` | Dedicated Smartlead setup credential, suppressed from setup output and errors |
 
 ## What Gets Stored Locally
 

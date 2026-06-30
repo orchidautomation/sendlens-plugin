@@ -29,7 +29,24 @@ is_unresolved_sendlens_value() {
     "${normalized}" == "your_api_key" ||
     "${normalized}" == "your-instantly-api-key" ||
     "${normalized}" == "your_instantly_api_key" ||
+    "${normalized}" == "your-smartlead-api-key" ||
+    "${normalized}" == "your_smartlead_api_key" ||
     "${normalized}" == "instantly_api_key"
+  ]]
+}
+
+is_unresolved_provider_value() {
+  local value="${1:-}"
+  local normalized
+  normalized="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')"
+  [[
+    "${normalized}" == *"+ name +"* ||
+    "${normalized}" == *'${'* ||
+    "${normalized}" == *"{{"* ||
+    "${normalized}" == *"}}"* ||
+    "${normalized}" == "your_provider" ||
+    "${normalized}" == "your-provider" ||
+    "${normalized}" == "provider"
   ]]
 }
 
@@ -57,4 +74,14 @@ fi
 if is_unresolved_sendlens_value "${SENDLENS_INSTANTLY_API_KEY:-}"; then
   echo "[sendlens] Ignoring unresolved SENDLENS_INSTANTLY_API_KEY placeholder." >&2
   unset SENDLENS_INSTANTLY_API_KEY
+fi
+
+if is_unresolved_sendlens_value "${SENDLENS_SMARTLEAD_API_KEY:-}"; then
+  echo "[sendlens] Ignoring unresolved SENDLENS_SMARTLEAD_API_KEY placeholder." >&2
+  unset SENDLENS_SMARTLEAD_API_KEY
+fi
+
+if is_unresolved_provider_value "${SENDLENS_PROVIDER:-}"; then
+  echo "[sendlens] Ignoring unresolved SENDLENS_PROVIDER placeholder." >&2
+  unset SENDLENS_PROVIDER
 fi

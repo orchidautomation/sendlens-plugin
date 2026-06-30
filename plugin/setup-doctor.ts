@@ -14,6 +14,12 @@ import {
   getDb,
   resolveDbPath,
 } from "./local-db";
+import {
+  providerModeIncludes,
+  providersForMode,
+  resolveSourceProviderMode,
+  validateSmartleadApiKey,
+} from "./provider-config";
 import { readRefreshStatus, type RefreshStatus } from "./refresh-status";
 
 type CheckStatus = "pass" | "warn" | "fail" | "info";
@@ -145,8 +151,19 @@ export async function buildSetupDoctorReport() {
     : path.dirname(dbPath);
   const shadowDbPath = path.join(stateDir, `.${path.basename(dbPath)}.refreshing`);
   const demoMode = isDemoMode();
+  const providerMode = resolveSourceProviderMode();
+  const sourceProviders = providerMode.valid ? providersForMode(providerMode.mode) : [];
+  const instantlySelected = providerMode.valid
+    ? providerModeIncludes(providerMode.mode, "instantly")
+    : false;
+  const smartleadSelected = providerMode.valid
+    ? providerModeIncludes(providerMode.mode, "smartlead")
+    : false;
   const apiKey = process.env.SENDLENS_INSTANTLY_API_KEY?.trim();
   const apiKeyConfigured = Boolean(apiKey) && !isUnresolvedEnvValue(apiKey);
+  const smartleadApiKey = process.env.SENDLENS_SMARTLEAD_API_KEY?.trim();
+  const smartleadApiKeyConfigured =
+    Boolean(smartleadApiKey) && !isUnresolvedEnvValue(smartleadApiKey);
   const dbExists = await exists(dbPath);
   const dbSize = formatBytes(await fileSize(dbPath));
   const dbDirWritable = await checkWritableDir(path.dirname(dbPath));
@@ -180,9 +197,13 @@ export async function buildSetupDoctorReport() {
   const buildRuntimeExists = await exists(path.join(root, "build", "plugin", "server.js"));
   const refreshRuntimeExists = await exists(path.join(root, "build", "plugin", "refresh-cli.js"));
   const demoRuntimeExists = await exists(path.join(root, "build", "plugin", "demo-workspace.js"));
-  const credentialValidation = apiKeyConfigured && !demoMode
+  const credentialValidation = apiKeyConfigured && !demoMode && instantlySelected
     ? await validateApiKey(apiKey!)
     : null;
+  const smartleadCredentialValidation =
+    smartleadApiKeyConfigured && !demoMode && smartleadSelected
+      ? await validateSmartleadApiKey(smartleadApiKey!)
+      : null;
   const activeCacheIsDemo = refreshStatus.workspaceId === DEMO_WORKSPACE_ID;
   const envLoad = getLastLoadedSendLensEnv();
   let cacheOwner: CacheOwnerMetadata | null = null;
@@ -205,49 +226,108 @@ export async function buildSetupDoctorReport() {
 
   const checks: DoctorCheck[] = [];
 
+  checks.push({
+    name: "Source provider mode",
+    status: providerMode.valid ? "pass" : "fail",
+    message: providerMode.valid
+      ? providerMode.defaulted
+        ? "Source provider mode defaults to Instantly."
+        : `Source provider mode is ${providerMode.mode}.`
+      : providerMode.message ?? "Invalid source provider mode.",
+    detail: providerMode.valid
+      ? `Configured source providers: ${sourceProviders.join(", ")}. Use source_provider for data-source identity; sendlens.accounts.provider remains mailbox/email-service provider.`
+      : `Received SENDLENS_PROVIDER=${providerMode.raw ?? "(empty)"}.`,
+  });
+
   if (demoMode) {
     checks.push({
       name: "Credentials",
       status: "pass",
-      message: "Demo mode enabled; production Instantly API key is optional.",
+      message: "Demo mode enabled; production provider API keys are optional.",
     });
-  } else if (apiKeyConfigured) {
-    if (credentialValidation?.status === "valid") {
-      checks.push({
-        name: "Credentials",
-        status: "pass",
-        message: "Instantly API key is configured and validated.",
-        detail: `${credentialValidation.message} Secret value suppressed.`,
-      });
-    } else if (credentialValidation?.status === "invalid") {
-      checks.push({
-        name: "Credentials",
-        status: "fail",
-        message: "Instantly API key is configured but Instantly rejected it.",
-        detail: `${credentialValidation.message} Secret value suppressed.`,
-      });
-    } else {
-      checks.push({
-        name: "Credentials",
-        status: "warn",
-        message: "Instantly API key is configured but could not be validated.",
-        detail: `${credentialValidation?.message ?? "Credential probe did not complete."} Secret value suppressed.`,
-      });
-    }
-  } else if (dbExists) {
-    checks.push({
-      name: "Credentials",
-      status: "warn",
-      message: "Instantly API key is not set; live refresh is disabled.",
-      detail: "Existing local DuckDB cache can still be used for read-only analysis.",
-    });
-  } else {
+  } else if (!providerMode.valid) {
     checks.push({
       name: "Credentials",
       status: "fail",
-      message: "Instantly API key is not set and no local DuckDB cache exists.",
-      detail: "For the fastest first run, call seed_demo_workspace now to initialize synthetic demo data. Configure SENDLENS_INSTANTLY_API_KEY later for real workspace analysis.",
+      message: "Provider credentials were not checked because SENDLENS_PROVIDER is invalid.",
+      detail: "Set SENDLENS_PROVIDER to instantly, smartlead, or all.",
     });
+  } else {
+    const instantCheckName = smartleadSelected ? "Instantly credentials" : "Credentials";
+    if (instantlySelected) {
+      if (apiKeyConfigured) {
+        if (credentialValidation?.status === "valid") {
+          checks.push({
+            name: instantCheckName,
+            status: "pass",
+            message: "Instantly API key is configured and validated.",
+            detail: `${credentialValidation.message} Secret value suppressed.`,
+          });
+        } else if (credentialValidation?.status === "invalid") {
+          checks.push({
+            name: instantCheckName,
+            status: "fail",
+            message: "Instantly API key is configured but Instantly rejected it.",
+            detail: `${credentialValidation.message} Secret value suppressed.`,
+          });
+        } else {
+          checks.push({
+            name: instantCheckName,
+            status: "warn",
+            message: "Instantly API key is configured but could not be validated.",
+            detail: `${credentialValidation?.message ?? "Credential probe did not complete."} Secret value suppressed.`,
+          });
+        }
+      } else if (dbExists) {
+        checks.push({
+          name: instantCheckName,
+          status: "warn",
+          message: "Instantly API key is not set; live refresh is disabled.",
+          detail: "Existing local DuckDB cache can still be used for read-only analysis.",
+        });
+      } else {
+        checks.push({
+          name: instantCheckName,
+          status: "fail",
+          message: "Instantly API key is not set and no local DuckDB cache exists.",
+          detail: "For the fastest first run, call seed_demo_workspace now to initialize synthetic demo data. Configure SENDLENS_INSTANTLY_API_KEY later for real workspace analysis.",
+        });
+      }
+    }
+
+    if (smartleadSelected) {
+      if (smartleadApiKeyConfigured) {
+        if (smartleadCredentialValidation?.status === "valid") {
+          checks.push({
+            name: "Smartlead credentials",
+            status: "pass",
+            message: "Smartlead API key is configured and validated.",
+            detail: `${smartleadCredentialValidation.message} Query-string access value suppressed. Probe URL: ${smartleadCredentialValidation.redacted_url}.`,
+          });
+        } else if (smartleadCredentialValidation?.status === "invalid") {
+          checks.push({
+            name: "Smartlead credentials",
+            status: "fail",
+            message: "Smartlead API key is configured but Smartlead rejected it.",
+            detail: `${smartleadCredentialValidation.message} Query-string access value suppressed. Probe URL: ${smartleadCredentialValidation.redacted_url}.`,
+          });
+        } else {
+          checks.push({
+            name: "Smartlead credentials",
+            status: "warn",
+            message: "Smartlead API key is configured but could not be validated.",
+            detail: `${smartleadCredentialValidation?.message ?? "Credential probe did not complete."} Query-string access value suppressed${smartleadCredentialValidation?.redacted_url ? `. Probe URL: ${smartleadCredentialValidation.redacted_url}.` : "."}`,
+          });
+        }
+      } else {
+        checks.push({
+          name: "Smartlead credentials",
+          status: "fail",
+          message: `SENDLENS_SMARTLEAD_API_KEY is not set for SENDLENS_PROVIDER=${providerMode.mode}.`,
+          detail: "Configure SENDLENS_SMARTLEAD_API_KEY for Smartlead read-only setup checks. Smartlead uses query-string access, so setup output and errors suppress the value.",
+        });
+      }
+    }
   }
 
   checks.push({
@@ -358,26 +438,43 @@ export async function buildSetupDoctorReport() {
 
   const nextSteps: string[] = [];
   const liveRefreshReady = credentialValidation?.status === "valid";
+  const smartleadConfigReady = smartleadCredentialValidation?.status === "valid";
   const demoSeedReady =
     demoMode ||
-    !apiKeyConfigured ||
+    (!apiKeyConfigured && !smartleadApiKeyConfigured) ||
     credentialValidation?.status === "invalid" ||
-    credentialValidation?.status === "unreachable";
-  if (cacheReadinessError) {
+    credentialValidation?.status === "unreachable" ||
+    smartleadCredentialValidation?.status === "invalid" ||
+    smartleadCredentialValidation?.status === "unreachable";
+  if (!providerMode.valid) {
+    nextSteps.push("Set SENDLENS_PROVIDER to instantly, smartlead, or all, then restart or reload the host.");
+  } else if (smartleadSelected && !smartleadApiKeyConfigured && !demoMode) {
+    nextSteps.push(`Configure SENDLENS_SMARTLEAD_API_KEY before using SENDLENS_PROVIDER=${providerMode.mode}.`);
+    nextSteps.push("Smartlead access is passed as a query-string parameter by Smartlead; SendLens setup output suppresses the value.");
+  } else if (smartleadSelected && smartleadCredentialValidation?.status === "invalid") {
+    nextSteps.push("Update SENDLENS_SMARTLEAD_API_KEY with a valid Smartlead API key, then restart or reload the host.");
+    nextSteps.push("Do not paste the Smartlead key into chat or logs; it is a query-string access value.");
+  } else if (smartleadSelected && smartleadCredentialValidation?.status === "unreachable") {
+    nextSteps.push("Retry /sendlens-setup after Smartlead connectivity is healthy; the configured Smartlead value was suppressed from the probe output.");
+  } else if (cacheReadinessError) {
     nextSteps.push("Run refresh_data now to rebuild and stamp the local cache for the currently configured Instantly API key.");
     nextSteps.push("Unset SENDLENS_INSTANTLY_API_KEY before starting the host only if you intentionally want to inspect the preserved legacy cache.");
-  } else if (!apiKeyConfigured && !demoMode && dbExists) {
+  } else if (smartleadSelected && !instantlySelected && smartleadConfigReady) {
+    nextSteps.push("Smartlead provider configuration is ready. Smartlead data refresh is read-only scope but lands in follow-up ingest work; use existing cache or demo mode until that refresh path is available.");
+  } else if (instantlySelected && !apiKeyConfigured && !demoMode && dbExists) {
     nextSteps.push("Use workspace_snapshot or analysis skills against the existing local cache.");
     nextSteps.push("Configure SENDLENS_INSTANTLY_API_KEY before running refresh_data for fresh Instantly data.");
-  } else if (!apiKeyConfigured && !demoMode) {
+  } else if (instantlySelected && !apiKeyConfigured && !demoMode) {
     nextSteps.push("Call seed_demo_workspace now for a zero-key synthetic demo workspace.");
     nextSteps.push("Configure SENDLENS_INSTANTLY_API_KEY later when you want real Instantly workspace analysis.");
-  } else if (apiKeyConfigured && credentialValidation?.status === "invalid") {
+  } else if (instantlySelected && apiKeyConfigured && credentialValidation?.status === "invalid") {
     nextSteps.push("Update SENDLENS_INSTANTLY_API_KEY with a valid Instantly API key, then restart or reload the host.");
     nextSteps.push("For the demo, call seed_demo_workspace now to use synthetic data while the key is fixed.");
-  } else if (apiKeyConfigured && credentialValidation?.status === "unreachable") {
+  } else if (instantlySelected && apiKeyConfigured && credentialValidation?.status === "unreachable") {
     nextSteps.push("Retry /sendlens-setup or run refresh_data after network access to Instantly is healthy.");
     nextSteps.push("For the demo, call seed_demo_workspace now to use synthetic data while Instantly is unreachable.");
+  } else if (providerMode.mode === "all" && liveRefreshReady && smartleadConfigReady) {
+    nextSteps.push("Run refresh_data now for the current Instantly refresh path. Smartlead provider configuration is ready for the follow-up read-only Smartlead ingest path.");
   } else if (!demoMode && liveRefreshReady && activeCacheIsDemo) {
     nextSteps.push("Run refresh_data now to pull live Instantly data and switch the active workspace away from demo_workspace.");
   } else if (demoMode && !dbExists) {
@@ -391,10 +488,16 @@ export async function buildSetupDoctorReport() {
     setup_status: setupStatus,
     demo_mode: demoMode,
     capabilities: {
+      source_provider_mode: providerMode.mode,
+      source_providers: sourceProviders,
+      source_provider_config_valid: providerMode.valid,
       local_cache_read: dbExists && !cacheReadinessError,
       live_refresh: liveRefreshReady || demoMode,
       demo_seed: demoSeedReady,
+      instantly_key_configured: apiKeyConfigured,
       instantly_key_validated: credentialValidation?.status === "valid",
+      smartlead_key_configured: smartleadApiKeyConfigured,
+      smartlead_key_validated: smartleadCredentialValidation?.status === "valid",
     },
     cache_freshness: cacheFreshness,
     paths: {

@@ -75,9 +75,11 @@ Expected core tools:
 - `search_catalog`
 - `analyze_data`
 
-## Missing API Key
+## Missing Provider API Key
 
-SendLens needs `SENDLENS_INSTANTLY_API_KEY`.
+SendLens defaults to `SENDLENS_PROVIDER=instantly`, so real workspace analysis needs `SENDLENS_INSTANTLY_API_KEY`.
+
+For Smartlead setup diagnosis, set `SENDLENS_PROVIDER=smartlead` or `SENDLENS_PROVIDER=all` and provide `SENDLENS_SMARTLEAD_API_KEY`. Smartlead uses query-string access; SendLens setup output, logs, and errors suppress the value. Smartlead data ingest is not the shipped refresh path yet.
 
 For local development, create `.env`:
 
