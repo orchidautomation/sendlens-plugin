@@ -8,6 +8,11 @@ read-only local analytics layer over Instantly: it fetches campaign, sender,
 tag, analytics, lead, reply, and inbox-placement evidence into DuckDB, then
 serves MCP tools for workspace diagnosis.
 
+Implementation contract: `docs/SMARTLEAD_PROVIDER_CONTRACT.md` is the
+implementation-ready V1 provider contract produced from this parity map. Treat
+it as the source of truth for SENDOSS-71 and SENDOSS-72 unless a newer contract
+supersedes it.
+
 Sources:
 
 - Current SendLens code: `plugin/instantly-client.ts`, `plugin/instantly-ingest.ts`,
