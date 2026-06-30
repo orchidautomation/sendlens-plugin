@@ -42,7 +42,11 @@ import {
 import { writeRefreshStatus } from "./refresh-status";
 import { buildWorkspaceSummary } from "./summary";
 import { appendTraceLog } from "./debug-log";
-import { resolveSourceProviderMode, type SourceProviderMode } from "./provider-config";
+import {
+  resolveSourceProviderMode,
+  type SourceProvider,
+  type SourceProviderMode,
+} from "./provider-config";
 import { refreshSmartleadWorkspace } from "./smartlead-ingest";
 
 type CampaignVariantTemplate = {
@@ -2886,6 +2890,45 @@ async function shouldSeedShadowFromLive(liveDbPath: string) {
   });
 }
 
+function campaignIdsForProvider(
+  campaignIds: string[] | undefined,
+  provider: SourceProvider,
+) {
+  if (!campaignIds?.length) return undefined;
+
+  const scopedIds = new Set<string>();
+  for (const campaignId of campaignIds) {
+    const id = String(campaignId).trim();
+    if (!id) continue;
+
+    const separatorIndex = id.indexOf(":");
+    if (separatorIndex > 0) {
+      const prefix = id.slice(0, separatorIndex);
+      const nativeId = id.slice(separatorIndex + 1);
+      if (prefix === "instantly" || prefix === "smartlead") {
+        if (prefix === provider && nativeId) {
+          scopedIds.add(nativeId);
+        }
+        continue;
+      }
+    }
+
+    scopedIds.add(id);
+  }
+
+  return [...scopedIds];
+}
+
+function refreshOptionsForProvider(
+  options: RefreshOptions,
+  provider: SourceProvider,
+) {
+  const campaignIds = campaignIdsForProvider(options.campaignIds, provider);
+  if (!options.campaignIds?.length || campaignIds == null) return options;
+  if (campaignIds.length === 0) return null;
+  return { ...options, campaignIds };
+}
+
 async function refreshWorkspaceAtomicallyWithProviderMode(options: RefreshOptions = {}) {
   const liveDbPath = resolveDbPath();
   const shadowDbPath = path.join(
@@ -2957,11 +3000,13 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
       }
 
       const summaries = [];
-      if (instantlyConfigured) {
-        summaries.push(await refreshInstantlyWorkspace(options));
+      const instantlyOptions = refreshOptionsForProvider(options, "instantly");
+      if (instantlyConfigured && instantlyOptions) {
+        summaries.push(await refreshInstantlyWorkspace(instantlyOptions));
       }
-      if (smartleadConfigured) {
-        summaries.push(await refreshSmartleadWorkspace(options));
+      const smartleadOptions = refreshOptionsForProvider(options, "smartlead");
+      if (smartleadConfigured && smartleadOptions) {
+        summaries.push(await refreshSmartleadWorkspace(smartleadOptions));
       }
       if (summaries.length === 0) {
         throw new Error(

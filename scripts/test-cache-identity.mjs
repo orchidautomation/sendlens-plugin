@@ -516,6 +516,23 @@ try {
   } finally {
     closeDb(db);
   }
+
+  process.env.SENDLENS_INSTANTLY_API_KEY = "instantly-all-secret";
+  process.env.SENDLENS_SMARTLEAD_API_KEY = "smartlead-all-secret";
+  process.env.SENDLENS_CLIENT = "all_scoped_ws";
+  process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-smartlead-scope.duckdb");
+  instantly.listCampaigns = async () => {
+    throw new Error("Instantly scoped refresh should be skipped");
+  };
+  const allProviderScopedRefresh = await refreshWorkspaceAtomically({
+    provider: "all",
+    source: "manual",
+    campaignIds: ["smartlead:901"],
+    client: smartleadProviderOverrideClient,
+  });
+  assert.equal(allProviderScopedRefresh.workspaceId, "all_scoped_ws");
+  delete process.env.SENDLENS_INSTANTLY_API_KEY;
+  delete process.env.SENDLENS_CLIENT;
   delete process.env.SENDLENS_SMARTLEAD_API_KEY;
 
   const legacyAccountPkDbPath = path.join(tempDir, "legacy-account-pk.duckdb");
