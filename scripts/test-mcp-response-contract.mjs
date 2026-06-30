@@ -101,6 +101,7 @@ for (const term of [
 }
 
 for (const term of [
+  "provider-qualified or native campaign ID",
   "exact `campaign_overview`",
   "`human_reply_sample` grouped into positive, negative, and neutral buckets",
   "optional `rendered_outbound_sample`",
@@ -109,6 +110,10 @@ for (const term of [
   assertIncludes(source.docs, term, "load_campaign_data docs");
 }
 for (const term of [
+  "loadCampaignScope",
+  "refreshProvider",
+  "campaignIdFilterSql",
+  "Provider-qualified or native campaign ID to load.",
   "campaign_overview",
   "human_reply_sample",
   "rendered_outbound_sample",
