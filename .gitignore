@@ -26,3 +26,6 @@ passthrough/runtime/state/
 TODO.md
 dist.stale.*/
 *.swp
+
+# Agent scratch artifacts
+.agent-artifacts/
