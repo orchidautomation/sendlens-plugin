@@ -190,11 +190,13 @@ try {
     return responseJson([{ id: 10 }]);
   };
   report = await buildSetupDoctorReport();
+  assert.equal(report.setup_status, "blocked");
   assert.equal(report.capabilities.source_provider_mode, "all");
   assert.deepEqual(report.capabilities.source_providers, ["instantly", "smartlead"]);
   assert.equal(report.capabilities.local_cache_read, false);
   assert.equal(report.capabilities.live_refresh, false);
   assert.equal(report.capabilities.demo_seed, true);
+  assert.equal(report.capabilities.instantly_key_configured, false);
   assert.equal(report.capabilities.smartlead_key_validated, true);
   assert.equal(findCheck(report, "Instantly credentials")?.status, "fail");
   assert.equal(findCheck(report, "Smartlead credentials")?.status, "pass");
