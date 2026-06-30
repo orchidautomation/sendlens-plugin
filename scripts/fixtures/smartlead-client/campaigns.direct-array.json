@@ -1,0 +1,18 @@
+[
+  {
+    "id": 101,
+    "name": "Fixture Campaign A",
+    "status": "ACTIVE",
+    "client_id": 501,
+    "tags": [
+      { "tag_id": 1, "tag_name": "ICP A", "tag_color": "#2563eb" }
+    ]
+  },
+  {
+    "id": 102,
+    "name": "Fixture Campaign B",
+    "status": "PAUSED",
+    "client_id": 501,
+    "tags": []
+  }
+]

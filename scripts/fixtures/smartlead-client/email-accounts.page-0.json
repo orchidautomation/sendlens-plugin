@@ -1,0 +1,18 @@
+[
+  {
+    "id": 301,
+    "from_email": "sender-301@example.com",
+    "from_name": "Sender 301",
+    "type": "gmail",
+    "message_per_day": 30,
+    "campaign_ids": [101]
+  },
+  {
+    "id": 302,
+    "from_email": "sender-302@example.com",
+    "from_name": "Sender 302",
+    "type": "outlook",
+    "message_per_day": 25,
+    "campaign_ids": [101, 102]
+  }
+]

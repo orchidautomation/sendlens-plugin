@@ -1,0 +1,27 @@
+{
+  "data": {
+    "offset": 0,
+    "limit": 1000,
+    "total": 2,
+    "email_statistics": [
+      {
+        "lead_email": "lead-1001@example.com",
+        "sequence_number": 1,
+        "sent_time": "2026-06-01T10:00:00.000Z",
+        "is_opened": true,
+        "is_clicked": false,
+        "is_replied": true,
+        "is_bounced": false
+      },
+      {
+        "lead_email": "lead-1002@example.com",
+        "sequence_number": 1,
+        "sent_time": "2026-06-01T10:05:00.000Z",
+        "is_opened": false,
+        "is_clicked": false,
+        "is_replied": false,
+        "is_bounced": false
+      }
+    ]
+  }
+}
