@@ -92,6 +92,23 @@ async function runScript(scriptPath, env) {
   }
 }
 
+async function commandPath(commandName) {
+  const { stdout } = await execFile("bash", ["-lc", `command -v ${commandName}`], {
+    cwd: root,
+    env: process.env,
+  });
+  return stdout.trim();
+}
+
+async function createPathWithoutNode(label) {
+  const binDir = path.join(os.tmpdir(), `sendlens-provider-config-${label}-bin-${Date.now()}`);
+  await fs.mkdir(binDir, { recursive: true });
+  for (const commandName of ["bash", "dirname", "tr"]) {
+    await fs.symlink(await commandPath(commandName), path.join(binDir, commandName));
+  }
+  return binDir;
+}
+
 function assertInvalidProviderResult(result, entryPoint) {
   assert.equal(result.code, 1, `${entryPoint} should reject invalid SENDLENS_PROVIDER`);
   assert.match(result.stderr, /Invalid SENDLENS_PROVIDER value 'mailgun'/);
@@ -296,9 +313,10 @@ try {
 
   tempDir = resetEnv("trimmed-provider-start");
   await fs.mkdir(tempDir, { recursive: true });
+  const pathWithoutNode = await createPathWithoutNode("trimmed-provider-start");
   const trimmedStartResult = await runScript(path.join(root, "scripts/start-mcp.sh"), {
     PLUGIN_ROOT: root,
-    PATH: "/usr/bin:/bin",
+    PATH: pathWithoutNode,
     SENDLENS_CONTEXT_ROOT: tempDir,
     SENDLENS_DB_PATH: path.join(tempDir, "workspace-cache.duckdb"),
     SENDLENS_STATE_DIR: tempDir,
