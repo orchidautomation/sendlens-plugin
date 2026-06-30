@@ -7,6 +7,7 @@ import {
   run,
   setActiveWorkspaceId,
   stampCacheOwner,
+  withCacheProviderMode,
 } from "./local-db";
 import { writeRefreshStatus } from "./refresh-status";
 import {
@@ -1482,7 +1483,7 @@ function buildSyncLogId(source: RefreshSource, mode: RefreshMode) {
   return `${SOURCE_PROVIDER}:${source}:${mode}:${process.pid}:${Date.now()}`;
 }
 
-export async function refreshSmartleadWorkspace(options: SmartleadRefreshOptions = {}) {
+async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefreshOptions = {}) {
   const accessValue = process.env.SENDLENS_SMARTLEAD_API_KEY?.trim();
   const client = options.client ?? (accessValue ? createSmartleadClient(accessValue) : null);
   if (!client) {
@@ -1639,4 +1640,10 @@ export async function refreshSmartleadWorkspace(options: SmartleadRefreshOptions
   } finally {
     closeDb(db);
   }
+}
+
+export async function refreshSmartleadWorkspace(options: SmartleadRefreshOptions = {}) {
+  return withCacheProviderMode(SOURCE_PROVIDER, () =>
+    refreshSmartleadWorkspaceWithProviderMode(options),
+  );
 }

@@ -28,6 +28,7 @@ import {
   setActiveWorkspaceId,
   shouldCopyLiveCacheForRefresh,
   stampCacheOwner,
+  withCacheProviderMode,
 } from "./local-db";
 import {
   allocateVariantEmailCaps,
@@ -2885,7 +2886,7 @@ async function shouldSeedShadowFromLive(liveDbPath: string) {
   });
 }
 
-export async function refreshWorkspaceAtomically(options: RefreshOptions = {}) {
+async function refreshWorkspaceAtomicallyWithProviderMode(options: RefreshOptions = {}) {
   const liveDbPath = resolveDbPath();
   const shadowDbPath = path.join(
     path.dirname(liveDbPath),
@@ -2941,35 +2942,48 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
     throw new Error(providerMode.message ?? "Invalid SendLens provider mode.");
   }
 
-  if (providerMode.mode === "smartlead") {
-    return refreshSmartleadWorkspace(options);
+  return withCacheProviderMode(providerMode.mode, async () => {
+    if (providerMode.mode === "smartlead") {
+      return refreshSmartleadWorkspace(options);
+    }
+
+    if (providerMode.mode === "all") {
+      const instantlyConfigured = Boolean(process.env.SENDLENS_INSTANTLY_API_KEY?.trim());
+      const smartleadConfigured = Boolean(process.env.SENDLENS_SMARTLEAD_API_KEY?.trim());
+      if (instantlyConfigured && smartleadConfigured && !process.env.SENDLENS_CLIENT?.trim()) {
+        throw new Error(
+          "SENDLENS_PROVIDER=all with both Instantly and Smartlead requires SENDLENS_CLIENT so both provider refreshes write the same local workspace.",
+        );
+      }
+
+      const summaries = [];
+      if (instantlyConfigured) {
+        summaries.push(await refreshInstantlyWorkspace(options));
+      }
+      if (smartleadConfigured) {
+        summaries.push(await refreshSmartleadWorkspace(options));
+      }
+      if (summaries.length === 0) {
+        throw new Error(
+          "SENDLENS_PROVIDER=all requires SENDLENS_INSTANTLY_API_KEY, SENDLENS_SMARTLEAD_API_KEY, or both.",
+        );
+      }
+      return summaries[summaries.length - 1];
+    }
+
+    return refreshInstantlyWorkspace(options);
+  });
+}
+
+export async function refreshWorkspaceAtomically(options: RefreshOptions = {}) {
+  const providerMode = resolveSourceProviderMode(options.provider);
+  if (!providerMode.valid) {
+    throw new Error(providerMode.message ?? "Invalid SendLens provider mode.");
   }
 
-  if (providerMode.mode === "all") {
-    const instantlyConfigured = Boolean(process.env.SENDLENS_INSTANTLY_API_KEY?.trim());
-    const smartleadConfigured = Boolean(process.env.SENDLENS_SMARTLEAD_API_KEY?.trim());
-    if (instantlyConfigured && smartleadConfigured && !process.env.SENDLENS_CLIENT?.trim()) {
-      throw new Error(
-        "SENDLENS_PROVIDER=all with both Instantly and Smartlead requires SENDLENS_CLIENT so both provider refreshes write the same local workspace.",
-      );
-    }
-
-    const summaries = [];
-    if (instantlyConfigured) {
-      summaries.push(await refreshInstantlyWorkspace(options));
-    }
-    if (smartleadConfigured) {
-      summaries.push(await refreshSmartleadWorkspace(options));
-    }
-    if (summaries.length === 0) {
-      throw new Error(
-        "SENDLENS_PROVIDER=all requires SENDLENS_INSTANTLY_API_KEY, SENDLENS_SMARTLEAD_API_KEY, or both.",
-      );
-    }
-    return summaries[summaries.length - 1];
-  }
-
-  return refreshInstantlyWorkspace(options);
+  return withCacheProviderMode(providerMode.mode, () =>
+    refreshWorkspaceAtomicallyWithProviderMode(options),
+  );
 }
 
 async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {

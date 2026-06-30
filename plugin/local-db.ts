@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
@@ -12,6 +13,7 @@ import {
 import {
   providerModeIncludes,
   resolveSourceProviderMode,
+  type SourceProviderMode,
 } from "./provider-config";
 
 const DEFAULT_DB_CONNECT_TIMEOUT_MS = 15_000;
@@ -28,11 +30,20 @@ const LOCK_ERROR_PATTERNS = [
   /WAL replay/i,
 ];
 const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
+const cacheProviderModeContext = new AsyncLocalStorage<SourceProviderMode>();
 
 export type GetDbOptions = {
   timeoutMs?: number;
   retryMs?: number;
 };
+
+export async function withCacheProviderMode<T>(
+  providerMode: SourceProviderMode,
+  operation: () => Promise<T>,
+) {
+  if (cacheProviderModeContext.getStore()) return operation();
+  return cacheProviderModeContext.run(providerMode, operation);
+}
 
 export class LocalDbUnavailableError extends Error {
   code = "duckdb_unavailable" as const;
@@ -1890,7 +1901,15 @@ function normalizeNullable(value: string | undefined | null) {
 }
 
 export function currentApiKeyFingerprint() {
-  const providerMode = resolveSourceProviderMode();
+  const activeProviderMode = cacheProviderModeContext.getStore();
+  const providerMode = activeProviderMode
+    ? {
+        mode: activeProviderMode,
+        raw: activeProviderMode,
+        valid: true,
+        defaulted: false,
+      }
+    : resolveSourceProviderMode();
   const instantlyKey = normalizeNullable(process.env.SENDLENS_INSTANTLY_API_KEY);
   const smartleadKey = normalizeNullable(process.env.SENDLENS_SMARTLEAD_API_KEY);
   const fingerprints: Array<{ provider: "instantly" | "smartlead"; value: string }> = [];

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
@@ -20,6 +21,7 @@ const {
   setActiveWorkspaceId,
   setPluginState,
   stampCacheOwner,
+  withCacheProviderMode,
 } = require("../build/plugin/local-db.js");
 const { refreshWorkspaceAtomically } = require("../build/plugin/instantly-ingest.js");
 const { readRefreshStatus } = require("../build/plugin/refresh-status.js");
@@ -174,6 +176,10 @@ function installSuccessfulRefresh(workspaceId, campaignId, campaignName) {
 
 async function openDb() {
   return getDb({ timeoutMs: 1_000, retryMs: 25 });
+}
+
+function providerScopedFingerprint(provider, value) {
+  return createHash("sha256").update(`${provider}:${value}`, "utf8").digest("hex");
 }
 
 async function pathExists(filePath) {
@@ -431,6 +437,85 @@ try {
     closeDb(db);
   }
   delete process.env.SENDLENS_PROVIDER;
+
+  process.env.SENDLENS_SMARTLEAD_API_KEY = "smartlead-override-secret";
+  process.env.SENDLENS_DB_PATH = path.join(tempDir, "smartlead-provider-override.duckdb");
+  const smartleadProviderOverrideClient = {
+    async listCampaigns() {
+      return [
+        {
+          id: "901",
+          name: "Provider Override Campaign",
+          status: "active",
+          user_id: "smartlead_override_ws",
+        },
+      ];
+    },
+    async getCampaign() {
+      return {
+        id: "901",
+        name: "Provider Override Campaign",
+        status: "active",
+        user_id: "smartlead_override_ws",
+      };
+    },
+    async getCampaignSequences() {
+      return [];
+    },
+    async getCampaignAnalytics() {
+      return { campaign_id: "901" };
+    },
+    async getCampaignAnalyticsByDate() {
+      return [];
+    },
+    async listAllCampaignStatistics() {
+      return [];
+    },
+    async listCampaignEmailAccounts() {
+      return [];
+    },
+    async listAllCampaignLeads() {
+      return [];
+    },
+    async listAllCampaignMailboxStatistics() {
+      return [];
+    },
+    async listAllEmailAccounts() {
+      return [];
+    },
+    async getEmailAccountWarmupStats() {
+      return {};
+    },
+  };
+
+  const smartleadOverrideRefresh = await refreshWorkspaceAtomically({
+    provider: "smartlead",
+    source: "manual",
+    campaignIds: ["901"],
+    client: smartleadProviderOverrideClient,
+  });
+  assert.equal(smartleadOverrideRefresh.workspaceId, "smartlead_override_ws");
+  db = await openDb();
+  try {
+    const owner = await getCacheOwnerMetadata(db);
+    assert.equal(
+      owner.apiKeyFingerprint,
+      providerScopedFingerprint("smartlead", "smartlead-override-secret"),
+    );
+    assert.equal(currentApiKeyFingerprint(), null);
+
+    process.env.SENDLENS_SMARTLEAD_API_KEY = "smartlead-override-new-secret";
+    await assert.rejects(
+      withCacheProviderMode("smartlead", () => assertCacheReadableForCurrentEnv(db)),
+      (error) =>
+        error instanceof CacheReadinessError &&
+        error.issue === "api_key_mismatch" &&
+        !String(error.message).includes("smartlead-override-secret") &&
+        !String(error.message).includes("smartlead-override-new-secret"),
+    );
+  } finally {
+    closeDb(db);
+  }
   delete process.env.SENDLENS_SMARTLEAD_API_KEY;
 
   const legacyAccountPkDbPath = path.join(tempDir, "legacy-account-pk.duckdb");
