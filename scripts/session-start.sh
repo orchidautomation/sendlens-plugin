@@ -15,6 +15,7 @@ export SENDLENS_STATE_DIR="${STATE_DIR}"
 # shellcheck disable=SC1091
 source "${PLUGIN_ROOT}/scripts/load-env.sh"
 
+SOURCE_PROVIDER="$(printf '%s' "${SENDLENS_PROVIDER:-instantly}" | tr '[:upper:]' '[:lower:]')"
 DB_PATH="${SENDLENS_DB_PATH:-${HOME}/.sendlens/workspace-cache.duckdb}"
 STATE_DIR="${SENDLENS_STATE_DIR:-$(dirname "${DB_PATH}")}"
 LOCK_DIR="${STATE_DIR}/session-start-refresh.lock"
@@ -27,6 +28,12 @@ is_demo_mode() {
   local raw
   raw="$(printf '%s' "${SENDLENS_DEMO_MODE:-}" | tr '[:upper:]' '[:lower:]')"
   [[ "${raw}" == "1" || "${raw}" == "true" || "${raw}" == "yes" ]]
+}
+
+source_provider_includes() {
+  local mode="$1"
+  local provider="$2"
+  [[ "${mode}" == "all" || "${mode}" == "${provider}" ]]
 }
 
 refresh_lock_is_active() {
@@ -46,7 +53,8 @@ cleanup_stale_refresh_state() {
   rm -f "${SHADOW_DB_PATH}" "${SHADOW_DB_PATH}.wal" 2>/dev/null || true
 }
 
-write_missing_key_status() {
+write_session_start_idle_status() {
+  local message="$1"
   mkdir -p "${STATE_DIR}" 2>/dev/null || return 0
   if command -v node >/dev/null 2>&1; then
     node -e '
@@ -64,20 +72,31 @@ write_missing_key_status() {
         source: "session_start",
         pid: process.pid,
         endedAt: new Date().toISOString(),
-        message: "Session-start refresh skipped because SENDLENS_INSTANTLY_API_KEY is not set. Existing local DuckDB cache remains usable; configure the key before running refresh_data.",
+        message: process.argv[3],
         dbPath,
       };
       fs.mkdirSync(path.dirname(statusPath), { recursive: true });
       fs.writeFileSync(statusPath, JSON.stringify(next, null, 2));
-    ' "${STATE_DIR}/refresh-status.json" "${DB_PATH}" 2>/dev/null || true
+    ' "${STATE_DIR}/refresh-status.json" "${DB_PATH}" "${message}" 2>/dev/null || true
   fi
 }
 
 cleanup_stale_refresh_state
 
+if [[ "${SOURCE_PROVIDER}" != "instantly" && "${SOURCE_PROVIDER}" != "smartlead" && "${SOURCE_PROVIDER}" != "all" ]]; then
+  echo "[sendlens] Invalid SENDLENS_PROVIDER value '${SENDLENS_PROVIDER}'. Set SENDLENS_PROVIDER to instantly, smartlead, or all." >&2
+  exit 1
+fi
+
+if ! is_demo_mode && ! source_provider_includes "${SOURCE_PROVIDER}" "instantly"; then
+  write_session_start_idle_status "Session-start refresh skipped because SENDLENS_PROVIDER=${SOURCE_PROVIDER} does not use the Instantly refresh path. Existing local DuckDB cache remains usable; Smartlead refresh lands in follow-up ingest work."
+  echo "[sendlens] SENDLENS_PROVIDER=${SOURCE_PROVIDER} does not use the Instantly session-start refresh; skipping refresh. Existing local DuckDB cache remains available." >&2
+  exit 0
+fi
+
 if [[ -z "${SENDLENS_INSTANTLY_API_KEY:-}" ]] && ! is_demo_mode; then
-  write_missing_key_status
-  echo "[sendlens] SENDLENS_INSTANTLY_API_KEY is not set; skipping session-start refresh. Existing local DuckDB cache remains available." >&2
+  write_session_start_idle_status "Session-start refresh skipped because SENDLENS_INSTANTLY_API_KEY is not set for SENDLENS_PROVIDER=${SOURCE_PROVIDER}. Existing local DuckDB cache remains usable; configure the key before running refresh_data."
+  echo "[sendlens] SENDLENS_INSTANTLY_API_KEY is not set for SENDLENS_PROVIDER=${SOURCE_PROVIDER}; skipping session-start refresh. Existing local DuckDB cache remains available." >&2
   echo "[sendlens] Run /sendlens-setup in your AI host to initialize a zero-key synthetic demo workspace, or configure the key before running refresh_data." >&2
   exit 0
 fi

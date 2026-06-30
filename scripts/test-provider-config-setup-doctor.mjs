@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
+import childProcess from "node:child_process";
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
+const execFile = promisify(childProcess.execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const accessParam = "api" + "_key";
@@ -18,6 +21,7 @@ const {
 } = require("../build/plugin/provider-config.js");
 const { loadClientEnv } = require("../build/plugin/env.js");
 const { buildSetupDoctorReport } = require("../build/plugin/setup-doctor.js");
+const { readRefreshStatus } = require("../build/plugin/refresh-status.js");
 
 const originalFetch = globalThis.fetch;
 const managedEnv = [
@@ -69,6 +73,23 @@ function assertNoSensitiveValue(value, sensitiveValue) {
 
 function findCheck(report, name) {
   return report.checks.find((check) => check.name === name);
+}
+
+async function runScript(scriptPath, env) {
+  try {
+    const result = await execFile("bash", [scriptPath], {
+      cwd: root,
+      env: { ...process.env, ...env },
+      timeout: 10000,
+    });
+    return { code: 0, stdout: result.stdout, stderr: result.stderr };
+  } catch (error) {
+    return {
+      code: typeof error.code === "number" ? error.code : 1,
+      stdout: error.stdout ?? "",
+      stderr: error.stderr ?? "",
+    };
+  }
 }
 
 try {
@@ -210,6 +231,43 @@ try {
   loadClientEnv(tempDir);
   assert.equal(process.env.SENDLENS_SMARTLEAD_API_KEY, undefined);
   assert.equal(process.env.SENDLENS_PROVIDER, undefined);
+
+  tempDir = resetEnv("stale-instantly-status-smartlead");
+  await fs.mkdir(tempDir, { recursive: true });
+  process.env.SENDLENS_PROVIDER = "smartlead";
+  await fs.writeFile(
+    path.join(tempDir, "refresh-status.json"),
+    JSON.stringify({
+      status: "idle",
+      source: "session_start",
+      message:
+        "Session-start refresh skipped because SENDLENS_INSTANTLY_API_KEY is not set. Existing local DuckDB cache remains usable; configure the key before running refresh_data.",
+      dbPath: process.env.SENDLENS_DB_PATH,
+    }),
+  );
+  const smartleadRefreshStatus = await readRefreshStatus();
+  assert.equal(smartleadRefreshStatus.status, "idle");
+  assert.ok(!String(smartleadRefreshStatus.message).includes("SENDLENS_INSTANTLY_API_KEY"));
+  assert.match(String(smartleadRefreshStatus.message), /SENDLENS_PROVIDER=smartlead/);
+
+  tempDir = resetEnv("session-start-smartlead");
+  await fs.mkdir(tempDir, { recursive: true });
+  const sessionStartResult = await runScript(path.join(root, "scripts/session-start.sh"), {
+    PLUGIN_ROOT: root,
+    SENDLENS_CONTEXT_ROOT: tempDir,
+    SENDLENS_DB_PATH: path.join(tempDir, "workspace-cache.duckdb"),
+    SENDLENS_STATE_DIR: tempDir,
+    SENDLENS_PROVIDER: "smartlead",
+    SENDLENS_SMARTLEAD_API_KEY: smartleadValue,
+  });
+  assert.equal(sessionStartResult.code, 0);
+  assert.ok(!sessionStartResult.stderr.includes("SENDLENS_INSTANTLY_API_KEY"));
+  assert.match(sessionStartResult.stderr, /does not use the Instantly session-start refresh/);
+  const sessionStartStatus = JSON.parse(
+    await fs.readFile(path.join(tempDir, "refresh-status.json"), "utf8"),
+  );
+  assert.ok(!sessionStartStatus.message.includes("SENDLENS_INSTANTLY_API_KEY"));
+  assert.match(sessionStartStatus.message, /SENDLENS_PROVIDER=smartlead/);
 } finally {
   globalThis.fetch = originalFetch;
   restoreEnv();

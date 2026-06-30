@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { isUnresolvedDbPath, resolveDbPath } from "./local-db";
 import { getRateLimitStats, type RateLimitStats } from "./instantly-client";
+import { resolveSourceProviderMode } from "./provider-config";
 
 export type RefreshStatus = {
   status: "idle" | "running" | "succeeded" | "failed";
@@ -59,10 +60,21 @@ function normalizeStatus(status: RefreshStatus): RefreshStatus {
   normalized.rateLimit = getRateLimitStats();
 
   if (
-    normalized.status === "failed" &&
+    (normalized.status === "failed" || normalized.status === "idle") &&
     normalized.source === "session_start" &&
     /SENDLENS_INSTANTLY_API_KEY is not set/i.test(normalized.message ?? "")
   ) {
+    const providerMode = resolveSourceProviderMode();
+    if (providerMode.valid && providerMode.mode === "smartlead") {
+      return {
+        ...normalized,
+        status: "idle",
+        dbPath: activeDbPath,
+        message:
+          "Session-start refresh skipped because SENDLENS_PROVIDER=smartlead does not use the Instantly refresh path. Existing local DuckDB cache remains usable; Smartlead refresh lands in follow-up ingest work.",
+      };
+    }
+
     return {
       ...normalized,
       status: "idle",
