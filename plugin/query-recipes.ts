@@ -2496,9 +2496,52 @@ LIMIT 100;`,
     ],
   },
   {
+    id: "cross-provider-overlap-risk",
+    topic: "icp-signals",
+    title: "Cross-provider duplicate contact and company exposure",
+    question: "Are we contacting the same people or companies across Instantly and Smartlead?",
+    exactness: "sampled",
+    rationale: "Find sampled contacts, domains, or companies that appear in more than one source provider within the overlap-risk window so analysts can spot diversification that is really duplicate outreach.",
+    sql: `SELECT
+  overlap_type,
+  overlap_key,
+  source_provider_count,
+  source_providers,
+  campaign_count,
+  sampled_rows,
+  sampled_contacts,
+  first_exposure_at,
+  last_exposure_at,
+  overall_contact_span_days,
+  closest_cross_provider_window_days,
+  contact_window_days,
+  within_unsafe_window,
+  overlap_risk_level,
+  sampled_reply_signal_rows,
+  sampled_negative_rows
+FROM sendlens.provider_overlap_risk
+WHERE within_unsafe_window IS DISTINCT FROM FALSE
+ORDER BY
+  CASE overlap_risk_level
+    WHEN 'high' THEN 0
+    WHEN 'medium' THEN 1
+    WHEN 'timing_unknown' THEN 2
+    ELSE 3
+  END,
+  campaign_count DESC,
+  sampled_negative_rows DESC,
+  sampled_rows DESC
+LIMIT 100;`,
+    notes: [
+      "This is sampled exposure evidence from cached lead rows, not a full suppression or CRM dedupe audit unless all relevant campaigns were fully scanned.",
+      "Use provider_overlap_risk_details to inspect the provider-qualified campaign rows behind a risky overlap.",
+      "A high/medium overlap is evidence to review coordination; do not infer reply-level duplication until Smartlead message-history hydration exists.",
+    ],
+  },
+  {
     id: "duplicate-contact-company-exposure",
     topic: "icp-signals",
-    title: "Duplicate contact and company exposure",
+    title: "Duplicate contact and company exposure across campaigns",
     question: "Are we contacting the same people or companies across multiple campaigns?",
     exactness: "sampled",
     rationale: "Find sampled contacts or company domains that appear in more than one campaign so analysts can spot overlap risk before blaming copy.",

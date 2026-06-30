@@ -1,6 +1,6 @@
 # SendLens Component Catalog
 
-SendLens is a local-first analysis plugin for Instantly workspaces. The public surface is built from skills, host commands, specialist agents, MCP tools, local scripts, and generated host bundles.
+SendLens is a local-first analysis plugin for outbound workspaces. Instantly remains the shipped full provider; Smartlead V1 support is read-only and provider-qualified where implemented.
 
 See also: [trust and privacy](./TRUST_AND_PRIVACY.md), [skill docs](./skills/README.md), [synthetic example outputs](./examples/SYNTHETIC_OUTPUTS.md), and [operator memory](./operator-memory/README.md).
 
@@ -71,8 +71,8 @@ MCP tools are registered by the local `sendlens` stdio server. Responses are JSO
 | `setup_doctor` | Read setup readiness without shell commands | First run, missing key diagnosis, local cache readiness, stale refresh state |
 | `seed_demo_workspace` | Seed synthetic proof data for demo or recovery | No usable API key, failed credential validation, or an explicit request for demo/sample data |
 | `refresh_status` | Read local refresh lifecycle state | Stale data, startup refresh, or cache-readiness questions |
-| `refresh_data` | Refresh local cache from Instantly | Explicit fresh pull, client/workspace change, or stale/failed status |
-| `workspace_snapshot` | First high-level read of a workspace, tag, or campaign-name scope | Broad triage and campaign selection |
+| `refresh_data` | Refresh local cache from the configured source provider | Explicit fresh pull, client/workspace change, provider-scoped refresh, or stale/failed status |
+| `workspace_snapshot` | First high-level read of a workspace, provider, tag, or campaign-name scope | Broad triage, provider-scoped/all-provider reads, and campaign selection |
 | `load_campaign_data` | Hydrate one campaign for copy, ICP, reply, or next-test analysis | After selecting a campaign |
 | `prepare_campaign_analysis` | Hydrate enough exact reply bodies and backfilled lead context for premium one-campaign diagnosis | Before working/not-working, reply-quality, winner, scale, or kill claims |
 | `fetch_reply_text` | Fetch exact inbound reply body text for one campaign into local DuckDB | Only when actual reply wording is needed |
@@ -88,13 +88,15 @@ The local schema exposes exact aggregate tables and semantic analysis views. Com
 
 | Surface | Classification | Use |
 | --- | --- | --- |
-| `campaigns`, `campaign_analytics`, `campaign_daily_metrics`, `step_analytics`, `campaign_variants` | Exact Instantly-derived campaign surfaces | Campaign, step, variant, template, tracking/deliverability settings, and daily performance analysis |
+| `campaigns`, `campaign_analytics`, `campaign_daily_metrics`, `step_analytics`, `campaign_variants` | Exact provider-qualified campaign surfaces where available | Campaign, step, variant, template, tracking/deliverability settings, provider dimensions, and daily performance analysis |
 | `accounts`, `account_daily_metrics`, `campaign_accounts` | Exact or resolved sender/account surfaces | Account health, sender coverage, and capacity checks |
 | `custom_tags`, `custom_tag_mappings`, `campaign_tags`, `account_tags` | Exact tag surfaces | Campaign and sender scoping |
 | `inbox_placement_tests`, `inbox_placement_analytics` | Exact when available from Instantly | Inbox placement and authentication evidence |
 | `inbox_placement_test_overview`, `sender_deliverability_health` | Semantic rollups over inbox placement data | Deliverability diagnosis with availability caveats |
 | `campaign_overview` | Semantic campaign rollup | Default campaign ranking, tracking/deliverability settings, and health view |
 | `lead_evidence`, `lead_payload_kv` | Sampled lead and campaign-payload evidence | ICP and lead-variable hypotheses |
+| `provider_capabilities` | Provider capability status | Explain supported, partial, or unsupported provider surfaces such as Smartlead inbox placement |
+| `provider_overlap_risk`, `provider_overlap_risk_details` | Sampled cross-provider overlap primitives | Find duplicate normalized email, domain, or company exposure across providers within the unsafe window |
 | `reply_context`, `reply_email_context`, `reply_emails` | Reply outcome context, email-anchored fetched reply context, and fetched exact reply rows | Reply cohort analysis and exact reply-body analysis when hydrated |
 | `rendered_outbound_context` | Locally reconstructed outbound context | Personalization QA and copy analysis, not byte-for-byte delivered email |
 
@@ -124,4 +126,4 @@ The plugin is authored once and generated into host-native bundles with Pluxx.
 | Codex | Skills, commands, agents, instructions, MCP server config, session-start hook |
 | OpenCode | Skills, commands, agents, instructions, MCP server config, session-start hook |
 
-The generated bundles preserve the same operating model: read-only Instantly access, local DuckDB cache, bounded MCP outputs, and one-campaign-at-a-time deep analysis.
+The generated bundles preserve the same operating model: read-only provider access, local DuckDB cache, bounded MCP outputs, and one-campaign-at-a-time deep analysis.

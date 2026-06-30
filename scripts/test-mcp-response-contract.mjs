@@ -11,7 +11,9 @@ const failures = [];
 const files = {
   server: "plugin/server.ts",
   summary: "plugin/summary.ts",
+  localDb: "plugin/local-db.ts",
   recipes: "plugin/query-recipes.ts",
+  constants: "plugin/constants.ts",
   replyTextContract: "plugin/reply-text-contract.ts",
   replyFetchTest: "scripts/test-reply-fetch-contract.mjs",
   docs: "docs/MCP_RESPONSE_CONTRACT.md",
@@ -69,6 +71,9 @@ for (const toolName of [
 for (const term of [
   'schema_version: "workspace_snapshot.v1"',
   "exact workspace/campaign/account metrics",
+  "optional `provider` input",
+  "`source_provider_scope`, `provider_breakdown`, and `provider_capabilities`",
+  "`rate_caveats`",
   "bounded `campaigns` rows",
   "bounded campaign coverage rows",
   "warnings when scoped output is capped",
@@ -78,6 +83,10 @@ for (const term of [
 for (const term of [
   'schema_version: "workspace_snapshot.v1"',
   "exact_metrics",
+  "source_provider_scope",
+  "provider_breakdown",
+  "provider_capabilities",
+  "rate_caveats",
   "output_limits",
   "campaigns",
   "coverage",
@@ -88,6 +97,11 @@ for (const term of [
 }
 for (const term of [
   "readiness: readinessPayload(readiness)",
+  "provider: z",
+  "buildWorkspaceSummary(db, undefined, provider)",
+  "provider_breakdown: []",
+  "provider_breakdown: providerBreakdown.map",
+  "providerBreakdown.filter",
   "campaign_limit",
   "coverage_limit",
   "Campaign rows were truncated",
@@ -133,6 +147,40 @@ for (const term of [
   "Rendered outbound rows are locally reconstructed sample evidence",
 ]) {
   assertIncludes(source.server, term, "load_campaign_data runtime");
+}
+
+for (const term of [
+  "Campaign selector matched multiple provider-qualified campaigns",
+  "campaign_source_id",
+  "provider_campaign_id",
+  "campaignSelectorAmbiguityPayload",
+  "formatCampaignMatch",
+]) {
+  assertIncludes(source.server, term, "provider-aware campaign selector runtime");
+}
+
+for (const term of [
+  "ambiguous provider-qualified campaign selectors return",
+  "writes exact inbound reply rows from supported provider reply surfaces",
+  "campaign selector ambiguity responses with provider-qualified matches",
+]) {
+  assertIncludes(source.docs, term, "provider-aware campaign selector docs");
+}
+
+for (const term of [
+  "provider_overlap_risk",
+  "provider_overlap_risk_details",
+  "within_unsafe_window",
+  "overlap_risk_level",
+  "closest_cross_provider_window_days",
+  "overall_contact_span_days",
+  "source_provider_count",
+]) {
+  assertIncludes(
+    `${source.localDb}\n${source.constants}\n${source.docs}`,
+    term,
+    "provider overlap risk catalog/docs",
+  );
 }
 
 for (const term of [
