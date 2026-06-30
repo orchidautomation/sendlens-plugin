@@ -5,7 +5,7 @@
     "status": "ACTIVE",
     "client_id": 501,
     "tags": [
-      { "id": 1, "name": "ICP A" }
+      { "tag_id": 1, "tag_name": "ICP A", "tag_color": "#2563eb" }
     ]
   },
   {

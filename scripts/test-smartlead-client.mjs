@@ -87,6 +87,7 @@ function assertAccessQuery(url) {
   const directOut = await directClient.listCampaigns();
   assert.equal(directOut.length, 2);
   assert.equal(directOut[0].id, 101);
+  assert.deepEqual(directOut[0].tags[0], { tag_id: 1, tag_name: "ICP A", tag_color: "#2563eb" });
 
   const wrappedClient = makeClient(async (url) => {
     const parsed = assertAccessQuery(url);
@@ -226,6 +227,64 @@ function assertAccessQuery(url) {
 }
 
 {
+  const controller = new AbortController();
+  const sleeps = [];
+  let calls = 0;
+  const client = makeClient(
+    async () => {
+      calls++;
+      return responseJson({ message: "wait" }, 429, { "Retry-After": "10" });
+    },
+    {
+      retry: { attempts: 1 },
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        return new Promise(() => {});
+      },
+    },
+  );
+
+  const retrying = client.requestJson("/campaigns/", { signal: controller.signal });
+  while (sleeps.length === 0) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  controller.abort();
+
+  await assert.rejects(retrying, { name: "AbortError" });
+  assert.equal(calls, 1);
+  assert.deepEqual(sleeps, [10_000]);
+}
+
+{
+  const controller = new AbortController();
+  const sleeps = [];
+  let calls = 0;
+  const client = makeClient(
+    async () => {
+      calls++;
+      throw new Error("temporary network failure");
+    },
+    {
+      retry: { attempts: 1, baseDelayMs: 123 },
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        return new Promise(() => {});
+      },
+    },
+  );
+
+  const retrying = client.requestJson("/campaigns/", { signal: controller.signal });
+  while (sleeps.length === 0) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  controller.abort();
+
+  await assert.rejects(retrying, { name: "AbortError" });
+  assert.equal(calls, 1);
+  assert.deepEqual(sleeps, [123]);
+}
+
+{
   let virtualNow = 0;
   const sleeps = [];
   let calls = 0;
@@ -247,6 +306,8 @@ function assertAccessQuery(url) {
   await client.requestJson("/campaigns/");
   assert.equal(calls, 2);
   assert.ok(sleeps.some((ms) => ms >= 1000), `expected burst gate sleep, got ${sleeps}`);
+  assert.equal(client.getRateLimitStats().burst_limit, 1);
+  assert.equal(client.getRateLimitStats().burst_window_ms, 1000);
   assert.equal(client.getRateLimitStats().throttled_count, 1);
 }
 
@@ -268,14 +329,16 @@ function assertAccessQuery(url) {
     retry: { attempts: 0, jitterRatio: 0 },
   });
 
-  for (let index = 0; index < 6; index++) {
+  for (let index = 0; index < 11; index++) {
     await client.requestJson("/campaigns/");
   }
 
-  assert.equal(calls, 6);
-  assert.deepEqual(sleeps, [1000]);
+  assert.equal(calls, 11);
+  assert.deepEqual(sleeps, [2000]);
+  assert.equal(client.getRateLimitStats().burst_limit, 10);
+  assert.equal(client.getRateLimitStats().burst_window_ms, 2000);
   assert.equal(client.getRateLimitStats().limit_1s, 5);
-  assert.equal(client.getRateLimitStats().limit_60s, 300);
+  assert.equal(client.getRateLimitStats().limit_60s, 50);
 }
 
 {
@@ -355,7 +418,7 @@ function assertAccessQuery(url) {
       return responseJson(await fixture("campaigns.direct-array.json"));
     },
     {
-      rateLimit: { perMinute: 100, burstPerSecond: 1, maxConcurrent: 8 },
+      rateLimit: { perMinute: 100, burstLimit: 1, burstWindowMs: 1000, maxConcurrent: 8 },
       sleep: async (ms) => {
         sleeps.push(ms);
         return new Promise(() => {});
@@ -386,7 +449,7 @@ function assertAccessQuery(url) {
       return new Promise(() => {});
     },
     {
-      rateLimit: { disabled: false, perMinute: 100, burstPerSecond: 100, maxConcurrent: 1 },
+      rateLimit: { disabled: false, perMinute: 100, burstLimit: 100, burstWindowMs: 1000, maxConcurrent: 1 },
       retry: { attempts: 0 },
     },
   );

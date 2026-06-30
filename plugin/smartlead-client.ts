@@ -7,8 +7,9 @@ const DEFAULT_RETRY_ATTEMPTS = 3;
 const DEFAULT_RETRY_BASE_DELAY_MS = 1000;
 const DEFAULT_RETRY_MAX_DELAY_MS = 60_000;
 const DEFAULT_RETRY_JITTER_RATIO = 0.2;
-const DEFAULT_RATE_LIMIT_PER_MINUTE = 300;
-const DEFAULT_BURST_LIMIT_PER_SECOND = 5;
+const DEFAULT_RATE_LIMIT_PER_MINUTE = 50;
+const DEFAULT_BURST_LIMIT = 10;
+const DEFAULT_BURST_WINDOW_MS = 2000;
 const DEFAULT_MAX_CONCURRENT = 8;
 const DEFAULT_PAGE_LIMIT = 100;
 const DEFAULT_MAX_PAGES = 200;
@@ -22,6 +23,12 @@ type QueryParams = Record<string, QueryValue | QueryValue[]>;
 
 export interface SmartleadRateLimitConfig {
   perMinute?: number;
+  burstLimit?: number;
+  burstWindowMs?: number;
+  /**
+   * Compatibility alias for callers that configured the first client version.
+   * Prefer burstLimit + burstWindowMs for new Smartlead rate-limit settings.
+   */
   burstPerSecond?: number;
   maxConcurrent?: number;
   disabled?: boolean;
@@ -68,20 +75,23 @@ export interface SmartleadAccessValidation {
 }
 
 export interface SmartleadRateLimitStats {
-  window_1s_count: number;
+  window_burst_count: number;
   window_60s_count: number;
-  limit_1s: number;
+  burst_limit: number;
+  burst_window_ms: number;
   limit_60s: number;
   throttled_count: number;
   active_requests: number;
   queued_requests: number;
+  window_1s_count: number;
+  limit_1s: number;
 }
 
 type RequiredRetryConfig = Required<Omit<SmartleadRetryConfig, "statuses">> & {
   statuses: Set<number>;
 };
 
-type RequiredRateLimitConfig = Required<SmartleadRateLimitConfig>;
+type RequiredRateLimitConfig = Required<Omit<SmartleadRateLimitConfig, "burstPerSecond">>;
 
 export class SmartleadApiError extends Error {
   status: number;
@@ -386,9 +396,10 @@ class SlidingWindowLimiter {
         this.throttledCount++;
         await appendTraceLog("smartlead.http.throttled", {
           waitMs,
-          in1s: this.countInWindow(1000),
+          inBurstWindow: this.countInWindow(this.config.burstWindowMs),
           in60s: this.countInWindow(60_000),
-          limit1s: this.config.burstPerSecond,
+          burstLimit: this.config.burstLimit,
+          burstWindowMs: this.config.burstWindowMs,
           limit60s: this.config.perMinute,
         });
         await abortable(this.sleep(waitMs), signal);
@@ -404,26 +415,29 @@ class SlidingWindowLimiter {
   stats(activeRequests: number, queuedRequests: number): SmartleadRateLimitStats {
     this.prune();
     return {
-      window_1s_count: this.countInWindow(1000),
+      window_burst_count: this.countInWindow(this.config.burstWindowMs),
       window_60s_count: this.countInWindow(60_000),
-      limit_1s: this.config.burstPerSecond,
+      burst_limit: this.config.burstLimit,
+      burst_window_ms: this.config.burstWindowMs,
       limit_60s: this.config.perMinute,
       throttled_count: this.throttledCount,
       active_requests: activeRequests,
       queued_requests: queuedRequests,
+      window_1s_count: this.countInWindow(1000),
+      limit_1s: Math.max(1, Math.floor(this.config.burstLimit * 1000 / this.config.burstWindowMs)),
     };
   }
 
   private computeWaitMs() {
     this.prune();
     return Math.max(
-      this.findWindowFreeTime(1000, this.config.burstPerSecond),
+      this.findWindowFreeTime(this.config.burstWindowMs, this.config.burstLimit),
       this.findWindowFreeTime(60_000, this.config.perMinute),
     );
   }
 
   private prune() {
-    const cutoff = this.now() - 60_000;
+    const cutoff = this.now() - Math.max(60_000, this.config.burstWindowMs);
     while (this.timestamps.length > 0 && this.timestamps[0] < cutoff) {
       this.timestamps.shift();
     }
@@ -494,9 +508,13 @@ class Semaphore {
 }
 
 function normalizeRateLimit(config: SmartleadRateLimitConfig = {}): RequiredRateLimitConfig {
+  const usePerSecondAlias = config.burstPerSecond != null
+    && config.burstLimit == null
+    && config.burstWindowMs == null;
   return {
     perMinute: config.perMinute ?? DEFAULT_RATE_LIMIT_PER_MINUTE,
-    burstPerSecond: config.burstPerSecond ?? DEFAULT_BURST_LIMIT_PER_SECOND,
+    burstLimit: config.burstLimit ?? config.burstPerSecond ?? DEFAULT_BURST_LIMIT,
+    burstWindowMs: config.burstWindowMs ?? (usePerSecondAlias ? 1000 : DEFAULT_BURST_WINDOW_MS),
     maxConcurrent: config.maxConcurrent ?? DEFAULT_MAX_CONCURRENT,
     disabled: config.disabled ?? false,
   };
@@ -604,7 +622,7 @@ export class SmartleadClient {
             delayMs,
             path: url.pathname,
           });
-          await this.sleep(delayMs);
+          await abortable(this.sleep(delayMs), init.signal);
           continue;
         }
         throw error instanceof Error
@@ -628,7 +646,7 @@ export class SmartleadClient {
           elapsedMs: this.now() - startedAt,
           rateLimit: rateLimitHeaders(response.headers),
         });
-        await this.sleep(delayMs);
+        await abortable(this.sleep(delayMs), init.signal);
         continue;
       }
 
