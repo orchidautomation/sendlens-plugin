@@ -41,6 +41,8 @@ import {
 import { writeRefreshStatus } from "./refresh-status";
 import { buildWorkspaceSummary } from "./summary";
 import { appendTraceLog } from "./debug-log";
+import { resolveSourceProviderMode, type SourceProviderMode } from "./provider-config";
+import { refreshSmartleadWorkspace } from "./smartlead-ingest";
 
 type CampaignVariantTemplate = {
   sequenceIndex: number;
@@ -80,6 +82,7 @@ type ReplyEmailRecord = {
 type RefreshOptions = {
   campaignIds?: string[];
   source?: "session_start" | "manual";
+  provider?: SourceProviderMode;
   forceHybrid?: boolean;
   nonReplyLeadLimit?: number;
   includeReplyThreadOutbound?: boolean;
@@ -2930,6 +2933,35 @@ export async function refreshWorkspaceAtomically(options: RefreshOptions = {}) {
 }
 
 export async function refreshWorkspace(options: RefreshOptions = {}) {
+  const providerMode = resolveSourceProviderMode(options.provider);
+  if (!providerMode.valid) {
+    throw new Error(providerMode.message ?? "Invalid SendLens provider mode.");
+  }
+
+  if (providerMode.mode === "smartlead") {
+    return refreshSmartleadWorkspace(options);
+  }
+
+  if (providerMode.mode === "all") {
+    const summaries = [];
+    if (process.env.SENDLENS_INSTANTLY_API_KEY?.trim()) {
+      summaries.push(await refreshInstantlyWorkspace(options));
+    }
+    if (process.env.SENDLENS_SMARTLEAD_API_KEY?.trim()) {
+      summaries.push(await refreshSmartleadWorkspace(options));
+    }
+    if (summaries.length === 0) {
+      throw new Error(
+        "SENDLENS_PROVIDER=all requires SENDLENS_INSTANTLY_API_KEY, SENDLENS_SMARTLEAD_API_KEY, or both.",
+      );
+    }
+    return summaries[summaries.length - 1];
+  }
+
+  return refreshInstantlyWorkspace(options);
+}
+
+async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
   const apiKey = process.env.SENDLENS_INSTANTLY_API_KEY?.trim();
   if (!apiKey) {
     throw new Error("Missing SENDLENS_INSTANTLY_API_KEY.");

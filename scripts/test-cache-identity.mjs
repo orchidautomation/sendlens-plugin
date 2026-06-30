@@ -6,6 +6,7 @@ import path from "node:path";
 
 const require = createRequire(import.meta.url);
 const instantly = require("../build/plugin/instantly-client.js");
+const { CURRENT_CACHE_SCHEMA_VERSION } = require("../build/plugin/constants.js");
 const {
   CacheReadinessError,
   assertCacheReadableForCurrentEnv,
@@ -296,7 +297,7 @@ try {
   try {
     const owner = await getCacheOwnerMetadata(db);
     assert.equal(owner.workspaceId, "ws_schema");
-    assert.equal(owner.schemaVersion, "sendlens.cache.v1");
+    assert.equal(owner.schemaVersion, CURRENT_CACHE_SCHEMA_VERSION);
     await assertCacheReadableForCurrentEnv(db);
   } finally {
     closeDb(db);

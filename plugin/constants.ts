@@ -1,7 +1,7 @@
 export const LOCAL_PLUGIN_NAME = "sendlens";
 export const DEFAULT_DB_DIRECTORY = ".sendlens";
 export const DEFAULT_DB_FILENAME = "workspace-cache.duckdb";
-export const CURRENT_CACHE_SCHEMA_VERSION = "sendlens.cache.v1";
+export const CURRENT_CACHE_SCHEMA_VERSION = "sendlens.cache.v2";
 
 export const FULL_LEADS_THRESHOLD = 500;
 export const FULL_EMAILS_THRESHOLD = 1000;
@@ -58,6 +58,7 @@ export const PUBLIC_TABLES = [
   "sampled_leads",
   "sampled_outbound_emails",
   "sampling_runs",
+  "provider_capabilities",
   "campaign_overview",
   "lead_evidence",
   "lead_payload_kv",
@@ -132,6 +133,8 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Locally reconstructed outbound copy built from campaign templates plus lead variables. Do not treat it as exact delivered email text.",
   sampling_runs:
     "Per-campaign ingest coverage metadata, including exact-vs-sampled mode and sample sizes.",
+  provider_capabilities:
+    "Provider capability status by local workspace, including unsupported or partial surfaces such as Smartlead inbox placement.",
   campaign_overview:
     "Semantic campaign health view: exact metrics, status, tracking and deliverability settings, sample coverage, and reply/bounce rates in one place.",
   lead_evidence:

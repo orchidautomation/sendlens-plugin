@@ -321,18 +321,22 @@ server.registerTool(
   {
     description:
       [
-        "Refresh the local SendLens cache from Instantly when the user explicitly asks for fresh data, changes client/workspace context, or refresh_status shows stale/failed data.",
+        "Refresh the local SendLens cache from the configured source provider when the user explicitly asks for fresh data, changes client/workspace context, or refresh_status shows stale/failed data.",
         "Do not use this as the default first read in a new session; session start already runs a lean background refresh and workspace_snapshot is usually the better first tool.",
-        "Returns refresh metadata, campaign coverage, and readiness information. Campaign/account/inbox-placement aggregates are exact from Instantly when available; lead and outbound evidence remains bounded or sampled where noted by the ingest coverage fields.",
+        "Returns refresh metadata, campaign coverage, and readiness information. Campaign/account aggregates are exact from provider counts where available; rates are recomputed in SendLens views, and lead/outbound evidence remains bounded or sampled where noted by the ingest coverage fields.",
       ].join(" "),
     inputSchema: {
       campaign_ids: z
         .array(z.string())
         .optional()
-        .describe("Optional list of campaign IDs to refresh instead of the full workspace."),
+        .describe("Optional list of provider-qualified or native campaign IDs to refresh instead of the full workspace."),
+      provider: z
+        .enum(["instantly", "smartlead", "all"])
+        .optional()
+        .describe("Optional source provider override. Defaults to SENDLENS_PROVIDER or instantly."),
     },
   },
-  async ({ campaign_ids }) => {
+  async ({ campaign_ids, provider }) => {
     const readiness = await waitForSessionSnapshot();
     if (readiness.timedOut) {
       return sessionRefreshBusyResponse(readiness);
@@ -344,6 +348,7 @@ server.registerTool(
         : await refreshWorkspaceAtomically({
           campaignIds: campaign_ids,
           source: "manual",
+          provider,
         });
       return jsonResponse({
         ...refreshed,
