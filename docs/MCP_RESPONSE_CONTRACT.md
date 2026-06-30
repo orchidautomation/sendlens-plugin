@@ -98,7 +98,7 @@ Where relevant, SendLens responses should include:
 Run `npm run test:mcp-response-contract` when changing MCP tools, response field names, warnings, caps, or this document. The test pins the response-contract terms that agents rely on for:
 
 - `workspace_snapshot` exact metrics, campaign rows, coverage, warnings, output limits, and readiness
-- `load_campaign_data` campaign overview, reply samples, rendered outbound reconstruction caveats, and output limits
+- `load_campaign_data` provider-qualified/native campaign handling, the `SENDLENS_PROVIDER=all` provider-qualified ID requirement, campaign overview, reply samples, rendered outbound reconstruction caveats, and output limits
 - `analysis_starters` recipe metadata, exactness labels, SQL, and notes
 - `analyze_data` rationale, row caps, truncation state, warnings, and rows
 - `fetch_reply_text` hydration result metadata, sample caps, and bounded reply samples

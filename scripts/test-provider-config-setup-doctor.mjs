@@ -230,10 +230,16 @@ try {
   process.env.SENDLENS_PROVIDER = "all";
   process.env.SENDLENS_INSTANTLY_API_KEY = "instantly-test-value";
   process.env.SENDLENS_SMARTLEAD_API_KEY = smartleadValue;
+  const allRefreshProviderFetches = [];
+  globalThis.fetch = async (url) => {
+    allRefreshProviderFetches.push(String(url));
+    return responseJson([]);
+  };
   await assert.rejects(
     refreshWorkspace({ provider: "all", source: "manual" }),
     /requires SENDLENS_CLIENT/,
   );
+  assert.deepEqual(allRefreshProviderFetches, []);
 
   tempDir = resetEnv("all-smartlead-valid-no-instantly-no-cache");
   await fs.mkdir(tempDir, { recursive: true });

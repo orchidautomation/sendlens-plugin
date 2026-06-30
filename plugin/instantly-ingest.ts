@@ -2929,6 +2929,11 @@ function refreshOptionsForProvider(
   return { ...options, campaignIds };
 }
 
+function isScopedCampaignMiss(error: unknown) {
+  return error instanceof Error &&
+    /No (Instantly |Smartlead )?campaigns matched the requested refresh scope\./.test(error.message);
+}
+
 async function refreshWorkspaceAtomicallyWithProviderMode(options: RefreshOptions = {}) {
   const liveDbPath = resolveDbPath();
   const shadowDbPath = path.join(
@@ -3004,15 +3009,33 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
       }
 
       const summaries = [];
+      const scopedMisses: string[] = [];
+      const configuredProviderCount = Number(instantlyConfigured) + Number(smartleadConfigured);
+      const allowScopedMiss = configuredProviderCount > 1 && Boolean(options.campaignIds?.length);
       const instantlyOptions = refreshOptionsForProvider(options, "instantly");
       if (instantlyConfigured && instantlyOptions) {
-        summaries.push(await refreshInstantlyWorkspace(instantlyOptions));
+        try {
+          summaries.push(await refreshInstantlyWorkspace(instantlyOptions));
+        } catch (error) {
+          if (!allowScopedMiss || !isScopedCampaignMiss(error)) throw error;
+          scopedMisses.push("instantly");
+        }
       }
       const smartleadOptions = refreshOptionsForProvider(options, "smartlead");
       if (smartleadConfigured && smartleadOptions) {
-        summaries.push(await refreshSmartleadWorkspace(smartleadOptions));
+        try {
+          summaries.push(await refreshSmartleadWorkspace(smartleadOptions));
+        } catch (error) {
+          if (!allowScopedMiss || !isScopedCampaignMiss(error)) throw error;
+          scopedMisses.push("smartlead");
+        }
       }
       if (summaries.length === 0) {
+        if (scopedMisses.length > 0) {
+          throw new Error(
+            `No campaigns matched the requested refresh scope across configured providers: ${scopedMisses.join(", ")}.`,
+          );
+        }
         throw new Error(
           "SENDLENS_PROVIDER=all requires SENDLENS_INSTANTLY_API_KEY, SENDLENS_SMARTLEAD_API_KEY, or both.",
         );

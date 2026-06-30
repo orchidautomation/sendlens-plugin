@@ -174,6 +174,11 @@ class CampaignIdScopeError extends Error {
 
 function loadCampaignScope(campaignId: string) {
   const requestedId = campaignId.trim();
+  if (!requestedId) {
+    throw new CampaignIdScopeError(
+      "load_campaign_data requires a non-empty campaign_id.",
+    );
+  }
   const parsed = parseProviderQualifiedCampaignId(requestedId);
   const providerMode = resolveSourceProviderMode();
   if (!parsed && providerMode.valid && providerMode.mode === "all") {

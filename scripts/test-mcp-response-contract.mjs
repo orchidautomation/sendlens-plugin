@@ -111,10 +111,17 @@ for (const term of [
   assertIncludes(source.docs, term, "load_campaign_data docs");
 }
 for (const term of [
+  "`load_campaign_data` provider-qualified/native campaign handling",
+  "the `SENDLENS_PROVIDER=all` provider-qualified ID requirement",
+]) {
+  assertIncludes(source.docs, term, "load_campaign_data runtime coverage docs");
+}
+for (const term of [
   "loadCampaignScope",
   "refreshProvider",
   "CampaignIdScopeError",
   "load_campaign_data requires a provider-qualified campaign_id when SENDLENS_PROVIDER=all",
+  "load_campaign_data requires a non-empty campaign_id",
   "campaignIdFilterSql",
   "Provider-qualified or native campaign ID to load.",
   "campaign_overview",

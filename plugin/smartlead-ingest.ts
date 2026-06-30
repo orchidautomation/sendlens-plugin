@@ -219,6 +219,10 @@ function normalizeEmail(value: unknown) {
   return email.includes("@") ? email : null;
 }
 
+function pickEmail(record: SmartleadRow, keys: string[]) {
+  return normalizeEmail(pickString(record, keys));
+}
+
 function domainFromEmail(email: string | null) {
   if (!email) return null;
   const at = email.lastIndexOf("@");
@@ -235,6 +239,14 @@ function campaignSourceId(providerId: string) {
 
 function accountSourceId(providerId: string) {
   return `${SOURCE_PROVIDER}:${providerId}`;
+}
+
+function providerAccountId(account: SmartleadRow) {
+  return pickString(account, ["id", "email_account_id", "account_id"]);
+}
+
+function accountEmail(account: SmartleadRow) {
+  return pickEmail(account, ["from_email", "email", "email_account", "email_account_email"]);
 }
 
 function tagSourceId(providerId: string) {
@@ -636,7 +648,7 @@ async function cleanupSmartleadTagMappings(
   const accountResourceIds = [
     ...new Set(
       accounts
-        .map((account) => normalizeEmail(account.from_email ?? account.email))
+        .map(accountEmail)
         .filter((email): email is string => Boolean(email)),
     ),
   ];
@@ -682,6 +694,7 @@ async function storeTags(
   workspaceId: string,
   campaigns: SmartleadRow[],
   accounts: SmartleadRow[],
+  cleanupAccounts = accounts,
 ) {
   const tagMap = new Map<string, SmartleadRow>();
   const mappings: Array<{ tagId: string; resourceType: "1" | "2"; resourceId: string; providerResourceId: string | null }> = [];
@@ -712,15 +725,15 @@ async function storeTags(
   }
 
   for (const account of accounts) {
-    const email = normalizeEmail(account.from_email ?? account.email);
-    const providerAccountId = pickString(account, ["id", "email_account_id", "account_id"]);
+    const email = accountEmail(account);
+    const nativeAccountId = providerAccountId(account);
     if (!email) continue;
     for (const tag of arrayFrom(account.tags)) {
-      collectTag(tag, "1", email, providerAccountId);
+      collectTag(tag, "1", email, nativeAccountId);
     }
   }
 
-  await cleanupSmartleadTagMappings(conn, workspaceId, campaigns, accounts);
+  await cleanupSmartleadTagMappings(conn, workspaceId, campaigns, cleanupAccounts);
 
   await insertRows(
     conn,
@@ -814,8 +827,8 @@ async function storeEmailAccounts(
     ],
     accounts
       .map((account) => {
-        const email = normalizeEmail(account.from_email ?? account.email);
-        const providerId = pickString(account, ["id", "email_account_id", "account_id"]);
+        const email = accountEmail(account);
+        const providerId = providerAccountId(account);
         if (!email || !providerId) return null;
         const warmup = warmupByAccountId.get(providerId) ?? {};
         const name = splitName(account.from_name ?? account.name);
@@ -1145,10 +1158,10 @@ async function storeCampaignFacts(
     ],
     bundle.campaignAccounts
       .map((account) => {
-        const email = normalizeEmail(account.from_email ?? account.email);
-        const providerAccountId = pickString(account, ["id", "email_account_id", "account_id"]);
-        if (!email && !providerAccountId) return null;
-        const key = providerAccountId ? accountSourceId(providerAccountId) : email ?? "";
+        const email = accountEmail(account);
+        const nativeAccountId = providerAccountId(account);
+        if (!email && !nativeAccountId) return null;
+        const key = nativeAccountId ? accountSourceId(nativeAccountId) : email ?? "";
         return `(
           '${esc(workspaceId)}',
           '${esc(id)}',
@@ -1158,7 +1171,7 @@ async function storeCampaignFacts(
           'email',
           '${esc(key)}',
           ${sqlString(email)},
-          ${sqlString(providerAccountId)},
+          ${sqlString(nativeAccountId)},
           NULL,
           CURRENT_TIMESTAMP
         )`;
@@ -1333,7 +1346,7 @@ function aggregateMailboxStats(stats: SmartleadRow[]) {
   }>();
 
   for (const row of stats) {
-    const email = normalizeEmail(row.email ?? row.from_email ?? row.email_account ?? row.email_account_email);
+    const email = pickEmail(row, ["email", "from_email", "email_account", "email_account_email"]);
     const date = pickString(row, ["date", "sent_date", "report_date", "day"]);
     if (!email || !date) continue;
     const providerAccountId = pickString(row, ["email_account_id", "account_id", "id"]);
@@ -1465,7 +1478,7 @@ async function fetchCampaignBundle(
 async function fetchWarmups(client: SmartleadIngestClient, accounts: SmartleadRow[]) {
   const warmups = new Map<string, SmartleadRow>();
   for (const account of accounts) {
-    const providerId = pickString(account, ["id", "email_account_id", "account_id"]);
+    const providerId = providerAccountId(account);
     if (!providerId) continue;
     try {
       warmups.set(providerId, asRecord(await client.getEmailAccountWarmupStats(providerId)));
@@ -1569,12 +1582,32 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
       ? bundles.map((bundle) => bundle.detail)
       : [...campaigns, ...bundles.map((bundle) => bundle.detail)];
     const tagAccounts = scopedRefresh
+      ? (() => {
+        const scopedAccountEmails = new Set<string>();
+        const scopedAccountIds = new Set<string>();
+        for (const account of bundles.flatMap((bundle) => bundle.campaignAccounts)) {
+          const email = accountEmail(account);
+          const nativeAccountId = providerAccountId(account);
+          if (email) scopedAccountEmails.add(email);
+          if (nativeAccountId) scopedAccountIds.add(nativeAccountId);
+        }
+        return accounts.filter((account) => {
+          const email = accountEmail(account);
+          const nativeAccountId = providerAccountId(account);
+          return Boolean(
+            (email && scopedAccountEmails.has(email)) ||
+            (nativeAccountId && scopedAccountIds.has(nativeAccountId)),
+          );
+        });
+      })()
+      : accounts;
+    const tagCleanupAccounts = scopedRefresh
       ? uniqueBy(
         bundles.flatMap((bundle) => bundle.campaignAccounts),
-        (account) => normalizeEmail(account.from_email ?? account.email),
+        (account) => accountEmail(account) ?? providerAccountId(account),
       )
-      : accounts;
-    await storeTags(db, workspaceId, tagCampaigns, tagAccounts);
+      : tagAccounts;
+    await storeTags(db, workspaceId, tagCampaigns, tagAccounts, tagCleanupAccounts);
     if (!scopedRefresh) {
       const warmups = await fetchWarmups(client, accounts);
       await storeEmailAccounts(db, workspaceId, accounts, warmups, rollupsFromMailboxStats(allMailboxStats));
