@@ -1,6 +1,6 @@
 # `sendlens-setup`
 
-Runs first-run setup and doctor checks for env, runtime dependencies, local state, host bundle context, and synthetic demo mode.
+Runs first-run setup and doctor checks for source provider mode, env, runtime dependencies, local state, host bundle context, and synthetic demo mode.
 
 Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md), [operator setup playbook](../operator-memory/PLAYBOOKS.md), and [synthetic examples](../examples/SYNTHETIC_OUTPUTS.md).
 
@@ -8,7 +8,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 - The user installed SendLens for the first time.
 - MCP tools are missing or a host bundle needs verification.
-- The API key, runtime dependencies, local cache path, refresh status, or session-start lock needs diagnosis.
+- The provider mode, API key, runtime dependencies, local cache path, refresh status, or session-start lock needs diagnosis.
 - The user wants a proof path with synthetic demo data instead of production Instantly credentials.
 
 ## Primary Surfaces
@@ -35,8 +35,9 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 - Next command to run.
 - Relevant docs links.
 - Whether demo mode is enabled.
+- Source provider mode: `instantly`, `smartlead`, or `all`.
 - Whether demo seeding is available because credentials are missing, rejected, unreachable, or `SENDLENS_DEMO_MODE=1` is enabled.
 
 ## Privacy Boundaries
 
-The doctor tool should never print secrets. Do not ask users to paste API keys into chat. When demo mode is enabled, keep every answer clearly labeled as synthetic demo evidence. If production credentials are already configured, keep the default path on real workspace analysis and mention demo only when explicitly requested.
+The doctor tool should never print secrets. Do not ask users to paste API keys into chat. Smartlead uses query-string API keys, so redact them from URLs, logs, traces, setup output, errors, and fixtures/tests. When demo mode is enabled, keep every answer clearly labeled as synthetic demo evidence. If production credentials are already configured, keep the default path on real workspace analysis and mention demo only when explicitly requested.

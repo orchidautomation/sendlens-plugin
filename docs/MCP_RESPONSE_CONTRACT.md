@@ -38,11 +38,12 @@ Where relevant, SendLens responses should include:
 
 - `schema_version: "sendlens_setup_doctor.v1"`
 - setup status, demo mode, and local-cache/live-refresh/demo-seed capabilities
+- provider setup metadata in `capabilities`: `source_provider_mode`, `source_providers`, `source_provider_config_valid`, provider key configured flags, and provider key validated flags
 - `cache_freshness` with the refresh timestamp, relative age in seconds, and display label
 - plugin root, DuckDB cache path, and state directory
 - setup checks with pass/warn/fail/info statuses
 - failures, warnings, docs, and next steps
-- never prints secret values and never refreshes or mutates campaign data
+- never prints secret values, redacts Smartlead query-string access values, and never refreshes or mutates campaign data
 
 `seed_demo_workspace`
 

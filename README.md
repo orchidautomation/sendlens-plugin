@@ -123,9 +123,11 @@ To force a fresh prompt and replace saved install config, set `PLUXX_RECONFIGURE
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | PLUXX_RECONFIGURE=1 bash
 ```
 
-## Connect Instantly
+## Connect A Provider
 
-SendLens needs a read-only Instantly API key for real workspace analysis. The release installer stores it for you; use `SENDLENS_INSTANTLY_API_KEY` directly only for local development, custom launch scripts, or one-off overrides.
+SendLens defaults to `SENDLENS_PROVIDER=instantly` and needs a read-only Instantly API key for real workspace analysis. The release installer stores it for you; use `SENDLENS_INSTANTLY_API_KEY` directly only for local development, custom launch scripts, or one-off overrides.
+
+Smartlead provider setup can be diagnosed with `SENDLENS_PROVIDER=smartlead` or `SENDLENS_PROVIDER=all` plus `SENDLENS_SMARTLEAD_API_KEY`. Smartlead uses query-string access, so SendLens suppresses that value in setup output, logs, and errors. Smartlead read-only ingest is provider-parity work in progress; Instantly remains the shipped refresh path in this release.
 
 For a one-session launch:
 
@@ -182,7 +184,7 @@ Full data-handling details: [Trust and privacy](./docs/TRUST_AND_PRIVACY.md).
 
 ## What it works with today
 
-This release works with **Instantly** — campaigns, daily metrics, senders, custom tags, deliverability tests, lead details, and reply text.
+This release works with **Instantly** — campaigns, daily metrics, senders, custom tags, deliverability tests, lead details, and reply text. Smartlead provider configuration and setup diagnosis are available for the provider-parity rollout, but Smartlead data ingest is not the shipped refresh path yet.
 
 ## Who builds SendLens
 
