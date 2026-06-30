@@ -2904,7 +2904,7 @@ function parseCampaignScopeId(campaignId: unknown): {
   }
 
   const prefix = id.slice(0, separatorIndex);
-  const nativeId = id.slice(separatorIndex + 1);
+  const nativeId = id.slice(separatorIndex + 1).trim();
   if (prefix === "instantly" || prefix === "smartlead") {
     return { provider: prefix, nativeId, isQualified: true };
   }

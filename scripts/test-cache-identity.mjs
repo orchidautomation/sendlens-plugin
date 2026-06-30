@@ -567,7 +567,7 @@ try {
   const allProviderScopedRefresh = await refreshWorkspaceAtomically({
     provider: "all",
     source: "manual",
-    campaignIds: ["smartlead:901"],
+    campaignIds: ["smartlead: 901"],
     client: smartleadProviderOverrideClient,
   });
   assert.equal(allProviderScopedRefresh.workspaceId, "all_scoped_ws");
@@ -592,7 +592,7 @@ try {
   const allProviderQualifiedInstantlyRefresh = await refreshWorkspaceAtomically({
     provider: "all",
     source: "manual",
-    campaignIds: ["instantly:instantly-only"],
+    campaignIds: ["instantly: instantly-only"],
     client: smartleadProviderOverrideClient,
   });
   assert.equal(allProviderQualifiedInstantlyRefresh.workspaceId, "all_scoped_ws");
