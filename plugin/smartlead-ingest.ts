@@ -605,6 +605,65 @@ async function storeProviderCapabilities(conn: DuckDBConnection, workspaceId: st
   );
 }
 
+async function cleanupSmartleadTagMappings(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  campaigns: SmartleadRow[],
+  accounts: SmartleadRow[],
+) {
+  const workspace = esc(workspaceId);
+  const campaignResourceIds = [
+    ...new Set(
+      campaigns
+        .map(providerCampaignId)
+        .filter((id): id is string => Boolean(id))
+        .map(campaignSourceId),
+    ),
+  ];
+  const accountResourceIds = [
+    ...new Set(
+      accounts
+        .map((account) => normalizeEmail(account.from_email ?? account.email))
+        .filter((email): email is string => Boolean(email)),
+    ),
+  ];
+
+  if (campaignResourceIds.length > 0) {
+    await run(
+      conn,
+      `DELETE FROM sendlens.custom_tag_mappings
+       WHERE workspace_id = '${workspace}'
+         AND COALESCE(source_provider, 'instantly') = '${SOURCE_PROVIDER}'
+         AND TRY_CAST(resource_type AS INTEGER) = 2
+         AND resource_id IN (${campaignResourceIds.map((id) => `'${esc(id)}'`).join(", ")})`,
+    );
+  }
+
+  if (accountResourceIds.length > 0) {
+    await run(
+      conn,
+      `DELETE FROM sendlens.custom_tag_mappings
+       WHERE workspace_id = '${workspace}'
+         AND COALESCE(source_provider, 'instantly') = '${SOURCE_PROVIDER}'
+         AND TRY_CAST(resource_type AS INTEGER) = 1
+         AND resource_id IN (${accountResourceIds.map((id) => `'${esc(id)}'`).join(", ")})`,
+    );
+  }
+
+  await run(
+    conn,
+    `DELETE FROM sendlens.custom_tags
+     WHERE workspace_id = '${workspace}'
+       AND COALESCE(source_provider, 'instantly') = '${SOURCE_PROVIDER}'
+       AND id NOT IN (
+         SELECT tag_id
+         FROM sendlens.custom_tag_mappings
+         WHERE workspace_id = '${workspace}'
+           AND COALESCE(source_provider, 'instantly') = '${SOURCE_PROVIDER}'
+       )`,
+  );
+}
+
 async function storeTags(
   conn: DuckDBConnection,
   workspaceId: string,
@@ -647,6 +706,8 @@ async function storeTags(
       collectTag(tag, "1", email, providerAccountId);
     }
   }
+
+  await cleanupSmartleadTagMappings(conn, workspaceId, campaigns, accounts);
 
   await insertRows(
     conn,
@@ -1444,8 +1505,9 @@ export async function refreshSmartleadWorkspace(options: SmartleadRefreshOptions
 
     const campaigns = await client.listCampaigns({ includeTags: true });
     const selectedIds = new Set(options.campaignIds ?? []);
+    const scopedRefresh = selectedIds.size > 0;
     const activeCampaigns = campaigns.filter(isCampaignActivelySending);
-    const selectedCampaigns = selectedIds.size > 0
+    const selectedCampaigns = scopedRefresh
       ? campaigns.filter((campaign) => {
         const nativeId = providerCampaignId(campaign);
         return nativeId ? selectedIds.has(nativeId) || selectedIds.has(campaignSourceId(nativeId)) : false;
@@ -1473,7 +1535,7 @@ export async function refreshSmartleadWorkspace(options: SmartleadRefreshOptions
       .map(providerCampaignId)
       .filter((id): id is string => Boolean(id))
       .map(campaignSourceId);
-    await clearSmartleadData(db, workspaceId, options.campaignIds?.length ? selectedCampaignSourceIds : undefined);
+    await clearSmartleadData(db, workspaceId, scopedRefresh ? selectedCampaignSourceIds : undefined);
 
     const bundles: CampaignBundle[] = [];
     for (const campaign of selectedCampaigns) {
@@ -1489,11 +1551,13 @@ export async function refreshSmartleadWorkspace(options: SmartleadRefreshOptions
     }
 
     const allMailboxStats = bundles.flatMap((bundle) => bundle.mailboxStats);
-    const warmups = await fetchWarmups(client, accounts);
     await storeProviderCapabilities(db, workspaceId);
     await storeTags(db, workspaceId, [...campaigns, ...bundles.map((bundle) => bundle.detail)], accounts);
-    await storeEmailAccounts(db, workspaceId, accounts, warmups, rollupsFromMailboxStats(allMailboxStats));
-    await storeAccountDailyMetrics(db, workspaceId, allMailboxStats);
+    if (!scopedRefresh) {
+      const warmups = await fetchWarmups(client, accounts);
+      await storeEmailAccounts(db, workspaceId, accounts, warmups, rollupsFromMailboxStats(allMailboxStats));
+      await storeAccountDailyMetrics(db, workspaceId, allMailboxStats);
+    }
     await storeCampaignDirectory(db, workspaceId, bundles);
     for (const bundle of bundles) {
       await storeCampaignFacts(db, workspaceId, bundle);

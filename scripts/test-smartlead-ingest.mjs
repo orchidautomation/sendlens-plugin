@@ -414,4 +414,273 @@ assert.equal(Number(coverage[0].reply_rows), 7);
 assert.equal(Number(coverage[0].reply_lead_rows), 2);
 assert.match(String(coverage[0].coverage_note), /Smartlead read-only ingest/);
 
+const regressionMailboxStats = {
+  101: [
+    {
+      email: "sender-301@example.com",
+      email_account_id: 301,
+      date: "2026-06-01",
+      sent: 30,
+      opened: 12,
+      replies: 3,
+      bounced: 1,
+      clicked: 2,
+    },
+    {
+      email: "sender-302@example.com",
+      email_account_id: 302,
+      date: "2026-06-01",
+      sent: 20,
+      opened: 8,
+      replies: 2,
+      bounced: 1,
+      clicked: 1,
+    },
+  ],
+  102: [
+    {
+      email: "sender-302@example.com",
+      email_account_id: 302,
+      date: "2026-06-01",
+      sent: 40,
+      opened: 16,
+      replies: 4,
+      bounced: 2,
+      clicked: 3,
+    },
+    {
+      email: "sender-303@example.com",
+      email_account_id: 303,
+      date: "2026-06-01",
+      sent: 25,
+      opened: 9,
+      replies: 1,
+      bounced: 0,
+      clicked: 1,
+    },
+  ],
+};
+
+function regressionClient({ includeTags }) {
+  const regressionCampaigns = campaigns.map((campaign) => ({
+    ...campaign,
+    status: "ACTIVE",
+    tags: includeTags && Number(campaign.id) === 101
+      ? [{ tag_id: 1, tag_name: "ICP A", tag_color: "#2563eb" }]
+      : [],
+  }));
+  const regressionAccounts = emailAccounts.map((account) => ({
+    ...account,
+    tags: includeTags && Number(account.id) === 301
+      ? [{ tag_id: 20, tag_name: "Primary Sender", tag_color: "#16a34a" }]
+      : [],
+  }));
+
+  return {
+    async listCampaigns() {
+      return regressionCampaigns;
+    },
+    async getCampaign(campaignId) {
+      const campaign = regressionCampaigns.find((row) => String(row.id) === String(campaignId));
+      assert.ok(campaign);
+      return {
+        ...campaign,
+        message_per_day: Number(campaignId) === 101 ? 40 : 35,
+        created_at: "2026-06-01T00:00:00.000Z",
+        updated_at: "2026-06-02T00:00:00.000Z",
+      };
+    },
+    async getCampaignSequences(campaignId) {
+      return [
+        {
+          seq_number: 1,
+          subject: `Regression ${campaignId}`,
+          email_body: "Regression body",
+          delay_days: 0,
+        },
+      ];
+    },
+    async getCampaignAnalytics(campaignId) {
+      const stats = regressionMailboxStats[campaignId];
+      return {
+        total_leads: stats.length,
+        sent_count: stats.reduce((sum, row) => sum + row.sent, 0),
+        open_count: stats.reduce((sum, row) => sum + row.opened, 0),
+        reply_count: stats.reduce((sum, row) => sum + row.replies, 0),
+        click_count: stats.reduce((sum, row) => sum + row.clicked, 0),
+        bounce_count: stats.reduce((sum, row) => sum + row.bounced, 0),
+      };
+    },
+    async getCampaignAnalyticsByDate(campaignId) {
+      const totals = regressionMailboxStats[campaignId].reduce(
+        (sum, row) => ({
+          sent: sum.sent + row.sent,
+          opened: sum.opened + row.opened,
+          replies: sum.replies + row.replies,
+          clicked: sum.clicked + row.clicked,
+          bounced: sum.bounced + row.bounced,
+        }),
+        { sent: 0, opened: 0, replies: 0, clicked: 0, bounced: 0 },
+      );
+      return {
+        daily: [
+          {
+            date: "2026-06-01",
+            ...totals,
+          },
+        ],
+      };
+    },
+    async listAllCampaignStatistics(campaignId) {
+      const totals = await this.getCampaignAnalytics(campaignId);
+      return [
+        {
+          seq_number: 1,
+          sent: totals.sent_count,
+          opens: totals.open_count,
+          replies: totals.reply_count,
+          clicks: totals.click_count,
+          bounces: totals.bounce_count,
+        },
+      ];
+    },
+    async listAllCampaignMailboxStatistics(campaignId) {
+      return regressionMailboxStats[campaignId];
+    },
+    async listCampaignEmailAccounts(campaignId) {
+      return regressionAccounts.filter((account) => account.campaign_ids?.includes(Number(campaignId)));
+    },
+    async listAllEmailAccounts() {
+      return regressionAccounts;
+    },
+    async getEmailAccountWarmupStats(emailAccountId) {
+      return {
+        score: Number(emailAccountId) === 301 ? 91 : 87,
+        status: "healthy",
+      };
+    },
+    async listAllCampaignLeads(campaignId) {
+      return [
+        {
+          id: `${campaignId}001`,
+          email: `regression-${campaignId}@example.com`,
+          first_name: "Regression",
+          last_name: String(campaignId),
+          email_stats: { is_replied: Number(campaignId) === 101 },
+        },
+      ];
+    },
+  };
+}
+
+closeDb(db);
+
+await refreshSmartleadWorkspace({
+  client: regressionClient({ includeTags: true }),
+  source: "manual",
+});
+
+const regressionDb = await getDb();
+const accountTotalsBeforeScoped = await query(
+  regressionDb,
+  `SELECT total_sent_30d, total_replies_30d, total_bounces_30d
+   FROM sendlens.accounts
+   WHERE workspace_id = '501'
+     AND source_provider = 'smartlead'
+     AND email = 'sender-302@example.com'`,
+);
+assert.equal(accountTotalsBeforeScoped.length, 1);
+assert.equal(Number(accountTotalsBeforeScoped[0].total_sent_30d), 60);
+assert.equal(Number(accountTotalsBeforeScoped[0].total_replies_30d), 6);
+assert.equal(Number(accountTotalsBeforeScoped[0].total_bounces_30d), 3);
+
+const accountDailyBeforeScoped = await query(
+  regressionDb,
+  `SELECT sent, unique_replies
+   FROM sendlens.account_daily_metrics
+   WHERE workspace_id = '501'
+     AND source_provider = 'smartlead'
+     AND email = 'sender-302@example.com'
+     AND date = DATE '2026-06-01'`,
+);
+assert.equal(accountDailyBeforeScoped.length, 1);
+assert.equal(Number(accountDailyBeforeScoped[0].sent), 60);
+assert.equal(Number(accountDailyBeforeScoped[0].unique_replies), 6);
+
+const tagsBeforeScoped = await query(
+  regressionDb,
+  `SELECT tag_id
+   FROM sendlens.campaign_tags
+   WHERE workspace_id = '501'
+     AND source_provider = 'smartlead'
+     AND campaign_id = 'smartlead:101'`,
+);
+assert.deepEqual(tagsBeforeScoped.map((row) => row.tag_id), ["smartlead:tag:1"]);
+
+const accountTagsBeforeScoped = await query(
+  regressionDb,
+  `SELECT tag_id
+   FROM sendlens.account_tags
+   WHERE workspace_id = '501'
+     AND source_provider = 'smartlead'
+     AND account_email = 'sender-301@example.com'`,
+);
+assert.deepEqual(accountTagsBeforeScoped.map((row) => row.tag_id), ["smartlead:tag:20"]);
+
+closeDb(regressionDb);
+
+await refreshSmartleadWorkspace({
+  client: regressionClient({ includeTags: false }),
+  source: "manual",
+  campaignIds: ["101"],
+});
+
+const scopedDb = await getDb();
+const accountTotalsAfterScoped = await query(
+  scopedDb,
+  `SELECT total_sent_30d, total_replies_30d, total_bounces_30d
+   FROM sendlens.accounts
+   WHERE workspace_id = '501'
+     AND source_provider = 'smartlead'
+     AND email = 'sender-302@example.com'`,
+);
+assert.equal(accountTotalsAfterScoped.length, 1);
+assert.equal(Number(accountTotalsAfterScoped[0].total_sent_30d), 60);
+assert.equal(Number(accountTotalsAfterScoped[0].total_replies_30d), 6);
+assert.equal(Number(accountTotalsAfterScoped[0].total_bounces_30d), 3);
+
+const accountDailyAfterScoped = await query(
+  scopedDb,
+  `SELECT sent, unique_replies
+   FROM sendlens.account_daily_metrics
+   WHERE workspace_id = '501'
+     AND source_provider = 'smartlead'
+     AND email = 'sender-302@example.com'
+     AND date = DATE '2026-06-01'`,
+);
+assert.equal(accountDailyAfterScoped.length, 1);
+assert.equal(Number(accountDailyAfterScoped[0].sent), 60);
+assert.equal(Number(accountDailyAfterScoped[0].unique_replies), 6);
+
+const campaignTagsAfterScoped = await query(
+  scopedDb,
+  `SELECT tag_id
+   FROM sendlens.campaign_tags
+   WHERE workspace_id = '501'
+     AND source_provider = 'smartlead'
+     AND campaign_id = 'smartlead:101'`,
+);
+assert.equal(campaignTagsAfterScoped.length, 0);
+
+const accountTagsAfterScoped = await query(
+  scopedDb,
+  `SELECT tag_id
+   FROM sendlens.account_tags
+   WHERE workspace_id = '501'
+     AND source_provider = 'smartlead'
+     AND account_email = 'sender-301@example.com'`,
+);
+assert.equal(accountTagsAfterScoped.length, 0);
+
+closeDb(scopedDb);
 await resetDbConnectionForTests();
