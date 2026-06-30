@@ -36,6 +36,18 @@ function responseText(text, status = 200, headers = {}) {
   return new Response(text, { status, headers });
 }
 
+function nextImmediate() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+async function waitForFixtureSignal(label, predicate, maxTicks = 100) {
+  for (let tick = 0; tick < maxTicks; tick++) {
+    if (predicate()) return;
+    await nextImmediate();
+  }
+  throw new Error(`Timed out waiting for fixture signal: ${label}`);
+}
+
 function makeClient(fetchImpl, options = {}) {
   return new SmartleadClient({
     accessValue,
@@ -245,9 +257,7 @@ function assertAccessQuery(url) {
   );
 
   const retrying = client.requestJson("/campaigns/", { signal: controller.signal });
-  while (sleeps.length === 0) {
-    await new Promise((resolve) => setImmediate(resolve));
-  }
+  await waitForFixtureSignal("429 retry sleep", () => sleeps.length > 0);
   controller.abort();
 
   await assert.rejects(retrying, { name: "AbortError" });
@@ -274,9 +284,7 @@ function assertAccessQuery(url) {
   );
 
   const retrying = client.requestJson("/campaigns/", { signal: controller.signal });
-  while (sleeps.length === 0) {
-    await new Promise((resolve) => setImmediate(resolve));
-  }
+  await waitForFixtureSignal("network retry sleep", () => sleeps.length > 0);
   controller.abort();
 
   await assert.rejects(retrying, { name: "AbortError" });
@@ -430,9 +438,7 @@ function assertAccessQuery(url) {
 
   await client.requestJson("/campaigns/");
   const blocked = client.requestJson("/campaigns/", { signal: controller.signal });
-  while (sleeps.length === 0) {
-    await new Promise((resolve) => setImmediate(resolve));
-  }
+  await waitForFixtureSignal("throttled prefetch sleep", () => sleeps.length > 0);
   controller.abort();
 
   await assert.rejects(blocked, { name: "AbortError" });
@@ -455,13 +461,9 @@ function assertAccessQuery(url) {
   );
 
   void client.requestJson("/campaigns/");
-  while (calls === 0) {
-    await new Promise((resolve) => setImmediate(resolve));
-  }
+  await waitForFixtureSignal("active semaphore request", () => calls > 0);
   const queued = client.requestJson("/campaigns/", { signal: controller.signal });
-  while (client.getRateLimitStats().queued_requests === 0) {
-    await new Promise((resolve) => setImmediate(resolve));
-  }
+  await waitForFixtureSignal("queued semaphore request", () => client.getRateLimitStats().queued_requests > 0);
   assert.equal(client.getRateLimitStats().queued_requests, 1);
   controller.abort();
 
