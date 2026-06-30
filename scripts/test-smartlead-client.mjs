@@ -45,6 +45,7 @@ async function waitForFixtureSignal(label, predicate, maxTicks = 100) {
     if (predicate()) return;
     await nextImmediate();
   }
+  if (predicate()) return;
   throw new Error(`Timed out waiting for fixture signal: ${label}`);
 }
 
