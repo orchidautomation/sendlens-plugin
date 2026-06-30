@@ -129,6 +129,20 @@ function assertAccessQuery(url) {
   assert.equal(parsedPage.hasMore, true);
   assert.equal(parsedPage.nextOffset, 2);
   assert.equal(parsedPage.total, 5);
+
+  const shortNonTerminalPage = parseSmartleadOffsetPage({
+    total: 20,
+    offset: 0,
+    limit: 10,
+    has_more: true,
+    leads: [{ id: 1001 }, { id: 1002 }],
+  }, {
+    offset: 0,
+    limit: 10,
+    itemKeys: ["leads"],
+  });
+  assert.equal(shortNonTerminalPage.hasMore, true);
+  assert.equal(shortNonTerminalPage.nextOffset, 10);
 }
 
 {

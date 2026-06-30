@@ -316,7 +316,7 @@ export function parseSmartleadOffsetPage<T extends Record<string, unknown> = Rec
     ?? readNumber(dataRecord, ["limit"])
     ?? opts.limit;
   const explicitHasMore = root?.has_more ?? root?.hasMore ?? dataRecord?.has_more ?? dataRecord?.hasMore;
-  const nextOffset = offset + items.length;
+  const nextOffset = offset + limit;
   const hasMore = typeof explicitHasMore === "boolean"
     ? explicitHasMore && items.length > 0
     : total != null
