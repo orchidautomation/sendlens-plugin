@@ -372,6 +372,9 @@ function normalizeSubject(subject: string) {
 }
 
 function deriveWorkspaceId(sources: Array<Record<string, unknown> | undefined>) {
+  const configuredClient = process.env.SENDLENS_CLIENT?.trim();
+  if (configuredClient) return configuredClient;
+
   for (const source of sources) {
     if (!source) continue;
     const value =
@@ -2943,11 +2946,19 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
   }
 
   if (providerMode.mode === "all") {
+    const instantlyConfigured = Boolean(process.env.SENDLENS_INSTANTLY_API_KEY?.trim());
+    const smartleadConfigured = Boolean(process.env.SENDLENS_SMARTLEAD_API_KEY?.trim());
+    if (instantlyConfigured && smartleadConfigured && !process.env.SENDLENS_CLIENT?.trim()) {
+      throw new Error(
+        "SENDLENS_PROVIDER=all with both Instantly and Smartlead requires SENDLENS_CLIENT so both provider refreshes write the same local workspace.",
+      );
+    }
+
     const summaries = [];
-    if (process.env.SENDLENS_INSTANTLY_API_KEY?.trim()) {
+    if (instantlyConfigured) {
       summaries.push(await refreshInstantlyWorkspace(options));
     }
-    if (process.env.SENDLENS_SMARTLEAD_API_KEY?.trim()) {
+    if (smartleadConfigured) {
       summaries.push(await refreshSmartleadWorkspace(options));
     }
     if (summaries.length === 0) {
