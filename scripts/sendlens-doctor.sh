@@ -28,16 +28,6 @@ is_demo_mode() {
   [[ "${raw}" == "1" || "${raw}" == "true" || "${raw}" == "yes" ]]
 }
 
-source_provider_mode() {
-  printf '%s' "${SENDLENS_PROVIDER:-instantly}" | tr '[:upper:]' '[:lower:]'
-}
-
-source_provider_includes() {
-  local mode="$1"
-  local provider="$2"
-  [[ "${mode}" == "all" || "${mode}" == "${provider}" ]]
-}
-
 check_writable_dir() {
   local dir="$1"
   local label="$2"
@@ -62,7 +52,7 @@ echo "Plugin root:  ${PLUGIN_ROOT}"
 
 section "Environment"
 SOURCE_PROVIDER_MODE="$(source_provider_mode)"
-if [[ "${SOURCE_PROVIDER_MODE}" == "instantly" || "${SOURCE_PROVIDER_MODE}" == "smartlead" || "${SOURCE_PROVIDER_MODE}" == "all" ]]; then
+if source_provider_is_valid "${SOURCE_PROVIDER_MODE}"; then
   ok "Source provider mode: ${SOURCE_PROVIDER_MODE}"
   detail "Use source_provider for data-source identity; sendlens.accounts.provider remains mailbox/email-service provider."
 else

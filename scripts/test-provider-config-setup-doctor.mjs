@@ -106,6 +106,7 @@ try {
     defaulted: true,
   });
   assert.equal(resolveSourceProviderMode("SMARTLEAD").mode, "smartlead");
+  assert.equal(resolveSourceProviderMode(" smartlead ").mode, "smartlead");
   assert.equal(resolveSourceProviderMode("all").mode, "all");
   assert.equal(resolveSourceProviderMode("mailgun").valid, false);
 
@@ -277,6 +278,57 @@ try {
     "session-start.sh",
   );
 
+  tempDir = resetEnv("trimmed-provider-check");
+  await fs.mkdir(tempDir, { recursive: true });
+  const trimmedCheckResult = await runScript(path.join(root, "scripts/check-env.sh"), {
+    PLUGIN_ROOT: root,
+    SENDLENS_CONTEXT_ROOT: tempDir,
+    SENDLENS_DB_PATH: path.join(tempDir, "workspace-cache.duckdb"),
+    SENDLENS_STATE_DIR: tempDir,
+    SENDLENS_PROVIDER: " smartlead ",
+  });
+  assert.equal(trimmedCheckResult.code, 0);
+  assert.match(
+    trimmedCheckResult.stderr,
+    /SENDLENS_SMARTLEAD_API_KEY is not set for SENDLENS_PROVIDER=smartlead/,
+  );
+  assert.doesNotMatch(trimmedCheckResult.stderr, /Invalid SENDLENS_PROVIDER/);
+
+  tempDir = resetEnv("trimmed-provider-start");
+  await fs.mkdir(tempDir, { recursive: true });
+  const trimmedStartResult = await runScript(path.join(root, "scripts/start-mcp.sh"), {
+    PLUGIN_ROOT: root,
+    PATH: "/usr/bin:/bin",
+    SENDLENS_CONTEXT_ROOT: tempDir,
+    SENDLENS_DB_PATH: path.join(tempDir, "workspace-cache.duckdb"),
+    SENDLENS_STATE_DIR: tempDir,
+    SENDLENS_PROVIDER: " smartlead ",
+  });
+  assert.equal(trimmedStartResult.code, 1);
+  assert.match(
+    trimmedStartResult.stderr,
+    /SENDLENS_SMARTLEAD_API_KEY is not set for SENDLENS_PROVIDER=smartlead/,
+  );
+  assert.match(trimmedStartResult.stderr, /Node\.js is required/);
+  assert.doesNotMatch(trimmedStartResult.stderr, /Invalid SENDLENS_PROVIDER/);
+
+  tempDir = resetEnv("trimmed-provider-doctor");
+  await fs.mkdir(tempDir, { recursive: true });
+  const trimmedDoctorResult = await runScript(path.join(root, "scripts/sendlens-doctor.sh"), {
+    PLUGIN_ROOT: root,
+    SENDLENS_CONTEXT_ROOT: tempDir,
+    SENDLENS_DB_PATH: path.join(tempDir, "workspace-cache.duckdb"),
+    SENDLENS_STATE_DIR: tempDir,
+    SENDLENS_PROVIDER: " smartlead ",
+    SENDLENS_SMARTLEAD_API_KEY: smartleadValue,
+  });
+  assert.equal(trimmedDoctorResult.code, 0);
+  assert.match(trimmedDoctorResult.stdout, /PASS  Source provider mode: smartlead/);
+  assert.doesNotMatch(
+    `${trimmedDoctorResult.stdout}\n${trimmedDoctorResult.stderr}`,
+    /Invalid SENDLENS_PROVIDER/,
+  );
+
   tempDir = resetEnv("stale-instantly-status-smartlead");
   await fs.mkdir(tempDir, { recursive: true });
   process.env.SENDLENS_PROVIDER = "smartlead";
@@ -302,7 +354,7 @@ try {
     SENDLENS_CONTEXT_ROOT: tempDir,
     SENDLENS_DB_PATH: path.join(tempDir, "workspace-cache.duckdb"),
     SENDLENS_STATE_DIR: tempDir,
-    SENDLENS_PROVIDER: "smartlead",
+    SENDLENS_PROVIDER: " smartlead ",
     SENDLENS_SMARTLEAD_API_KEY: smartleadValue,
   });
   assert.equal(sessionStartResult.code, 0);

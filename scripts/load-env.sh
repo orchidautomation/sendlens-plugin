@@ -10,6 +10,13 @@ load_env_file() {
   fi
 }
 
+trim_sendlens_value() {
+  local value="${1:-}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "${value}"
+}
+
 is_unresolved_sendlens_path() {
   local value="${1:-}"
   [[ "${value}" == *"+ name +"* || "${value}" == *'${'* || "${value}" == *"{{"* || "${value}" == *"}}"* ]]
@@ -38,7 +45,7 @@ is_unresolved_sendlens_value() {
 is_unresolved_provider_value() {
   local value="${1:-}"
   local normalized
-  normalized="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')"
+  normalized="$(trim_sendlens_value "${value}" | tr '[:upper:]' '[:lower:]')"
   [[
     "${normalized}" == *"+ name +"* ||
     "${normalized}" == *'${'* ||
@@ -51,7 +58,12 @@ is_unresolved_provider_value() {
 }
 
 source_provider_mode() {
-  printf '%s' "${SENDLENS_PROVIDER:-instantly}" | tr '[:upper:]' '[:lower:]'
+  local mode
+  mode="$(trim_sendlens_value "${SENDLENS_PROVIDER:-}")"
+  if [[ -z "${mode}" ]]; then
+    mode="instantly"
+  fi
+  printf '%s' "${mode}" | tr '[:upper:]' '[:lower:]'
 }
 
 source_provider_includes() {
@@ -60,9 +72,14 @@ source_provider_includes() {
   [[ "${mode}" == "all" || "${mode}" == "${provider}" ]]
 }
 
+source_provider_is_valid() {
+  local mode="$1"
+  [[ "${mode}" == "instantly" || "${mode}" == "smartlead" || "${mode}" == "all" ]]
+}
+
 validate_source_provider() {
   local mode="${1:-$(source_provider_mode)}"
-  if [[ "${mode}" == "instantly" || "${mode}" == "smartlead" || "${mode}" == "all" ]]; then
+  if source_provider_is_valid "${mode}"; then
     return 0
   fi
   echo "[sendlens] Invalid SENDLENS_PROVIDER value '${SENDLENS_PROVIDER:-${mode}}'. Set SENDLENS_PROVIDER to instantly, smartlead, or all." >&2
