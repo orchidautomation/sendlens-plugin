@@ -825,10 +825,10 @@ async function fetchSmartleadMessageHistory(
   campaignId: string,
   leads: SmartleadRow[],
 ): Promise<SmartleadMessageHistoryHydration> {
-  const eligibleLeads = leads
-    .filter(smartleadLeadHasReplySignal)
-    .slice(0, MESSAGE_HISTORY_LEAD_LIMIT);
-  const coverage = emptyMessageHistoryHydration(eligibleLeads.length).coverage;
+  const allEligibleLeads = leads.filter(smartleadLeadHasReplySignal);
+  const eligibleLeads = allEligibleLeads.slice(0, MESSAGE_HISTORY_LEAD_LIMIT);
+  const coverage = emptyMessageHistoryHydration(allEligibleLeads.length).coverage;
+  coverage.skippedLeads = Math.max(0, allEligibleLeads.length - eligibleLeads.length);
   coverage.unsupportedLeads = 0;
 
   if (eligibleLeads.length === 0) {

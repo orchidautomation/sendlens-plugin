@@ -864,4 +864,132 @@ try {
 } finally {
   closeDb(scopedDb);
 }
+
+const overLimitLeads = Array.from({ length: 51 }, (_, index) => {
+  const leadNumber = index + 1;
+  return {
+    id: String(9000 + leadNumber),
+    email: `over-limit-${leadNumber}@example.com`,
+    first_name: `Lead ${leadNumber}`,
+    email_stats: { is_replied: true },
+  };
+});
+const overLimitHydratedIds = overLimitLeads.slice(0, 50).map((lead) => String(lead.id));
+
+await refreshSmartleadWorkspace({
+  client: {
+    async listCampaigns() {
+      return [
+        {
+          id: 201,
+          name: "Over Limit Coverage",
+          status: "ACTIVE",
+          user_id: "501",
+        },
+      ];
+    },
+    async getCampaign(campaignId) {
+      assert.equal(String(campaignId), "201");
+      return {
+        id: 201,
+        name: "Over Limit Coverage",
+        status: "ACTIVE",
+        user_id: "501",
+      };
+    },
+    async getCampaignSequences(campaignId) {
+      assert.equal(String(campaignId), "201");
+      return [
+        {
+          seq_number: 1,
+          subject: "Over limit",
+          email_body: "Over limit body",
+          delay_days: 0,
+        },
+      ];
+    },
+    async getCampaignAnalytics(campaignId) {
+      assert.equal(String(campaignId), "201");
+      return {
+        total_leads: overLimitLeads.length,
+        sent_count: overLimitLeads.length,
+        reply_count: overLimitLeads.length,
+      };
+    },
+    async getCampaignAnalyticsByDate(campaignId) {
+      assert.equal(String(campaignId), "201");
+      return {
+        daily: [
+          {
+            date: "2026-06-01",
+            sent: overLimitLeads.length,
+            replies: overLimitLeads.length,
+          },
+        ],
+      };
+    },
+    async listAllCampaignStatistics(campaignId) {
+      assert.equal(String(campaignId), "201");
+      return [];
+    },
+    async listAllCampaignMailboxStatistics(campaignId) {
+      assert.equal(String(campaignId), "201");
+      return [];
+    },
+    async listCampaignEmailAccounts(campaignId) {
+      assert.equal(String(campaignId), "201");
+      return [];
+    },
+    async listAllEmailAccounts() {
+      return [];
+    },
+    async getEmailAccountWarmupStats() {
+      return {};
+    },
+    async listAllCampaignLeads(campaignId) {
+      assert.equal(String(campaignId), "201");
+      return overLimitLeads;
+    },
+    async getBulkMessageHistory(campaignId, leadIds) {
+      assert.equal(String(campaignId), "201");
+      assert.deepEqual(leadIds.map(String), overLimitHydratedIds);
+      return {
+        data: Object.fromEntries(
+          overLimitHydratedIds.map((leadId, index) => [
+            leadId,
+            [
+              {
+                id: `in-${leadId}`,
+                direction: "inbound",
+                subject: "Re: Over limit",
+                body_text: `Reply ${index + 1}`,
+                received_at: "2026-06-01T12:00:00.000Z",
+                from_email: `over-limit-${index + 1}@example.com`,
+              },
+            ],
+          ]),
+        ),
+      };
+    },
+  },
+  source: "manual",
+  campaignIds: ["201"],
+});
+
+const overLimitDb = await getDb();
+try {
+  const overLimitCoverage = await query(
+    overLimitDb,
+    `SELECT coverage_note
+     FROM sendlens.sampling_runs
+     WHERE workspace_id = '501' AND campaign_id = 'smartlead:201'`,
+  );
+  assert.equal(overLimitCoverage.length, 1);
+  assert.match(String(overLimitCoverage[0].coverage_note), /message_history eligible_leads=51/);
+  assert.match(String(overLimitCoverage[0].coverage_note), /lead_limit=50/);
+  assert.match(String(overLimitCoverage[0].coverage_note), /fetched_leads=50/);
+  assert.match(String(overLimitCoverage[0].coverage_note), /skipped_leads=1/);
+} finally {
+  closeDb(overLimitDb);
+}
 await resetDbConnectionForTests();
