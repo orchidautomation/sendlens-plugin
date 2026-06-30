@@ -588,14 +588,26 @@ try {
   assert(smartleadProviderCalls.some((call) => call.method === "listCampaigns"));
   resetSmartleadProviderTracking();
 
-  process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-qualified-instantly-scope.duckdb");
-  const allProviderQualifiedInstantlyRefresh = await refreshWorkspaceAtomically({
+  process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-qualified-instantly-compact-scope.duckdb");
+  const allProviderQualifiedInstantlyCompactRefresh = await refreshWorkspaceAtomically({
+    provider: "all",
+    source: "manual",
+    campaignIds: ["instantly:instantly-only"],
+    client: smartleadProviderOverrideClient,
+  });
+  assert.equal(allProviderQualifiedInstantlyCompactRefresh.workspaceId, "all_scoped_ws");
+  assert.deepEqual(smartleadProviderCalls, []);
+  assert.deepEqual(smartleadRequestedCampaignIds, []);
+  resetSmartleadProviderTracking();
+
+  process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-qualified-instantly-whitespace-scope.duckdb");
+  const allProviderQualifiedInstantlyWhitespaceRefresh = await refreshWorkspaceAtomically({
     provider: "all",
     source: "manual",
     campaignIds: ["instantly: instantly-only"],
     client: smartleadProviderOverrideClient,
   });
-  assert.equal(allProviderQualifiedInstantlyRefresh.workspaceId, "all_scoped_ws");
+  assert.equal(allProviderQualifiedInstantlyWhitespaceRefresh.workspaceId, "all_scoped_ws");
   assert.deepEqual(smartleadProviderCalls, []);
   assert.deepEqual(smartleadRequestedCampaignIds, []);
 
