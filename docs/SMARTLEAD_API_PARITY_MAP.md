@@ -130,7 +130,7 @@ needed for current SendLens and would change the product safety boundary.
 | Lead lookup/backfill | `POST /leads/list` with `ids` or `contacts` | `GET /leads/{lead_id}` and `GET /leads/?email=...` | Strong | Smartlead has both ID and email-based lead lookups in docs. |
 | Reply bodies | `GET /emails?email_type=received&i_status=...` | `GET /campaigns/{campaign_id}/leads/{lead_id}/message-history` or bulk `POST /campaigns/{campaign_id}/message-history-for-leads/...` | Medium | Smartlead message history can return full thread context. Bulk endpoint can reduce per-lead API cost, but its path includes a documented static segment that must be verified live. |
 | Reply categories/outcomes | Instantly `i_status` and lead state | Lead `category_id/category_name`, email stats, global analytics positive replies | Medium | Need mapping from Smartlead categories to SendLens `positive`, `negative`, `neutral`, `wrong_person`, `ooo`. Do not infer sentiment from text in V1. |
-| Outbound delivered/reconstructed copy | `GET /emails` outbound sample plus templates | Message history plus sequences/templates | Medium | If message history includes sent body text, it can improve over local reconstruction. If not, reconstruct from sequence templates plus lead custom fields. |
+| Outbound delivered/reconstructed copy | `GET /emails` outbound sample plus templates | Message history plus sequences/templates | Medium | If message history includes sent body text, expose it only through a new exact outbound surface or schema/MCP migration. If not, reconstruct from sequence templates plus lead custom fields. |
 | Custom tags | `GET /custom-tags`, `GET /custom-tag-mappings` | Campaign list with `include_tags=true` | Partial | Campaign tags are available inline. Need separate evidence for account tags, lead tags, or tag definitions/mappings outside campaigns. |
 | Lead lists | `GET /lead-lists` | No direct equivalent in checked docs | Gap | Smartlead campaign leads may be enough for current analysis; lead-list inventory is not core today. |
 | Inbox placement tests | `GET /inbox-placement-tests`, `GET /inbox-placement-analytics` | No documented equivalent found in checked docs | Gap | Smartlead has warmup stats, email health, and send-test-email, but not an equivalent per-test seed placement analytics API in the checked docs. |
@@ -213,12 +213,13 @@ workspaces.
 
 Recommended model:
 
-- Add a provider dimension to ingested rows: `provider` values such as
-  `instantly` and `smartlead`.
+- Add a source-provider dimension to ingested rows: use a new field such as
+  `source_provider` with values like `instantly` and `smartlead`. Do not reuse
+  existing mailbox-provider fields such as `sendlens.accounts.provider`.
 - Preserve raw source IDs in provider-specific columns or composite IDs:
   `provider_campaign_id`, `provider_account_id`, `provider_lead_id`.
 - Use a stable composite campaign key for cross-provider tables:
-  `campaign_source_id = provider || ':' || provider_campaign_id`.
+  `campaign_source_id = source_provider || ':' || provider_campaign_id`.
 - Keep source-native raw JSON for provider-specific fields that do not normalize
   cleanly.
 - Keep one client/workspace cache that can contain both providers, with refresh
@@ -232,9 +233,9 @@ Cross-provider analysis rules:
 - Recompute rates from normalized counts where possible. Do not blindly compare
   provider-native rates because Smartlead and Instantly may use different
   denominators or unique/raw definitions.
-- Keep provider-specific evidence labels. Example: `inbox_placement` can be
-  exact for Instantly and unavailable for Smartlead; `message_history` can be
-  exact for Smartlead where fetched.
+- Keep provider-specific evidence surfaces. Example: `inbox_placement` can be
+  exact for Instantly and unavailable for Smartlead; Smartlead exact outbound
+  `message_history` requires a new explicit surface before MCP exposure.
 - Deduplicate lead/person analysis by normalized email and domain across
   providers, but keep campaign membership and reply events source-specific.
 - Detect overlap risks: same lead, same domain, or same company being contacted
@@ -246,10 +247,11 @@ Cross-provider analysis rules:
 Tables/views should eventually expose both provider-scoped and client-wide
 answers:
 
-- `campaign_overview`: add `provider`, `provider_campaign_id`, and
+- `campaign_overview`: add `source_provider`, `provider_campaign_id`, and
   `campaign_source_id`.
-- `accounts` and `campaign_accounts`: add provider fields so sender utilization
-  can be compared without ID collisions.
+- `accounts` and `campaign_accounts`: add source-provider/native-id fields so
+  sender utilization can be compared without ID collisions while preserving
+  `accounts.provider` as the mailbox/email-service provider field.
 - `lead_evidence` and `reply_context`: add provider fields and normalized lead
   identity fields such as `normalized_email`, `normalized_domain`, and
   `company_domain` where available.

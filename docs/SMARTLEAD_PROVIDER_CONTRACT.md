@@ -85,9 +85,9 @@ Required identity fields:
 
 | Field | Rule |
 | --- | --- |
-| `provider` | Literal source provider id: `instantly` or `smartlead`. |
+| `source_provider` | Literal source provider id: `instantly` or `smartlead`. This must be a new provider/source column or provider-aware view field. Do not reuse `sendlens.accounts.provider`, which currently means mailbox/email-service provider. |
 | `provider_campaign_id` | Native campaign id as a string. For Smartlead this is the numeric `id` serialized as text. |
-| `campaign_source_id` | Stable composite key: `provider || ':' || provider_campaign_id`, for example `smartlead:12345`. |
+| `campaign_source_id` | Stable composite key: `source_provider || ':' || provider_campaign_id`, for example `smartlead:12345`. |
 | `provider_account_id` | Native sender account id as a string. Smartlead uses numeric account ids. |
 | `provider_lead_id` | Native lead id as a string. |
 | `normalized_email` | Lowercased email for cross-provider lead and sender dedupe. |
@@ -132,7 +132,7 @@ selects Smartlead through config or a provider parameter.
 | Sequences/templates | `GET /campaigns/{campaign_id}/sequences` | access value only | Wrapped data array with `seq_number`, `subject`, `email_body`, and `sequence_variants[]`. | `campaign_variants` | Strong |
 | Campaign aggregate analytics | `GET /campaigns/{campaign_id}/analytics` | campaign id | Object with `campaign_id`, `campaign_name`, `total_sent`, `total_opened`, `total_clicked`, `total_replied`, rates, bounce/unsubscribe rates. | `campaign_analytics` | Medium |
 | Campaign daily/range metrics | `GET /campaigns/{campaign_id}/analytics-by-date` | `start_date`, `end_date` ISO timestamps | Object for the requested range, not a documented per-day row array. Use as range metrics unless live fixture proves per-day rows. | `campaign_daily_metrics` only after shape validation; otherwise coverage note | Medium |
-| Step/sequence statistics | `GET /campaigns/{campaign_id}/statistics` | `offset`, `limit`, optional `email_sequence_number`, `email_status`, sent-time filters | Docs conflict: one section shows sequence aggregate rows; another shows overall object plus detailed email statistics fields. Client must fixture both. | `step_analytics`, `sampled_outbound_emails` where detailed rows exist | Partial |
+| Step/sequence statistics | `GET /campaigns/{campaign_id}/statistics` | `offset`, `limit`, optional `email_sequence_number`, `email_status`, sent-time filters | Docs conflict: one section shows sequence aggregate rows; another shows overall object plus detailed email statistics fields. Client must fixture both. | `step_analytics`; detailed email event rows need a separate diagnostic surface if exposed | Partial |
 | Campaign mailbox statistics | `GET /campaigns/{campaign_id}/mailbox-statistics` | `offset`, `limit` max 20, optional date range/timezone/client id | Mailbox-scoped campaign stats. | `campaign_accounts`, account rollups if row shape supports it | Medium |
 | Campaign sending accounts | `GET /campaigns/{campaign_id}/email-accounts` | campaign id | Email account rows associated with one campaign. | `campaign_account_assignments`, `campaign_accounts` view | Strong |
 | Workspace email accounts | `GET /email-accounts/` | `offset`, `limit`, optional filters, `fetch_campaigns=true` | Direct array with `id`, `from_email`, `from_name`, `type`, `client_id`, `campaign_count`, `message_per_day`, `daily_sent_count`, `warmup_details`, `tags`, optional `campaign_ids`, plus connection fields that must be dropped. | `accounts`, `custom_tags`, `custom_tag_mappings`, optional `campaign_account_assignments` | Strong |
@@ -140,8 +140,8 @@ selects Smartlead through config or a provider parameter.
 | Campaign leads | `GET /campaigns/{campaign_id}/leads` | `offset`, `limit` max 100, optional `status`, `emailStatus`, `lead_category_id`, date filters | `{total,leads,offset,limit}` with lead contact fields, `status`, `category_id`, `category_name`, `email_stats`, `custom_fields`. | `sampled_leads`, `lead_payload_kv` | Strong |
 | Lead lookup by id | `GET /leads/{lead_id}` | lead id | Single lead row. | backfill into `sampled_leads` | Medium |
 | Lead lookup by email | `GET /leads/` | email query | Search result by email with associated campaign data. | backfill into `sampled_leads` | Medium |
-| Message history | `GET /campaigns/{campaign_id}/leads/{lead_id}/message-history` | optional `event_time_gt`, plain-text response flag | `{messages:[...]}` with `id`, `subject`, `direction`, `sent_at` or `received_at`, and optional body fields when plain-text output works. | `reply_emails`, `sampled_outbound_emails` | Medium |
-| Bulk message history | `POST /campaigns/{campaign_id}/message-history-for-leads/bbfbdsFGHlBr76ruhjvh6fhHL` | `lead_ids` body, optional event time | `{data:{lead_id:[messages]}}`. Static path segment is docs-confirmed but live-untested. | `reply_emails`, `sampled_outbound_emails` | Medium |
+| Message history | `GET /campaigns/{campaign_id}/leads/{lead_id}/message-history` | optional `event_time_gt`, plain-text response flag | `{messages:[...]}` with `id`, `subject`, `direction`, `sent_at` or `received_at`, and optional body fields when plain-text output works. | `reply_emails`; exact outbound history requires a new surface or schema/MCP migration | Medium |
+| Bulk message history | `POST /campaigns/{campaign_id}/message-history-for-leads/bbfbdsFGHlBr76ruhjvh6fhHL` | `lead_ids` body, optional event time | `{data:{lead_id:[messages]}}`. Static path segment is docs-confirmed but live-untested. | `reply_emails`; exact outbound history requires a new surface or schema/MCP migration | Medium |
 | Global overall analytics | `GET /analytics/overall-stats-v2` | `start_date`, `end_date`, optional timezone/client/campaign ids | Wrapped `overall_stats` with raw counts, unique counts, rates, positive replies. | workspace snapshot rollups, not per-campaign tables | Medium |
 | Campaign performance analytics | `GET /analytics/campaign/overall-stats` | date range, timezone, optional client/campaign ids, limit/offset/full-data flag | Wrapped `campaign_wise_performance[]`. Useful when campaign-scoped endpoint is incomplete. | `campaign_analytics` with recomputed rates | Medium |
 | Provider performance | `GET /analytics/mailbox/provider-wise-overall-performance` | date range, timezone/client/campaign filters | Provider-level mailbox performance. | provider capability/diagnostic views | Later |
@@ -154,7 +154,7 @@ selects Smartlead through config or a provider parameter.
 | Field | Smartlead source |
 | --- | --- |
 | `id` | `campaign_source_id` once provider-aware schema lands. Until then, Smartlead implementation must not mix with Instantly rows in the same cache without schema migration. |
-| `provider` | `smartlead` in new provider-aware column. |
+| `source_provider` | `smartlead` in a new provider-aware column or view field. |
 | `provider_campaign_id` | `String(campaign.id)`. |
 | `organization_id` | `client_id` when present, else `user_id` as a best-effort workspace owner id. |
 | `name` | `name`. |
@@ -233,7 +233,9 @@ message/template evidence.
 | Field | Smartlead source |
 | --- | --- |
 | `email` | `from_email`, lowercased for identity comparisons but preserve display casing if schema supports it later. |
-| `provider` | Smartlead account `type` means email service provider (`GMAIL`, `OUTLOOK`, `SMTP`), not SendLens source provider. Store this in a future `email_service_provider` field or raw JSON; keep SendLens `provider` for source provider. |
+| `provider` | Existing `sendlens.accounts.provider` is mailbox/email-service provider and is exposed through `sendlens.campaign_accounts`. Smartlead account `type` may map here only as the mailbox provider value. Never write `smartlead` into this field. |
+| `source_provider` | Required new provider/source column or provider-aware view field before Smartlead rows can share the same cache with Instantly rows. If the schema is not migrated, Smartlead account rows must stay isolated from existing Instantly account rows. |
+| `provider_account_id` | Required new column or mapping table field for Smartlead numeric account ids. Existing account lookup views resolve accounts by `email`, not provider account id. |
 | `daily_limit` | `message_per_day`. |
 | `sending_gap` | `minTimeToWaitInMins`. |
 | `first_name` / `last_name` | Split `from_name` only if no direct fields are available; otherwise leave nullable. |
@@ -253,13 +255,19 @@ assignment key and `from_email` as `account_email`.
 
 Smartlead campaign tags are available on campaign list/detail when
 `include_tags=true`. Email account tags are always included on email account
-rows. Normalize both into the existing tag tables with these resource types:
+rows. Preserve the current SendLens lookup keys unless a schema/view migration is
+part of the implementation issue:
 
 | Resource | Mapping |
 | --- | --- |
-| Campaign tag | `resource_type = campaign`, `resource_id = campaign_source_id`. |
-| Account tag | `resource_type = account`, `resource_id = provider_account_id` plus `account_email` in raw mapping if schema supports it later. |
+| Campaign tag | Existing views require numeric `resource_type = 2` and `resource_id` matching `sendlens.campaigns.id`. After the provider-aware campaign migration, that id may be `campaign_source_id`; before that migration, do not store Smartlead campaign tags in a mixed cache. |
+| Account tag | Existing views require numeric `resource_type = 1` and `resource_id` as the account email because `sendlens.account_tags` exposes `resource_id AS account_email`. Do not use Smartlead provider account ids here unless the tag views and downstream recipes are migrated. |
 | Lead tag | Not in V1 unless a read-only lead tag mapping endpoint is explicitly added and fixture-backed. |
+
+If Smartlead needs native ids on tag mappings, add explicit columns such as
+`source_provider` and `provider_resource_id`, or a provider mapping table, then
+update `campaign_tags`, `account_tags`, tag-scoped query recipes, and MCP
+contract tests in the same implementation PR.
 
 ### `sampled_leads`
 
@@ -281,22 +289,25 @@ rows. Normalize both into the existing tag tables with these resource types:
 | `custom_payload` | Full `custom_fields` object, after redaction. |
 | `sample_source` | `smartlead_campaign_leads`, `smartlead_replied_leads`, or `smartlead_message_history_backfill`. |
 
-### `reply_emails` And `sampled_outbound_emails`
+### `reply_emails`, Reconstructed Outbound, And Exact Outbound History
 
-Use message history for exact thread evidence. Normalize by message direction:
+Use message history for exact thread evidence. Normalize by message direction,
+without changing evidence semantics of existing reconstructed outbound surfaces:
 
-| Direction | Target table |
+| Direction | Target surface |
 | --- | --- |
 | `inbound` | `reply_emails` |
-| `outbound` | `sampled_outbound_emails` |
+| `outbound` with exact body text | New explicit exact outbound surface, for example `outbound_message_history`, or a documented schema and MCP response contract migration. Do not store exact delivered bodies in `sampled_outbound_emails` under the current contract. |
+| `outbound` without body text | Reconstruct from `campaign_variants` plus `custom_fields` and store only as reconstructed sample evidence in `sampled_outbound_emails`. |
 
 Message ids may be non-unique across leads in examples. Store ids as
 `smartlead:{campaign_id}:{lead_id}:{message_id}` if needed to avoid collisions.
 
-When plain-text message history returns body text, store exact body text with
-evidence label `message_history`. If body text is absent, reconstruct outbound
-text from `campaign_variants` plus `custom_fields` and label as
-`reconstructed_outbound`.
+Current `sampled_outbound_emails` has no `evidence_label` column, and current
+MCP guidance documents it as locally reconstructed outbound context. If
+Smartlead exact outbound bodies are exposed in V1, the implementation must add
+schema, views, MCP response contract language, and tests that keep exact
+message-history evidence separate from reconstructed outbound evidence.
 
 ### `sampling_runs` And Provider Capabilities
 
@@ -317,6 +328,7 @@ without treating them as stale cache:
 | `account_daily_campaign_metrics` | partial |
 | `lead_evidence` | supported |
 | `reply_message_history` | supported, medium confidence |
+| `exact_outbound_history` | partial; requires a new exact outbound surface before MCP exposure |
 | `custom_tags` | partial for campaign/account only |
 | `lead_lists` | later |
 | `inbox_placement` | unsupported in Smartlead V1 |
@@ -330,7 +342,7 @@ without treating them as stale cache:
 | Campaign analytics shape | Campaign-scoped analytics and global analytics have different field names and rate semantics. | Normalize only documented raw counts. Recompute rates locally for SendLens answers. |
 | `analytics-by-date` granularity | Docs show a date range object, not guaranteed daily rows. | Do not populate `campaign_daily_metrics` unless fixture confirms rows. |
 | `statistics` shape | Docs conflict between sequence aggregate, campaign aggregate, and detailed email statistics. | Build a parser that supports aggregate sequence rows and detailed email rows, with nulls for unavailable fields. |
-| Message history bodies | Example omits body fields even with plain-text output documented. | Treat body as optional. Fall back to reconstruction for outbound and preview-only inbound evidence. |
+| Message history bodies | Example omits body fields even with plain-text output documented. | Treat body as optional. Inbound exact bodies map to `reply_emails`; outbound exact bodies require a new exact outbound surface, while missing outbound bodies fall back to reconstruction. |
 | Bulk message-history static suffix | Docs include `bbfbdsFGHlBr76ruhjvh6fhHL` in the path. | Keep endpoint behind one client method and mark live-untested. Unit-test URL construction exactly from docs. |
 | Reply category mapping | Smartlead categories are mutable and workspace-defined. | Use `category_id/category_name` as evidence. Do not infer positive/negative from reply text in V1. |
 | Account daily campaign metrics | Warmup stats are not campaign sends. Mailbox stats/global mailbox analytics need live shape validation. | Keep account daily campaign metrics null or partial until fixture-backed. |
@@ -380,5 +392,12 @@ Optional live validation, only when access exists:
   Instantly path.
 - The ingest issue should add provider-aware identity fields before mixing
   Smartlead rows into the existing DuckDB schema.
+- The schema issue must preserve current account and tag lookup semantics:
+  `accounts.provider` remains mailbox provider, account tags keep email
+  resource ids with numeric resource type `1`, and campaign tags keep numeric
+  resource type `2` until their views are migrated.
+- Exact Smartlead outbound message bodies require a new explicit surface or a
+  schema plus MCP contract migration before agents can treat them as delivered
+  outbound evidence.
 - PR review should verify that no Smartlead query-string access value can appear
   in logs, thrown errors, trace files, snapshots, or docs.
