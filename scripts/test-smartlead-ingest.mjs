@@ -32,14 +32,17 @@ delete process.env.SENDLENS_CLIENT;
 await resetDbConnectionForTests();
 
 const preexistingDb = await getDb();
-await run(
-  preexistingDb,
-  `INSERT OR REPLACE INTO sendlens.campaigns
-   (id, workspace_id, source_provider, provider_campaign_id, campaign_source_id, organization_id, name, status, synced_at)
-   VALUES ('instant-preserved', '501', 'instantly', 'instant-preserved', 'instant-preserved', '501', 'Preserved Instantly Campaign', 'paused', CURRENT_TIMESTAMP)`,
-);
-await run(preexistingDb, "CHECKPOINT");
-closeDb(preexistingDb);
+try {
+  await run(
+    preexistingDb,
+    `INSERT OR REPLACE INTO sendlens.campaigns
+     (id, workspace_id, source_provider, provider_campaign_id, campaign_source_id, organization_id, name, status, synced_at)
+     VALUES ('instant-preserved', '501', 'instantly', 'instant-preserved', 'instant-preserved', '501', 'Preserved Instantly Campaign', 'paused', CURRENT_TIMESTAMP)`,
+  );
+  await run(preexistingDb, "CHECKPOINT");
+} finally {
+  closeDb(preexistingDb);
+}
 
 const campaigns = await fixture("campaigns.direct-array.json");
 const leadPages = await Promise.all([
@@ -199,14 +202,14 @@ assert.equal(summary.campaigns[0].provider_campaign_id, "101");
 assert.equal(summary.campaigns[0].campaign_source_id, "smartlead:101");
 
 const db = await getDb();
-
 try {
-const preservedInstantly = await query(
-  db,
-  `SELECT source_provider, name
-   FROM sendlens.campaigns
-   WHERE workspace_id = '501' AND id = 'instant-preserved'`,
-);
+
+  const preservedInstantly = await query(
+    db,
+    `SELECT source_provider, name
+     FROM sendlens.campaigns
+     WHERE workspace_id = '501' AND id = 'instant-preserved'`,
+  );
 assert.equal(preservedInstantly.length, 1);
 assert.equal(preservedInstantly[0].source_provider, "instantly");
 assert.equal(preservedInstantly[0].name, "Preserved Instantly Campaign");
@@ -584,51 +587,51 @@ await refreshSmartleadWorkspace({
 
 const regressionDb = await getDb();
 try {
-const accountTotalsBeforeScoped = await query(
-  regressionDb,
-  `SELECT total_sent_30d, total_replies_30d, total_bounces_30d
-   FROM sendlens.accounts
-   WHERE workspace_id = '501'
-     AND source_provider = 'smartlead'
-     AND email = 'sender-302@example.com'`,
-);
-assert.equal(accountTotalsBeforeScoped.length, 1);
-assert.equal(Number(accountTotalsBeforeScoped[0].total_sent_30d), 60);
-assert.equal(Number(accountTotalsBeforeScoped[0].total_replies_30d), 6);
-assert.equal(Number(accountTotalsBeforeScoped[0].total_bounces_30d), 3);
+  const accountTotalsBeforeScoped = await query(
+    regressionDb,
+    `SELECT total_sent_30d, total_replies_30d, total_bounces_30d
+     FROM sendlens.accounts
+     WHERE workspace_id = '501'
+       AND source_provider = 'smartlead'
+       AND email = 'sender-302@example.com'`,
+  );
+  assert.equal(accountTotalsBeforeScoped.length, 1);
+  assert.equal(Number(accountTotalsBeforeScoped[0].total_sent_30d), 60);
+  assert.equal(Number(accountTotalsBeforeScoped[0].total_replies_30d), 6);
+  assert.equal(Number(accountTotalsBeforeScoped[0].total_bounces_30d), 3);
 
-const accountDailyBeforeScoped = await query(
-  regressionDb,
-  `SELECT sent, unique_replies
-   FROM sendlens.account_daily_metrics
-   WHERE workspace_id = '501'
-     AND source_provider = 'smartlead'
-     AND email = 'sender-302@example.com'
-     AND date = DATE '2026-06-01'`,
-);
-assert.equal(accountDailyBeforeScoped.length, 1);
-assert.equal(Number(accountDailyBeforeScoped[0].sent), 60);
-assert.equal(Number(accountDailyBeforeScoped[0].unique_replies), 6);
+  const accountDailyBeforeScoped = await query(
+    regressionDb,
+    `SELECT sent, unique_replies
+     FROM sendlens.account_daily_metrics
+     WHERE workspace_id = '501'
+       AND source_provider = 'smartlead'
+       AND email = 'sender-302@example.com'
+       AND date = DATE '2026-06-01'`,
+  );
+  assert.equal(accountDailyBeforeScoped.length, 1);
+  assert.equal(Number(accountDailyBeforeScoped[0].sent), 60);
+  assert.equal(Number(accountDailyBeforeScoped[0].unique_replies), 6);
 
-const tagsBeforeScoped = await query(
-  regressionDb,
-  `SELECT tag_id
-   FROM sendlens.campaign_tags
-   WHERE workspace_id = '501'
-     AND source_provider = 'smartlead'
-     AND campaign_id = 'smartlead:101'`,
-);
-assert.deepEqual(tagsBeforeScoped.map((row) => row.tag_id), ["smartlead:tag:1"]);
+  const tagsBeforeScoped = await query(
+    regressionDb,
+    `SELECT tag_id
+     FROM sendlens.campaign_tags
+     WHERE workspace_id = '501'
+       AND source_provider = 'smartlead'
+       AND campaign_id = 'smartlead:101'`,
+  );
+  assert.deepEqual(tagsBeforeScoped.map((row) => row.tag_id), ["smartlead:tag:1"]);
 
-const accountTagsBeforeScoped = await query(
-  regressionDb,
-  `SELECT tag_id
-   FROM sendlens.account_tags
-   WHERE workspace_id = '501'
-     AND source_provider = 'smartlead'
-     AND account_email = 'sender-301@example.com'`,
-);
-assert.deepEqual(accountTagsBeforeScoped.map((row) => row.tag_id), ["smartlead:tag:20"]);
+  const accountTagsBeforeScoped = await query(
+    regressionDb,
+    `SELECT tag_id
+     FROM sendlens.account_tags
+     WHERE workspace_id = '501'
+       AND source_provider = 'smartlead'
+       AND account_email = 'sender-301@example.com'`,
+  );
+  assert.deepEqual(accountTagsBeforeScoped.map((row) => row.tag_id), ["smartlead:tag:20"]);
 } finally {
   closeDb(regressionDb);
 }
@@ -641,51 +644,51 @@ await refreshSmartleadWorkspace({
 
 const scopedDb = await getDb();
 try {
-const accountTotalsAfterScoped = await query(
-  scopedDb,
-  `SELECT total_sent_30d, total_replies_30d, total_bounces_30d
-   FROM sendlens.accounts
-   WHERE workspace_id = '501'
-     AND source_provider = 'smartlead'
-     AND email = 'sender-302@example.com'`,
-);
-assert.equal(accountTotalsAfterScoped.length, 1);
-assert.equal(Number(accountTotalsAfterScoped[0].total_sent_30d), 60);
-assert.equal(Number(accountTotalsAfterScoped[0].total_replies_30d), 6);
-assert.equal(Number(accountTotalsAfterScoped[0].total_bounces_30d), 3);
+  const accountTotalsAfterScoped = await query(
+    scopedDb,
+    `SELECT total_sent_30d, total_replies_30d, total_bounces_30d
+     FROM sendlens.accounts
+     WHERE workspace_id = '501'
+       AND source_provider = 'smartlead'
+       AND email = 'sender-302@example.com'`,
+  );
+  assert.equal(accountTotalsAfterScoped.length, 1);
+  assert.equal(Number(accountTotalsAfterScoped[0].total_sent_30d), 60);
+  assert.equal(Number(accountTotalsAfterScoped[0].total_replies_30d), 6);
+  assert.equal(Number(accountTotalsAfterScoped[0].total_bounces_30d), 3);
 
-const accountDailyAfterScoped = await query(
-  scopedDb,
-  `SELECT sent, unique_replies
-   FROM sendlens.account_daily_metrics
-   WHERE workspace_id = '501'
-     AND source_provider = 'smartlead'
-     AND email = 'sender-302@example.com'
-     AND date = DATE '2026-06-01'`,
-);
-assert.equal(accountDailyAfterScoped.length, 1);
-assert.equal(Number(accountDailyAfterScoped[0].sent), 60);
-assert.equal(Number(accountDailyAfterScoped[0].unique_replies), 6);
+  const accountDailyAfterScoped = await query(
+    scopedDb,
+    `SELECT sent, unique_replies
+     FROM sendlens.account_daily_metrics
+     WHERE workspace_id = '501'
+       AND source_provider = 'smartlead'
+       AND email = 'sender-302@example.com'
+       AND date = DATE '2026-06-01'`,
+  );
+  assert.equal(accountDailyAfterScoped.length, 1);
+  assert.equal(Number(accountDailyAfterScoped[0].sent), 60);
+  assert.equal(Number(accountDailyAfterScoped[0].unique_replies), 6);
 
-const campaignTagsAfterScoped = await query(
-  scopedDb,
-  `SELECT tag_id
-   FROM sendlens.campaign_tags
-   WHERE workspace_id = '501'
-     AND source_provider = 'smartlead'
-     AND campaign_id = 'smartlead:101'`,
-);
-assert.equal(campaignTagsAfterScoped.length, 0);
+  const campaignTagsAfterScoped = await query(
+    scopedDb,
+    `SELECT tag_id
+     FROM sendlens.campaign_tags
+     WHERE workspace_id = '501'
+       AND source_provider = 'smartlead'
+       AND campaign_id = 'smartlead:101'`,
+  );
+  assert.equal(campaignTagsAfterScoped.length, 0);
 
-const accountTagsAfterScoped = await query(
-  scopedDb,
-  `SELECT tag_id
-   FROM sendlens.account_tags
-   WHERE workspace_id = '501'
-     AND source_provider = 'smartlead'
-     AND account_email = 'sender-301@example.com'`,
-);
-assert.equal(accountTagsAfterScoped.length, 0);
+  const accountTagsAfterScoped = await query(
+    scopedDb,
+    `SELECT tag_id
+     FROM sendlens.account_tags
+     WHERE workspace_id = '501'
+       AND source_provider = 'smartlead'
+       AND account_email = 'sender-301@example.com'`,
+  );
+  assert.equal(accountTagsAfterScoped.length, 0);
 } finally {
   closeDb(scopedDb);
 }

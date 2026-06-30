@@ -6,6 +6,7 @@ import path from "node:path";
 
 const require = createRequire(import.meta.url);
 const instantly = require("../build/plugin/instantly-client.js");
+const { DuckDBInstance } = require("@duckdb/node-api");
 const { CURRENT_CACHE_SCHEMA_VERSION } = require("../build/plugin/constants.js");
 const {
   CacheReadinessError,
@@ -179,6 +180,96 @@ async function pathExists(filePath) {
   return fs.stat(filePath).then(() => true).catch(() => false);
 }
 
+async function seedLegacyAccountPrimaryKeyCache(filePath) {
+  const instance = await DuckDBInstance.create(filePath);
+  const conn = await instance.connect();
+  try {
+    await conn.run("CREATE SCHEMA IF NOT EXISTS sendlens");
+    await conn.run(
+      `CREATE TABLE sendlens.plugin_state (
+        key VARCHAR PRIMARY KEY,
+        value VARCHAR,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
+    );
+    await conn.run(
+      `CREATE TABLE sendlens.accounts (
+        workspace_id VARCHAR NOT NULL,
+        email VARCHAR NOT NULL,
+        organization_id VARCHAR,
+        status VARCHAR,
+        warmup_status VARCHAR,
+        warmup_score DOUBLE,
+        provider VARCHAR,
+        daily_limit INTEGER,
+        sending_gap INTEGER,
+        first_name VARCHAR,
+        last_name VARCHAR,
+        total_sent_30d INTEGER,
+        total_replies_30d INTEGER,
+        total_bounces_30d INTEGER,
+        synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (workspace_id, email)
+      )`,
+    );
+    await conn.run(
+      `CREATE TABLE sendlens.account_daily_metrics (
+        workspace_id VARCHAR NOT NULL,
+        email VARCHAR NOT NULL,
+        date DATE NOT NULL,
+        sent INTEGER,
+        bounced INTEGER,
+        contacted INTEGER,
+        new_leads_contacted INTEGER,
+        opened INTEGER,
+        unique_opened INTEGER,
+        replies INTEGER,
+        unique_replies INTEGER,
+        replies_automatic INTEGER,
+        unique_replies_automatic INTEGER,
+        clicks INTEGER,
+        unique_clicks INTEGER,
+        synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (workspace_id, email, date)
+      )`,
+    );
+    await conn.run(
+      `INSERT INTO sendlens.accounts (
+        workspace_id,
+        email,
+        organization_id,
+        status,
+        provider,
+        total_sent_30d,
+        total_replies_30d,
+        total_bounces_30d
+      )
+      VALUES ('legacy_ws', 'shared@example.com', 'legacy_ws', 'active', 'gmail', 11, 2, 1)`,
+    );
+    await conn.run(
+      `INSERT INTO sendlens.account_daily_metrics (
+        workspace_id,
+        email,
+        date,
+        sent,
+        bounced,
+        contacted,
+        new_leads_contacted,
+        opened,
+        unique_opened,
+        replies,
+        unique_replies,
+        clicks,
+        unique_clicks
+      )
+      VALUES ('legacy_ws', 'shared@example.com', DATE '2026-06-01', 11, 1, 11, 11, 4, 4, 2, 2, 1, 1)`,
+    );
+  } finally {
+    conn.closeSync();
+    instance.closeSync();
+  }
+}
+
 try {
   process.env.SENDLENS_INSTANTLY_API_KEY = "old-key-secret";
   let db = await openDb();
@@ -307,12 +398,25 @@ try {
   db = await openDb();
   try {
     const readiness = await assertCacheReadableForCurrentEnv(db);
-    assert.match(String(readiness.warning), /No SENDLENS_INSTANTLY_API_KEY/);
+    assert.match(String(readiness.warning), /No SendLens provider API key/);
   } finally {
     closeDb(db);
   }
 
-  process.env.SENDLENS_SMARTLEAD_API_KEY = "smartlead-new-key-secret";
+  process.env.SENDLENS_PROVIDER = "smartlead";
+  process.env.SENDLENS_SMARTLEAD_API_KEY = "smartlead-old-secret";
+  process.env.SENDLENS_DB_PATH = path.join(tempDir, "smartlead-cache-owner.duckdb");
+  db = await openDb();
+  try {
+    await stampCacheOwner(db, "smartlead_ws", "2026-06-01T00:00:00.000Z");
+    const owner = await getCacheOwnerMetadata(db);
+    assert.equal(owner.apiKeyFingerprint, currentApiKeyFingerprint());
+    assert.notEqual(owner.apiKeyFingerprint, "smartlead-old-secret");
+  } finally {
+    closeDb(db);
+  }
+
+  process.env.SENDLENS_SMARTLEAD_API_KEY = "smartlead-new-secret";
   db = await openDb();
   try {
     await assert.rejects(
@@ -320,7 +424,151 @@ try {
       (error) =>
         error instanceof CacheReadinessError &&
         error.issue === "api_key_mismatch" &&
-        !String(error.message).includes("smartlead-new-key-secret"),
+        !String(error.message).includes("smartlead-old-secret") &&
+        !String(error.message).includes("smartlead-new-secret"),
+    );
+  } finally {
+    closeDb(db);
+  }
+  delete process.env.SENDLENS_PROVIDER;
+  delete process.env.SENDLENS_SMARTLEAD_API_KEY;
+
+  const legacyAccountPkDbPath = path.join(tempDir, "legacy-account-pk.duckdb");
+  await seedLegacyAccountPrimaryKeyCache(legacyAccountPkDbPath);
+  process.env.SENDLENS_DB_PATH = legacyAccountPkDbPath;
+  db = await openDb();
+  try {
+    const accountPk = await query(
+      db,
+      `SELECT name
+       FROM pragma_table_info('sendlens.accounts')
+       WHERE pk > 0
+       ORDER BY pk`,
+    );
+    assert.deepEqual(
+      accountPk.map((row) => row.name).sort(),
+      ["email", "source_provider", "workspace_id"],
+    );
+
+    const accountDailyPk = await query(
+      db,
+      `SELECT name
+       FROM pragma_table_info('sendlens.account_daily_metrics')
+       WHERE pk > 0
+       ORDER BY pk`,
+    );
+    assert.deepEqual(
+      accountDailyPk.map((row) => row.name).sort(),
+      ["date", "email", "source_provider", "workspace_id"],
+    );
+
+    await run(
+      db,
+      `INSERT OR REPLACE INTO sendlens.accounts (
+        workspace_id,
+        email,
+        source_provider,
+        provider_account_id,
+        account_source_id,
+        organization_id,
+        status,
+        provider,
+        total_sent_30d,
+        total_replies_30d,
+        total_bounces_30d
+      )
+      VALUES (
+        'legacy_ws',
+        'shared@example.com',
+        'smartlead',
+        '301',
+        'smartlead:301',
+        'legacy_ws',
+        'active',
+        'smtp',
+        7,
+        3,
+        0
+      )`,
+    );
+    await run(
+      db,
+      `INSERT OR REPLACE INTO sendlens.account_daily_metrics (
+        workspace_id,
+        email,
+        source_provider,
+        provider_account_id,
+        account_source_id,
+        date,
+        sent,
+        bounced,
+        contacted,
+        new_leads_contacted,
+        opened,
+        unique_opened,
+        replies,
+        unique_replies,
+        clicks,
+        unique_clicks
+      )
+      VALUES (
+        'legacy_ws',
+        'shared@example.com',
+        'smartlead',
+        '301',
+        'smartlead:301',
+        DATE '2026-06-01',
+        7,
+        0,
+        7,
+        7,
+        3,
+        3,
+        3,
+        3,
+        1,
+        1
+      )`,
+    );
+
+    const accountRows = await query(
+      db,
+      `SELECT source_provider, total_sent_30d, total_replies_30d
+       FROM sendlens.accounts
+       WHERE workspace_id = 'legacy_ws' AND email = 'shared@example.com'
+       ORDER BY source_provider`,
+    );
+    assert.deepEqual(
+      accountRows.map((row) => ({
+        source_provider: row.source_provider,
+        total_sent_30d: Number(row.total_sent_30d),
+        total_replies_30d: Number(row.total_replies_30d),
+      })),
+      [
+        { source_provider: "instantly", total_sent_30d: 11, total_replies_30d: 2 },
+        { source_provider: "smartlead", total_sent_30d: 7, total_replies_30d: 3 },
+      ],
+    );
+
+    const accountDailyRows = await query(
+      db,
+      `SELECT source_provider, sent, unique_replies
+       FROM sendlens.account_daily_metrics
+       WHERE workspace_id = 'legacy_ws'
+         AND email = 'shared@example.com'
+         AND date = DATE '2026-06-01'
+       ORDER BY source_provider`,
+    );
+    assert.deepEqual(
+      accountDailyRows.map((row) => ({
+        source_provider: row.source_provider,
+        sent: Number(row.sent),
+        unique_replies: Number(row.unique_replies),
+      })),
+      [
+        { source_provider: "instantly", sent: 11, unique_replies: 2 },
+        { source_provider: "smartlead", sent: 7, unique_replies: 3 },
+      ],
     );
   } finally {
     closeDb(db);
@@ -331,6 +579,7 @@ try {
   }
   delete process.env.SENDLENS_INSTANTLY_API_KEY;
   delete process.env.SENDLENS_SMARTLEAD_API_KEY;
+  delete process.env.SENDLENS_PROVIDER;
   delete process.env.SENDLENS_DB_PATH;
   delete process.env.SENDLENS_STATE_DIR;
   delete process.env.SENDLENS_CONTEXT_ROOT;
