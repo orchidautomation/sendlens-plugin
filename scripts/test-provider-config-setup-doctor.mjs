@@ -179,6 +179,28 @@ try {
   assert.equal(findCheck(report, "Smartlead credentials")?.status, "pass");
   assertNoSensitiveValue(report, smartleadValue);
 
+  tempDir = resetEnv("all-smartlead-valid-no-instantly-no-cache");
+  await fs.mkdir(tempDir, { recursive: true });
+  process.env.SENDLENS_PROVIDER = "all";
+  process.env.SENDLENS_SMARTLEAD_API_KEY = smartleadValue;
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    assert.equal(parsed.hostname, "server.smartlead.ai");
+    assert.equal(parsed.searchParams.get(accessParam), smartleadValue);
+    return responseJson([{ id: 10 }]);
+  };
+  report = await buildSetupDoctorReport();
+  assert.equal(report.capabilities.source_provider_mode, "all");
+  assert.deepEqual(report.capabilities.source_providers, ["instantly", "smartlead"]);
+  assert.equal(report.capabilities.local_cache_read, false);
+  assert.equal(report.capabilities.live_refresh, false);
+  assert.equal(report.capabilities.demo_seed, true);
+  assert.equal(report.capabilities.smartlead_key_validated, true);
+  assert.equal(findCheck(report, "Instantly credentials")?.status, "fail");
+  assert.equal(findCheck(report, "Smartlead credentials")?.status, "pass");
+  assert.ok(report.next_steps.some((step) => step.includes("seed_demo_workspace")));
+  assertNoSensitiveValue(report, smartleadValue);
+
   tempDir = resetEnv("env-sanitize");
   await fs.mkdir(tempDir, { recursive: true });
   process.env.SENDLENS_SMARTLEAD_API_KEY = "your_smartlead_api_key";

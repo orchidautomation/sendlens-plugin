@@ -440,10 +440,13 @@ export async function buildSetupDoctorReport() {
   const liveRefreshReady = credentialValidation?.status === "valid";
   const smartleadConfigReady = smartleadCredentialValidation?.status === "valid";
   const noReadableCache = !dbExists || Boolean(cacheReadinessError);
+  const instantlyFirstRunDemoSeedReady =
+    instantlySelected && !apiKeyConfigured && noReadableCache;
   const smartleadReadOnlyDemoSeedReady =
     smartleadSelected && !instantlySelected && smartleadConfigReady && noReadableCache;
   const demoSeedReady =
     demoMode ||
+    instantlyFirstRunDemoSeedReady ||
     smartleadReadOnlyDemoSeedReady ||
     (!apiKeyConfigured && !smartleadApiKeyConfigured) ||
     credentialValidation?.status === "invalid" ||
