@@ -351,6 +351,18 @@ function endDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function uniqueBy<T>(rows: T[], keyFor: (row: T) => string | null) {
+  const seen = new Set<string>();
+  const unique: T[] = [];
+  for (const row of rows) {
+    const key = keyFor(row);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(row);
+  }
+  return unique;
+}
+
 async function insertRows(
   conn: DuckDBConnection,
   table: string,
@@ -1552,7 +1564,16 @@ export async function refreshSmartleadWorkspace(options: SmartleadRefreshOptions
 
     const allMailboxStats = bundles.flatMap((bundle) => bundle.mailboxStats);
     await storeProviderCapabilities(db, workspaceId);
-    await storeTags(db, workspaceId, [...campaigns, ...bundles.map((bundle) => bundle.detail)], accounts);
+    const tagCampaigns = scopedRefresh
+      ? bundles.map((bundle) => bundle.detail)
+      : [...campaigns, ...bundles.map((bundle) => bundle.detail)];
+    const tagAccounts = scopedRefresh
+      ? uniqueBy(
+        bundles.flatMap((bundle) => bundle.campaignAccounts),
+        (account) => normalizeEmail(account.from_email ?? account.email),
+      )
+      : accounts;
+    await storeTags(db, workspaceId, tagCampaigns, tagAccounts);
     if (!scopedRefresh) {
       const warmups = await fetchWarmups(client, accounts);
       await storeEmailAccounts(db, workspaceId, accounts, warmups, rollupsFromMailboxStats(allMailboxStats));

@@ -472,14 +472,32 @@ function regressionClient({ includeTags }) {
   const regressionCampaigns = campaigns.map((campaign) => ({
     ...campaign,
     status: "ACTIVE",
-    tags: includeTags && Number(campaign.id) === 101
-      ? [{ tag_id: 1, tag_name: "ICP A", tag_color: "#2563eb" }]
+    tags: includeTags
+      ? [
+        Number(campaign.id) === 101
+          ? { tag_id: 1, tag_name: "ICP A", tag_color: "#2563eb" }
+          : { tag_id: 2, tag_name: "ICP B", tag_color: "#7c3aed" },
+      ]
       : [],
   }));
-  const regressionAccounts = emailAccounts.map((account) => ({
+  const regressionAccounts = [
+    ...emailAccounts,
+    {
+      id: 303,
+      from_email: "sender-303@example.com",
+      from_name: "Sender Three",
+      status: "ACTIVE",
+      campaign_ids: [102],
+      message_per_day: 50,
+    },
+  ].map((account) => ({
     ...account,
-    tags: includeTags && Number(account.id) === 301
-      ? [{ tag_id: 20, tag_name: "Primary Sender", tag_color: "#16a34a" }]
+    tags: includeTags
+      ? [
+        Number(account.id) === 301
+          ? { tag_id: 20, tag_name: "Primary Sender", tag_color: "#16a34a" }
+          : { tag_id: 21, tag_name: "Secondary Sender", tag_color: "#dc2626" },
+      ]
       : [],
   }));
 
@@ -632,6 +650,26 @@ try {
        AND account_email = 'sender-301@example.com'`,
   );
   assert.deepEqual(accountTagsBeforeScoped.map((row) => row.tag_id), ["smartlead:tag:20"]);
+
+  const unscopedTagsBeforeScoped = await query(
+    regressionDb,
+    `SELECT tag_id
+     FROM sendlens.campaign_tags
+     WHERE workspace_id = '501'
+       AND source_provider = 'smartlead'
+       AND campaign_id = 'smartlead:102'`,
+  );
+  assert.deepEqual(unscopedTagsBeforeScoped.map((row) => row.tag_id), ["smartlead:tag:2"]);
+
+  const unscopedAccountTagsBeforeScoped = await query(
+    regressionDb,
+    `SELECT tag_id
+     FROM sendlens.account_tags
+     WHERE workspace_id = '501'
+       AND source_provider = 'smartlead'
+       AND account_email = 'sender-303@example.com'`,
+  );
+  assert.deepEqual(unscopedAccountTagsBeforeScoped.map((row) => row.tag_id), ["smartlead:tag:21"]);
 } finally {
   closeDb(regressionDb);
 }
@@ -689,6 +727,26 @@ try {
        AND account_email = 'sender-301@example.com'`,
   );
   assert.equal(accountTagsAfterScoped.length, 0);
+
+  const unscopedCampaignTagsAfterScoped = await query(
+    scopedDb,
+    `SELECT tag_id
+     FROM sendlens.campaign_tags
+     WHERE workspace_id = '501'
+       AND source_provider = 'smartlead'
+       AND campaign_id = 'smartlead:102'`,
+  );
+  assert.deepEqual(unscopedCampaignTagsAfterScoped.map((row) => row.tag_id), ["smartlead:tag:2"]);
+
+  const unscopedAccountTagsAfterScoped = await query(
+    scopedDb,
+    `SELECT tag_id
+     FROM sendlens.account_tags
+     WHERE workspace_id = '501'
+       AND source_provider = 'smartlead'
+       AND account_email = 'sender-303@example.com'`,
+  );
+  assert.deepEqual(unscopedAccountTagsAfterScoped.map((row) => row.tag_id), ["smartlead:tag:21"]);
 } finally {
   closeDb(scopedDb);
 }
