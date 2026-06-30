@@ -220,7 +220,11 @@ function normalizeEmail(value: unknown) {
 }
 
 function pickEmail(record: SmartleadRow, keys: string[]) {
-  return normalizeEmail(pickString(record, keys));
+  for (const key of keys) {
+    const email = normalizeEmail(record[key]);
+    if (email) return email;
+  }
+  return null;
 }
 
 function domainFromEmail(email: string | null) {
@@ -246,7 +250,7 @@ function providerAccountId(account: SmartleadRow) {
 }
 
 function accountEmail(account: SmartleadRow) {
-  return pickEmail(account, ["from_email", "email", "email_account", "email_account_email"]);
+  return pickEmail(account, ["from_email", "email", "email_account_email", "email_account"]);
 }
 
 function tagSourceId(providerId: string) {
@@ -652,6 +656,13 @@ async function cleanupSmartleadTagMappings(
         .filter((email): email is string => Boolean(email)),
     ),
   ];
+  const accountProviderResourceIds = [
+    ...new Set(
+      accounts
+        .map(providerAccountId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
 
   if (campaignResourceIds.length > 0) {
     await run(
@@ -664,14 +675,21 @@ async function cleanupSmartleadTagMappings(
     );
   }
 
-  if (accountResourceIds.length > 0) {
+  if (accountResourceIds.length > 0 || accountProviderResourceIds.length > 0) {
+    const predicates = [];
+    if (accountResourceIds.length > 0) {
+      predicates.push(`resource_id IN (${accountResourceIds.map((id) => `'${esc(id)}'`).join(", ")})`);
+    }
+    if (accountProviderResourceIds.length > 0) {
+      predicates.push(`provider_resource_id IN (${accountProviderResourceIds.map((id) => `'${esc(id)}'`).join(", ")})`);
+    }
     await run(
       conn,
       `DELETE FROM sendlens.custom_tag_mappings
        WHERE workspace_id = '${workspace}'
          AND COALESCE(source_provider, 'instantly') = '${SOURCE_PROVIDER}'
          AND TRY_CAST(resource_type AS INTEGER) = 1
-         AND resource_id IN (${accountResourceIds.map((id) => `'${esc(id)}'`).join(", ")})`,
+         AND (${predicates.join(" OR ")})`,
     );
   }
 

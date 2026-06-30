@@ -2929,6 +2929,42 @@ function refreshOptionsForProvider(
   return { ...options, campaignIds };
 }
 
+function providerScopedCampaignIds(campaignIds: string[] | undefined, provider: SourceProvider) {
+  if (!campaignIds?.length) return [];
+  const scopedIds: string[] = [];
+  for (const campaignId of campaignIds) {
+    const id = String(campaignId).trim();
+    const separatorIndex = id.indexOf(":");
+    if (separatorIndex <= 0) continue;
+    const prefix = id.slice(0, separatorIndex);
+    const nativeId = id.slice(separatorIndex + 1);
+    if (prefix === provider && nativeId) scopedIds.push(nativeId);
+  }
+  return scopedIds;
+}
+
+function hasUnqualifiedCampaignIds(campaignIds: string[] | undefined) {
+  if (!campaignIds?.length) return false;
+  return campaignIds.some((campaignId) => {
+    const id = String(campaignId).trim();
+    if (!id) return false;
+    const separatorIndex = id.indexOf(":");
+    if (separatorIndex <= 0) return true;
+    const prefix = id.slice(0, separatorIndex);
+    return prefix !== "instantly" && prefix !== "smartlead";
+  });
+}
+
+function shouldSwallowProviderScopedMiss(
+  campaignIds: string[] | undefined,
+  provider: SourceProvider,
+  configuredProviderCount: number,
+) {
+  return configuredProviderCount > 1 &&
+    hasUnqualifiedCampaignIds(campaignIds) &&
+    providerScopedCampaignIds(campaignIds, provider).length === 0;
+}
+
 function isScopedCampaignMiss(error: unknown) {
   return error instanceof Error &&
     /No (Instantly |Smartlead )?campaigns matched the requested refresh scope\./.test(error.message);
@@ -3011,13 +3047,17 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
       const summaries = [];
       const scopedMisses: string[] = [];
       const configuredProviderCount = Number(instantlyConfigured) + Number(smartleadConfigured);
-      const allowScopedMiss = configuredProviderCount > 1 && Boolean(options.campaignIds?.length);
       const instantlyOptions = refreshOptionsForProvider(options, "instantly");
       if (instantlyConfigured && instantlyOptions) {
         try {
           summaries.push(await refreshInstantlyWorkspace(instantlyOptions));
         } catch (error) {
-          if (!allowScopedMiss || !isScopedCampaignMiss(error)) throw error;
+          if (
+            !shouldSwallowProviderScopedMiss(options.campaignIds, "instantly", configuredProviderCount) ||
+            !isScopedCampaignMiss(error)
+          ) {
+            throw error;
+          }
           scopedMisses.push("instantly");
         }
       }
@@ -3026,7 +3066,12 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
         try {
           summaries.push(await refreshSmartleadWorkspace(smartleadOptions));
         } catch (error) {
-          if (!allowScopedMiss || !isScopedCampaignMiss(error)) throw error;
+          if (
+            !shouldSwallowProviderScopedMiss(options.campaignIds, "smartlead", configuredProviderCount) ||
+            !isScopedCampaignMiss(error)
+          ) {
+            throw error;
+          }
           scopedMisses.push("smartlead");
         }
       }

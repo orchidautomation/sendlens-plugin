@@ -516,7 +516,8 @@ try {
     client: smartleadProviderOverrideClient,
   });
   assert.equal(smartleadOverrideRefresh.workspaceId, "smartlead_override_ws");
-  assert.ok(smartleadRequestedCampaignIds.includes("901"));
+  assert.deepEqual([...new Set(smartleadRequestedCampaignIds)], ["901"]);
+  smartleadRequestedCampaignIds.length = 0;
   db = await openDb();
   try {
     const owner = await getCacheOwnerMetadata(db);
@@ -553,6 +554,8 @@ try {
     client: smartleadProviderOverrideClient,
   });
   assert.equal(allProviderScopedRefresh.workspaceId, "all_scoped_ws");
+  assert.deepEqual([...new Set(smartleadRequestedCampaignIds)], ["901"]);
+  smartleadRequestedCampaignIds.length = 0;
 
   installSuccessfulRefresh("all_scoped_ws", "instantly-only", "Instantly Only");
   process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-unqualified-smartlead-scope.duckdb");
@@ -563,6 +566,8 @@ try {
     client: smartleadProviderOverrideClient,
   });
   assert.equal(allProviderUnqualifiedSmartleadRefresh.workspaceId, "all_scoped_ws");
+  assert.deepEqual([...new Set(smartleadRequestedCampaignIds)], ["901"]);
+  smartleadRequestedCampaignIds.length = 0;
 
   process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-unqualified-instantly-scope.duckdb");
   const allProviderUnqualifiedInstantlyRefresh = await refreshWorkspaceAtomically({
@@ -572,7 +577,19 @@ try {
     client: smartleadProviderOverrideClient,
   });
   assert.equal(allProviderUnqualifiedInstantlyRefresh.workspaceId, "all_scoped_ws");
-  assert.ok(!smartleadRequestedCampaignIds.includes("smartlead:901"));
+  assert.deepEqual(smartleadRequestedCampaignIds, []);
+
+  process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-explicit-smartlead-miss.duckdb");
+  await assert.rejects(
+    refreshWorkspaceAtomically({
+      provider: "all",
+      source: "manual",
+      campaignIds: ["instantly:instantly-only", "smartlead:typo"],
+      client: smartleadProviderOverrideClient,
+    }),
+    /No Smartlead campaigns matched the requested refresh scope/,
+  );
+  assert.deepEqual(smartleadRequestedCampaignIds, []);
   delete process.env.SENDLENS_INSTANTLY_API_KEY;
   delete process.env.SENDLENS_CLIENT;
   delete process.env.SENDLENS_SMARTLEAD_API_KEY;

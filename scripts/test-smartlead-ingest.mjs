@@ -493,7 +493,9 @@ function regressionClient({ includeTags }) {
   ].map((account) => ({
     ...account,
     from_email: Number(account.id) === 303 ? "" : account.from_email,
-    email: Number(account.id) === 303 ? "sender-303@example.com" : account.email,
+    email: Number(account.id) === 303 ? undefined : account.email,
+    email_account: Number(account.id) === 303 ? "account-303" : account.email_account,
+    email_account_email: Number(account.id) === 303 ? "sender-303@example.com" : account.email_account_email,
     tags: includeTags
       ? [
         Number(account.id) === 301
@@ -577,7 +579,13 @@ function regressionClient({ includeTags }) {
     async listCampaignEmailAccounts(campaignId) {
       return regressionAccounts
         .filter((account) => account.campaign_ids?.includes(Number(campaignId)))
-        .map(({ tags: _tags, ...account }) => account);
+        .map(({ tags: _tags, ...account }) => {
+          if (!includeTags && Number(campaignId) === 101 && Number(account.id) === 301) {
+            const { email: _email, email_account_email: _emailAccountEmail, ...scopedAccount } = account;
+            return { ...scopedAccount, from_email: "" };
+          }
+          return account;
+        });
     },
     async listAllEmailAccounts() {
       return regressionAccounts;
