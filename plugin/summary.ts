@@ -55,6 +55,9 @@ export async function buildWorkspaceSummary(
     conn,
     `SELECT
        campaign_id,
+       source_provider,
+       provider_campaign_id,
+       campaign_source_id,
        campaign_name AS name,
        campaign_name,
        status,
@@ -214,6 +217,9 @@ export async function buildWorkspaceSummary(
     },
     campaigns: campaignRows.map((row) => ({
       campaign_id: row.campaign_id,
+      source_provider: row.source_provider ?? "instantly",
+      provider_campaign_id: row.provider_campaign_id ?? row.campaign_id,
+      campaign_source_id: row.campaign_source_id ?? row.campaign_id,
       campaign_name: row.campaign_name ?? row.name,
       status: row.status,
       leads_count: num(row.leads_count),

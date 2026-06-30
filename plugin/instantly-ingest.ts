@@ -28,6 +28,7 @@ import {
   setActiveWorkspaceId,
   shouldCopyLiveCacheForRefresh,
   stampCacheOwner,
+  withCacheProviderMode,
 } from "./local-db";
 import {
   allocateVariantEmailCaps,
@@ -41,6 +42,12 @@ import {
 import { writeRefreshStatus } from "./refresh-status";
 import { buildWorkspaceSummary } from "./summary";
 import { appendTraceLog } from "./debug-log";
+import {
+  resolveSourceProviderMode,
+  type SourceProvider,
+  type SourceProviderMode,
+} from "./provider-config";
+import { refreshSmartleadWorkspace } from "./smartlead-ingest";
 
 type CampaignVariantTemplate = {
   sequenceIndex: number;
@@ -80,6 +87,7 @@ type ReplyEmailRecord = {
 type RefreshOptions = {
   campaignIds?: string[];
   source?: "session_start" | "manual";
+  provider?: SourceProviderMode;
   forceHybrid?: boolean;
   nonReplyLeadLimit?: number;
   includeReplyThreadOutbound?: boolean;
@@ -369,6 +377,9 @@ function normalizeSubject(subject: string) {
 }
 
 function deriveWorkspaceId(sources: Array<Record<string, unknown> | undefined>) {
+  const configuredClient = process.env.SENDLENS_CLIENT?.trim();
+  if (configuredClient) return configuredClient;
+
   for (const source of sources) {
     if (!source) continue;
     const value =
@@ -2879,7 +2890,96 @@ async function shouldSeedShadowFromLive(liveDbPath: string) {
   });
 }
 
-export async function refreshWorkspaceAtomically(options: RefreshOptions = {}) {
+function parseCampaignScopeId(campaignId: unknown): {
+  provider: SourceProvider | null;
+  nativeId: string;
+  isQualified: boolean;
+} | null {
+  const id = String(campaignId ?? "").trim();
+  if (!id) return null;
+
+  const separatorIndex = id.indexOf(":");
+  if (separatorIndex <= 0) {
+    return { provider: null, nativeId: id, isQualified: false };
+  }
+
+  const prefix = id.slice(0, separatorIndex);
+  const nativeId = id.slice(separatorIndex + 1).trim();
+  if (prefix === "instantly" || prefix === "smartlead") {
+    return { provider: prefix, nativeId, isQualified: true };
+  }
+
+  return { provider: null, nativeId: id, isQualified: false };
+}
+
+function campaignIdsForProvider(
+  campaignIds: string[] | undefined,
+  provider: SourceProvider,
+) {
+  if (!campaignIds?.length) return undefined;
+
+  const scopedIds = new Set<string>();
+  for (const campaignId of campaignIds) {
+    const parsed = parseCampaignScopeId(campaignId);
+    if (!parsed) continue;
+    if (parsed.isQualified) {
+      if (parsed.provider === provider && parsed.nativeId) {
+        scopedIds.add(parsed.nativeId);
+      }
+      continue;
+    }
+    scopedIds.add(parsed.nativeId);
+  }
+
+  return [...scopedIds];
+}
+
+function refreshOptionsForProvider(
+  options: RefreshOptions,
+  provider: SourceProvider,
+) {
+  const campaignIds = campaignIdsForProvider(options.campaignIds, provider);
+  if (!options.campaignIds?.length || campaignIds == null) return options;
+  if (campaignIds.length === 0) return null;
+  return { ...options, campaignIds };
+}
+
+function providerScopedCampaignIds(campaignIds: string[] | undefined, provider: SourceProvider) {
+  if (!campaignIds?.length) return [];
+  const scopedIds: string[] = [];
+  for (const campaignId of campaignIds) {
+    const parsed = parseCampaignScopeId(campaignId);
+    if (parsed?.isQualified && parsed.provider === provider && parsed.nativeId) {
+      scopedIds.push(parsed.nativeId);
+    }
+  }
+  return scopedIds;
+}
+
+function hasUnqualifiedCampaignIds(campaignIds: string[] | undefined) {
+  if (!campaignIds?.length) return false;
+  return campaignIds.some((campaignId) => {
+    const parsed = parseCampaignScopeId(campaignId);
+    return Boolean(parsed && !parsed.isQualified);
+  });
+}
+
+function shouldSwallowProviderScopedMiss(
+  campaignIds: string[] | undefined,
+  provider: SourceProvider,
+  configuredProviderCount: number,
+) {
+  return configuredProviderCount > 1 &&
+    hasUnqualifiedCampaignIds(campaignIds) &&
+    providerScopedCampaignIds(campaignIds, provider).length === 0;
+}
+
+function isScopedCampaignMiss(error: unknown) {
+  return error instanceof Error &&
+    /No (Instantly |Smartlead )?campaigns matched the requested refresh scope\./.test(error.message);
+}
+
+async function refreshWorkspaceAtomicallyWithProviderMode(options: RefreshOptions = {}) {
   const liveDbPath = resolveDbPath();
   const shadowDbPath = path.join(
     path.dirname(liveDbPath),
@@ -2930,6 +3030,93 @@ export async function refreshWorkspaceAtomically(options: RefreshOptions = {}) {
 }
 
 export async function refreshWorkspace(options: RefreshOptions = {}) {
+  const providerMode = resolveSourceProviderMode(options.provider);
+  if (!providerMode.valid) {
+    throw new Error(providerMode.message ?? "Invalid SendLens provider mode.");
+  }
+
+  return withCacheProviderMode(providerMode.mode, async () => {
+    if (providerMode.mode === "smartlead") {
+      const smartleadOptions = refreshOptionsForProvider(options, "smartlead");
+      if (!smartleadOptions) {
+        throw new Error("No Smartlead campaigns matched the requested refresh scope.");
+      }
+      return refreshSmartleadWorkspace(smartleadOptions);
+    }
+
+    if (providerMode.mode === "all") {
+      const instantlyConfigured = Boolean(process.env.SENDLENS_INSTANTLY_API_KEY?.trim());
+      const smartleadConfigured = Boolean(process.env.SENDLENS_SMARTLEAD_API_KEY?.trim());
+      if (instantlyConfigured && smartleadConfigured && !process.env.SENDLENS_CLIENT?.trim()) {
+        throw new Error(
+          "SENDLENS_PROVIDER=all with both Instantly and Smartlead requires SENDLENS_CLIENT so both provider refreshes write the same local workspace.",
+        );
+      }
+
+      const summaries = [];
+      const scopedMisses: string[] = [];
+      const configuredProviderCount = Number(instantlyConfigured) + Number(smartleadConfigured);
+      const instantlyOptions = refreshOptionsForProvider(options, "instantly");
+      if (instantlyConfigured && instantlyOptions) {
+        try {
+          summaries.push(await refreshInstantlyWorkspace(instantlyOptions));
+        } catch (error) {
+          if (
+            !shouldSwallowProviderScopedMiss(options.campaignIds, "instantly", configuredProviderCount) ||
+            !isScopedCampaignMiss(error)
+          ) {
+            throw error;
+          }
+          scopedMisses.push("instantly");
+        }
+      }
+      const smartleadOptions = refreshOptionsForProvider(options, "smartlead");
+      if (smartleadConfigured && smartleadOptions) {
+        try {
+          summaries.push(await refreshSmartleadWorkspace(smartleadOptions));
+        } catch (error) {
+          if (
+            !shouldSwallowProviderScopedMiss(options.campaignIds, "smartlead", configuredProviderCount) ||
+            !isScopedCampaignMiss(error)
+          ) {
+            throw error;
+          }
+          scopedMisses.push("smartlead");
+        }
+      }
+      if (summaries.length === 0) {
+        if (scopedMisses.length > 0) {
+          throw new Error(
+            `No campaigns matched the requested refresh scope across configured providers: ${scopedMisses.join(", ")}.`,
+          );
+        }
+        throw new Error(
+          "SENDLENS_PROVIDER=all requires SENDLENS_INSTANTLY_API_KEY, SENDLENS_SMARTLEAD_API_KEY, or both.",
+        );
+      }
+      return summaries[summaries.length - 1];
+    }
+
+    const instantlyOptions = refreshOptionsForProvider(options, "instantly");
+    if (!instantlyOptions) {
+      throw new Error("No Instantly campaigns matched the requested refresh scope.");
+    }
+    return refreshInstantlyWorkspace(instantlyOptions);
+  });
+}
+
+export async function refreshWorkspaceAtomically(options: RefreshOptions = {}) {
+  const providerMode = resolveSourceProviderMode(options.provider);
+  if (!providerMode.valid) {
+    throw new Error(providerMode.message ?? "Invalid SendLens provider mode.");
+  }
+
+  return withCacheProviderMode(providerMode.mode, () =>
+    refreshWorkspaceAtomicallyWithProviderMode(options),
+  );
+}
+
+async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
   const apiKey = process.env.SENDLENS_INSTANTLY_API_KEY?.trim();
   if (!apiKey) {
     throw new Error("Missing SENDLENS_INSTANTLY_API_KEY.");

@@ -30,6 +30,7 @@ export async function seedDemoWorkspace() {
     await seedTagsAndAccounts(db);
     await seedLeadsAndReplies(db);
     await seedInboxPlacement(db);
+    await seedProviderCapabilities(db);
     await setActiveWorkspaceId(db, DEMO_WORKSPACE_ID, "fast");
 
     const endedAt = new Date();
@@ -252,6 +253,18 @@ async function seedInboxPlacement(db: Awaited<ReturnType<typeof getDb>>) {
      ('${DEMO_WORKSPACE_ID}', 'demo-ipa-alpha-2', 'demo_org', 'demo-ipt-alpha', '2026-05-01 10:02:00'::TIMESTAMP, '2026-05-01'::DATE, false, true, 'sender-b@demo.invalid', 2, 'seed-outlook@example.invalid', 2, 1, 1, true, true, true, NULL, NULL, 2, '{"id":"demo-ipa-alpha-2"}', CURRENT_TIMESTAMP),
      ('${DEMO_WORKSPACE_ID}', 'demo-ipa-risk-1', 'demo_org', 'demo-ipt-risk', '2026-05-01 10:03:00'::TIMESTAMP, '2026-05-01'::DATE, true, false, 'sender-risk@demo.invalid', 1, 'seed-gmail@example.invalid', 1, 1, 1, true, false, true, '{"listed":true}', '{"dkim":"failed"}', 2, '{"id":"demo-ipa-risk-1"}', CURRENT_TIMESTAMP),
      ('${DEMO_WORKSPACE_ID}', 'demo-ipa-risk-2', 'demo_org', 'demo-ipt-risk', '2026-05-01 10:04:00'::TIMESTAMP, '2026-05-01'::DATE, false, true, 'sender-risk@demo.invalid', 2, 'seed-outlook@example.invalid', 2, 1, 1, true, true, false, NULL, '{"dmarc":"failed"}', 2, '{"id":"demo-ipa-risk-2"}', CURRENT_TIMESTAMP)`,
+  );
+}
+
+async function seedProviderCapabilities(db: Awaited<ReturnType<typeof getDb>>) {
+  await run(
+    db,
+    `INSERT OR REPLACE INTO sendlens.provider_capabilities
+     (workspace_id, source_provider, capability, support_status, confidence, coverage_note, synced_at)
+     VALUES
+     ('${DEMO_WORKSPACE_ID}', 'instantly', 'campaign_directory', 'supported', 'high', 'Synthetic demo capability row for campaign directory reads.', CURRENT_TIMESTAMP),
+     ('${DEMO_WORKSPACE_ID}', 'instantly', 'campaign_analytics', 'supported', 'high', 'Synthetic demo capability row for aggregate campaign analytics.', CURRENT_TIMESTAMP),
+     ('${DEMO_WORKSPACE_ID}', 'instantly', 'inbox_placement', 'supported', 'high', 'Synthetic demo capability row for inbox placement evidence.', CURRENT_TIMESTAMP)`,
   );
 }
 

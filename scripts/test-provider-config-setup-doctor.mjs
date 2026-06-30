@@ -20,6 +20,7 @@ const {
   validateSmartleadApiKey,
 } = require("../build/plugin/provider-config.js");
 const { loadClientEnv } = require("../build/plugin/env.js");
+const { refreshWorkspace } = require("../build/plugin/instantly-ingest.js");
 const { buildSetupDoctorReport } = require("../build/plugin/setup-doctor.js");
 const { readRefreshStatus } = require("../build/plugin/refresh-status.js");
 
@@ -223,6 +224,22 @@ try {
   assert.equal(findCheck(report, "Instantly credentials")?.status, "pass");
   assert.equal(findCheck(report, "Smartlead credentials")?.status, "pass");
   assertNoSensitiveValue(report, smartleadValue);
+
+  tempDir = resetEnv("all-refresh-requires-client");
+  await fs.mkdir(tempDir, { recursive: true });
+  process.env.SENDLENS_PROVIDER = "all";
+  process.env.SENDLENS_INSTANTLY_API_KEY = "instantly-test-value";
+  process.env.SENDLENS_SMARTLEAD_API_KEY = smartleadValue;
+  let allRefreshProviderFetchCount = 0;
+  globalThis.fetch = async () => {
+    allRefreshProviderFetchCount += 1;
+    return responseJson([]);
+  };
+  await assert.rejects(
+    refreshWorkspace({ provider: "all", source: "manual" }),
+    /requires SENDLENS_CLIENT/,
+  );
+  assert.equal(allRefreshProviderFetchCount, 0);
 
   tempDir = resetEnv("all-smartlead-valid-no-instantly-no-cache");
   await fs.mkdir(tempDir, { recursive: true });

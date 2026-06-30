@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
@@ -9,6 +10,11 @@ import {
   DEFAULT_DB_FILENAME,
   PUBLIC_TABLES,
 } from "./constants";
+import {
+  providerModeIncludes,
+  resolveSourceProviderMode,
+  type SourceProviderMode,
+} from "./provider-config";
 
 const DEFAULT_DB_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_DB_CONNECT_RETRY_MS = 250;
@@ -24,11 +30,20 @@ const LOCK_ERROR_PATTERNS = [
   /WAL replay/i,
 ];
 const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
+const cacheProviderModeContext = new AsyncLocalStorage<SourceProviderMode>();
 
 export type GetDbOptions = {
   timeoutMs?: number;
   retryMs?: number;
 };
+
+export async function withCacheProviderMode<T>(
+  providerMode: SourceProviderMode,
+  operation: () => Promise<T>,
+) {
+  if (cacheProviderModeContext.getStore()) return operation();
+  return cacheProviderModeContext.run(providerMode, operation);
+}
 
 export class LocalDbUnavailableError extends Error {
   code = "duckdb_unavailable" as const;
@@ -258,6 +273,209 @@ export async function run(conn: DuckDBConnection, sql: string) {
   await conn.run(sql);
 }
 
+function quoteIdent(value: string) {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function arraysEqual(left: string[], right: string[]) {
+  const leftSet = new Set(left);
+  return left.length === right.length && right.every((value) => leftSet.has(value));
+}
+
+async function primaryKeyColumns(conn: DuckDBConnection, tableName: string) {
+  const rows = await query(
+    conn,
+    `SELECT name, pk
+     FROM pragma_table_info('sendlens.${esc(tableName)}')
+     WHERE pk > 0
+     ORDER BY pk`,
+  );
+  return rows.map((row) => String(row.name));
+}
+
+async function dropSendlensViews(conn: DuckDBConnection) {
+  const views = await query(
+    conn,
+    `SELECT table_name
+     FROM information_schema.views
+     WHERE table_schema = 'sendlens'`,
+  );
+  for (const view of views) {
+    const viewName = String(view.table_name ?? "");
+    if (!viewName) continue;
+    await run(conn, `DROP VIEW IF EXISTS sendlens.${quoteIdent(viewName)} CASCADE`);
+  }
+}
+
+async function rebuildAccountsWithProviderKey(conn: DuckDBConnection) {
+  await run(conn, "DROP TABLE IF EXISTS sendlens.accounts__provider_key_migration");
+  await run(conn, "ALTER TABLE sendlens.accounts RENAME TO accounts__provider_key_migration");
+  await run(
+    conn,
+    `CREATE TABLE sendlens.accounts (
+      workspace_id VARCHAR NOT NULL,
+      email VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      provider_account_id VARCHAR,
+      account_source_id VARCHAR,
+      organization_id VARCHAR,
+      status VARCHAR,
+      warmup_status VARCHAR,
+      warmup_score DOUBLE,
+      provider VARCHAR,
+      daily_limit INTEGER,
+      sending_gap INTEGER,
+      first_name VARCHAR,
+      last_name VARCHAR,
+      total_sent_30d INTEGER,
+      total_replies_30d INTEGER,
+      total_bounces_30d INTEGER,
+      source_raw_json VARCHAR,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, source_provider, email)
+    )`,
+  );
+  await run(
+    conn,
+    `INSERT OR REPLACE INTO sendlens.accounts (
+      workspace_id,
+      email,
+      source_provider,
+      provider_account_id,
+      account_source_id,
+      organization_id,
+      status,
+      warmup_status,
+      warmup_score,
+      provider,
+      daily_limit,
+      sending_gap,
+      first_name,
+      last_name,
+      total_sent_30d,
+      total_replies_30d,
+      total_bounces_30d,
+      source_raw_json,
+      synced_at
+    )
+    SELECT
+      workspace_id,
+      email,
+      COALESCE(NULLIF(source_provider, ''), 'instantly') AS source_provider,
+      provider_account_id,
+      account_source_id,
+      organization_id,
+      status,
+      warmup_status,
+      warmup_score,
+      provider,
+      daily_limit,
+      sending_gap,
+      first_name,
+      last_name,
+      total_sent_30d,
+      total_replies_30d,
+      total_bounces_30d,
+      source_raw_json,
+      synced_at
+    FROM sendlens.accounts__provider_key_migration`,
+  );
+  await run(conn, "DROP TABLE sendlens.accounts__provider_key_migration");
+}
+
+async function rebuildAccountDailyMetricsWithProviderKey(conn: DuckDBConnection) {
+  await run(conn, "DROP TABLE IF EXISTS sendlens.account_daily_metrics__provider_key_migration");
+  await run(conn, "ALTER TABLE sendlens.account_daily_metrics RENAME TO account_daily_metrics__provider_key_migration");
+  await run(
+    conn,
+    `CREATE TABLE sendlens.account_daily_metrics (
+      workspace_id VARCHAR NOT NULL,
+      email VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      provider_account_id VARCHAR,
+      account_source_id VARCHAR,
+      date DATE NOT NULL,
+      sent INTEGER,
+      bounced INTEGER,
+      contacted INTEGER,
+      new_leads_contacted INTEGER,
+      opened INTEGER,
+      unique_opened INTEGER,
+      replies INTEGER,
+      unique_replies INTEGER,
+      replies_automatic INTEGER,
+      unique_replies_automatic INTEGER,
+      clicks INTEGER,
+      unique_clicks INTEGER,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, source_provider, email, date)
+    )`,
+  );
+  await run(
+    conn,
+    `INSERT OR REPLACE INTO sendlens.account_daily_metrics (
+      workspace_id,
+      email,
+      source_provider,
+      provider_account_id,
+      account_source_id,
+      date,
+      sent,
+      bounced,
+      contacted,
+      new_leads_contacted,
+      opened,
+      unique_opened,
+      replies,
+      unique_replies,
+      replies_automatic,
+      unique_replies_automatic,
+      clicks,
+      unique_clicks,
+      synced_at
+    )
+    SELECT
+      workspace_id,
+      email,
+      COALESCE(NULLIF(source_provider, ''), 'instantly') AS source_provider,
+      provider_account_id,
+      account_source_id,
+      date,
+      sent,
+      bounced,
+      contacted,
+      new_leads_contacted,
+      opened,
+      unique_opened,
+      replies,
+      unique_replies,
+      replies_automatic,
+      unique_replies_automatic,
+      clicks,
+      unique_clicks,
+      synced_at
+    FROM sendlens.account_daily_metrics__provider_key_migration`,
+  );
+  await run(conn, "DROP TABLE sendlens.account_daily_metrics__provider_key_migration");
+}
+
+async function ensureProviderQualifiedAccountPrimaryKeys(conn: DuckDBConnection) {
+  const accountsPk = await primaryKeyColumns(conn, "accounts");
+  const accountDailyPk = await primaryKeyColumns(conn, "account_daily_metrics");
+  const rebuildAccounts = !arraysEqual(accountsPk, ["workspace_id", "source_provider", "email"]);
+  const rebuildAccountDaily = !arraysEqual(accountDailyPk, ["workspace_id", "source_provider", "email", "date"]);
+
+  if (!rebuildAccounts && !rebuildAccountDaily) return;
+
+  await dropSendlensViews(conn);
+  if (rebuildAccounts) {
+    await rebuildAccountsWithProviderKey(conn);
+  }
+  if (rebuildAccountDaily) {
+    await rebuildAccountDailyMetricsWithProviderKey(conn);
+  }
+}
+
 async function ensureSchema(conn: DuckDBConnection) {
   const statements = [
     "CREATE SCHEMA IF NOT EXISTS sendlens",
@@ -269,6 +487,9 @@ async function ensureSchema(conn: DuckDBConnection) {
     `CREATE TABLE IF NOT EXISTS sendlens.campaigns (
       id VARCHAR,
       workspace_id VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      provider_campaign_id VARCHAR,
+      campaign_source_id VARCHAR,
       organization_id VARCHAR,
       name VARCHAR,
       status VARCHAR,
@@ -288,12 +509,16 @@ async function ensureSchema(conn: DuckDBConnection) {
       step_count INTEGER,
       timestamp_created TIMESTAMP,
       timestamp_updated TIMESTAMP,
+      source_raw_json VARCHAR,
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (workspace_id, id)
     )`,
     `CREATE TABLE IF NOT EXISTS sendlens.campaign_analytics (
       workspace_id VARCHAR NOT NULL,
       campaign_id VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      provider_campaign_id VARCHAR,
+      campaign_source_id VARCHAR,
       campaign_name VARCHAR,
       leads_count INTEGER,
       contacted_count INTEGER,
@@ -320,6 +545,9 @@ async function ensureSchema(conn: DuckDBConnection) {
     `CREATE TABLE IF NOT EXISTS sendlens.campaign_daily_metrics (
       workspace_id VARCHAR NOT NULL,
       campaign_id VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      provider_campaign_id VARCHAR,
+      campaign_source_id VARCHAR,
       date DATE NOT NULL,
       sent INTEGER,
       contacted INTEGER,
@@ -340,6 +568,9 @@ async function ensureSchema(conn: DuckDBConnection) {
     `CREATE TABLE IF NOT EXISTS sendlens.step_analytics (
       workspace_id VARCHAR NOT NULL,
       campaign_id VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      provider_campaign_id VARCHAR,
+      campaign_source_id VARCHAR,
       step INTEGER,
       variant INTEGER,
       sent INTEGER,
@@ -356,6 +587,9 @@ async function ensureSchema(conn: DuckDBConnection) {
     `CREATE TABLE IF NOT EXISTS sendlens.campaign_variants (
       workspace_id VARCHAR NOT NULL,
       campaign_id VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      provider_campaign_id VARCHAR,
+      campaign_source_id VARCHAR,
       sequence_index INTEGER,
       step INTEGER,
       variant INTEGER,
@@ -370,9 +604,13 @@ async function ensureSchema(conn: DuckDBConnection) {
     `CREATE TABLE IF NOT EXISTS sendlens.campaign_account_assignments (
       workspace_id VARCHAR NOT NULL,
       campaign_id VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      provider_campaign_id VARCHAR,
+      campaign_source_id VARCHAR,
       assignment_type VARCHAR NOT NULL,
       assignment_key VARCHAR NOT NULL,
       account_email VARCHAR,
+      provider_account_id VARCHAR,
       tag_id VARCHAR,
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (workspace_id, campaign_id, assignment_type, assignment_key)
@@ -380,6 +618,9 @@ async function ensureSchema(conn: DuckDBConnection) {
     `CREATE TABLE IF NOT EXISTS sendlens.accounts (
       workspace_id VARCHAR NOT NULL,
       email VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      provider_account_id VARCHAR,
+      account_source_id VARCHAR,
       organization_id VARCHAR,
       status VARCHAR,
       warmup_status VARCHAR,
@@ -392,12 +633,16 @@ async function ensureSchema(conn: DuckDBConnection) {
       total_sent_30d INTEGER,
       total_replies_30d INTEGER,
       total_bounces_30d INTEGER,
+      source_raw_json VARCHAR,
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (workspace_id, email)
+      PRIMARY KEY (workspace_id, source_provider, email)
     )`,
     `CREATE TABLE IF NOT EXISTS sendlens.account_daily_metrics (
       workspace_id VARCHAR NOT NULL,
       email VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      provider_account_id VARCHAR,
+      account_source_id VARCHAR,
       date DATE NOT NULL,
       sent INTEGER,
       bounced INTEGER,
@@ -412,11 +657,13 @@ async function ensureSchema(conn: DuckDBConnection) {
       clicks INTEGER,
       unique_clicks INTEGER,
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (workspace_id, email, date)
+      PRIMARY KEY (workspace_id, source_provider, email, date)
     )`,
     `CREATE TABLE IF NOT EXISTS sendlens.custom_tags (
       workspace_id VARCHAR NOT NULL,
       id VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      provider_tag_id VARCHAR,
       organization_id VARCHAR,
       name VARCHAR,
       label VARCHAR,
@@ -430,6 +677,8 @@ async function ensureSchema(conn: DuckDBConnection) {
     `CREATE TABLE IF NOT EXISTS sendlens.custom_tag_mappings (
       workspace_id VARCHAR NOT NULL,
       tag_id VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      provider_resource_id VARCHAR,
       resource_type VARCHAR NOT NULL,
       resource_id VARCHAR NOT NULL,
       timestamp_created TIMESTAMP,
@@ -531,8 +780,14 @@ async function ensureSchema(conn: DuckDBConnection) {
     `CREATE TABLE IF NOT EXISTS sendlens.sampled_leads (
       workspace_id VARCHAR NOT NULL,
       campaign_id VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      provider_campaign_id VARCHAR,
+      campaign_source_id VARCHAR,
       id VARCHAR,
+      provider_lead_id VARCHAR,
       email VARCHAR NOT NULL,
+      normalized_email VARCHAR,
+      normalized_domain VARCHAR,
       first_name VARCHAR,
       last_name VARCHAR,
       company_name VARCHAR,
@@ -561,6 +816,7 @@ async function ensureSchema(conn: DuckDBConnection) {
       subsequence_id VARCHAR,
       list_id VARCHAR,
       custom_payload VARCHAR,
+      source_raw_json VARCHAR,
       sample_source VARCHAR,
       sampled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (workspace_id, campaign_id, email)
@@ -568,6 +824,9 @@ async function ensureSchema(conn: DuckDBConnection) {
     `CREATE TABLE IF NOT EXISTS sendlens.sampled_outbound_emails (
       workspace_id VARCHAR NOT NULL,
       campaign_id VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      provider_campaign_id VARCHAR,
+      campaign_source_id VARCHAR,
       id VARCHAR NOT NULL,
       to_email VARCHAR,
       from_email VARCHAR,
@@ -584,6 +843,9 @@ async function ensureSchema(conn: DuckDBConnection) {
     `CREATE TABLE IF NOT EXISTS sendlens.sampling_runs (
       workspace_id VARCHAR NOT NULL,
       campaign_id VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      provider_campaign_id VARCHAR,
+      campaign_source_id VARCHAR,
       ingest_mode VARCHAR,
       total_leads INTEGER,
       total_sent INTEGER,
@@ -598,6 +860,16 @@ async function ensureSchema(conn: DuckDBConnection) {
       coverage_note VARCHAR,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (workspace_id, campaign_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.provider_capabilities (
+      workspace_id VARCHAR NOT NULL,
+      source_provider VARCHAR NOT NULL,
+      capability VARCHAR NOT NULL,
+      support_status VARCHAR NOT NULL,
+      confidence VARCHAR,
+      coverage_note VARCHAR,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, source_provider, capability)
     )`,
     `CREATE TABLE IF NOT EXISTS sendlens.sync_log (
       id VARCHAR PRIMARY KEY,
@@ -648,10 +920,56 @@ async function ensureSchema(conn: DuckDBConnection) {
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS filtered_lead_rows INTEGER",
     "ALTER TABLE sendlens.campaign_daily_metrics ADD COLUMN IF NOT EXISTS opportunities INTEGER",
     "ALTER TABLE sendlens.campaign_daily_metrics ADD COLUMN IF NOT EXISTS unique_opportunities INTEGER",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS provider_campaign_id VARCHAR",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS campaign_source_id VARCHAR",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS source_raw_json VARCHAR",
+    "ALTER TABLE sendlens.campaign_analytics ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
+    "ALTER TABLE sendlens.campaign_analytics ADD COLUMN IF NOT EXISTS provider_campaign_id VARCHAR",
+    "ALTER TABLE sendlens.campaign_analytics ADD COLUMN IF NOT EXISTS campaign_source_id VARCHAR",
+    "ALTER TABLE sendlens.campaign_daily_metrics ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
+    "ALTER TABLE sendlens.campaign_daily_metrics ADD COLUMN IF NOT EXISTS provider_campaign_id VARCHAR",
+    "ALTER TABLE sendlens.campaign_daily_metrics ADD COLUMN IF NOT EXISTS campaign_source_id VARCHAR",
+    "ALTER TABLE sendlens.step_analytics ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
+    "ALTER TABLE sendlens.step_analytics ADD COLUMN IF NOT EXISTS provider_campaign_id VARCHAR",
+    "ALTER TABLE sendlens.step_analytics ADD COLUMN IF NOT EXISTS campaign_source_id VARCHAR",
+    "ALTER TABLE sendlens.campaign_variants ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
+    "ALTER TABLE sendlens.campaign_variants ADD COLUMN IF NOT EXISTS provider_campaign_id VARCHAR",
+    "ALTER TABLE sendlens.campaign_variants ADD COLUMN IF NOT EXISTS campaign_source_id VARCHAR",
+    "ALTER TABLE sendlens.campaign_account_assignments ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
+    "ALTER TABLE sendlens.campaign_account_assignments ADD COLUMN IF NOT EXISTS provider_campaign_id VARCHAR",
+    "ALTER TABLE sendlens.campaign_account_assignments ADD COLUMN IF NOT EXISTS campaign_source_id VARCHAR",
+    "ALTER TABLE sendlens.campaign_account_assignments ADD COLUMN IF NOT EXISTS provider_account_id VARCHAR",
+    "ALTER TABLE sendlens.accounts ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
+    "ALTER TABLE sendlens.accounts ADD COLUMN IF NOT EXISTS provider_account_id VARCHAR",
+    "ALTER TABLE sendlens.accounts ADD COLUMN IF NOT EXISTS account_source_id VARCHAR",
+    "ALTER TABLE sendlens.accounts ADD COLUMN IF NOT EXISTS source_raw_json VARCHAR",
+    "ALTER TABLE sendlens.account_daily_metrics ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
+    "ALTER TABLE sendlens.account_daily_metrics ADD COLUMN IF NOT EXISTS provider_account_id VARCHAR",
+    "ALTER TABLE sendlens.account_daily_metrics ADD COLUMN IF NOT EXISTS account_source_id VARCHAR",
+    "ALTER TABLE sendlens.custom_tags ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
+    "ALTER TABLE sendlens.custom_tags ADD COLUMN IF NOT EXISTS provider_tag_id VARCHAR",
+    "ALTER TABLE sendlens.custom_tag_mappings ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
+    "ALTER TABLE sendlens.custom_tag_mappings ADD COLUMN IF NOT EXISTS provider_resource_id VARCHAR",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS provider_campaign_id VARCHAR",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS campaign_source_id VARCHAR",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS provider_lead_id VARCHAR",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS normalized_email VARCHAR",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS normalized_domain VARCHAR",
+    "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS source_raw_json VARCHAR",
+    "ALTER TABLE sendlens.sampled_outbound_emails ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
+    "ALTER TABLE sendlens.sampled_outbound_emails ADD COLUMN IF NOT EXISTS provider_campaign_id VARCHAR",
+    "ALTER TABLE sendlens.sampled_outbound_emails ADD COLUMN IF NOT EXISTS campaign_source_id VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS provider_campaign_id VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS campaign_source_id VARCHAR",
     `CREATE OR REPLACE VIEW sendlens.campaign_tags AS
       SELECT
         m.workspace_id,
+        COALESCE(m.source_provider, 'instantly') AS source_provider,
         m.resource_id AS campaign_id,
+        COALESCE(c.campaign_source_id, m.resource_id) AS campaign_source_id,
         c.name AS campaign_name,
         m.tag_id,
         COALESCE(t.label, t.name) AS tag_label,
@@ -661,14 +979,18 @@ async function ensureSchema(conn: DuckDBConnection) {
       JOIN sendlens.custom_tags t
         ON m.workspace_id = t.workspace_id
        AND m.tag_id = t.id
+       AND COALESCE(m.source_provider, 'instantly') = COALESCE(t.source_provider, 'instantly')
       LEFT JOIN sendlens.campaigns c
         ON m.workspace_id = c.workspace_id
        AND m.resource_id = c.id
+       AND COALESCE(m.source_provider, 'instantly') = COALESCE(c.source_provider, 'instantly')
       WHERE TRY_CAST(m.resource_type AS INTEGER) = 2`,
     `CREATE OR REPLACE VIEW sendlens.account_tags AS
       SELECT
         m.workspace_id,
+        COALESCE(m.source_provider, 'instantly') AS source_provider,
         m.resource_id AS account_email,
+        m.provider_resource_id AS provider_account_id,
         m.tag_id,
         COALESCE(t.label, t.name) AS tag_label,
         t.color,
@@ -677,13 +999,17 @@ async function ensureSchema(conn: DuckDBConnection) {
       JOIN sendlens.custom_tags t
         ON m.workspace_id = t.workspace_id
        AND m.tag_id = t.id
+       AND COALESCE(m.source_provider, 'instantly') = COALESCE(t.source_provider, 'instantly')
       WHERE TRY_CAST(m.resource_type AS INTEGER) = 1`,
     `CREATE OR REPLACE VIEW sendlens.campaign_accounts AS
       SELECT
         ca.workspace_id,
+        COALESCE(ca.source_provider, 'instantly') AS source_provider,
         ca.campaign_id,
+        COALESCE(ca.campaign_source_id, c.campaign_source_id, ca.campaign_id) AS campaign_source_id,
         c.name AS campaign_name,
         ca.account_email,
+        ca.provider_account_id,
         'direct' AS assignment_source,
         NULL::VARCHAR AS tag_id,
         NULL::VARCHAR AS tag_label,
@@ -700,17 +1026,22 @@ async function ensureSchema(conn: DuckDBConnection) {
       LEFT JOIN sendlens.campaigns c
         ON ca.workspace_id = c.workspace_id
        AND ca.campaign_id = c.id
+       AND COALESCE(ca.source_provider, 'instantly') = COALESCE(c.source_provider, 'instantly')
       LEFT JOIN sendlens.accounts a
         ON ca.workspace_id = a.workspace_id
        AND lower(ca.account_email) = lower(a.email)
+       AND COALESCE(ca.source_provider, 'instantly') = COALESCE(a.source_provider, 'instantly')
       WHERE ca.assignment_type = 'email'
         AND ca.account_email IS NOT NULL
       UNION ALL
       SELECT
         ca.workspace_id,
+        COALESCE(ca.source_provider, 'instantly') AS source_provider,
         ca.campaign_id,
+        COALESCE(ca.campaign_source_id, c.campaign_source_id, ca.campaign_id) AS campaign_source_id,
         c.name AS campaign_name,
         acct_tag.account_email,
+        COALESCE(ca.provider_account_id, acct_tag.provider_account_id) AS provider_account_id,
         'tag' AS assignment_source,
         ca.tag_id,
         acct_tag.tag_label,
@@ -727,12 +1058,15 @@ async function ensureSchema(conn: DuckDBConnection) {
       JOIN sendlens.account_tags acct_tag
         ON ca.workspace_id = acct_tag.workspace_id
        AND ca.tag_id = acct_tag.tag_id
+       AND COALESCE(ca.source_provider, 'instantly') = COALESCE(acct_tag.source_provider, 'instantly')
       LEFT JOIN sendlens.campaigns c
         ON ca.workspace_id = c.workspace_id
        AND ca.campaign_id = c.id
+       AND COALESCE(ca.source_provider, 'instantly') = COALESCE(c.source_provider, 'instantly')
       LEFT JOIN sendlens.accounts a
         ON ca.workspace_id = a.workspace_id
        AND lower(acct_tag.account_email) = lower(a.email)
+       AND COALESCE(ca.source_provider, 'instantly') = COALESCE(a.source_provider, 'instantly')
       WHERE ca.assignment_type = 'tag'
         AND ca.tag_id IS NOT NULL`,
     `CREATE OR REPLACE VIEW sendlens.inbox_placement_test_overview AS
@@ -836,6 +1170,9 @@ async function ensureSchema(conn: DuckDBConnection) {
       SELECT
         c.workspace_id,
         c.id AS campaign_id,
+        COALESCE(c.source_provider, 'instantly') AS source_provider,
+        COALESCE(c.provider_campaign_id, c.id) AS provider_campaign_id,
+        COALESCE(c.campaign_source_id, c.id) AS campaign_source_id,
         c.name AS campaign_name,
         c.status,
         c.daily_limit,
@@ -892,9 +1229,11 @@ async function ensureSchema(conn: DuckDBConnection) {
       LEFT JOIN sendlens.campaign_analytics ca
         ON c.workspace_id = ca.workspace_id
        AND c.id = ca.campaign_id
+       AND COALESCE(c.source_provider, 'instantly') = COALESCE(ca.source_provider, 'instantly')
       LEFT JOIN sendlens.sampling_runs sr
         ON c.workspace_id = sr.workspace_id
-       AND c.id = sr.campaign_id`,
+       AND c.id = sr.campaign_id
+       AND COALESCE(c.source_provider, 'instantly') = COALESCE(sr.source_provider, 'instantly')`,
     `CREATE OR REPLACE VIEW sendlens.tag_scope_audit AS
       SELECT
         t.workspace_id,
@@ -924,10 +1263,12 @@ async function ensureSchema(conn: DuckDBConnection) {
       WITH tagged_campaigns AS (
         SELECT
           ct.workspace_id,
+          ct.source_provider,
           ct.tag_id,
           ct.tag_label,
           lower(trim(ct.tag_label)) AS normalized_tag_label,
           co.campaign_id,
+          co.campaign_source_id,
           co.campaign_name,
           co.status,
           co.daily_limit AS campaign_daily_limit,
@@ -936,11 +1277,13 @@ async function ensureSchema(conn: DuckDBConnection) {
         JOIN sendlens.campaign_overview co
           ON ct.workspace_id = co.workspace_id
          AND ct.campaign_id = co.campaign_id
+         AND ct.source_provider = co.source_provider
         WHERE co.status = 'active'
       ),
       sender_coverage AS (
         SELECT
           tc.workspace_id,
+          tc.source_provider,
           tc.tag_id,
           tc.campaign_id,
           COUNT(DISTINCT ca.account_email) AS resolved_sender_accounts,
@@ -951,17 +1294,21 @@ async function ensureSchema(conn: DuckDBConnection) {
         LEFT JOIN sendlens.campaign_accounts ca
           ON tc.workspace_id = ca.workspace_id
          AND tc.campaign_id = ca.campaign_id
+         AND tc.source_provider = ca.source_provider
         LEFT JOIN sendlens.account_daily_metrics adm
           ON ca.workspace_id = adm.workspace_id
          AND lower(ca.account_email) = lower(adm.email)
-        GROUP BY 1, 2, 3
+         AND ca.source_provider = COALESCE(adm.source_provider, 'instantly')
+        GROUP BY 1, 2, 3, 4
       )
       SELECT
         tc.workspace_id,
+        tc.source_provider,
         tc.tag_id,
         tc.tag_label,
         tc.normalized_tag_label,
         tc.campaign_id,
+        tc.campaign_source_id,
         tc.campaign_name,
         tc.status,
         tc.campaign_daily_limit,
@@ -979,15 +1326,18 @@ async function ensureSchema(conn: DuckDBConnection) {
       FROM tagged_campaigns tc
       LEFT JOIN sender_coverage sc
         ON tc.workspace_id = sc.workspace_id
+       AND tc.source_provider = sc.source_provider
        AND tc.tag_id = sc.tag_id
        AND tc.campaign_id = sc.campaign_id`,
     `CREATE OR REPLACE VIEW sendlens.campaign_tag_daily_volume_by_campaign AS
-      SELECT
+        SELECT
         ct.workspace_id,
+        ct.source_provider,
         ct.tag_id,
         ct.tag_label,
         lower(trim(ct.tag_label)) AS normalized_tag_label,
         co.campaign_id,
+        co.campaign_source_id,
         co.campaign_name,
         adm.date,
         co.daily_limit AS campaign_daily_limit,
@@ -1000,18 +1350,22 @@ async function ensureSchema(conn: DuckDBConnection) {
       JOIN sendlens.campaign_overview co
         ON ct.workspace_id = co.workspace_id
        AND ct.campaign_id = co.campaign_id
+       AND ct.source_provider = co.source_provider
       JOIN sendlens.campaign_accounts ca
         ON co.workspace_id = ca.workspace_id
        AND co.campaign_id = ca.campaign_id
+       AND co.source_provider = ca.source_provider
       JOIN sendlens.account_daily_metrics adm
         ON ca.workspace_id = adm.workspace_id
        AND lower(ca.account_email) = lower(adm.email)
+       AND ca.source_provider = COALESCE(adm.source_provider, 'instantly')
       WHERE co.status = 'active'
-      GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9`,
+      GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11`,
     `CREATE OR REPLACE VIEW sendlens.campaign_tag_daily_volume_deduped AS
       WITH assigned_accounts AS (
         SELECT DISTINCT
           ct.workspace_id,
+          ct.source_provider,
           ct.tag_id,
           ct.tag_label,
           lower(trim(ct.tag_label)) AS normalized_tag_label,
@@ -1020,15 +1374,18 @@ async function ensureSchema(conn: DuckDBConnection) {
         JOIN sendlens.campaign_overview co
           ON ct.workspace_id = co.workspace_id
          AND ct.campaign_id = co.campaign_id
+         AND ct.source_provider = co.source_provider
         JOIN sendlens.campaign_accounts ca
           ON co.workspace_id = ca.workspace_id
          AND co.campaign_id = ca.campaign_id
+         AND co.source_provider = ca.source_provider
         WHERE co.status = 'active'
           AND ca.account_email IS NOT NULL
       ),
       capacity AS (
         SELECT
           ct.workspace_id,
+          ct.source_provider,
           ct.tag_id,
           COUNT(DISTINCT co.campaign_id) AS active_campaigns,
           COALESCE(SUM(co.daily_limit), 0) AS configured_campaign_daily_limit_total,
@@ -1037,11 +1394,13 @@ async function ensureSchema(conn: DuckDBConnection) {
         JOIN sendlens.campaign_overview co
           ON ct.workspace_id = co.workspace_id
          AND ct.campaign_id = co.campaign_id
+         AND ct.source_provider = co.source_provider
         WHERE co.status = 'active'
-        GROUP BY 1, 2
+        GROUP BY 1, 2, 3
       )
       SELECT
         aa.workspace_id,
+        aa.source_provider,
         aa.tag_id,
         aa.tag_label,
         aa.normalized_tag_label,
@@ -1057,14 +1416,17 @@ async function ensureSchema(conn: DuckDBConnection) {
       JOIN sendlens.account_daily_metrics adm
         ON aa.workspace_id = adm.workspace_id
        AND lower(aa.account_email) = lower(adm.email)
+       AND aa.source_provider = COALESCE(adm.source_provider, 'instantly')
       JOIN capacity c
         ON aa.workspace_id = c.workspace_id
+       AND aa.source_provider = c.source_provider
        AND aa.tag_id = c.tag_id
-      GROUP BY 1, 2, 3, 4, 5, 6, 7, 8`,
+      GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9`,
     `CREATE OR REPLACE VIEW sendlens.campaign_tag_daily_volume_utilization AS
       WITH assigned_accounts AS (
         SELECT DISTINCT
           ct.workspace_id,
+          ct.source_provider,
           ct.tag_id,
           ca.account_email,
           ca.daily_limit AS account_daily_limit
@@ -1072,23 +1434,27 @@ async function ensureSchema(conn: DuckDBConnection) {
         JOIN sendlens.campaign_overview co
           ON ct.workspace_id = co.workspace_id
          AND ct.campaign_id = co.campaign_id
+         AND ct.source_provider = co.source_provider
         JOIN sendlens.campaign_accounts ca
           ON co.workspace_id = ca.workspace_id
          AND co.campaign_id = ca.campaign_id
+         AND co.source_provider = ca.source_provider
         WHERE co.status = 'active'
           AND ca.account_email IS NOT NULL
       ),
       sender_capacity AS (
         SELECT
           workspace_id,
+          source_provider,
           tag_id,
           COUNT(DISTINCT account_email) AS resolved_sender_accounts,
           COALESCE(SUM(account_daily_limit), 0) AS resolved_account_daily_limit_total
         FROM assigned_accounts
-        GROUP BY 1, 2
+        GROUP BY 1, 2, 3
       )
       SELECT
         dv.workspace_id,
+        dv.source_provider,
         dv.tag_id,
         dv.tag_label,
         dv.normalized_tag_label,
@@ -1107,10 +1473,12 @@ async function ensureSchema(conn: DuckDBConnection) {
       FROM sendlens.campaign_tag_daily_volume_deduped dv
       LEFT JOIN sender_capacity sc
         ON dv.workspace_id = sc.workspace_id
+       AND dv.source_provider = sc.source_provider
        AND dv.tag_id = sc.tag_id`,
     `CREATE OR REPLACE VIEW sendlens.campaign_tag_daily_volume_trend AS
       SELECT
         workspace_id,
+        source_provider,
         tag_id,
         tag_label,
         normalized_tag_label,
@@ -1118,18 +1486,19 @@ async function ensureSchema(conn: DuckDBConnection) {
         strftime(date, '%w') AS weekday_number,
         strftime(date, '%A') AS weekday_name,
         deduped_sender_sent,
-        ROUND(AVG(deduped_sender_sent) OVER (PARTITION BY workspace_id, tag_id ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 2) AS rolling_7_day_avg_sent,
-        MAX(deduped_sender_sent) OVER (PARTITION BY workspace_id, tag_id) AS peak_daily_sent,
-        ROUND(AVG(deduped_sender_sent) OVER (PARTITION BY workspace_id, tag_id), 2) AS avg_daily_sent_all_cached_days,
-        COUNT(*) OVER (PARTITION BY workspace_id, tag_id) AS cached_sending_days,
-        MIN(date) OVER (PARTITION BY workspace_id, tag_id) AS first_cached_send_date,
-        MAX(date) OVER (PARTITION BY workspace_id, tag_id) AS last_cached_send_date,
+        ROUND(AVG(deduped_sender_sent) OVER (PARTITION BY workspace_id, source_provider, tag_id ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 2) AS rolling_7_day_avg_sent,
+        MAX(deduped_sender_sent) OVER (PARTITION BY workspace_id, source_provider, tag_id) AS peak_daily_sent,
+        ROUND(AVG(deduped_sender_sent) OVER (PARTITION BY workspace_id, source_provider, tag_id), 2) AS avg_daily_sent_all_cached_days,
+        COUNT(*) OVER (PARTITION BY workspace_id, source_provider, tag_id) AS cached_sending_days,
+        MIN(date) OVER (PARTITION BY workspace_id, source_provider, tag_id) AS first_cached_send_date,
+        MAX(date) OVER (PARTITION BY workspace_id, source_provider, tag_id) AS last_cached_send_date,
         deduped_sender_unique_replies,
         deduped_sender_bounces
       FROM sendlens.campaign_tag_daily_volume_deduped`,
     `CREATE OR REPLACE VIEW sendlens.campaign_tag_true_daily_volume AS
       SELECT
         ct.workspace_id,
+        ct.source_provider,
         ct.tag_id,
         ct.tag_label,
         lower(trim(ct.tag_label)) AS normalized_tag_label,
@@ -1155,14 +1524,17 @@ async function ensureSchema(conn: DuckDBConnection) {
       JOIN sendlens.campaign_overview co
         ON ct.workspace_id = co.workspace_id
        AND ct.campaign_id = co.campaign_id
+       AND ct.source_provider = co.source_provider
       JOIN sendlens.campaign_daily_metrics cdm
         ON co.workspace_id = cdm.workspace_id
        AND co.campaign_id = cdm.campaign_id
+       AND co.source_provider = COALESCE(cdm.source_provider, 'instantly')
       WHERE co.status = 'active'
-      GROUP BY 1, 2, 3, 4, 5`,
+      GROUP BY 1, 2, 3, 4, 5, 6`,
     `CREATE OR REPLACE VIEW sendlens.campaign_tag_true_daily_volume_trend AS
       SELECT
         workspace_id,
+        source_provider,
         tag_id,
         tag_label,
         normalized_tag_label,
@@ -1170,12 +1542,12 @@ async function ensureSchema(conn: DuckDBConnection) {
         strftime(date, '%w') AS weekday_number,
         strftime(date, '%A') AS weekday_name,
         campaign_attributed_sent,
-        ROUND(AVG(campaign_attributed_sent) OVER (PARTITION BY workspace_id, tag_id ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 2) AS rolling_7_day_avg_sent,
-        MAX(campaign_attributed_sent) OVER (PARTITION BY workspace_id, tag_id) AS peak_daily_sent,
-        ROUND(AVG(campaign_attributed_sent) OVER (PARTITION BY workspace_id, tag_id), 2) AS avg_daily_sent_all_cached_days,
-        COUNT(*) OVER (PARTITION BY workspace_id, tag_id) AS cached_sending_days,
-        MIN(date) OVER (PARTITION BY workspace_id, tag_id) AS first_cached_send_date,
-        MAX(date) OVER (PARTITION BY workspace_id, tag_id) AS last_cached_send_date,
+        ROUND(AVG(campaign_attributed_sent) OVER (PARTITION BY workspace_id, source_provider, tag_id ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 2) AS rolling_7_day_avg_sent,
+        MAX(campaign_attributed_sent) OVER (PARTITION BY workspace_id, source_provider, tag_id) AS peak_daily_sent,
+        ROUND(AVG(campaign_attributed_sent) OVER (PARTITION BY workspace_id, source_provider, tag_id), 2) AS avg_daily_sent_all_cached_days,
+        COUNT(*) OVER (PARTITION BY workspace_id, source_provider, tag_id) AS cached_sending_days,
+        MIN(date) OVER (PARTITION BY workspace_id, source_provider, tag_id) AS first_cached_send_date,
+        MAX(date) OVER (PARTITION BY workspace_id, source_provider, tag_id) AS last_cached_send_date,
         campaign_attributed_unique_replies,
         campaign_attributed_replies,
         campaign_attributed_opportunities
@@ -1184,9 +1556,15 @@ async function ensureSchema(conn: DuckDBConnection) {
       SELECT
         sl.workspace_id,
         sl.campaign_id,
+        COALESCE(sl.source_provider, c.source_provider, 'instantly') AS source_provider,
+        COALESCE(sl.provider_campaign_id, c.provider_campaign_id, sl.campaign_id) AS provider_campaign_id,
+        COALESCE(sl.campaign_source_id, c.campaign_source_id, sl.campaign_id) AS campaign_source_id,
         c.name AS campaign_name,
         sl.id,
+        COALESCE(sl.provider_lead_id, sl.id) AS provider_lead_id,
         sl.email,
+        COALESCE(sl.normalized_email, lower(sl.email)) AS normalized_email,
+        COALESCE(sl.normalized_domain, regexp_extract(lower(sl.email), '@([^@]+)$', 1)) AS normalized_domain,
         sl.first_name,
         sl.last_name,
         sl.company_name,
@@ -1242,13 +1620,20 @@ async function ensureSchema(conn: DuckDBConnection) {
       FROM sendlens.sampled_leads sl
       LEFT JOIN sendlens.campaigns c
         ON sl.workspace_id = c.workspace_id
-       AND sl.campaign_id = c.id`,
+       AND sl.campaign_id = c.id
+       AND COALESCE(sl.source_provider, 'instantly') = COALESCE(c.source_provider, 'instantly')`,
     `CREATE OR REPLACE VIEW sendlens.lead_payload_kv AS
       SELECT
         le.workspace_id,
         le.campaign_id,
+        le.source_provider,
+        le.provider_campaign_id,
+        le.campaign_source_id,
         le.campaign_name,
         le.email,
+        le.provider_lead_id,
+        le.normalized_email,
+        le.normalized_domain,
         le.job_title,
         le.company_name,
         le.company_domain,
@@ -1457,8 +1842,16 @@ async function ensureSchema(conn: DuckDBConnection) {
        AND CAST(cv.variant AS VARCHAR) = so.variant_resolved`,
   ];
 
+  let providerQualifiedAccountKeysChecked = false;
   for (const statement of statements) {
+    if (!providerQualifiedAccountKeysChecked && /\bCREATE\s+OR\s+REPLACE\s+VIEW\b/i.test(statement)) {
+      await ensureProviderQualifiedAccountPrimaryKeys(conn);
+      providerQualifiedAccountKeysChecked = true;
+    }
     await run(conn, statement);
+  }
+  if (!providerQualifiedAccountKeysChecked) {
+    await ensureProviderQualifiedAccountPrimaryKeys(conn);
   }
   await stampCacheSchemaVersion(conn);
 }
@@ -1508,9 +1901,35 @@ function normalizeNullable(value: string | undefined | null) {
 }
 
 export function currentApiKeyFingerprint() {
-  const apiKey = normalizeNullable(process.env.SENDLENS_INSTANTLY_API_KEY);
-  if (!apiKey) return null;
-  return createHash("sha256").update(apiKey, "utf8").digest("hex");
+  const activeProviderMode = cacheProviderModeContext.getStore();
+  const providerMode = activeProviderMode
+    ? {
+        mode: activeProviderMode,
+        raw: activeProviderMode,
+        valid: true,
+        defaulted: false,
+      }
+    : resolveSourceProviderMode();
+  const instantlyKey = normalizeNullable(process.env.SENDLENS_INSTANTLY_API_KEY);
+  const smartleadKey = normalizeNullable(process.env.SENDLENS_SMARTLEAD_API_KEY);
+  const fingerprints: Array<{ provider: "instantly" | "smartlead"; value: string }> = [];
+
+  if ((!providerMode.valid || providerModeIncludes(providerMode.mode, "instantly")) && instantlyKey) {
+    fingerprints.push({ provider: "instantly", value: instantlyKey });
+  }
+  if (providerMode.valid && providerModeIncludes(providerMode.mode, "smartlead") && smartleadKey) {
+    fingerprints.push({ provider: "smartlead", value: smartleadKey });
+  }
+
+  if (fingerprints.length === 0) return null;
+  if (fingerprints.length === 1 && fingerprints[0].provider === "instantly") {
+    return createHash("sha256").update(fingerprints[0].value, "utf8").digest("hex");
+  }
+
+  const providerScopedSecret = fingerprints
+    .map(({ provider, value }) => `${provider}:${value}`)
+    .join("\n");
+  return createHash("sha256").update(providerScopedSecret, "utf8").digest("hex");
 }
 
 export function fingerprintPrefix(fingerprint: string | undefined | null) {
@@ -1607,14 +2026,14 @@ export async function getCacheReadiness(
       readable: true,
       owner,
       warning:
-        "No SENDLENS_INSTANTLY_API_KEY is configured, so SendLens is reading the existing local cache without live-refresh identity validation.",
+        "No SendLens provider API key is configured, so SendLens is reading the existing local cache without live-refresh identity validation.",
     };
   }
 
   if (!owner.apiKeyFingerprint) {
     throw new CacheReadinessError(
       "legacy_unowned_cache",
-      "A SENDLENS_INSTANTLY_API_KEY is configured, but the local DuckDB cache has no cache-owner fingerprint. Run refresh_data to rebuild and stamp the cache for this key, or unset the key if you intentionally want to inspect legacy cached data.",
+      "A SendLens provider API key is configured, but the local DuckDB cache has no cache-owner fingerprint. Run refresh_data to rebuild and stamp the cache for this key, or unset the key if you intentionally want to inspect legacy cached data.",
       {
         cacheOwner: owner,
         expectedFingerprintPrefix: fingerprintPrefix(expectedFingerprint),
@@ -1625,7 +2044,7 @@ export async function getCacheReadiness(
   if (owner.apiKeyFingerprint !== expectedFingerprint) {
     throw new CacheReadinessError(
       "api_key_mismatch",
-      "A different SENDLENS_INSTANTLY_API_KEY is configured than the key that last refreshed this DuckDB cache. The previous cache is preserved but will not be used for this key. Run refresh_data after Instantly is reachable to replace the cache, or set SENDLENS_DB_PATH to a client-specific database.",
+      "A different SendLens provider API key is configured than the key that last refreshed this DuckDB cache. The previous cache is preserved but will not be used for this key. Run refresh_data after the provider is reachable to replace the cache, or set SENDLENS_DB_PATH to a client-specific database.",
       {
         cacheOwner: owner,
         expectedFingerprintPrefix: fingerprintPrefix(expectedFingerprint),
@@ -1677,6 +2096,7 @@ export async function clearWorkspaceData(
     "sampled_leads",
     "sampled_outbound_emails",
     "sampling_runs",
+    "provider_capabilities",
   ];
   const scopedTables = [
     "campaigns",
@@ -1730,6 +2150,7 @@ export async function clearWorkspaceMetadata(
     "custom_tag_mappings",
     "inbox_placement_tests",
     "inbox_placement_analytics",
+    "provider_capabilities",
   ]) {
     await run(
       conn,

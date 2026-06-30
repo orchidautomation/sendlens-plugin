@@ -19,6 +19,10 @@ import {
   refreshWorkspaceAtomically,
 } from "./instantly-ingest";
 import {
+  resolveSourceProviderMode,
+  type SourceProvider,
+} from "./provider-config";
+import {
   classifyHydrationCoverage,
   normalizeCampaignAnalysisStatuses,
   resolveCampaignAnalysisDepth,
@@ -132,8 +136,84 @@ function sqlSafe(value: string) {
   return value.replace(/'/g, "''");
 }
 
+function sqlStringList(values: string[]) {
+  return values.map((value) => `'${sqlSafe(value)}'`).join(", ");
+}
+
 function sqlNumberList(values: number[]) {
   return values.map((value) => String(Math.trunc(value))).join(", ");
+}
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function parseProviderQualifiedCampaignId(value: string) {
+  const campaignId = value.trim();
+  const separatorIndex = campaignId.indexOf(":");
+  if (separatorIndex <= 0) return null;
+
+  const provider = campaignId.slice(0, separatorIndex);
+  const nativeId = campaignId.slice(separatorIndex + 1).trim();
+  if ((provider === "instantly" || provider === "smartlead") && nativeId) {
+    return { provider: provider as SourceProvider, nativeId };
+  }
+  return null;
+}
+
+function storedCampaignIdForProvider(provider: SourceProvider, nativeId: string) {
+  return provider === "smartlead" ? `smartlead:${nativeId}` : nativeId;
+}
+
+class CampaignIdScopeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CampaignIdScopeError";
+  }
+}
+
+function loadCampaignScope(campaignId: string) {
+  const requestedId = campaignId.trim();
+  if (!requestedId) {
+    throw new CampaignIdScopeError(
+      "load_campaign_data requires a non-empty campaign_id.",
+    );
+  }
+  const parsed = parseProviderQualifiedCampaignId(requestedId);
+  const providerMode = resolveSourceProviderMode();
+  if (!parsed && providerMode.valid && providerMode.mode === "all") {
+    throw new CampaignIdScopeError(
+      "load_campaign_data requires a provider-qualified campaign_id when SENDLENS_PROVIDER=all. Use instantly:<id> or smartlead:<id> so colliding native campaign IDs cannot load the wrong provider.",
+    );
+  }
+
+  const nativeId = parsed?.nativeId ?? requestedId;
+  const provider = parsed?.provider ?? (
+    providerMode.valid && providerMode.mode !== "all" ? providerMode.mode : null
+  );
+  const queryCampaignIds = provider
+    ? uniqueStrings([storedCampaignIdForProvider(provider, nativeId), requestedId])
+    : uniqueStrings([requestedId, storedCampaignIdForProvider("smartlead", nativeId)]);
+
+  return {
+    refreshProvider: parsed?.provider,
+    refreshCampaignIds: [requestedId],
+    queryCampaignIds,
+  };
+}
+
+function campaignIdFilterSql(column: string, campaignIds: string[]) {
+  if (campaignIds.length === 1) {
+    return `${column} = '${sqlSafe(campaignIds[0])}'`;
+  }
+  return `${column} IN (${sqlStringList(campaignIds)})`;
+}
+
+function campaignIdOrderSql(column: string, campaignIds: string[]) {
+  const cases = campaignIds
+    .map((campaignId, index) => `WHEN '${sqlSafe(campaignId)}' THEN ${index}`)
+    .join(" ");
+  return `CASE ${column} ${cases} ELSE ${campaignIds.length} END`;
 }
 
 type CampaignResolution =
@@ -321,18 +401,22 @@ server.registerTool(
   {
     description:
       [
-        "Refresh the local SendLens cache from Instantly when the user explicitly asks for fresh data, changes client/workspace context, or refresh_status shows stale/failed data.",
+        "Refresh the local SendLens cache from the configured source provider when the user explicitly asks for fresh data, changes client/workspace context, or refresh_status shows stale/failed data.",
         "Do not use this as the default first read in a new session; session start already runs a lean background refresh and workspace_snapshot is usually the better first tool.",
-        "Returns refresh metadata, campaign coverage, and readiness information. Campaign/account/inbox-placement aggregates are exact from Instantly when available; lead and outbound evidence remains bounded or sampled where noted by the ingest coverage fields.",
+        "Returns refresh metadata, campaign coverage, and readiness information. Campaign/account aggregates are exact from provider counts where available; rates are recomputed in SendLens views, and lead/outbound evidence remains bounded or sampled where noted by the ingest coverage fields.",
       ].join(" "),
     inputSchema: {
       campaign_ids: z
         .array(z.string())
         .optional()
-        .describe("Optional list of campaign IDs to refresh instead of the full workspace."),
+        .describe("Optional list of provider-qualified or native campaign IDs to refresh instead of the full workspace."),
+      provider: z
+        .enum(["instantly", "smartlead", "all"])
+        .optional()
+        .describe("Optional source provider override. Defaults to SENDLENS_PROVIDER or instantly."),
     },
   },
-  async ({ campaign_ids }) => {
+  async ({ campaign_ids, provider }) => {
     const readiness = await waitForSessionSnapshot();
     if (readiness.timedOut) {
       return sessionRefreshBusyResponse(readiness);
@@ -344,6 +428,7 @@ server.registerTool(
         : await refreshWorkspaceAtomically({
           campaignIds: campaign_ids,
           source: "manual",
+          provider,
         });
       return jsonResponse({
         ...refreshed,
@@ -370,7 +455,7 @@ server.registerTool(
         "campaign_overview uses exact Instantly aggregates; human replies use lead-level reply outcome state; rendered outbound rows are locally reconstructed/sampled evidence, not exact delivered email bodies.",
       ].join(" "),
     inputSchema: {
-      campaign_id: z.string().describe("Instantly campaign ID to load."),
+      campaign_id: z.string().describe("Provider-qualified or native campaign ID to load."),
       include_rendered_outbound: z
         .boolean()
         .optional()
@@ -404,11 +489,13 @@ server.registerTool(
 
     let db: Awaited<ReturnType<typeof getDb>> | null = null;
     try {
+      const campaignScope = loadCampaignScope(campaign_id);
       const refreshed = isDemoMode()
         ? await seedDemoWorkspace()
         : await refreshWorkspaceAtomically({
-          campaignIds: [campaign_id],
+          campaignIds: campaignScope.refreshCampaignIds,
           source: "manual",
+          provider: campaignScope.refreshProvider,
           forceHybrid: true,
           nonReplyLeadLimit: max_nonreply_leads,
         });
@@ -422,22 +509,28 @@ server.registerTool(
         });
       }
 
-      const campaignSafe = campaign_id.replace(/'/g, "''");
       const workspaceSafe = workspaceId.replace(/'/g, "''");
       const overviewRows = await query(
         db,
         `SELECT *
          FROM sendlens.campaign_overview
          WHERE workspace_id = '${workspaceSafe}'
-           AND campaign_id = '${campaignSafe}'
+           AND ${campaignIdFilterSql("campaign_id", campaignScope.queryCampaignIds)}
+         ORDER BY ${campaignIdOrderSql("campaign_id", campaignScope.queryCampaignIds)}
          LIMIT 1`,
       );
+      const loadedCampaignId = typeof overviewRows[0]?.campaign_id === "string"
+        ? String(overviewRows[0].campaign_id)
+        : null;
+      const evidenceCampaignIds = loadedCampaignId
+        ? [loadedCampaignId]
+        : campaignScope.queryCampaignIds;
       const replyRows = await query(
         db,
         `SELECT *
          FROM sendlens.reply_context
          WHERE workspace_id = '${workspaceSafe}'
-           AND campaign_id = '${campaignSafe}'
+           AND ${campaignIdFilterSql("campaign_id", evidenceCampaignIds)}
          ORDER BY reply_at DESC NULLS LAST, lead_email
          LIMIT ${REPLY_CONTEXT_SCAN_LIMIT + 1}`,
       );
@@ -447,7 +540,7 @@ server.registerTool(
           `SELECT *
            FROM sendlens.rendered_outbound_context
            WHERE workspace_id = '${workspaceSafe}'
-             AND campaign_id = '${campaignSafe}'
+             AND ${campaignIdFilterSql("campaign_id", evidenceCampaignIds)}
            ORDER BY sent_at DESC NULLS LAST
            LIMIT ${RENDERED_OUTBOUND_SAMPLE_LIMIT}`,
         )
@@ -485,6 +578,13 @@ server.registerTool(
         rendered_outbound_sample: renderedRows,
       });
     } catch (error) {
+      if (error instanceof CampaignIdScopeError) {
+        return jsonResponse({
+          error: error.message,
+          hint:
+            "Use the provider-qualified campaign_id from workspace_snapshot, for example instantly:<id> or smartlead:<id>.",
+        });
+      }
       if (error instanceof CacheReadinessError) {
         return cacheReadinessResponse(error);
       }
