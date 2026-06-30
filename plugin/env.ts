@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { isUnresolvedProviderMode } from "./provider-config";
 
 type EnvMap = Record<string, string>;
 export type LoadedSendLensEnv = {
@@ -69,6 +70,8 @@ export function isUnresolvedEnvValue(value: string | undefined | null) {
     trimmed === "your_api_key" ||
     trimmed === "your-instantly-api-key" ||
     trimmed === "your_instantly_api_key" ||
+    trimmed === "your-smartlead-api-key" ||
+    trimmed === "your_smartlead_api_key" ||
     trimmed === "instantly_api_key"
   );
 }
@@ -76,6 +79,12 @@ export function isUnresolvedEnvValue(value: string | undefined | null) {
 function sanitizeSendLensEnv() {
   if (isUnresolvedEnvValue(process.env.SENDLENS_INSTANTLY_API_KEY)) {
     delete process.env.SENDLENS_INSTANTLY_API_KEY;
+  }
+  if (isUnresolvedEnvValue(process.env.SENDLENS_SMARTLEAD_API_KEY)) {
+    delete process.env.SENDLENS_SMARTLEAD_API_KEY;
+  }
+  if (isUnresolvedProviderMode(process.env.SENDLENS_PROVIDER)) {
+    delete process.env.SENDLENS_PROVIDER;
   }
 }
 

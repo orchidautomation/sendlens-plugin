@@ -51,19 +51,42 @@ echo "Context root: ${SENDLENS_CONTEXT_ROOT}"
 echo "Plugin root:  ${PLUGIN_ROOT}"
 
 section "Environment"
-if is_demo_mode; then
-  ok "Demo mode enabled; production Instantly API key is optional"
-elif [[ -n "${SENDLENS_INSTANTLY_API_KEY:-}" ]]; then
-  ok "Instantly API key is configured"
-  detail "Secret value suppressed"
-elif [[ -f "${DB_PATH}" ]]; then
-  warn "Instantly API key is missing; refresh is disabled"
-  detail "Existing local DuckDB cache can still be used for read-only analysis"
-  detail "Set SENDLENS_INSTANTLY_API_KEY before running refresh_data"
+SOURCE_PROVIDER_MODE="$(source_provider_mode)"
+if source_provider_is_valid "${SOURCE_PROVIDER_MODE}"; then
+  ok "Source provider mode: ${SOURCE_PROVIDER_MODE}"
+  detail "Use source_provider for data-source identity; sendlens.accounts.provider remains mailbox/email-service provider."
 else
-  fail "Instantly API key is missing"
-  detail "Run /sendlens-setup in your AI host to initialize a zero-key synthetic demo workspace"
-  detail "Set SENDLENS_INSTANTLY_API_KEY in host config, .env, or .env.clients/<client>.env when you want real workspace analysis"
+  fail "Invalid SENDLENS_PROVIDER value"
+  detail "Set SENDLENS_PROVIDER to instantly, smartlead, or all"
+fi
+
+if is_demo_mode; then
+  ok "Demo mode enabled; production provider API keys are optional"
+else
+  if source_provider_includes "${SOURCE_PROVIDER_MODE}" "instantly"; then
+    if [[ -n "${SENDLENS_INSTANTLY_API_KEY:-}" ]]; then
+      ok "Instantly API key is configured"
+      detail "Secret value suppressed"
+    elif [[ -f "${DB_PATH}" ]]; then
+      warn "Instantly API key is missing; refresh is disabled"
+      detail "Existing local DuckDB cache can still be used for read-only analysis"
+      detail "Set SENDLENS_INSTANTLY_API_KEY before running refresh_data"
+    else
+      fail "Instantly API key is missing"
+      detail "Run /sendlens-setup in your AI host to initialize a zero-key synthetic demo workspace"
+      detail "Set SENDLENS_INSTANTLY_API_KEY in host config, .env, or .env.clients/<client>.env when you want real workspace analysis"
+    fi
+  fi
+
+  if source_provider_includes "${SOURCE_PROVIDER_MODE}" "smartlead"; then
+    if [[ -n "${SENDLENS_SMARTLEAD_API_KEY:-}" ]]; then
+      ok "Smartlead API key is configured"
+      detail "Query-string access value suppressed"
+    else
+      fail "Smartlead API key is missing"
+      detail "Set SENDLENS_SMARTLEAD_API_KEY for SENDLENS_PROVIDER=${SOURCE_PROVIDER_MODE}"
+    fi
+  fi
 fi
 
 if [[ -n "${SENDLENS_CLIENT:-}" ]]; then

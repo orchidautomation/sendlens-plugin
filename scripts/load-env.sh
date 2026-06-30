@@ -10,6 +10,13 @@ load_env_file() {
   fi
 }
 
+trim_sendlens_value() {
+  local value="${1:-}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "${value}"
+}
+
 is_unresolved_sendlens_path() {
   local value="${1:-}"
   [[ "${value}" == *"+ name +"* || "${value}" == *'${'* || "${value}" == *"{{"* || "${value}" == *"}}"* ]]
@@ -29,8 +36,54 @@ is_unresolved_sendlens_value() {
     "${normalized}" == "your_api_key" ||
     "${normalized}" == "your-instantly-api-key" ||
     "${normalized}" == "your_instantly_api_key" ||
+    "${normalized}" == "your-smartlead-api-key" ||
+    "${normalized}" == "your_smartlead_api_key" ||
     "${normalized}" == "instantly_api_key"
   ]]
+}
+
+is_unresolved_provider_value() {
+  local value="${1:-}"
+  local normalized
+  normalized="$(trim_sendlens_value "${value}" | tr '[:upper:]' '[:lower:]')"
+  [[
+    "${normalized}" == *"+ name +"* ||
+    "${normalized}" == *'${'* ||
+    "${normalized}" == *"{{"* ||
+    "${normalized}" == *"}}"* ||
+    "${normalized}" == "your_provider" ||
+    "${normalized}" == "your-provider" ||
+    "${normalized}" == "provider"
+  ]]
+}
+
+source_provider_mode() {
+  local mode
+  mode="$(trim_sendlens_value "${SENDLENS_PROVIDER:-}")"
+  if [[ -z "${mode}" ]]; then
+    mode="instantly"
+  fi
+  printf '%s' "${mode}" | tr '[:upper:]' '[:lower:]'
+}
+
+source_provider_includes() {
+  local mode="$1"
+  local provider="$2"
+  [[ "${mode}" == "all" || "${mode}" == "${provider}" ]]
+}
+
+source_provider_is_valid() {
+  local mode="$1"
+  [[ "${mode}" == "instantly" || "${mode}" == "smartlead" || "${mode}" == "all" ]]
+}
+
+validate_source_provider() {
+  local mode="${1:-$(source_provider_mode)}"
+  if source_provider_is_valid "${mode}"; then
+    return 0
+  fi
+  echo "[sendlens] Invalid SENDLENS_PROVIDER value '${SENDLENS_PROVIDER:-${mode}}'. Set SENDLENS_PROVIDER to instantly, smartlead, or all." >&2
+  return 1
 }
 
 PLUGIN_ROOT="${PLUGIN_ROOT:-$(pwd)}"
@@ -57,4 +110,14 @@ fi
 if is_unresolved_sendlens_value "${SENDLENS_INSTANTLY_API_KEY:-}"; then
   echo "[sendlens] Ignoring unresolved SENDLENS_INSTANTLY_API_KEY placeholder." >&2
   unset SENDLENS_INSTANTLY_API_KEY
+fi
+
+if is_unresolved_sendlens_value "${SENDLENS_SMARTLEAD_API_KEY:-}"; then
+  echo "[sendlens] Ignoring unresolved SENDLENS_SMARTLEAD_API_KEY placeholder." >&2
+  unset SENDLENS_SMARTLEAD_API_KEY
+fi
+
+if is_unresolved_provider_value "${SENDLENS_PROVIDER:-}"; then
+  echo "[sendlens] Ignoring unresolved SENDLENS_PROVIDER placeholder." >&2
+  unset SENDLENS_PROVIDER
 fi

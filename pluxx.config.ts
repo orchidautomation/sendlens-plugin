@@ -60,6 +60,16 @@ export default definePlugin({
 
   userConfig: [
     {
+      key: "sendlens-provider",
+      title: "Source Provider Mode",
+      description:
+        "Source data provider mode: instantly, smartlead, or all. Defaults to instantly. This is source identity and is separate from mailbox provider fields in analysis tables.",
+      type: "string",
+      required: false,
+      envVar: "SENDLENS_PROVIDER",
+      targets: ["claude-code", "cursor", "codex", "opencode"],
+    },
+    {
       key: "instantly-api-key",
       title: "Instantly API Key",
       description:
@@ -67,6 +77,16 @@ export default definePlugin({
       type: "secret",
       required: true,
       envVar: "SENDLENS_INSTANTLY_API_KEY",
+      targets: ["claude-code", "cursor", "codex", "opencode"],
+    },
+    {
+      key: "smartlead-api-key",
+      title: "Smartlead API Key",
+      description:
+        "Dedicated Smartlead read-only API key for Smartlead provider setup checks. Smartlead uses query-string access, and SendLens suppresses the value in setup output and errors.",
+      type: "secret",
+      required: false,
+      envVar: "SENDLENS_SMARTLEAD_API_KEY",
       targets: ["claude-code", "cursor", "codex", "opencode"],
     },
     {
@@ -117,7 +137,9 @@ export default definePlugin({
       command: "bash",
       args: ["./scripts/start-mcp.sh"],
       env: {
+        SENDLENS_PROVIDER: "${SENDLENS_PROVIDER}",
         SENDLENS_INSTANTLY_API_KEY: "${SENDLENS_INSTANTLY_API_KEY}",
+        SENDLENS_SMARTLEAD_API_KEY: "${SENDLENS_SMARTLEAD_API_KEY}",
         SENDLENS_CLIENT: "${SENDLENS_CLIENT}",
         SENDLENS_CLIENTS_DIR: "${SENDLENS_CLIENTS_DIR}",
         SENDLENS_DB_PATH: "${SENDLENS_DB_PATH}",
