@@ -400,6 +400,14 @@ try {
     closeDb(db);
   }
 
+  installSuccessfulRefresh("ws_qualified", "qualified-campaign", "Qualified Campaign");
+  const qualifiedInstantlyRefresh = await refreshWorkspaceAtomically({
+    provider: "instantly",
+    source: "manual",
+    campaignIds: ["instantly:qualified-campaign"],
+  });
+  assert.equal(qualifiedInstantlyRefresh.workspaceId, "ws_qualified");
+
   delete process.env.SENDLENS_INSTANTLY_API_KEY;
   db = await openDb();
   try {

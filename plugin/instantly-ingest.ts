@@ -2987,7 +2987,11 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
 
   return withCacheProviderMode(providerMode.mode, async () => {
     if (providerMode.mode === "smartlead") {
-      return refreshSmartleadWorkspace(options);
+      const smartleadOptions = refreshOptionsForProvider(options, "smartlead");
+      if (!smartleadOptions) {
+        throw new Error("No Smartlead campaigns matched the requested refresh scope.");
+      }
+      return refreshSmartleadWorkspace(smartleadOptions);
     }
 
     if (providerMode.mode === "all") {
@@ -3016,7 +3020,11 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
       return summaries[summaries.length - 1];
     }
 
-    return refreshInstantlyWorkspace(options);
+    const instantlyOptions = refreshOptionsForProvider(options, "instantly");
+    if (!instantlyOptions) {
+      throw new Error("No Instantly campaigns matched the requested refresh scope.");
+    }
+    return refreshInstantlyWorkspace(instantlyOptions);
   });
 }
 
