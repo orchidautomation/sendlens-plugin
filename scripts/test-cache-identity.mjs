@@ -448,13 +448,27 @@ try {
 
   process.env.SENDLENS_SMARTLEAD_API_KEY = "smartlead-override-secret";
   process.env.SENDLENS_DB_PATH = path.join(tempDir, "smartlead-provider-override.duckdb");
+  const smartleadProviderCalls = [];
   const smartleadRequestedCampaignIds = [];
-  function assertSmartleadCampaignId(campaignId) {
-    assert.equal(String(campaignId), "901");
-    smartleadRequestedCampaignIds.push(String(campaignId));
+  function recordSmartleadProviderCall(method, campaignId = null) {
+    smartleadProviderCalls.push({
+      method,
+      campaignId: campaignId == null ? null : String(campaignId),
+    });
+  }
+  function resetSmartleadProviderTracking() {
+    smartleadProviderCalls.length = 0;
+    smartleadRequestedCampaignIds.length = 0;
+  }
+  function assertSmartleadCampaignId(method, campaignId) {
+    const normalizedCampaignId = String(campaignId);
+    assert.equal(normalizedCampaignId, "901");
+    recordSmartleadProviderCall(method, normalizedCampaignId);
+    smartleadRequestedCampaignIds.push(normalizedCampaignId);
   }
   const smartleadProviderOverrideClient = {
     async listCampaigns() {
+      recordSmartleadProviderCall("listCampaigns");
       return [
         {
           id: "901",
@@ -465,7 +479,7 @@ try {
       ];
     },
     async getCampaign(campaignId) {
-      assertSmartleadCampaignId(campaignId);
+      assertSmartleadCampaignId("getCampaign", campaignId);
       return {
         id: "901",
         name: "Provider Override Campaign",
@@ -474,37 +488,39 @@ try {
       };
     },
     async getCampaignSequences(campaignId) {
-      assertSmartleadCampaignId(campaignId);
+      assertSmartleadCampaignId("getCampaignSequences", campaignId);
       return [];
     },
     async getCampaignAnalytics(campaignId) {
-      assertSmartleadCampaignId(campaignId);
+      assertSmartleadCampaignId("getCampaignAnalytics", campaignId);
       return { campaign_id: "901" };
     },
     async getCampaignAnalyticsByDate(campaignId) {
-      assertSmartleadCampaignId(campaignId);
+      assertSmartleadCampaignId("getCampaignAnalyticsByDate", campaignId);
       return [];
     },
     async listAllCampaignStatistics(campaignId) {
-      assertSmartleadCampaignId(campaignId);
+      assertSmartleadCampaignId("listAllCampaignStatistics", campaignId);
       return [];
     },
     async listCampaignEmailAccounts(campaignId) {
-      assertSmartleadCampaignId(campaignId);
+      assertSmartleadCampaignId("listCampaignEmailAccounts", campaignId);
       return [];
     },
     async listAllCampaignLeads(campaignId) {
-      assertSmartleadCampaignId(campaignId);
+      assertSmartleadCampaignId("listAllCampaignLeads", campaignId);
       return [];
     },
     async listAllCampaignMailboxStatistics(campaignId) {
-      assertSmartleadCampaignId(campaignId);
+      assertSmartleadCampaignId("listAllCampaignMailboxStatistics", campaignId);
       return [];
     },
     async listAllEmailAccounts() {
+      recordSmartleadProviderCall("listAllEmailAccounts");
       return [];
     },
     async getEmailAccountWarmupStats() {
+      recordSmartleadProviderCall("getEmailAccountWarmupStats");
       return {};
     },
   };
@@ -517,7 +533,8 @@ try {
   });
   assert.equal(smartleadOverrideRefresh.workspaceId, "smartlead_override_ws");
   assert.deepEqual([...new Set(smartleadRequestedCampaignIds)], ["901"]);
-  smartleadRequestedCampaignIds.length = 0;
+  assert(smartleadProviderCalls.length > 0);
+  resetSmartleadProviderTracking();
   db = await openDb();
   try {
     const owner = await getCacheOwnerMetadata(db);
@@ -555,7 +572,8 @@ try {
   });
   assert.equal(allProviderScopedRefresh.workspaceId, "all_scoped_ws");
   assert.deepEqual([...new Set(smartleadRequestedCampaignIds)], ["901"]);
-  smartleadRequestedCampaignIds.length = 0;
+  assert(smartleadProviderCalls.some((call) => call.method === "listCampaigns"));
+  resetSmartleadProviderTracking();
 
   installSuccessfulRefresh("all_scoped_ws", "instantly-only", "Instantly Only");
   process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-unqualified-smartlead-scope.duckdb");
@@ -567,7 +585,19 @@ try {
   });
   assert.equal(allProviderUnqualifiedSmartleadRefresh.workspaceId, "all_scoped_ws");
   assert.deepEqual([...new Set(smartleadRequestedCampaignIds)], ["901"]);
-  smartleadRequestedCampaignIds.length = 0;
+  assert(smartleadProviderCalls.some((call) => call.method === "listCampaigns"));
+  resetSmartleadProviderTracking();
+
+  process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-qualified-instantly-scope.duckdb");
+  const allProviderQualifiedInstantlyRefresh = await refreshWorkspaceAtomically({
+    provider: "all",
+    source: "manual",
+    campaignIds: ["instantly:instantly-only"],
+    client: smartleadProviderOverrideClient,
+  });
+  assert.equal(allProviderQualifiedInstantlyRefresh.workspaceId, "all_scoped_ws");
+  assert.deepEqual(smartleadProviderCalls, []);
+  assert.deepEqual(smartleadRequestedCampaignIds, []);
 
   process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-unqualified-instantly-scope.duckdb");
   const allProviderUnqualifiedInstantlyRefresh = await refreshWorkspaceAtomically({
@@ -577,7 +607,9 @@ try {
     client: smartleadProviderOverrideClient,
   });
   assert.equal(allProviderUnqualifiedInstantlyRefresh.workspaceId, "all_scoped_ws");
+  assert.deepEqual(smartleadProviderCalls, [{ method: "listCampaigns", campaignId: null }]);
   assert.deepEqual(smartleadRequestedCampaignIds, []);
+  resetSmartleadProviderTracking();
 
   process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-explicit-smartlead-miss.duckdb");
   await assert.rejects(
@@ -589,6 +621,7 @@ try {
     }),
     /No Smartlead campaigns matched the requested refresh scope/,
   );
+  assert.deepEqual(smartleadProviderCalls, [{ method: "listCampaigns", campaignId: null }]);
   assert.deepEqual(smartleadRequestedCampaignIds, []);
   delete process.env.SENDLENS_INSTANTLY_API_KEY;
   delete process.env.SENDLENS_CLIENT;

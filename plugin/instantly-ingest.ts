@@ -2890,6 +2890,28 @@ async function shouldSeedShadowFromLive(liveDbPath: string) {
   });
 }
 
+function parseCampaignScopeId(campaignId: unknown): {
+  provider: SourceProvider | null;
+  nativeId: string;
+  isQualified: boolean;
+} | null {
+  const id = String(campaignId ?? "").trim();
+  if (!id) return null;
+
+  const separatorIndex = id.indexOf(":");
+  if (separatorIndex <= 0) {
+    return { provider: null, nativeId: id, isQualified: false };
+  }
+
+  const prefix = id.slice(0, separatorIndex);
+  const nativeId = id.slice(separatorIndex + 1);
+  if (prefix === "instantly" || prefix === "smartlead") {
+    return { provider: prefix, nativeId, isQualified: true };
+  }
+
+  return { provider: null, nativeId: id, isQualified: false };
+}
+
 function campaignIdsForProvider(
   campaignIds: string[] | undefined,
   provider: SourceProvider,
@@ -2898,22 +2920,15 @@ function campaignIdsForProvider(
 
   const scopedIds = new Set<string>();
   for (const campaignId of campaignIds) {
-    const id = String(campaignId).trim();
-    if (!id) continue;
-
-    const separatorIndex = id.indexOf(":");
-    if (separatorIndex > 0) {
-      const prefix = id.slice(0, separatorIndex);
-      const nativeId = id.slice(separatorIndex + 1);
-      if (prefix === "instantly" || prefix === "smartlead") {
-        if (prefix === provider && nativeId) {
-          scopedIds.add(nativeId);
-        }
-        continue;
+    const parsed = parseCampaignScopeId(campaignId);
+    if (!parsed) continue;
+    if (parsed.isQualified) {
+      if (parsed.provider === provider && parsed.nativeId) {
+        scopedIds.add(parsed.nativeId);
       }
+      continue;
     }
-
-    scopedIds.add(id);
+    scopedIds.add(parsed.nativeId);
   }
 
   return [...scopedIds];
@@ -2933,12 +2948,10 @@ function providerScopedCampaignIds(campaignIds: string[] | undefined, provider: 
   if (!campaignIds?.length) return [];
   const scopedIds: string[] = [];
   for (const campaignId of campaignIds) {
-    const id = String(campaignId).trim();
-    const separatorIndex = id.indexOf(":");
-    if (separatorIndex <= 0) continue;
-    const prefix = id.slice(0, separatorIndex);
-    const nativeId = id.slice(separatorIndex + 1);
-    if (prefix === provider && nativeId) scopedIds.push(nativeId);
+    const parsed = parseCampaignScopeId(campaignId);
+    if (parsed?.isQualified && parsed.provider === provider && parsed.nativeId) {
+      scopedIds.push(parsed.nativeId);
+    }
   }
   return scopedIds;
 }
@@ -2946,12 +2959,8 @@ function providerScopedCampaignIds(campaignIds: string[] | undefined, provider: 
 function hasUnqualifiedCampaignIds(campaignIds: string[] | undefined) {
   if (!campaignIds?.length) return false;
   return campaignIds.some((campaignId) => {
-    const id = String(campaignId).trim();
-    if (!id) return false;
-    const separatorIndex = id.indexOf(":");
-    if (separatorIndex <= 0) return true;
-    const prefix = id.slice(0, separatorIndex);
-    return prefix !== "instantly" && prefix !== "smartlead";
+    const parsed = parseCampaignScopeId(campaignId);
+    return Boolean(parsed && !parsed.isQualified);
   });
 }
 
