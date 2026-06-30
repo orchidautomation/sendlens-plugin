@@ -104,6 +104,10 @@ function defaultSleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === "AbortError";
+}
+
 function normalizeBaseUrl(baseUrl: string) {
   return baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
 }
@@ -538,6 +542,9 @@ export class SmartleadClient {
         response = await this.fetchImpl(url, init);
       } catch (error) {
         this.semaphore.release();
+        if (isAbortError(error)) {
+          throw error;
+        }
         if (attempt <= this.retry.attempts) {
           const delayMs = this.backoffDelay(attempt);
           await appendTraceLog("smartlead.http.retry", {

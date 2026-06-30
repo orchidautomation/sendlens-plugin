@@ -277,6 +277,32 @@ function assertAccessQuery(url) {
 }
 
 {
+  const sleeps = [];
+  let calls = 0;
+  const client = makeClient(
+    async (_url, options = {}) => {
+      calls++;
+      const { signal } = options;
+      if (signal.aborted) {
+        throw new DOMException("The operation was aborted.", "AbortError");
+      }
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener(
+          "abort",
+          () => reject(new DOMException("The operation was aborted.", "AbortError")),
+          { once: true },
+        );
+      });
+    },
+    { sleep: async (ms) => { sleeps.push(ms); } },
+  );
+  const result = await client.validateAccess(1);
+  assert.equal(result.status, "unreachable");
+  assert.equal(calls, 1);
+  assert.deepEqual(sleeps, []);
+}
+
+{
   let captured = null;
   const client = makeClient(async (url, options = {}) => {
     const parsed = assertAccessQuery(url);
