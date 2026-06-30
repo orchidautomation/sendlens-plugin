@@ -92,6 +92,12 @@ async function runScript(scriptPath, env) {
   }
 }
 
+function assertInvalidProviderResult(result, entryPoint) {
+  assert.equal(result.code, 1, `${entryPoint} should reject invalid SENDLENS_PROVIDER`);
+  assert.match(result.stderr, /Invalid SENDLENS_PROVIDER value 'mailgun'/);
+  assert.match(result.stderr, /Set SENDLENS_PROVIDER to instantly, smartlead, or all/);
+}
+
 try {
   assert.deepEqual(resolveSourceProviderMode(undefined), {
     mode: "instantly",
@@ -231,6 +237,45 @@ try {
   loadClientEnv(tempDir);
   assert.equal(process.env.SENDLENS_SMARTLEAD_API_KEY, undefined);
   assert.equal(process.env.SENDLENS_PROVIDER, undefined);
+
+  tempDir = resetEnv("invalid-provider-check-env");
+  await fs.mkdir(tempDir, { recursive: true });
+  assertInvalidProviderResult(
+    await runScript(path.join(root, "scripts/check-env.sh"), {
+      PLUGIN_ROOT: root,
+      SENDLENS_CONTEXT_ROOT: tempDir,
+      SENDLENS_DB_PATH: path.join(tempDir, "workspace-cache.duckdb"),
+      SENDLENS_STATE_DIR: tempDir,
+      SENDLENS_PROVIDER: "mailgun",
+    }),
+    "check-env.sh",
+  );
+
+  tempDir = resetEnv("invalid-provider-start-mcp");
+  await fs.mkdir(tempDir, { recursive: true });
+  assertInvalidProviderResult(
+    await runScript(path.join(root, "scripts/start-mcp.sh"), {
+      PLUGIN_ROOT: root,
+      SENDLENS_CONTEXT_ROOT: tempDir,
+      SENDLENS_DB_PATH: path.join(tempDir, "workspace-cache.duckdb"),
+      SENDLENS_STATE_DIR: tempDir,
+      SENDLENS_PROVIDER: "mailgun",
+    }),
+    "start-mcp.sh",
+  );
+
+  tempDir = resetEnv("invalid-provider-session-start");
+  await fs.mkdir(tempDir, { recursive: true });
+  assertInvalidProviderResult(
+    await runScript(path.join(root, "scripts/session-start.sh"), {
+      PLUGIN_ROOT: root,
+      SENDLENS_CONTEXT_ROOT: tempDir,
+      SENDLENS_DB_PATH: path.join(tempDir, "workspace-cache.duckdb"),
+      SENDLENS_STATE_DIR: tempDir,
+      SENDLENS_PROVIDER: "mailgun",
+    }),
+    "session-start.sh",
+  );
 
   tempDir = resetEnv("stale-instantly-status-smartlead");
   await fs.mkdir(tempDir, { recursive: true });

@@ -50,6 +50,25 @@ is_unresolved_provider_value() {
   ]]
 }
 
+source_provider_mode() {
+  printf '%s' "${SENDLENS_PROVIDER:-instantly}" | tr '[:upper:]' '[:lower:]'
+}
+
+source_provider_includes() {
+  local mode="$1"
+  local provider="$2"
+  [[ "${mode}" == "all" || "${mode}" == "${provider}" ]]
+}
+
+validate_source_provider() {
+  local mode="${1:-$(source_provider_mode)}"
+  if [[ "${mode}" == "instantly" || "${mode}" == "smartlead" || "${mode}" == "all" ]]; then
+    return 0
+  fi
+  echo "[sendlens] Invalid SENDLENS_PROVIDER value '${SENDLENS_PROVIDER:-${mode}}'. Set SENDLENS_PROVIDER to instantly, smartlead, or all." >&2
+  return 1
+}
+
 PLUGIN_ROOT="${PLUGIN_ROOT:-$(pwd)}"
 ENV_ROOT="${SENDLENS_CONTEXT_ROOT:-${PWD}}"
 CLIENTS_DIR="${SENDLENS_CLIENTS_DIR:-.env.clients}"

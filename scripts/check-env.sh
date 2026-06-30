@@ -8,7 +8,7 @@ BUILD_ENTRY="${PLUGIN_ROOT}/build/plugin/server.js"
 # shellcheck disable=SC1091
 source "${PLUGIN_ROOT}/scripts/load-env.sh"
 
-SOURCE_PROVIDER="$(printf '%s' "${SENDLENS_PROVIDER:-instantly}" | tr '[:upper:]' '[:lower:]')"
+SOURCE_PROVIDER="$(source_provider_mode)"
 API_KEY="${SENDLENS_INSTANTLY_API_KEY:-}"
 SMARTLEAD_API_KEY="${SENDLENS_SMARTLEAD_API_KEY:-}"
 DB_PATH="${SENDLENS_DB_PATH:-${HOME}/.sendlens/workspace-cache.duckdb}"
@@ -19,20 +19,17 @@ is_demo_mode() {
   [[ "${raw}" == "1" || "${raw}" == "true" || "${raw}" == "yes" ]]
 }
 
-if [[ "${SOURCE_PROVIDER}" != "instantly" && "${SOURCE_PROVIDER}" != "smartlead" && "${SOURCE_PROVIDER}" != "all" ]]; then
-  echo "[sendlens] Invalid SENDLENS_PROVIDER value '${SENDLENS_PROVIDER}'. Set SENDLENS_PROVIDER to instantly, smartlead, or all." >&2
-  exit 1
-fi
+validate_source_provider "${SOURCE_PROVIDER}" || exit 1
 
 if [[ -z "${API_KEY}" ]] && ! is_demo_mode; then
-  if [[ "${SOURCE_PROVIDER}" == "instantly" || "${SOURCE_PROVIDER}" == "all" ]]; then
+  if source_provider_includes "${SOURCE_PROVIDER}" "instantly"; then
     echo "[sendlens] SENDLENS_INSTANTLY_API_KEY is not set for SENDLENS_PROVIDER=${SOURCE_PROVIDER}. Runtime can start in read-only local-cache mode; refresh_data will require the key." >&2
     echo "[sendlens] Run /sendlens-setup in your AI host to initialize a zero-key synthetic demo workspace." >&2
   fi
 fi
 
 if [[ -z "${SMARTLEAD_API_KEY}" ]] && ! is_demo_mode; then
-  if [[ "${SOURCE_PROVIDER}" == "smartlead" || "${SOURCE_PROVIDER}" == "all" ]]; then
+  if source_provider_includes "${SOURCE_PROVIDER}" "smartlead"; then
     echo "[sendlens] SENDLENS_SMARTLEAD_API_KEY is not set for SENDLENS_PROVIDER=${SOURCE_PROVIDER}. Smartlead setup checks require it, and setup output suppresses the value." >&2
   fi
 fi

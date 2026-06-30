@@ -9,7 +9,7 @@ export SENDLENS_CONTEXT_ROOT="${SENDLENS_CONTEXT_ROOT:-${PWD}}"
 # shellcheck disable=SC1091
 source "${PLUGIN_ROOT}/scripts/load-env.sh"
 
-SOURCE_PROVIDER="$(printf '%s' "${SENDLENS_PROVIDER:-instantly}" | tr '[:upper:]' '[:lower:]')"
+SOURCE_PROVIDER="$(source_provider_mode)"
 
 is_demo_mode() {
   local raw
@@ -17,16 +17,7 @@ is_demo_mode() {
   [[ "${raw}" == "1" || "${raw}" == "true" || "${raw}" == "yes" ]]
 }
 
-source_provider_includes() {
-  local mode="$1"
-  local provider="$2"
-  [[ "${mode}" == "all" || "${mode}" == "${provider}" ]]
-}
-
-if [[ "${SOURCE_PROVIDER}" != "instantly" && "${SOURCE_PROVIDER}" != "smartlead" && "${SOURCE_PROVIDER}" != "all" ]]; then
-  echo "[sendlens] Invalid SENDLENS_PROVIDER value '${SENDLENS_PROVIDER}'. Set SENDLENS_PROVIDER to instantly, smartlead, or all." >&2
-  exit 1
-fi
+validate_source_provider "${SOURCE_PROVIDER}" || exit 1
 
 if [[ -z "${SENDLENS_INSTANTLY_API_KEY:-}" ]] && ! is_demo_mode && source_provider_includes "${SOURCE_PROVIDER}" "instantly"; then
   echo "[sendlens] SENDLENS_INSTANTLY_API_KEY is not set for SENDLENS_PROVIDER=${SOURCE_PROVIDER}. Starting MCP in read-only local-cache mode; refresh_data will require the key." >&2

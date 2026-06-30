@@ -15,7 +15,7 @@ export SENDLENS_STATE_DIR="${STATE_DIR}"
 # shellcheck disable=SC1091
 source "${PLUGIN_ROOT}/scripts/load-env.sh"
 
-SOURCE_PROVIDER="$(printf '%s' "${SENDLENS_PROVIDER:-instantly}" | tr '[:upper:]' '[:lower:]')"
+SOURCE_PROVIDER="$(source_provider_mode)"
 DB_PATH="${SENDLENS_DB_PATH:-${HOME}/.sendlens/workspace-cache.duckdb}"
 STATE_DIR="${SENDLENS_STATE_DIR:-$(dirname "${DB_PATH}")}"
 LOCK_DIR="${STATE_DIR}/session-start-refresh.lock"
@@ -28,12 +28,6 @@ is_demo_mode() {
   local raw
   raw="$(printf '%s' "${SENDLENS_DEMO_MODE:-}" | tr '[:upper:]' '[:lower:]')"
   [[ "${raw}" == "1" || "${raw}" == "true" || "${raw}" == "yes" ]]
-}
-
-source_provider_includes() {
-  local mode="$1"
-  local provider="$2"
-  [[ "${mode}" == "all" || "${mode}" == "${provider}" ]]
 }
 
 refresh_lock_is_active() {
@@ -83,10 +77,7 @@ write_session_start_idle_status() {
 
 cleanup_stale_refresh_state
 
-if [[ "${SOURCE_PROVIDER}" != "instantly" && "${SOURCE_PROVIDER}" != "smartlead" && "${SOURCE_PROVIDER}" != "all" ]]; then
-  echo "[sendlens] Invalid SENDLENS_PROVIDER value '${SENDLENS_PROVIDER}'. Set SENDLENS_PROVIDER to instantly, smartlead, or all." >&2
-  exit 1
-fi
+validate_source_provider "${SOURCE_PROVIDER}" || exit 1
 
 if ! is_demo_mode && ! source_provider_includes "${SOURCE_PROVIDER}" "instantly"; then
   write_session_start_idle_status "Session-start refresh skipped because SENDLENS_PROVIDER=${SOURCE_PROVIDER} does not use the Instantly refresh path. Existing local DuckDB cache remains usable; Smartlead refresh lands in follow-up ingest work."
