@@ -191,7 +191,7 @@ try {
   assert.equal(report.capabilities.source_provider_mode, "smartlead");
   assert.equal(report.capabilities.source_providers.join(","), "smartlead");
   assert.equal(report.capabilities.local_cache_read, false);
-  assert.equal(report.capabilities.live_refresh, false);
+  assert.equal(report.capabilities.live_refresh, true);
   assert.equal(report.capabilities.demo_seed, true);
   assert.equal(report.capabilities.smartlead_key_validated, true);
   assert.equal(findCheck(report, "Smartlead credentials")?.status, "pass");
@@ -199,7 +199,8 @@ try {
   assert.ok(
     report.next_steps.some((step) => step.includes("Smartlead provider configuration is ready")),
   );
-  assert.ok(report.next_steps.some((step) => step.includes("seed_demo_workspace")));
+  assert.ok(report.next_steps.some((step) => step.includes("refresh_data")));
+  assert.ok(!report.next_steps.some((step) => step.includes("follow-up ingest")));
   assert.ok(report.next_steps.some((step) => step.includes("No readable cache was found")));
   assert.ok(!report.next_steps.some((step) => step.includes("existing readable cache")));
 
@@ -221,8 +222,32 @@ try {
   assert.deepEqual(report.capabilities.source_providers, ["instantly", "smartlead"]);
   assert.equal(report.capabilities.instantly_key_validated, true);
   assert.equal(report.capabilities.smartlead_key_validated, true);
+  assert.equal(report.capabilities.live_refresh, false);
   assert.equal(findCheck(report, "Instantly credentials")?.status, "pass");
   assert.equal(findCheck(report, "Smartlead credentials")?.status, "pass");
+  assert.ok(report.next_steps.some((step) => step.includes("SENDLENS_CLIENT")));
+  assert.ok(!report.next_steps.some((step) => step.includes("follow-up")));
+  assertNoSensitiveValue(report, smartleadValue);
+
+  tempDir = resetEnv("all-valid-with-client");
+  await fs.mkdir(tempDir, { recursive: true });
+  process.env.SENDLENS_PROVIDER = "all";
+  process.env.SENDLENS_CLIENT = "acme";
+  process.env.SENDLENS_INSTANTLY_API_KEY = "instantly-test-value";
+  process.env.SENDLENS_SMARTLEAD_API_KEY = smartleadValue;
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    if (parsed.hostname === "api.instantly.ai") {
+      return responseJson({ items: [{ id: "instantly-campaign" }] });
+    }
+    assert.equal(parsed.hostname, "server.smartlead.ai");
+    return responseJson([{ id: 10 }]);
+  };
+  report = await buildSetupDoctorReport();
+  assert.equal(report.capabilities.source_provider_mode, "all");
+  assert.equal(report.paths.selected_client, "acme");
+  assert.equal(report.capabilities.live_refresh, true);
+  assert.ok(report.next_steps.some((step) => step.includes("live Instantly and read-only Smartlead")));
   assertNoSensitiveValue(report, smartleadValue);
 
   tempDir = resetEnv("all-refresh-requires-client");
