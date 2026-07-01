@@ -1,6 +1,6 @@
 # SendLens
 
-SendLens is the reasoning layer over Instantly data. It runs read-only, stores data locally, and gives the host a clean way to understand what is landing, who is replying, and what to change next.
+SendLens is the reasoning layer over Instantly and Smartlead provider data. It runs read-only, stores data locally, and gives the host a clean way to understand what is landing, who is replying, and what to change next.
 
 ## Client Env Support
 
@@ -31,6 +31,8 @@ Treat this file as the host startup bias for SendLens. The user should not need 
 - For winner, scale, kill, working, or client-safe claims, treat broad aggregates as triage only. Load the campaign with `load_campaign_data` before making the claim.
 - For copy, reply, ICP, launch QA, and experiment planning, narrow to one campaign before deep analysis.
 - Keep evidence labels honest: `exact_aggregate`, `sampled_evidence`, `reconstructed_outbound`, `hydrated_reply_body`, `inference`, or `unsupported`.
+- Preserve provider labels when present: `source_provider`, `provider_campaign_id`, and `campaign_source_id` disambiguate mixed Instantly/Smartlead workspaces.
+- Treat Smartlead inbox placement as `unsupported` in V1. Do not treat empty Smartlead inbox-placement rows as healthy placement or stale data.
 - Do not expose internal routing, skill-selection, or setup mechanics in the final answer unless the user asks. Show the evidence and answer the business question.
 
 ## Linear Planning
@@ -99,8 +101,8 @@ If the host degrades command or skill routing to guidance, explicitly invoke the
 - Treat `custom_tags` and `custom_tag_mappings` as the exact tag-filter layer. Use them to scope analyses by campaign or sampled lead tags.
 - Treat `lead_evidence`, `lead_payload_kv`, `reply_context`, and `rendered_outbound_context` as the preferred semantic evidence layer.
 - Treat `sampled_leads` and `sampled_outbound_emails` as storage tables behind that layer. Never project full-population totals from sampled raw rows.
-- Reply outcome labels come from Instantly lead state, primarily `lt_interest_status` and related lead metadata. Do not invent sentiment labels from reply text in V1.
-- Default to Instantly reply outcomes and reconstructed outbound copy unless `prepare_campaign_analysis` or `fetch_reply_text` has returned exact reply bodies.
+- Reply outcome labels come from provider lead state, primarily Instantly `lt_interest_status` and related lead metadata where available. Do not invent sentiment labels from reply text in V1.
+- Default to provider outcome fields and reconstructed outbound copy unless `prepare_campaign_analysis` or `fetch_reply_text` has returned exact reply bodies, or Smartlead bounded message-history refresh has returned exact reply bodies.
 - Use `campaign_variants` as the source of truth for intended copy templates and `rendered_outbound_context` to verify how those templates render against stored lead variables.
 - Reply-signal leads are found during bounded lead scans and can be supplemented by reply-email contact/id backfill. Non-reply leads are bounded locally.
 - `custom_payload` is preserved per lead as raw JSON text, but campaign-variable analysis should use `lead_payload_kv` and the ICP payload recipes. Do not assume payload keys are shared across campaigns or customers.

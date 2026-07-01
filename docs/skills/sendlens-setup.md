@@ -9,7 +9,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 - The user installed SendLens for the first time.
 - MCP tools are missing or a host bundle needs verification.
 - The provider mode, API key, runtime dependencies, local cache path, refresh status, or session-start lock needs diagnosis.
-- The user wants a proof path with synthetic demo data instead of production Instantly credentials.
+- The user wants a proof path with synthetic demo data instead of production provider credentials.
 
 ## Primary Surfaces
 
@@ -37,7 +37,9 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 - Whether demo mode is enabled.
 - Source provider mode: `instantly`, `smartlead`, or `all`.
 - Whether demo seeding is available because credentials are missing, rejected, unreachable, or `SENDLENS_DEMO_MODE=1` is enabled.
+- Smartlead query-string access is redacted from URLs, logs, traces, setup output, errors, fixtures, and tests.
+- Smartlead inbox placement is unsupported in V1 unless a later checked read endpoint exists.
 
 ## Privacy Boundaries
 
-The doctor tool should never print secrets. Do not ask users to paste API keys into chat. Smartlead uses query-string API keys, so redact them from URLs, logs, traces, setup output, errors, and fixtures/tests. When demo mode is enabled, keep every answer clearly labeled as synthetic demo evidence. If production credentials are already configured, keep the default path on real workspace analysis and mention demo only when explicitly requested.
+The doctor tool should never print secrets. Do not ask users to paste API keys into chat. Smartlead uses query-string API keys, so redact them from URLs, logs, traces, setup output, errors, and fixtures/tests. Smartlead V1 is read-only and does not support inbox placement. When demo mode is enabled, keep every answer clearly labeled as synthetic demo evidence. If production credentials are already configured, keep the default path on real workspace analysis and mention demo only when explicitly requested.

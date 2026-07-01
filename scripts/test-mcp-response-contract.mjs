@@ -168,6 +168,15 @@ for (const term of [
 }
 
 for (const term of [
+  "provider-aware campaign IDs",
+  "provider-qualified Instantly/Smartlead campaigns",
+  "duplicate campaign names across providers",
+  "unsupported Smartlead inbox-placement capability row",
+]) {
+  assertIncludes(source.docs, term, "provider-aware demo seed docs");
+}
+
+for (const term of [
   "provider_overlap_risk",
   "provider_overlap_risk_details",
   "within_unsafe_window",

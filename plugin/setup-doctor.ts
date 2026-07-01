@@ -159,6 +159,7 @@ export async function buildSetupDoctorReport() {
   const smartleadSelected = providerMode.valid
     ? providerModeIncludes(providerMode.mode, "smartlead")
     : false;
+  const selectedClient = process.env.SENDLENS_CLIENT?.trim() || null;
   const apiKey = process.env.SENDLENS_INSTANTLY_API_KEY?.trim();
   const apiKeyConfigured = Boolean(apiKey) && !isUnresolvedEnvValue(apiKey);
   const smartleadApiKey = process.env.SENDLENS_SMARTLEAD_API_KEY?.trim();
@@ -439,6 +440,12 @@ export async function buildSetupDoctorReport() {
   const nextSteps: string[] = [];
   const liveRefreshReady = credentialValidation?.status === "valid";
   const smartleadConfigReady = smartleadCredentialValidation?.status === "valid";
+  const dualProviderClientMissing =
+    providerMode.mode === "all" && liveRefreshReady && smartleadConfigReady && !selectedClient;
+  const providerLiveRefreshReady = demoMode ||
+    (providerMode.mode === "all"
+      ? liveRefreshReady && smartleadConfigReady && Boolean(selectedClient)
+      : (instantlySelected && liveRefreshReady) || (smartleadSelected && smartleadConfigReady));
   const noReadableCache = !dbExists || Boolean(cacheReadinessError);
   const instantlyFirstRunDemoSeedReady =
     instantlySelected && !apiKeyConfigured && noReadableCache;
@@ -464,13 +471,13 @@ export async function buildSetupDoctorReport() {
   } else if (smartleadSelected && smartleadCredentialValidation?.status === "unreachable") {
     nextSteps.push("Retry /sendlens-setup after Smartlead connectivity is healthy; the configured Smartlead value was suppressed from the probe output.");
   } else if (smartleadReadOnlyDemoSeedReady) {
-    nextSteps.push("Smartlead provider configuration is ready. Smartlead data refresh lands in follow-up ingest work; call seed_demo_workspace now for a synthetic first-run workspace.");
-    nextSteps.push("No readable cache was found, so only synthetic demo data is available until the Smartlead refresh path lands.");
+    nextSteps.push("Smartlead provider configuration is ready. Run refresh_data now to pull read-only Smartlead campaign, account, lead, analytics, and bounded message-history evidence.");
+    nextSteps.push("No readable cache was found. Run refresh_data before real analysis, or call seed_demo_workspace only when you intentionally want synthetic proof data.");
   } else if (cacheReadinessError) {
     nextSteps.push("Run refresh_data now to rebuild and stamp the local cache for the currently configured Instantly API key.");
     nextSteps.push("Unset SENDLENS_INSTANTLY_API_KEY before starting the host only if you intentionally want to inspect the preserved legacy cache.");
   } else if (smartleadSelected && !instantlySelected && smartleadConfigReady) {
-    nextSteps.push("Smartlead provider configuration is ready. Smartlead data refresh is read-only scope but lands in follow-up ingest work; use existing cache or demo mode until that refresh path is available.");
+    nextSteps.push("Smartlead provider configuration is ready. Use workspace_snapshot against the existing local cache, or run refresh_data when you explicitly need a fresh Smartlead pull.");
   } else if (instantlySelected && !apiKeyConfigured && !demoMode && dbExists) {
     nextSteps.push("Use workspace_snapshot or analysis skills against the existing local cache.");
     nextSteps.push("Configure SENDLENS_INSTANTLY_API_KEY before running refresh_data for fresh Instantly data.");
@@ -483,8 +490,10 @@ export async function buildSetupDoctorReport() {
   } else if (instantlySelected && apiKeyConfigured && credentialValidation?.status === "unreachable") {
     nextSteps.push("Retry /sendlens-setup or run refresh_data after network access to Instantly is healthy.");
     nextSteps.push("For the demo, call seed_demo_workspace now to use synthetic data while Instantly is unreachable.");
+  } else if (dualProviderClientMissing) {
+    nextSteps.push("Set SENDLENS_CLIENT before running refresh_data with SENDLENS_PROVIDER=all so Instantly and Smartlead refreshes write the same named local workspace.");
   } else if (providerMode.mode === "all" && liveRefreshReady && smartleadConfigReady) {
-    nextSteps.push("Run refresh_data now for the current Instantly refresh path. Smartlead provider configuration is ready for the follow-up read-only Smartlead ingest path.");
+    nextSteps.push("Run refresh_data now to pull live Instantly and read-only Smartlead data into the current client workspace.");
   } else if (!demoMode && liveRefreshReady && activeCacheIsDemo) {
     nextSteps.push("Run refresh_data now to pull live Instantly data and switch the active workspace away from demo_workspace.");
   } else if (demoMode && !dbExists) {
@@ -502,7 +511,7 @@ export async function buildSetupDoctorReport() {
       source_providers: sourceProviders,
       source_provider_config_valid: providerMode.valid,
       local_cache_read: dbExists && !cacheReadinessError,
-      live_refresh: liveRefreshReady || demoMode,
+      live_refresh: providerLiveRefreshReady,
       demo_seed: demoSeedReady,
       instantly_key_configured: apiKeyConfigured,
       instantly_key_validated: credentialValidation?.status === "valid",
@@ -513,7 +522,7 @@ export async function buildSetupDoctorReport() {
     paths: {
       plugin_root: root,
       context_root: envLoad?.contextRoot ?? process.env.SENDLENS_CONTEXT_ROOT ?? process.cwd(),
-      selected_client: process.env.SENDLENS_CLIENT?.trim() || null,
+      selected_client: selectedClient,
       clients_dir: envLoad?.clientsDir ?? path.resolve(process.cwd(), ".env.clients"),
       loaded_env_files: envLoad?.loaded ?? [],
       db_path: dbPath,

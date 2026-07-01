@@ -22,10 +22,11 @@ Use this when SendLens installs but the MCP tools do not appear, the local cache
    node --version
    ```
 
-3. Confirm your Instantly API key is present without printing it:
+3. Confirm the expected provider API key is present without printing it:
 
    ```bash
    test -n "$SENDLENS_INSTANTLY_API_KEY" && echo "set" || echo "missing"
+   test -n "$SENDLENS_SMARTLEAD_API_KEY" && echo "set" || echo "missing"
    ```
 
 4. Confirm the plugin builds locally:
@@ -77,14 +78,23 @@ Expected core tools:
 
 ## Missing Provider API Key
 
-SendLens defaults to `SENDLENS_PROVIDER=instantly`, so real workspace analysis needs `SENDLENS_INSTANTLY_API_KEY`.
+SendLens defaults to `SENDLENS_PROVIDER=instantly`, so real Instantly workspace analysis needs `SENDLENS_INSTANTLY_API_KEY`.
 
-For Smartlead setup diagnosis, set `SENDLENS_PROVIDER=smartlead` or `SENDLENS_PROVIDER=all` and provide `SENDLENS_SMARTLEAD_API_KEY`. Smartlead uses query-string access; SendLens setup output, logs, and errors suppress the value. Smartlead data ingest is not the shipped refresh path yet.
+Provider modes:
+
+- `SENDLENS_PROVIDER=instantly`: requires `SENDLENS_INSTANTLY_API_KEY`.
+- `SENDLENS_PROVIDER=smartlead`: requires `SENDLENS_SMARTLEAD_API_KEY`.
+- `SENDLENS_PROVIDER=all`: requires both keys plus `SENDLENS_CLIENT` for full live refresh into one shared local workspace; setup can still report partial readiness without printing either value.
+
+Smartlead uses query-string access; SendLens setup output, logs, traces, errors, fixtures, and tests suppress the value. Smartlead V1 support is read-only and does not expose campaign, lead, account, email, webhook, or provider-setting mutation paths.
 
 For local development, create `.env`:
 
 ```bash
 SENDLENS_INSTANTLY_API_KEY=your_key
+# Optional Smartlead-only or both-provider setup:
+SENDLENS_PROVIDER=smartlead
+SENDLENS_SMARTLEAD_API_KEY=your_key
 ```
 
 For a one-session launch, export the value or prefix the host command:
@@ -100,7 +110,7 @@ Running `SENDLENS_INSTANTLY_API_KEY=your_key` by itself only creates a shell var
 
 Claude Code and other hosts pass environment values to the MCP process when the host/plugin starts. After changing the key, reload plugins or restart the host before retrying `refresh_data`.
 
-If SendLens says a different API key is configured than the key that last refreshed the DuckDB cache, this is intentional stale-cache protection. Run `refresh_data` with the current key so SendLens can rebuild and stamp the cache. If Instantly is temporarily failing, the old cache is preserved but blocked for the new key. To inspect the old cached data anyway, restart the host without `SENDLENS_INSTANTLY_API_KEY`.
+If SendLens says a different API key is configured than the key that last refreshed the DuckDB cache, this is intentional stale-cache protection. Run `refresh_data` with the current key so SendLens can rebuild and stamp the cache. If a provider is temporarily failing, the old cache is preserved but blocked for the new key. To inspect old cached Instantly data anyway, restart the host without `SENDLENS_INSTANTLY_API_KEY`.
 
 For client-specific local overlays, use:
 
@@ -123,7 +133,7 @@ For synthetic demo proof without production credentials, run setup in your AI ho
 /sendlens-setup
 ```
 
-If no Instantly API key and no local cache are configured, setup initializes the synthetic demo workspace.
+If no provider API key and no local cache are configured, setup initializes the synthetic demo workspace.
 
 From a local source checkout, you can also seed directly:
 
@@ -131,7 +141,7 @@ From a local source checkout, you can also seed directly:
 SENDLENS_DEMO_MODE=1 npm run demo:seed
 ```
 
-Demo mode is only for public-safe fixture data and should always be described as synthetic.
+Demo mode is only for public-safe fixture data and should always be described as synthetic. The demo contains provider-qualified Instantly and Smartlead fixture rows, an intentionally duplicated campaign name across providers, and an explicit unsupported Smartlead inbox-placement capability row.
 
 ## Refresh Is Still Running
 
@@ -180,6 +190,8 @@ If inbox placement tables are empty:
 
 Empty inbox placement tables mean no local inbox placement evidence was available. They do not prove senders are landing in primary inbox.
 
+For `SENDLENS_PROVIDER=smartlead`, Smartlead inbox placement is unsupported in V1 because no checked equivalent read endpoint exists. The expected behavior is a `provider_capabilities` row and `workspace_snapshot` warning that say Smartlead inbox placement is unsupported. Do not fix this by adding fake Smartlead inbox-placement rows or treating the absence as stale data.
+
 ## Rendered Copy Limits
 
 SendLens reconstructs outbound copy locally from campaign templates plus stored lead variables. Treat this as analysis evidence and personalization QA, not as a guaranteed byte-for-byte copy of the delivered email.
@@ -204,7 +216,7 @@ If you use client-specific env files, confirm `SENDLENS_CLIENT` is set to the cl
 
 ## Frequent 429s During Refresh
 
-If `refresh_status` shows repeated 429 responses or the refresh never completes, SendLens is hitting Instantly's workspace-wide rate limit (100 req/10s, 600 req/min). The plugin has two layers of mitigation:
+If `refresh_status` shows repeated 429 responses or the refresh never completes, SendLens is hitting a provider rate limit. Instantly has a workspace-wide limit of 100 req/10s and 600 req/min. Smartlead has plan-dependent limits and documented 429 behavior; SendLens uses conservative local throttling and honors retry signals where present. The plugin has two layers of mitigation:
 
 1. A per-process sliding-window limiter proactively throttles requests before the limit is reached. `refresh_status.rateLimit.throttled_count` reports the cumulative number of times the limiter had to pause a request.
 2. On 429 responses, SendLens honors the `Retry-After` header (both seconds and HTTP-date form) instead of using a fixed exponential backoff.

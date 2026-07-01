@@ -35,6 +35,8 @@ Startup keeps SendLens fast: no Instantly List Email calls, no broad reply-body 
 
 Premium depth is deliberate and one campaign at a time. For working/not-working, serious reply-quality, copy, ICP, or scale/kill diagnosis, call `prepare_campaign_analysis`; it uses the rate-limited email endpoint for exact reply bodies, then uses `/leads/list` contact/id backfill for lead context.
 
+Provider scope is part of the evidence contract. Preserve `source_provider`, `provider_campaign_id`, and `campaign_source_id` when SendLens returns them. If a campaign name matches both Instantly and Smartlead, ask for or use the provider-qualified campaign ID instead of guessing.
+
 ## Evidence Discipline
 
 Label material claims with the weakest relevant evidence class:
@@ -48,6 +50,8 @@ Label material claims with the weakest relevant evidence class:
 
 Never upgrade sampled evidence, reconstructed outbound, or inference into an exact business claim. Treat absent data as absent local evidence, not proof of health or failure.
 
+For Smartlead V1, inbox placement is `unsupported`; empty Smartlead inbox-placement rows do not mean healthy sender placement or a failed refresh.
+
 ## Pressure Cases
 
 - If the user asks for an exact ICP conclusion from sampled leads, answer with a sampled hypothesis and recommend the next test.
@@ -56,6 +60,7 @@ Never upgrade sampled evidence, reconstructed outbound, or inference into an exa
 - If the user says the highest reply-rate campaign must be the winner, check metric basis, volume, bounce risk, runway, and sample coverage before agreeing.
 - If the user asks what seems to be working for a client, use broad aggregates only to shortlist campaigns; load campaign evidence before making scale, copy, or client-safe winner claims.
 - If inbox placement rows are missing, say no local inbox-placement evidence was available. Do not say deliverability is clean.
+- If Smartlead is the source provider, say inbox placement is unsupported in V1 unless `provider_capabilities` shows a later supported surface.
 - If the user asks you to infer reply sentiment from outcome fields, use SendLens reply outcomes and hydrated reply bodies only when available. Do not invent sentiment labels.
 - If reply bodies contradict intended outbound or reconstructed outbound, prioritize the mismatch as a setup or targeting finding before copy/ICP conclusions.
 
