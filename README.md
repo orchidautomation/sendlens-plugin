@@ -129,7 +129,7 @@ SendLens supports provider-scoped read-only setup modes:
 
 - Instantly-only: leave `SENDLENS_PROVIDER` unset or set `SENDLENS_PROVIDER=instantly`, then provide `SENDLENS_INSTANTLY_API_KEY`.
 - Smartlead-only: set `SENDLENS_PROVIDER=smartlead`, then provide `SENDLENS_SMARTLEAD_API_KEY`.
-- Both providers: set `SENDLENS_PROVIDER=all`, then provide both keys.
+- Both providers: set `SENDLENS_PROVIDER=all`, set `SENDLENS_CLIENT` for the shared local workspace, then provide both keys.
 
 The release installer stores provider config for you. Use env vars directly only for local development, custom launch scripts, or one-off overrides. Smartlead uses query-string access, so SendLens suppresses that value in setup output, logs, traces, and errors.
 
@@ -158,10 +158,13 @@ For both providers:
 
 ```bash
 SENDLENS_PROVIDER=all \
+SENDLENS_CLIENT=acme \
 SENDLENS_INSTANTLY_API_KEY="your_instantly_api_key" \
 SENDLENS_SMARTLEAD_API_KEY="your_smartlead_api_key" \
 claude
 ```
+
+`SENDLENS_PROVIDER=all` with both provider keys requires `SENDLENS_CLIENT`; this keeps the Instantly and Smartlead refreshes in the same named local workspace cache.
 
 For repeat use, put it in the folder where you launch your AI tool:
 
@@ -179,6 +182,7 @@ For multiple clients, give each client its own cache path:
 SENDLENS_INSTANTLY_API_KEY=your_acme_instantly_api_key
 SENDLENS_SMARTLEAD_API_KEY=your_acme_smartlead_api_key
 SENDLENS_PROVIDER=all
+SENDLENS_CLIENT=acme
 SENDLENS_DB_PATH=$HOME/.sendlens/acme.duckdb
 SENDLENS_STATE_DIR=$HOME/.sendlens/acme-state
 ```

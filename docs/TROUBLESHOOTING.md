@@ -84,7 +84,7 @@ Provider modes:
 
 - `SENDLENS_PROVIDER=instantly`: requires `SENDLENS_INSTANTLY_API_KEY`.
 - `SENDLENS_PROVIDER=smartlead`: requires `SENDLENS_SMARTLEAD_API_KEY`.
-- `SENDLENS_PROVIDER=all`: requires both keys for full live refresh; setup can still report partial readiness without printing either value.
+- `SENDLENS_PROVIDER=all`: requires both keys plus `SENDLENS_CLIENT` for full live refresh into one shared local workspace; setup can still report partial readiness without printing either value.
 
 Smartlead uses query-string access; SendLens setup output, logs, traces, errors, fixtures, and tests suppress the value. Smartlead V1 support is read-only and does not expose campaign, lead, account, email, webhook, or provider-setting mutation paths.
 
