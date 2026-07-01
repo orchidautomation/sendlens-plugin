@@ -8,6 +8,8 @@
       "email": "lead-1005@example.co",
       "first_name": "Mary",
       "status": "STOPPED",
+      "category_id": 22,
+      "category_name": "Wrong Person",
       "email_stats": {
         "is_opened": false,
         "is_replied": true

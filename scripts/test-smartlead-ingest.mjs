@@ -186,6 +186,50 @@ const fakeClient = {
     assert.equal(String(campaignId), "101");
     return leadPages.flatMap((page) => page.leads);
   },
+  async getBulkMessageHistory(campaignId, leadIds) {
+    assert.equal(String(campaignId), "101");
+    assert.deepEqual(leadIds.map(String), ["1002", "1005"]);
+    return {
+      data: {
+        1002: [
+          {
+            id: "out-1002-1",
+            direction: "outbound",
+            email_sequence_number: 1,
+            subject: "Exact delivered outbound subject should stay out of rendered context",
+            body_text: "Exact delivered outbound body should not be stored as reconstructed copy.",
+            sent_at: "2026-06-03T10:00:00.000Z",
+            from_email: "sender-301@example.com",
+            to_email: "lead-1002@example.com",
+          },
+          {
+            id: "in-1002-1",
+            direction: "inbound",
+            email_sequence_number: 1,
+            subject: "Re: Fixture intro",
+            body_text: "Synthetic exact reply body: the timing works.",
+            received_at: "2026-06-03T11:15:00.000Z",
+            from_email: "lead-1002@example.com",
+            to_email: "sender-301@example.com",
+          },
+        ],
+      },
+    };
+  },
+  async getMessageHistory(campaignId, leadId) {
+    assert.equal(String(campaignId), "101");
+    assert.equal(String(leadId), "1005");
+    return [
+      {
+        id: "out-1005-1",
+        email_sequence_number: 1,
+        subject: "Wrong person follow-up",
+        sent_at: "2026-06-04T10:00:00.000Z",
+        from_email: "sender-301@example.com",
+        to_email: "lead-1005@example.co",
+      },
+    ];
+  },
 };
 
 const summary = await refreshSmartleadWorkspace({
@@ -340,7 +384,8 @@ assert.equal(Number(accountDaily[0].unique_clicks), 2);
 const leadEvidence = await query(
   db,
   `SELECT source_provider, provider_lead_id, normalized_email, normalized_domain,
-          company_domain, email_reply_count, lt_interest_status, custom_payload, has_reply_signal
+          company_domain, email_reply_count, lt_interest_status, reply_outcome_label,
+          custom_payload, has_reply_signal
    FROM sendlens.lead_evidence
    WHERE workspace_id = '501' AND email = 'lead-1002@example.com'`,
 );
@@ -351,9 +396,46 @@ assert.equal(leadEvidence[0].normalized_email, "lead-1002@example.com");
 assert.equal(leadEvidence[0].normalized_domain, "example.com");
 assert.equal(leadEvidence[0].company_domain, "example.org");
 assert.equal(Number(leadEvidence[0].email_reply_count), 1);
-assert.equal(leadEvidence[0].lt_interest_status, null);
+assert.equal(Number(leadEvidence[0].lt_interest_status), 1);
+assert.equal(leadEvidence[0].reply_outcome_label, "positive");
 assert.equal(Boolean(leadEvidence[0].has_reply_signal), true);
 assert.match(String(leadEvidence[0].custom_payload), /company_domain/);
+assert.match(String(leadEvidence[0].custom_payload), /smartlead_category_name/);
+
+const replyContext = await query(
+  db,
+  `SELECT reply_email_id, reply_body_text, reply_outcome_label, rendered_subject,
+          rendered_body_text, sample_source, template_body_text
+   FROM sendlens.reply_context
+   WHERE workspace_id = '501' AND campaign_id = 'smartlead:101' AND lead_email = 'lead-1002@example.com'`,
+);
+assert.equal(replyContext.length, 1);
+assert.match(String(replyContext[0].reply_email_id), /^smartlead:reply:smartlead:101:1002:/);
+assert.equal(replyContext[0].reply_body_text, "Synthetic exact reply body: the timing works.");
+assert.equal(replyContext[0].reply_outcome_label, "positive");
+assert.equal(replyContext[0].rendered_subject, "Fixture intro");
+assert.equal(replyContext[0].rendered_body_text, "Hi Grace");
+assert.equal(replyContext[0].sample_source, "smartlead_sequence_template_reconstructed");
+assert.equal(replyContext[0].template_body_text, "Hi {{first_name}}");
+assert.doesNotMatch(
+  String(replyContext[0].rendered_body_text),
+  /Exact delivered outbound body/,
+);
+
+const replyEmailContext = await query(
+  db,
+  `SELECT reply_body_text, hydrated_reply_body, reply_outcome_label,
+          rendered_body_text, rendered_sample_source, context_gap_reason
+   FROM sendlens.reply_email_context
+   WHERE workspace_id = '501' AND campaign_id = 'smartlead:101' AND lead_email = 'lead-1002@example.com'`,
+);
+assert.equal(replyEmailContext.length, 1);
+assert.equal(replyEmailContext[0].reply_body_text, "Synthetic exact reply body: the timing works.");
+assert.equal(Boolean(replyEmailContext[0].hydrated_reply_body), true);
+assert.equal(replyEmailContext[0].reply_outcome_label, "positive");
+assert.equal(replyEmailContext[0].rendered_body_text, "Hi Grace");
+assert.equal(replyEmailContext[0].rendered_sample_source, "smartlead_sequence_template_reconstructed");
+assert.equal(replyEmailContext[0].context_gap_reason, "covered");
 
 const payloadKv = await query(
   db,
@@ -404,7 +486,8 @@ assert.equal(capabilities[0].confidence, "high");
 
 const coverage = await query(
   db,
-  `SELECT source_provider, provider_campaign_id, campaign_source_id, total_leads, total_sent, reply_rows, reply_lead_rows, coverage_note
+  `SELECT source_provider, provider_campaign_id, campaign_source_id, total_leads, total_sent,
+          reply_rows, reply_lead_rows, outbound_rows_sampled, reply_outbound_rows, coverage_note
    FROM sendlens.sampling_runs
    WHERE workspace_id = '501' AND campaign_id = 'smartlead:101'`,
 );
@@ -416,7 +499,14 @@ assert.equal(Number(coverage[0].total_leads), 5);
 assert.equal(Number(coverage[0].total_sent), 90);
 assert.equal(Number(coverage[0].reply_rows), 7);
 assert.equal(Number(coverage[0].reply_lead_rows), 2);
+assert.equal(Number(coverage[0].outbound_rows_sampled), 2);
+assert.equal(Number(coverage[0].reply_outbound_rows), 2);
 assert.match(String(coverage[0].coverage_note), /Smartlead read-only ingest/);
+assert.match(String(coverage[0].coverage_note), /message_history eligible_leads=2/);
+assert.match(String(coverage[0].coverage_note), /fetched_leads=2/);
+assert.match(String(coverage[0].coverage_note), /skipped_leads=0/);
+assert.match(String(coverage[0].coverage_note), /inbound_exact_body_rows=1/);
+assert.match(String(coverage[0].coverage_note), /outbound_exact_body_rows_skipped=1/);
 } finally {
   closeDb(db);
 }
@@ -773,5 +863,133 @@ try {
   ]);
 } finally {
   closeDb(scopedDb);
+}
+
+const overLimitLeads = Array.from({ length: 51 }, (_, index) => {
+  const leadNumber = index + 1;
+  return {
+    id: String(9000 + leadNumber),
+    email: `over-limit-${leadNumber}@example.com`,
+    first_name: `Lead ${leadNumber}`,
+    email_stats: { is_replied: true },
+  };
+});
+const overLimitHydratedIds = overLimitLeads.slice(0, 50).map((lead) => String(lead.id));
+
+await refreshSmartleadWorkspace({
+  client: {
+    async listCampaigns() {
+      return [
+        {
+          id: 201,
+          name: "Over Limit Coverage",
+          status: "ACTIVE",
+          user_id: "501",
+        },
+      ];
+    },
+    async getCampaign(campaignId) {
+      assert.equal(String(campaignId), "201");
+      return {
+        id: 201,
+        name: "Over Limit Coverage",
+        status: "ACTIVE",
+        user_id: "501",
+      };
+    },
+    async getCampaignSequences(campaignId) {
+      assert.equal(String(campaignId), "201");
+      return [
+        {
+          seq_number: 1,
+          subject: "Over limit",
+          email_body: "Over limit body",
+          delay_days: 0,
+        },
+      ];
+    },
+    async getCampaignAnalytics(campaignId) {
+      assert.equal(String(campaignId), "201");
+      return {
+        total_leads: overLimitLeads.length,
+        sent_count: overLimitLeads.length,
+        reply_count: overLimitLeads.length,
+      };
+    },
+    async getCampaignAnalyticsByDate(campaignId) {
+      assert.equal(String(campaignId), "201");
+      return {
+        daily: [
+          {
+            date: "2026-06-01",
+            sent: overLimitLeads.length,
+            replies: overLimitLeads.length,
+          },
+        ],
+      };
+    },
+    async listAllCampaignStatistics(campaignId) {
+      assert.equal(String(campaignId), "201");
+      return [];
+    },
+    async listAllCampaignMailboxStatistics(campaignId) {
+      assert.equal(String(campaignId), "201");
+      return [];
+    },
+    async listCampaignEmailAccounts(campaignId) {
+      assert.equal(String(campaignId), "201");
+      return [];
+    },
+    async listAllEmailAccounts() {
+      return [];
+    },
+    async getEmailAccountWarmupStats() {
+      return {};
+    },
+    async listAllCampaignLeads(campaignId) {
+      assert.equal(String(campaignId), "201");
+      return overLimitLeads;
+    },
+    async getBulkMessageHistory(campaignId, leadIds) {
+      assert.equal(String(campaignId), "201");
+      assert.deepEqual(leadIds.map(String), overLimitHydratedIds);
+      return {
+        data: Object.fromEntries(
+          overLimitHydratedIds.map((leadId, index) => [
+            leadId,
+            [
+              {
+                id: `in-${leadId}`,
+                direction: "inbound",
+                subject: "Re: Over limit",
+                body_text: `Reply ${index + 1}`,
+                received_at: "2026-06-01T12:00:00.000Z",
+                from_email: `over-limit-${index + 1}@example.com`,
+              },
+            ],
+          ]),
+        ),
+      };
+    },
+  },
+  source: "manual",
+  campaignIds: ["201"],
+});
+
+const overLimitDb = await getDb();
+try {
+  const overLimitCoverage = await query(
+    overLimitDb,
+    `SELECT coverage_note
+     FROM sendlens.sampling_runs
+     WHERE workspace_id = '501' AND campaign_id = 'smartlead:201'`,
+  );
+  assert.equal(overLimitCoverage.length, 1);
+  assert.match(String(overLimitCoverage[0].coverage_note), /message_history eligible_leads=51/);
+  assert.match(String(overLimitCoverage[0].coverage_note), /lead_limit=50/);
+  assert.match(String(overLimitCoverage[0].coverage_note), /fetched_leads=50/);
+  assert.match(String(overLimitCoverage[0].coverage_note), /skipped_leads=1/);
+} finally {
+  closeDb(overLimitDb);
 }
 await resetDbConnectionForTests();

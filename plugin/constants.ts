@@ -122,7 +122,7 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
   sender_deliverability_health:
     "Semantic sender-level deliverability health view built from inbox placement analytics across tests.",
   reply_emails:
-    "Exact inbound reply email rows fetched on demand from Instantly email search, including body text, body HTML, thread IDs, and interest status.",
+    "Exact inbound reply email rows fetched from provider reply surfaces, including Instantly email search and bounded Smartlead message history.",
   reply_email_hydration_state:
     "Pagination and cache state for on-demand reply text fetching by campaign, interest status, and thread mode.",
   reply_email_context:
@@ -130,7 +130,7 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
   sampled_leads:
     "Campaign-scoped lead evidence with reply-signal leads found during bounded scans, explicit reply-email backfills, and bounded non-reply samples. Do not use for population totals.",
   sampled_outbound_emails:
-    "Locally reconstructed outbound copy built from campaign templates plus lead variables. Do not treat it as exact delivered email text.",
+    "Locally reconstructed outbound copy built from campaign templates plus lead variables. Do not treat it as exact delivered email text, including when Smartlead message-history coverage exists.",
   sampling_runs:
     "Per-campaign ingest coverage metadata, including exact-vs-sampled mode and sample sizes.",
   provider_capabilities:
