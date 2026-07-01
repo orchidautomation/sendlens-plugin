@@ -1,5 +1,6 @@
 import type { DuckDBConnection } from "@duckdb/node-api";
 import { getActiveWorkspaceId, getPluginState, query } from "./local-db";
+import type { SourceProviderMode } from "./provider-config";
 
 const WORKSPACE_COVERAGE_LIMIT = 100;
 const WORKSPACE_CAMPAIGN_LIMIT = 100;
@@ -14,9 +15,27 @@ function num(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function providerScopeWhere(alias: string, providerScope: SourceProviderMode) {
+  if (providerScope === "all") return "TRUE";
+  return `COALESCE(${alias}.source_provider, 'instantly') = '${providerScope}'`;
+}
+
+function providerScopeLabel(providerScope: SourceProviderMode) {
+  return providerScope === "all" ? "all providers" : providerScope;
+}
+
+function rateCaveats(providerScope: SourceProviderMode, providerCount: number) {
+  if (providerScope !== "all" || providerCount <= 1) return [];
+  return [
+    "Cross-provider rates are recomputed from normalized SendLens count fields in the local cache.",
+    "Do not compare provider-native rates directly unless their denominator/source definitions have been verified.",
+  ];
+}
+
 export async function buildWorkspaceSummary(
   conn: DuckDBConnection,
   workspaceId?: string,
+  providerScope: SourceProviderMode = "all",
 ) {
   const activeWorkspaceId = workspaceId ?? (await getActiveWorkspaceId(conn));
   if (!activeWorkspaceId) {
@@ -29,11 +48,22 @@ export async function buildWorkspaceSummary(
       coverage: [],
       campaigns: [],
       warnings: ["No workspace has been refreshed locally yet."],
+      source_provider_scope: providerScope,
+      provider_breakdown: [],
+      provider_capabilities: [],
+      rate_caveats: [],
       last_refreshed_at: null,
     };
   }
 
   const workspace = activeWorkspaceId.replace(/'/g, "''");
+  const campaignProviderFilter = providerScopeWhere("c", providerScope);
+  const overviewProviderFilter = providerScope === "all"
+    ? "TRUE"
+    : `COALESCE(source_provider, 'instantly') = '${providerScope}'`;
+  const leadProviderFilter = overviewProviderFilter;
+  const tagProviderFilter = overviewProviderFilter;
+  const capabilityProviderFilter = overviewProviderFilter;
   const metricsRows = await query(
     conn,
     `SELECT
@@ -45,11 +75,42 @@ export async function buildWorkspaceSummary(
        COALESCE(SUM(ca.total_opportunities), 0) AS total_opportunities
      FROM sendlens.campaigns c
      LEFT JOIN sendlens.campaign_analytics ca
-       ON c.workspace_id = ca.workspace_id AND c.id = ca.campaign_id
+       ON c.workspace_id = ca.workspace_id
+      AND c.id = ca.campaign_id
+      AND COALESCE(c.source_provider, 'instantly') = COALESCE(ca.source_provider, 'instantly')
      WHERE c.workspace_id = '${workspace}'
-       AND c.status = 'active'`,
+       AND c.status = 'active'
+       AND ${campaignProviderFilter}`,
   );
   const metrics = metricsRows[0] ?? {};
+
+  const providerBreakdown = await query(
+    conn,
+    `SELECT
+       COALESCE(c.source_provider, 'instantly') AS source_provider,
+       COUNT(*) AS active_campaign_count,
+       COALESCE(SUM(ca.emails_sent_count), 0) AS total_sent,
+       COALESCE(SUM(ca.reply_count_unique), 0) AS total_unique_replies,
+       COALESCE(SUM(ca.bounced_count), 0) AS total_bounces,
+       CASE
+         WHEN COALESCE(SUM(ca.emails_sent_count), 0) = 0 THEN 0
+         ELSE ROUND(100.0 * COALESCE(SUM(ca.reply_count_unique), 0) / SUM(ca.emails_sent_count), 2)
+       END AS unique_reply_rate_pct,
+       CASE
+         WHEN COALESCE(SUM(ca.emails_sent_count), 0) = 0 THEN 0
+         ELSE ROUND(100.0 * COALESCE(SUM(ca.bounced_count), 0) / SUM(ca.emails_sent_count), 2)
+       END AS bounce_rate_pct
+     FROM sendlens.campaigns c
+     LEFT JOIN sendlens.campaign_analytics ca
+       ON c.workspace_id = ca.workspace_id
+      AND c.id = ca.campaign_id
+      AND COALESCE(c.source_provider, 'instantly') = COALESCE(ca.source_provider, 'instantly')
+     WHERE c.workspace_id = '${workspace}'
+       AND c.status = 'active'
+       AND ${campaignProviderFilter}
+     GROUP BY 1
+     ORDER BY source_provider`,
+  );
 
   const bestCampaignRows = await query(
     conn,
@@ -87,6 +148,7 @@ export async function buildWorkspaceSummary(
      FROM sendlens.campaign_overview
      WHERE workspace_id = '${workspace}'
        AND status = 'active'
+       AND ${overviewProviderFilter}
      ORDER BY unique_reply_rate_pct DESC NULLS LAST,
               emails_sent_count DESC
      LIMIT ${WORKSPACE_CAMPAIGN_LIMIT + 1}`,
@@ -95,48 +157,81 @@ export async function buildWorkspaceSummary(
   const coverage = await query(
     conn,
     `SELECT
-       campaign_id,
-       ingest_mode,
-       total_leads,
-       total_sent,
-       reply_rows,
-       nonreply_rows_sampled,
-       outbound_rows_sampled,
-       coverage_note,
-       created_at
-     FROM sendlens.sampling_runs
-     WHERE workspace_id = '${workspace}'
-       AND campaign_id IN (
-         SELECT id
-         FROM sendlens.campaigns
-         WHERE workspace_id = '${workspace}'
-           AND status = 'active'
-       )
-     ORDER BY campaign_id
+       sr.campaign_id,
+       COALESCE(sr.source_provider, c.source_provider, 'instantly') AS source_provider,
+       COALESCE(sr.provider_campaign_id, c.provider_campaign_id, sr.campaign_id) AS provider_campaign_id,
+       COALESCE(
+         sr.campaign_source_id,
+         c.campaign_source_id,
+         COALESCE(c.source_provider, sr.source_provider, 'instantly') || ':' || COALESCE(sr.provider_campaign_id, c.provider_campaign_id, sr.campaign_id)
+       ) AS campaign_source_id,
+       sr.ingest_mode,
+       sr.total_leads,
+       sr.total_sent,
+       sr.reply_rows,
+       sr.nonreply_rows_sampled,
+       sr.outbound_rows_sampled,
+       sr.coverage_note,
+       sr.created_at
+     FROM sendlens.sampling_runs sr
+     JOIN sendlens.campaigns c
+       ON sr.workspace_id = c.workspace_id
+      AND sr.campaign_id = c.id
+      AND COALESCE(sr.source_provider, 'instantly') = COALESCE(c.source_provider, 'instantly')
+     WHERE sr.workspace_id = '${workspace}'
+       AND c.status = 'active'
+       AND ${campaignProviderFilter}
+     ORDER BY source_provider, campaign_id
      LIMIT ${WORKSPACE_COVERAGE_LIMIT + 1}`,
   );
 
   const sampledLeadRows = await query(
     conn,
-    `SELECT COUNT(*) AS count FROM sendlens.sampled_leads WHERE workspace_id = '${workspace}'`,
+    `SELECT COUNT(*) AS count
+     FROM sendlens.lead_evidence
+     WHERE workspace_id = '${workspace}'
+       AND ${leadProviderFilter}`,
   );
   const repliedLeadRows = await query(
     conn,
     `SELECT COUNT(*) AS count
      FROM sendlens.lead_evidence
-     WHERE workspace_id = '${workspace}' AND has_reply_signal = TRUE`,
+     WHERE workspace_id = '${workspace}'
+       AND has_reply_signal = TRUE
+       AND ${leadProviderFilter}`,
   );
   const tagRows = await query(
     conn,
-    `SELECT COUNT(*) AS count FROM sendlens.custom_tags WHERE workspace_id = '${workspace}'`,
+    `SELECT COUNT(*) AS count
+     FROM sendlens.custom_tags
+     WHERE workspace_id = '${workspace}'
+       AND ${tagProviderFilter}`,
   );
-  const inboxPlacementTestRows = await query(
+  const inboxPlacementTestRows = providerScope === "smartlead"
+    ? [{ count: 0 }]
+    : await query(
+      conn,
+      `SELECT COUNT(*) AS count FROM sendlens.inbox_placement_tests WHERE workspace_id = '${workspace}'`,
+    );
+  const inboxPlacementAnalyticsRows = providerScope === "smartlead"
+    ? [{ count: 0 }]
+    : await query(
+      conn,
+      `SELECT COUNT(*) AS count FROM sendlens.inbox_placement_analytics WHERE workspace_id = '${workspace}'`,
+    );
+  const providerCapabilities = await query(
     conn,
-    `SELECT COUNT(*) AS count FROM sendlens.inbox_placement_tests WHERE workspace_id = '${workspace}'`,
-  );
-  const inboxPlacementAnalyticsRows = await query(
-    conn,
-    `SELECT COUNT(*) AS count FROM sendlens.inbox_placement_analytics WHERE workspace_id = '${workspace}'`,
+    `SELECT
+       source_provider,
+       capability,
+       support_status,
+       confidence,
+       coverage_note,
+       synced_at
+     FROM sendlens.provider_capabilities
+     WHERE workspace_id = '${workspace}'
+       AND ${capabilityProviderFilter}
+     ORDER BY source_provider, capability`,
   );
 
   const totalSent = num(metrics.total_sent);
@@ -159,6 +254,14 @@ export async function buildWorkspaceSummary(
     warnings.push("Workspace unique reply rate is below 1%, so copy and targeting need attention.");
   }
 
+  const activeProviderCount = providerBreakdown.filter((row) =>
+    num(row.active_campaign_count) > 0
+  ).length;
+  const normalizedRateCaveats = rateCaveats(providerScope, activeProviderCount);
+  if (normalizedRateCaveats.length > 0) {
+    warnings.push(normalizedRateCaveats[0]);
+  }
+
   const coverageTruncated = coverage.length > WORKSPACE_COVERAGE_LIMIT;
   const visibleCoverage = coverage.slice(0, WORKSPACE_COVERAGE_LIMIT);
   if (coverageTruncated) {
@@ -169,6 +272,17 @@ export async function buildWorkspaceSummary(
   if (campaignRowsTruncated) {
     warnings.push(
       `Campaign rows were truncated to ${WORKSPACE_CAMPAIGN_LIMIT} active campaigns. Use a scoped workspace_snapshot or analyze_data query for a narrower slice.`,
+    );
+  }
+  if (
+    providerCapabilities.some((row) =>
+      row.source_provider === "smartlead"
+      && row.capability === "inbox_placement"
+      && row.support_status === "unsupported"
+    )
+  ) {
+    warnings.push(
+      "Smartlead inbox placement is explicitly unsupported in the current provider capability surface; do not treat empty inbox-placement rows as stale Smartlead data.",
     );
   }
 
@@ -186,7 +300,7 @@ export async function buildWorkspaceSummary(
     schema_version: "workspace_snapshot.v1",
     workspaceId: activeWorkspaceId,
     summary: [
-      `Workspace ${activeWorkspaceId} has ${num(metrics.active_campaign_count)} active campaigns in the current SendLens snapshot.`,
+      `Workspace ${activeWorkspaceId} has ${num(metrics.active_campaign_count)} active campaigns in the current SendLens snapshot for ${providerScopeLabel(providerScope)}.`,
       `Exact totals: ${totalSent} sends, ${totalUniqueReplies} unique human replies, ${num(metrics.total_auto_replies)} auto-replies, ${num(metrics.total_opportunities)} opportunities.`,
       `Exact headline rates: ${replyRate.toFixed(2)}% unique reply rate and ${bounceRate.toFixed(2)}% bounce rate.`,
       `Best campaign: ${bestCampaignLine}`,
@@ -211,6 +325,18 @@ export async function buildWorkspaceSummary(
       inbox_placement_test_count: inboxPlacementTestCount,
       inbox_placement_analytics_rows: inboxPlacementAnalyticsCount,
     },
+    source_provider_scope: providerScope,
+    provider_breakdown: providerBreakdown.map((row) => ({
+      source_provider: row.source_provider ?? "instantly",
+      active_campaign_count: num(row.active_campaign_count),
+      total_sent: num(row.total_sent),
+      total_unique_replies: num(row.total_unique_replies),
+      total_bounces: num(row.total_bounces),
+      unique_reply_rate_pct: num(row.unique_reply_rate_pct),
+      bounce_rate_pct: num(row.bounce_rate_pct),
+    })),
+    provider_capabilities: providerCapabilities,
+    rate_caveats: normalizedRateCaveats,
     output_limits: {
       coverage_limit: WORKSPACE_COVERAGE_LIMIT,
       campaign_limit: WORKSPACE_CAMPAIGN_LIMIT,

@@ -969,7 +969,10 @@ async function ensureSchema(conn: DuckDBConnection) {
         m.workspace_id,
         COALESCE(m.source_provider, 'instantly') AS source_provider,
         m.resource_id AS campaign_id,
-        COALESCE(c.campaign_source_id, m.resource_id) AS campaign_source_id,
+        COALESCE(
+          c.campaign_source_id,
+          COALESCE(c.source_provider, m.source_provider, 'instantly') || ':' || COALESCE(c.provider_campaign_id, m.resource_id)
+        ) AS campaign_source_id,
         c.name AS campaign_name,
         m.tag_id,
         COALESCE(t.label, t.name) AS tag_label,
@@ -1006,7 +1009,11 @@ async function ensureSchema(conn: DuckDBConnection) {
         ca.workspace_id,
         COALESCE(ca.source_provider, 'instantly') AS source_provider,
         ca.campaign_id,
-        COALESCE(ca.campaign_source_id, c.campaign_source_id, ca.campaign_id) AS campaign_source_id,
+        COALESCE(
+          ca.campaign_source_id,
+          c.campaign_source_id,
+          COALESCE(c.source_provider, ca.source_provider, 'instantly') || ':' || COALESCE(c.provider_campaign_id, ca.provider_campaign_id, ca.campaign_id)
+        ) AS campaign_source_id,
         c.name AS campaign_name,
         ca.account_email,
         ca.provider_account_id,
@@ -1038,7 +1045,11 @@ async function ensureSchema(conn: DuckDBConnection) {
         ca.workspace_id,
         COALESCE(ca.source_provider, 'instantly') AS source_provider,
         ca.campaign_id,
-        COALESCE(ca.campaign_source_id, c.campaign_source_id, ca.campaign_id) AS campaign_source_id,
+        COALESCE(
+          ca.campaign_source_id,
+          c.campaign_source_id,
+          COALESCE(c.source_provider, ca.source_provider, 'instantly') || ':' || COALESCE(c.provider_campaign_id, ca.provider_campaign_id, ca.campaign_id)
+        ) AS campaign_source_id,
         c.name AS campaign_name,
         acct_tag.account_email,
         COALESCE(ca.provider_account_id, acct_tag.provider_account_id) AS provider_account_id,
@@ -1172,7 +1183,10 @@ async function ensureSchema(conn: DuckDBConnection) {
         c.id AS campaign_id,
         COALESCE(c.source_provider, 'instantly') AS source_provider,
         COALESCE(c.provider_campaign_id, c.id) AS provider_campaign_id,
-        COALESCE(c.campaign_source_id, c.id) AS campaign_source_id,
+        COALESCE(
+          c.campaign_source_id,
+          COALESCE(c.source_provider, 'instantly') || ':' || COALESCE(c.provider_campaign_id, c.id)
+        ) AS campaign_source_id,
         c.name AS campaign_name,
         c.status,
         c.daily_limit,
@@ -1558,7 +1572,11 @@ async function ensureSchema(conn: DuckDBConnection) {
         sl.campaign_id,
         COALESCE(sl.source_provider, c.source_provider, 'instantly') AS source_provider,
         COALESCE(sl.provider_campaign_id, c.provider_campaign_id, sl.campaign_id) AS provider_campaign_id,
-        COALESCE(sl.campaign_source_id, c.campaign_source_id, sl.campaign_id) AS campaign_source_id,
+        COALESCE(
+          sl.campaign_source_id,
+          c.campaign_source_id,
+          COALESCE(sl.source_provider, c.source_provider, 'instantly') || ':' || COALESCE(sl.provider_campaign_id, c.provider_campaign_id, sl.campaign_id)
+        ) AS campaign_source_id,
         c.name AS campaign_name,
         sl.id,
         COALESCE(sl.provider_lead_id, sl.id) AS provider_lead_id,
@@ -1609,6 +1627,7 @@ async function ensureSchema(conn: DuckDBConnection) {
         sl.timestamp_last_reply,
         sl.custom_payload,
         sl.sample_source,
+        sl.sampled_at,
         CASE
           WHEN (
             COALESCE(sl.email_reply_count, 0) > 0
@@ -1649,12 +1668,292 @@ async function ensureSchema(conn: DuckDBConnection) {
       WHERE le.custom_payload IS NOT NULL
         AND le.custom_payload <> ''
         AND json_valid(le.custom_payload)`,
+    `CREATE OR REPLACE VIEW sendlens.provider_overlap_risk AS
+      WITH identity_rows AS (
+        SELECT
+          workspace_id,
+          'contact_email' AS overlap_type,
+          normalized_email AS overlap_key,
+          source_provider,
+          campaign_id,
+          campaign_source_id,
+          campaign_name,
+          normalized_email,
+          normalized_domain,
+          company_domain,
+          company_name,
+          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          has_reply_signal,
+          reply_outcome_label
+        FROM sendlens.lead_evidence
+        WHERE normalized_email IS NOT NULL
+          AND trim(normalized_email) <> ''
+        UNION ALL
+        SELECT
+          workspace_id,
+          'email_domain' AS overlap_type,
+          normalized_domain AS overlap_key,
+          source_provider,
+          campaign_id,
+          campaign_source_id,
+          campaign_name,
+          normalized_email,
+          normalized_domain,
+          company_domain,
+          company_name,
+          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          has_reply_signal,
+          reply_outcome_label
+        FROM sendlens.lead_evidence
+        WHERE normalized_domain IS NOT NULL
+          AND trim(normalized_domain) <> ''
+        UNION ALL
+        SELECT
+          workspace_id,
+          'company_domain' AS overlap_type,
+          lower(trim(company_domain)) AS overlap_key,
+          source_provider,
+          campaign_id,
+          campaign_source_id,
+          campaign_name,
+          normalized_email,
+          normalized_domain,
+          company_domain,
+          company_name,
+          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          has_reply_signal,
+          reply_outcome_label
+        FROM sendlens.lead_evidence
+        WHERE company_domain IS NOT NULL
+          AND trim(company_domain) <> ''
+        UNION ALL
+        SELECT
+          workspace_id,
+          'company_name' AS overlap_type,
+          lower(trim(company_name)) AS overlap_key,
+          source_provider,
+          campaign_id,
+          campaign_source_id,
+          campaign_name,
+          normalized_email,
+          normalized_domain,
+          company_domain,
+          company_name,
+          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          has_reply_signal,
+          reply_outcome_label
+        FROM sendlens.lead_evidence
+        WHERE company_name IS NOT NULL
+          AND trim(company_name) <> ''
+      ),
+      identity_rollup AS (
+        SELECT
+          workspace_id,
+          overlap_type,
+          overlap_key,
+          COUNT(DISTINCT source_provider) AS source_provider_count,
+          string_agg(DISTINCT source_provider, ', ' ORDER BY source_provider) AS source_providers,
+          COUNT(DISTINCT campaign_source_id) AS campaign_count,
+          COUNT(*) AS sampled_rows,
+          COUNT(DISTINCT normalized_email) AS sampled_contacts,
+          MIN(exposure_at) AS first_exposure_at,
+          MAX(exposure_at) AS last_exposure_at,
+          CAST(date_diff('day', CAST(MIN(exposure_at) AS DATE), CAST(MAX(exposure_at) AS DATE)) AS INTEGER) AS overall_contact_span_days,
+          SUM(CASE WHEN has_reply_signal THEN 1 ELSE 0 END) AS sampled_reply_signal_rows,
+          SUM(CASE WHEN reply_outcome_label = 'negative' THEN 1 ELSE 0 END) AS sampled_negative_rows
+        FROM identity_rows
+        GROUP BY 1, 2, 3
+        HAVING COUNT(DISTINCT source_provider) > 1
+      ),
+      cross_provider_pairs AS (
+        SELECT
+          a.workspace_id,
+          a.overlap_type,
+          a.overlap_key,
+          MIN(
+            ABS(
+              CAST(date_diff('day', CAST(a.exposure_at AS DATE), CAST(b.exposure_at AS DATE)) AS INTEGER)
+            )
+          ) AS closest_cross_provider_window_days
+        FROM identity_rows a
+        JOIN identity_rows b
+          ON a.workspace_id = b.workspace_id
+         AND a.overlap_type = b.overlap_type
+         AND a.overlap_key = b.overlap_key
+         AND a.source_provider <> b.source_provider
+        WHERE a.exposure_at IS NOT NULL
+          AND b.exposure_at IS NOT NULL
+        GROUP BY 1, 2, 3
+      )
+      SELECT
+        r.workspace_id,
+        r.overlap_type,
+        r.overlap_key,
+        r.source_provider_count,
+        r.source_providers,
+        r.campaign_count,
+        r.sampled_rows,
+        r.sampled_contacts,
+        r.first_exposure_at,
+        r.last_exposure_at,
+        r.overall_contact_span_days,
+        p.closest_cross_provider_window_days,
+        p.closest_cross_provider_window_days AS contact_window_days,
+        CASE
+          WHEN p.closest_cross_provider_window_days IS NULL THEN NULL
+          ELSE p.closest_cross_provider_window_days <= 30
+        END AS within_unsafe_window,
+        CASE
+          WHEN p.closest_cross_provider_window_days IS NULL THEN 'timing_unknown'
+          WHEN p.closest_cross_provider_window_days <= 14 THEN 'high'
+          WHEN p.closest_cross_provider_window_days <= 30 THEN 'medium'
+          ELSE 'low'
+        END AS overlap_risk_level,
+        r.sampled_reply_signal_rows,
+        r.sampled_negative_rows
+      FROM identity_rollup r
+      LEFT JOIN cross_provider_pairs p
+        ON r.workspace_id = p.workspace_id
+       AND r.overlap_type = p.overlap_type
+       AND r.overlap_key = p.overlap_key`,
+    `CREATE OR REPLACE VIEW sendlens.provider_overlap_risk_details AS
+      WITH identity_rows AS (
+        SELECT
+          workspace_id,
+          'contact_email' AS overlap_type,
+          normalized_email AS overlap_key,
+          source_provider,
+          provider_campaign_id,
+          campaign_source_id,
+          campaign_id,
+          campaign_name,
+          provider_lead_id,
+          email,
+          normalized_email,
+          normalized_domain,
+          company_domain,
+          company_name,
+          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          has_reply_signal,
+          reply_outcome_label,
+          sample_source
+        FROM sendlens.lead_evidence
+        WHERE normalized_email IS NOT NULL
+          AND trim(normalized_email) <> ''
+        UNION ALL
+        SELECT
+          workspace_id,
+          'email_domain' AS overlap_type,
+          normalized_domain AS overlap_key,
+          source_provider,
+          provider_campaign_id,
+          campaign_source_id,
+          campaign_id,
+          campaign_name,
+          provider_lead_id,
+          email,
+          normalized_email,
+          normalized_domain,
+          company_domain,
+          company_name,
+          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          has_reply_signal,
+          reply_outcome_label,
+          sample_source
+        FROM sendlens.lead_evidence
+        WHERE normalized_domain IS NOT NULL
+          AND trim(normalized_domain) <> ''
+        UNION ALL
+        SELECT
+          workspace_id,
+          'company_domain' AS overlap_type,
+          lower(trim(company_domain)) AS overlap_key,
+          source_provider,
+          provider_campaign_id,
+          campaign_source_id,
+          campaign_id,
+          campaign_name,
+          provider_lead_id,
+          email,
+          normalized_email,
+          normalized_domain,
+          company_domain,
+          company_name,
+          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          has_reply_signal,
+          reply_outcome_label,
+          sample_source
+        FROM sendlens.lead_evidence
+        WHERE company_domain IS NOT NULL
+          AND trim(company_domain) <> ''
+        UNION ALL
+        SELECT
+          workspace_id,
+          'company_name' AS overlap_type,
+          lower(trim(company_name)) AS overlap_key,
+          source_provider,
+          provider_campaign_id,
+          campaign_source_id,
+          campaign_id,
+          campaign_name,
+          provider_lead_id,
+          email,
+          normalized_email,
+          normalized_domain,
+          company_domain,
+          company_name,
+          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          has_reply_signal,
+          reply_outcome_label,
+          sample_source
+        FROM sendlens.lead_evidence
+        WHERE company_name IS NOT NULL
+          AND trim(company_name) <> ''
+      )
+      SELECT
+        i.workspace_id,
+        i.overlap_type,
+        i.overlap_key,
+        r.source_provider_count,
+        r.source_providers,
+        r.campaign_count,
+        r.overall_contact_span_days,
+        r.closest_cross_provider_window_days,
+        r.contact_window_days,
+        r.within_unsafe_window,
+        r.overlap_risk_level,
+        i.source_provider,
+        i.provider_campaign_id,
+        i.campaign_source_id,
+        i.campaign_id,
+        i.campaign_name,
+        i.provider_lead_id,
+        i.email,
+        i.normalized_email,
+        i.normalized_domain,
+        i.company_domain,
+        i.company_name,
+        i.exposure_at,
+        i.has_reply_signal,
+        i.reply_outcome_label,
+        i.sample_source
+      FROM identity_rows i
+      JOIN sendlens.provider_overlap_risk r
+        ON i.workspace_id = r.workspace_id
+       AND i.overlap_type = r.overlap_type
+       AND i.overlap_key = r.overlap_key`,
     `CREATE OR REPLACE VIEW sendlens.reply_context AS
       SELECT
         le.workspace_id,
         le.campaign_id,
+        le.source_provider,
+        le.provider_campaign_id,
+        le.campaign_source_id,
         le.campaign_name,
         le.email AS lead_email,
+        le.provider_lead_id,
+        le.normalized_email,
+        le.normalized_domain,
         le.first_name,
         le.last_name,
         le.company_name,
@@ -1698,12 +1997,14 @@ async function ensureSchema(conn: DuckDBConnection) {
       LEFT JOIN sendlens.sampled_outbound_emails so
         ON le.workspace_id = so.workspace_id
        AND le.campaign_id = so.campaign_id
+       AND le.source_provider = COALESCE(so.source_provider, 'instantly')
        AND le.email = so.to_email
        AND CAST(le.email_replied_step AS VARCHAR) = so.step_resolved
        AND CAST(COALESCE(le.email_replied_variant, 0) AS VARCHAR) = so.variant_resolved
       LEFT JOIN sendlens.campaign_variants cv
         ON le.workspace_id = cv.workspace_id
        AND le.campaign_id = cv.campaign_id
+       AND le.source_provider = COALESCE(cv.source_provider, 'instantly')
        AND le.email_replied_step = cv.step
        AND COALESCE(le.email_replied_variant, 0) = cv.variant
       WHERE le.has_reply_signal = TRUE`,
@@ -1711,6 +2012,13 @@ async function ensureSchema(conn: DuckDBConnection) {
       SELECT
         re.workspace_id,
         re.campaign_id,
+        COALESCE(c.source_provider, le.source_provider, 'instantly') AS source_provider,
+        COALESCE(c.provider_campaign_id, le.provider_campaign_id, re.campaign_id) AS provider_campaign_id,
+        COALESCE(
+          c.campaign_source_id,
+          le.campaign_source_id,
+          COALESCE(c.source_provider, le.source_provider, 'instantly') || ':' || COALESCE(c.provider_campaign_id, le.provider_campaign_id, re.campaign_id)
+        ) AS campaign_source_id,
         c.name AS campaign_name,
         re.id AS reply_email_id,
         re.thread_id AS reply_thread_id,
@@ -1719,6 +2027,9 @@ async function ensureSchema(conn: DuckDBConnection) {
           WHEN re.lead_email LIKE '%@%' THEN re.lead_email
           ELSE re.from_email
         END AS lead_email,
+        le.provider_lead_id,
+        le.normalized_email,
+        le.normalized_domain,
         re.from_email AS reply_from_email,
         re.to_email AS reply_to_email,
         re.subject AS reply_subject,
@@ -1801,6 +2112,7 @@ async function ensureSchema(conn: DuckDBConnection) {
       LEFT JOIN sendlens.sampled_outbound_emails so
         ON re.workspace_id = so.workspace_id
        AND re.campaign_id = so.campaign_id
+       AND COALESCE(c.source_provider, le.source_provider, 'instantly') = COALESCE(so.source_provider, 'instantly')
        AND lower(
          CASE
            WHEN re.lead_email LIKE '%@%' THEN re.lead_email
@@ -1812,6 +2124,7 @@ async function ensureSchema(conn: DuckDBConnection) {
       LEFT JOIN sendlens.campaign_variants cv
         ON re.workspace_id = cv.workspace_id
        AND re.campaign_id = cv.campaign_id
+       AND COALESCE(c.source_provider, le.source_provider, 'instantly') = COALESCE(cv.source_provider, 'instantly')
        AND TRY_CAST(COALESCE(CAST(le.email_replied_step AS VARCHAR), re.step_resolved) AS INTEGER) = cv.step
        AND TRY_CAST(COALESCE(CAST(le.email_replied_variant AS VARCHAR), re.variant_resolved, '0') AS INTEGER) = cv.variant
       WHERE re.direction = 'inbound'`,
@@ -1819,6 +2132,13 @@ async function ensureSchema(conn: DuckDBConnection) {
       SELECT
         so.workspace_id,
         so.campaign_id,
+        COALESCE(so.source_provider, c.source_provider, 'instantly') AS source_provider,
+        COALESCE(so.provider_campaign_id, c.provider_campaign_id, so.campaign_id) AS provider_campaign_id,
+        COALESCE(
+          so.campaign_source_id,
+          c.campaign_source_id,
+          COALESCE(so.source_provider, c.source_provider, 'instantly') || ':' || COALESCE(so.provider_campaign_id, c.provider_campaign_id, so.campaign_id)
+        ) AS campaign_source_id,
         c.name AS campaign_name,
         so.id,
         so.to_email,
@@ -1835,9 +2155,11 @@ async function ensureSchema(conn: DuckDBConnection) {
       LEFT JOIN sendlens.campaigns c
         ON so.workspace_id = c.workspace_id
        AND so.campaign_id = c.id
+       AND COALESCE(so.source_provider, 'instantly') = COALESCE(c.source_provider, 'instantly')
       LEFT JOIN sendlens.campaign_variants cv
         ON so.workspace_id = cv.workspace_id
        AND so.campaign_id = cv.campaign_id
+       AND COALESCE(so.source_provider, 'instantly') = COALESCE(cv.source_provider, 'instantly')
        AND CAST(cv.step AS VARCHAR) = so.step_resolved
        AND CAST(cv.variant AS VARCHAR) = so.variant_resolved`,
   ];

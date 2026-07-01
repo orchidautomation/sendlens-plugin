@@ -62,6 +62,8 @@ export const PUBLIC_TABLES = [
   "campaign_overview",
   "lead_evidence",
   "lead_payload_kv",
+  "provider_overlap_risk",
+  "provider_overlap_risk_details",
   "reply_context",
   "rendered_outbound_context",
 ] as const;
@@ -70,13 +72,13 @@ export type PublicTableName = (typeof PUBLIC_TABLES)[number];
 
 export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
   campaigns:
-    "Exact campaign metadata from Instantly, including tracking, deliverability guardrail settings, and sequence counts.",
+    "Exact provider-qualified campaign metadata, including tracking, deliverability guardrail settings, sequence counts, and source-provider IDs when available.",
   campaign_analytics:
     "Exact per-campaign aggregate metrics such as sends, replies, bounces, and opportunities.",
   campaign_daily_metrics:
-    "Exact per-campaign daily performance metrics from Instantly daily campaign analytics.",
+    "Exact per-campaign daily performance metrics from provider daily campaign analytics when available.",
   step_analytics:
-    "Exact step and variant performance metrics from Instantly analytics.",
+    "Exact step and variant performance metrics from provider analytics when available.",
   campaign_variants:
     "Exact campaign templates extracted from campaign details: step, variant, subject, body, and delays.",
   campaign_account_assignments:
@@ -88,9 +90,9 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
   account_daily_metrics:
     "Exact per-account daily performance metrics for recent periods.",
   custom_tags:
-    "Exact Instantly custom tag definitions available for filtering local analysis.",
+    "Exact provider custom tag definitions available for filtering local analysis.",
   custom_tag_mappings:
-    "Exact Instantly custom tag assignments across tagged resources such as campaigns or accounts.",
+    "Exact provider custom tag assignments across tagged resources such as campaigns or accounts.",
   campaign_tags:
     "Convenience view joining campaign tag mappings to campaign names for exact tag-based filtering.",
   account_tags:
@@ -138,9 +140,13 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
   campaign_overview:
     "Semantic campaign health view: exact metrics, status, tracking and deliverability settings, sample coverage, and reply/bounce rates in one place.",
   lead_evidence:
-    "Semantic lead evidence view with stable Instantly lead fields, reply signals, and preserved campaign-scoped payload JSON.",
+    "Semantic lead evidence view with provider-qualified campaign and lead fields, reply signals, and preserved campaign-scoped payload JSON.",
   lead_payload_kv:
     "Campaign-scoped sampled lead payload key/value view for ICP analysis without using raw JSON table functions in agent-authored SQL.",
+  provider_overlap_risk:
+    "Sampled cross-provider overlap-risk rollup for the same normalized email, domain, company domain, or company name, scored by the closest cross-provider contact window.",
+  provider_overlap_risk_details:
+    "Contributing sampled lead rows behind provider_overlap_risk, preserving provider-qualified campaign IDs and timing evidence for each overlap.",
   reply_context:
     "Reply outcome view that joins replied leads to fetched inbound reply text when available plus originating templates and locally reconstructed copy.",
   rendered_outbound_context:

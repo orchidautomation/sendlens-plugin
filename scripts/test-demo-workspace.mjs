@@ -37,12 +37,19 @@ try {
   assert.ok(summary.summary.includes("Sampled raw tables are evidence support only"));
 
   const emptyPublicSurfaces = [];
+  const optionalDemoEmptySurfaces = new Set([
+    "provider_overlap_risk",
+    "provider_overlap_risk_details",
+  ]);
   for (const tableName of PUBLIC_TABLES) {
     const countRows = await query(
       db,
       `SELECT COUNT(*) AS row_count FROM sendlens.${tableName}`,
     );
-    if (Number(countRows[0].row_count) <= 0) {
+    if (
+      Number(countRows[0].row_count) <= 0
+      && !optionalDemoEmptySurfaces.has(tableName)
+    ) {
       emptyPublicSurfaces.push(tableName);
     }
   }

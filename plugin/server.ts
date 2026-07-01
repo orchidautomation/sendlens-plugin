@@ -21,6 +21,7 @@ import {
 import {
   resolveSourceProviderMode,
   type SourceProvider,
+  type SourceProviderMode,
 } from "./provider-config";
 import {
   classifyHydrationCoverage,
@@ -217,8 +218,61 @@ function campaignIdOrderSql(column: string, campaignIds: string[]) {
 }
 
 type CampaignResolution =
-  | { ok: true; campaign_id: string; campaign_name: string | null }
+  | {
+      ok: true;
+      campaign_id: string;
+      campaign_name: string | null;
+      source_provider: SourceProvider;
+      provider_campaign_id: string;
+      campaign_source_id: string;
+    }
   | { ok: false; payload: Record<string, unknown> };
+
+type CampaignMatchRow = {
+  campaign_id?: unknown;
+  id?: unknown;
+  campaign_name?: unknown;
+  name?: unknown;
+  source_provider?: unknown;
+  provider_campaign_id?: unknown;
+  campaign_source_id?: unknown;
+};
+
+function campaignSourceIdSql(alias: string) {
+  return `COALESCE(${alias}.campaign_source_id, COALESCE(${alias}.source_provider, 'instantly') || ':' || COALESCE(${alias}.provider_campaign_id, ${alias}.id))`;
+}
+
+function formatCampaignMatch(row: CampaignMatchRow) {
+  const campaignId = String(row.campaign_id ?? row.id ?? "");
+  const sourceProvider = (
+    row.source_provider === "smartlead" ? "smartlead" : "instantly"
+  ) as SourceProvider;
+  const providerCampaignId = String(row.provider_campaign_id ?? campaignId);
+  const campaignSourceId = String(
+    row.campaign_source_id ?? `${sourceProvider}:${providerCampaignId}`,
+  );
+  return {
+    campaign_id: campaignId,
+    source_provider: sourceProvider,
+    provider_campaign_id: providerCampaignId,
+    campaign_source_id: campaignSourceId,
+    campaign_name: typeof (row.campaign_name ?? row.name) === "string"
+      ? String(row.campaign_name ?? row.name)
+      : null,
+  };
+}
+
+function campaignSelectorAmbiguityPayload(
+  selector: Record<string, unknown>,
+  matches: CampaignMatchRow[],
+) {
+  return {
+    error:
+      "Campaign selector matched multiple provider-qualified campaigns. Retry with campaign_source_id or campaign_id from one match; do not guess across providers.",
+    selector,
+    matches: matches.slice(0, 5).map(formatCampaignMatch),
+  };
+}
 
 async function resolveCampaignSelector(
   db: Awaited<ReturnType<typeof getDb>>,
@@ -239,26 +293,54 @@ async function resolveCampaignSelector(
   const workspaceSafe = sqlSafe(workspaceId);
   let campaignRows;
   if (hasCampaignId) {
-    const campaignSafe = sqlSafe(selector.campaign_id!.trim());
+    const requestedCampaignId = selector.campaign_id!.trim();
+    const campaignSafe = sqlSafe(requestedCampaignId);
+    const parsed = parseProviderQualifiedCampaignId(requestedCampaignId);
+    const whereSql = parsed
+      ? `COALESCE(c.source_provider, 'instantly') = '${sqlSafe(parsed.provider)}'
+          AND (
+            c.id = '${sqlSafe(storedCampaignIdForProvider(parsed.provider, parsed.nativeId))}'
+            OR c.id = '${campaignSafe}'
+            OR c.provider_campaign_id = '${sqlSafe(parsed.nativeId)}'
+            OR c.campaign_source_id = '${campaignSafe}'
+            OR ${campaignSourceIdSql("c")} = '${campaignSafe}'
+          )`
+      : [
+          `c.id = '${campaignSafe}'`,
+          `OR c.provider_campaign_id = '${campaignSafe}'`,
+          `OR c.campaign_source_id = '${campaignSafe}'`,
+          `OR ${campaignSourceIdSql("c")} = '${campaignSafe}'`,
+        ].join("\n          ");
     campaignRows = await query(
       db,
-      `SELECT id, name
-       FROM sendlens.campaigns
-       WHERE workspace_id = '${workspaceSafe}'
-         AND id = '${campaignSafe}'
-       LIMIT 2`,
+      `SELECT
+         c.id AS campaign_id,
+         c.name AS campaign_name,
+         COALESCE(c.source_provider, 'instantly') AS source_provider,
+         COALESCE(c.provider_campaign_id, c.id) AS provider_campaign_id,
+         ${campaignSourceIdSql("c")} AS campaign_source_id
+       FROM sendlens.campaigns c
+       WHERE c.workspace_id = '${workspaceSafe}'
+         AND (${whereSql})
+       ORDER BY source_provider, campaign_name, campaign_id
+       LIMIT 6`,
     );
   } else {
     const nameSafe = sqlSafe(selector.campaign_name!.trim());
     campaignRows = await query(
       db,
-      `SELECT id, name
-       FROM sendlens.campaigns
-       WHERE workspace_id = '${workspaceSafe}'
-         AND lower(name) LIKE lower('%${nameSafe}%')
+      `SELECT
+         c.id AS campaign_id,
+         c.name AS campaign_name,
+         COALESCE(c.source_provider, 'instantly') AS source_provider,
+         COALESCE(c.provider_campaign_id, c.id) AS provider_campaign_id,
+         ${campaignSourceIdSql("c")} AS campaign_source_id
+       FROM sendlens.campaigns c
+       WHERE c.workspace_id = '${workspaceSafe}'
+         AND lower(c.name) LIKE lower('%${nameSafe}%')
        ORDER BY
-         CASE WHEN lower(name) = lower('${nameSafe}') THEN 0 ELSE 1 END,
-         name
+         CASE WHEN lower(c.name) = lower('${nameSafe}') THEN 0 ELSE 1 END,
+         c.name
        LIMIT 6`,
     );
   }
@@ -274,23 +356,26 @@ async function resolveCampaignSelector(
       },
     };
   }
-  if (!hasCampaignId && campaignRows.length > 1) {
+  if (campaignRows.length > 1) {
     return {
       ok: false,
-      payload: {
-        error:
-          "Campaign name matched multiple campaigns. Retry with campaign_id or a more exact campaign_name.",
-        matches: campaignRows.slice(0, 5),
-      },
+      payload: campaignSelectorAmbiguityPayload(
+        hasCampaignId
+          ? { campaign_id: selector.campaign_id }
+          : { campaign_name: selector.campaign_name },
+        campaignRows,
+      ),
     };
   }
 
+  const matchedCampaign = formatCampaignMatch(campaignRows[0]);
   return {
     ok: true,
-    campaign_id: String(campaignRows[0].id),
-    campaign_name: typeof campaignRows[0].name === "string"
-      ? campaignRows[0].name
-      : null,
+    campaign_id: matchedCampaign.campaign_id,
+    campaign_name: matchedCampaign.campaign_name,
+    source_provider: matchedCampaign.source_provider,
+    provider_campaign_id: matchedCampaign.provider_campaign_id,
+    campaign_source_id: matchedCampaign.campaign_source_id,
   };
 }
 
@@ -612,7 +697,7 @@ server.registerTool(
       campaign_id: z
         .string()
         .optional()
-        .describe("Exact Instantly campaign ID. Provide either campaign_id or campaign_name, not both."),
+        .describe("Exact provider-qualified or native campaign ID. Provide either campaign_id or campaign_name, not both."),
       campaign_name: z
         .string()
         .optional()
@@ -744,14 +829,20 @@ server.registerTool(
          LIMIT 1`,
       );
       const contextRows = await query(
-        db,
-        `SELECT
+         db,
+         `SELECT
            campaign_id,
+           source_provider,
+           provider_campaign_id,
+           campaign_source_id,
            campaign_name,
            reply_email_id,
            reply_thread_id,
            lead_id,
+           provider_lead_id,
            lead_email,
+           normalized_email,
+           normalized_domain,
            reply_from_email,
            reply_to_email,
            reply_subject,
@@ -846,6 +937,9 @@ server.registerTool(
         campaign: {
           campaign_id: resolved.campaign_id,
           campaign_name: resolved.campaign_name,
+          source_provider: resolved.source_provider,
+          provider_campaign_id: resolved.provider_campaign_id,
+          campaign_source_id: resolved.campaign_source_id,
         },
         analysis_depth: depth.depth,
         statuses: resolvedStatuses,
@@ -910,7 +1004,7 @@ server.registerTool(
       campaign_id: z
         .string()
         .optional()
-        .describe("Exact Instantly campaign ID. Provide either campaign_id or campaign_name, not both."),
+        .describe("Exact provider-qualified or native campaign ID. Provide either campaign_id or campaign_name, not both."),
       campaign_name: z
         .string()
         .optional()
@@ -969,61 +1063,23 @@ server.registerTool(
         });
       }
 
-      const hasCampaignId = Boolean(campaign_id?.trim());
-      const hasCampaignName = Boolean(campaign_name?.trim());
-      if (hasCampaignId === hasCampaignName) {
-        return jsonResponse({
-          error: "Provide exactly one campaign selector: campaign_id or campaign_name.",
-        });
-      }
-
       const workspaceSafe = workspaceId.replace(/'/g, "''");
-      let campaignRows;
-      if (hasCampaignId) {
-        const campaignSafe = campaign_id!.trim().replace(/'/g, "''");
-        campaignRows = await query(
-          db,
-          `SELECT id, name
-           FROM sendlens.campaigns
-           WHERE workspace_id = '${workspaceSafe}'
-             AND id = '${campaignSafe}'
-           LIMIT 2`,
-        );
-      } else {
-        const nameSafe = campaign_name!.trim().replace(/'/g, "''");
-        campaignRows = await query(
-          db,
-          `SELECT id, name
-           FROM sendlens.campaigns
-           WHERE workspace_id = '${workspaceSafe}'
-             AND lower(name) LIKE lower('%${nameSafe}%')
-           ORDER BY
-             CASE WHEN lower(name) = lower('${nameSafe}') THEN 0 ELSE 1 END,
-             name
-           LIMIT 6`,
-        );
+      const resolved = await resolveCampaignSelector(db, workspaceId, {
+        campaign_id,
+        campaign_name,
+      });
+      if (!resolved.ok) {
+        return jsonResponse(resolved.payload);
       }
 
-      if (campaignRows.length === 0) {
-        return jsonResponse({
-          error: "No campaign matched the provided selector in the local cache.",
-          selector: campaign_id ? { campaign_id } : { campaign_name },
-        });
-      }
-      if (!hasCampaignId && campaignRows.length > 1) {
-        return jsonResponse({
-          error: "Campaign name matched multiple campaigns. Retry with campaign_id or a more exact campaign_name.",
-          matches: campaignRows.slice(0, 5),
-        });
-      }
-
-      const resolvedCampaignId = String(campaignRows[0].id);
+      const resolvedCampaignId = resolved.campaign_id;
       const fetchResult = isDemoMode()
         ? toReplyTextFetchResult({
           mode: "demo",
           status: "skipped_live_fetch",
           workspace_id: workspaceId,
           campaign_id: resolvedCampaignId,
+          campaign_name: resolved.campaign_name,
           message:
             "Demo mode uses pre-seeded synthetic reply bodies and does not call Instantly.",
         })
@@ -1043,8 +1099,14 @@ server.registerTool(
           db,
           `SELECT
              campaign_id,
+             source_provider,
+             provider_campaign_id,
+             campaign_source_id,
              campaign_name,
              lead_email,
+             provider_lead_id,
+             normalized_email,
+             normalized_domain,
              reply_email_id,
              reply_thread_id,
              reply_email_i_status,
@@ -1098,12 +1160,16 @@ server.registerTool(
   {
     description:
       [
-        "Get the first high-level read of the active local workspace, optionally scoped by exact Instantly tag or campaign-name fragment.",
+        "Get the first high-level read of the active local workspace, optionally scoped by source provider, exact Instantly tag, or campaign-name fragment.",
         "Use this for broad questions like what is working, what is risky, or which campaign to inspect next.",
         "Do not use this for detailed copy, lead-variable, or reply cohort analysis; pick one campaign and call load_campaign_data or use analysis_starters plus analyze_data.",
-        "Returns exact headline campaign/account/inbox-placement metrics, bounded ranked campaigns from campaign_overview, campaign coverage rows, freshness/readiness metadata, and warnings when scoped output is capped.",
+        "Returns exact headline campaign/account/inbox-placement metrics, provider breakdown and capability rows, bounded ranked campaigns from campaign_overview, campaign coverage rows, freshness/readiness metadata, and warnings when scoped output is capped.",
       ].join(" "),
     inputSchema: {
+      provider: z
+        .enum(["instantly", "smartlead", "all"])
+        .optional()
+        .describe("Optional source provider read scope. Use all for mixed-provider workspace analysis; instantly or smartlead for provider-scoped reads."),
       instantly_tag: z
         .string()
         .optional()
@@ -1114,7 +1180,7 @@ server.registerTool(
         .describe("Optional case-insensitive campaign name fragment to filter by."),
     },
   },
-  async ({ instantly_tag, campaign_name }) => {
+  async ({ provider = "all", instantly_tag, campaign_name }) => {
     const readiness = await waitForSessionSnapshot();
     let db: Awaited<ReturnType<typeof getDb>> | null = null;
     try {
@@ -1124,10 +1190,11 @@ server.registerTool(
       const hasScope = Boolean(instantly_tag?.trim() || campaign_name?.trim());
       const summary = hasScope
         ? await buildScopedWorkspaceSnapshot(db, {
+          provider,
           instantlyTag: instantly_tag?.trim() || undefined,
           campaignName: campaign_name?.trim() || undefined,
         })
-        : await buildWorkspaceSummary(db);
+        : await buildWorkspaceSummary(db, undefined, provider);
       const payload = {
         ...summary,
         warnings: [
@@ -1522,6 +1589,7 @@ function classifyReply(row: Record<string, unknown>) {
 async function buildScopedWorkspaceSnapshot(
   db: Awaited<ReturnType<typeof getDb>>,
   scope: {
+    provider?: SourceProviderMode;
     instantlyTag?: string;
     campaignName?: string;
   },
@@ -1534,6 +1602,10 @@ async function buildScopedWorkspaceSnapshot(
       summary:
         "No active workspace is loaded. Run refresh_data() before asking for analysis.",
       exact_metrics: {},
+      source_provider_scope: scope.provider ?? "all",
+      provider_breakdown: [],
+      provider_capabilities: [],
+      rate_caveats: [],
       coverage: [],
       campaigns: [],
       warnings: ["No workspace has been refreshed locally yet."],
@@ -1542,11 +1614,18 @@ async function buildScopedWorkspaceSnapshot(
   }
 
   const workspace = workspaceId.replace(/'/g, "''");
+  const providerScope = scope.provider ?? "all";
   const whereClauses = [
     `co.workspace_id = '${workspace}'`,
     `co.status = 'active'`,
   ];
   const scopeNotes: string[] = [];
+  if (providerScope !== "all") {
+    whereClauses.push(`co.source_provider = '${providerScope}'`);
+    scopeNotes.push(`provider "${providerScope}"`);
+  } else {
+    scopeNotes.push("all providers");
+  }
 
   if (scope.instantlyTag) {
     const safeTag = scope.instantlyTag.replace(/'/g, "''");
@@ -1556,6 +1635,7 @@ async function buildScopedWorkspaceSnapshot(
         FROM sendlens.campaign_tags ct
         WHERE ct.workspace_id = co.workspace_id
           AND ct.campaign_id = co.campaign_id
+          AND ct.source_provider = co.source_provider
           AND lower(ct.tag_label) = lower('${safeTag}')
       )`,
     );
@@ -1574,6 +1654,9 @@ async function buildScopedWorkspaceSnapshot(
     db,
     `SELECT
        co.campaign_id,
+       co.source_provider,
+       co.provider_campaign_id,
+       co.campaign_source_id,
        co.campaign_name,
        co.status,
        co.daily_limit,
@@ -1605,6 +1688,28 @@ async function buildScopedWorkspaceSnapshot(
      LIMIT ${SCOPED_SNAPSHOT_CAMPAIGN_LIMIT + 1}`,
   );
 
+  const providerBreakdown = await query(
+    db,
+    `SELECT
+       co.source_provider,
+       COUNT(*) AS active_campaign_count,
+       COALESCE(SUM(co.emails_sent_count), 0) AS total_sent,
+       COALESCE(SUM(co.reply_count_unique), 0) AS total_unique_replies,
+       COALESCE(SUM(co.bounced_count), 0) AS total_bounces,
+       CASE
+         WHEN COALESCE(SUM(co.emails_sent_count), 0) = 0 THEN 0
+         ELSE ROUND(100.0 * COALESCE(SUM(co.reply_count_unique), 0) / SUM(co.emails_sent_count), 2)
+       END AS unique_reply_rate_pct,
+       CASE
+         WHEN COALESCE(SUM(co.emails_sent_count), 0) = 0 THEN 0
+         ELSE ROUND(100.0 * COALESCE(SUM(co.bounced_count), 0) / SUM(co.emails_sent_count), 2)
+       END AS bounce_rate_pct
+     FROM sendlens.campaign_overview co
+     WHERE ${whereSql}
+     GROUP BY 1
+     ORDER BY source_provider`,
+  );
+
   if (campaignRows.length === 0) {
     return {
       schema_version: "workspace_snapshot.v1",
@@ -1612,6 +1717,10 @@ async function buildScopedWorkspaceSnapshot(
       scope: scopeNotes,
       summary: `No campaigns matched ${scopeNotes.join(" and ")} in the active cached workspace.`,
       exact_metrics: {},
+      source_provider_scope: providerScope,
+      provider_breakdown: [],
+      provider_capabilities: [],
+      rate_caveats: [],
       coverage: [],
       warnings: ["No campaigns matched the requested scoped filter in the local cache."],
       last_refreshed_at: await readRefreshStatus().then((s) => s.lastSuccessAt ?? null),
@@ -1647,6 +1756,11 @@ async function buildScopedWorkspaceSnapshot(
   const visibleCampaignRows = campaignRows.slice(0, SCOPED_SNAPSHOT_CAMPAIGN_LIMIT);
   const leader = visibleCampaignRows[0];
   const warnings: string[] = [];
+  const activeProviders = new Set(
+    providerBreakdown
+      .filter((row) => Number(row.active_campaign_count ?? 0) > 0)
+      .map((row) => String(row.source_provider ?? "instantly")),
+  );
 
   if (bounceRate > 2) {
     warnings.push("Scoped bounce rate is above 2%, which deserves list-quality review.");
@@ -1657,6 +1771,42 @@ async function buildScopedWorkspaceSnapshot(
   if (campaignRowsTruncated) {
     warnings.push(
       `Scoped campaign list was truncated to ${SCOPED_SNAPSHOT_CAMPAIGN_LIMIT} campaigns. Add a narrower tag or campaign-name filter for more detail.`,
+    );
+  }
+  const rateCaveats = providerScope === "all" && activeProviders.size > 1
+    ? [
+      "Cross-provider rates are recomputed from normalized SendLens count fields in the local cache.",
+      "Do not compare provider-native rates directly unless their denominator/source definitions have been verified.",
+    ]
+    : [];
+  if (rateCaveats.length > 0) warnings.push(rateCaveats[0]);
+
+  const capabilityWhere = providerScope === "all"
+    ? "TRUE"
+    : `source_provider = '${providerScope}'`;
+  const providerCapabilities = await query(
+    db,
+    `SELECT
+       source_provider,
+       capability,
+       support_status,
+       confidence,
+       coverage_note,
+       synced_at
+     FROM sendlens.provider_capabilities
+     WHERE workspace_id = '${workspace}'
+       AND ${capabilityWhere}
+     ORDER BY source_provider, capability`,
+  );
+  if (
+    providerCapabilities.some((row) =>
+      row.source_provider === "smartlead"
+      && row.capability === "inbox_placement"
+      && row.support_status === "unsupported"
+    )
+  ) {
+    warnings.push(
+      "Smartlead inbox placement is explicitly unsupported in the current provider capability surface; do not treat empty inbox-placement rows as stale Smartlead data.",
     );
   }
 
@@ -1689,12 +1839,27 @@ async function buildScopedWorkspaceSnapshot(
       unique_reply_rate_pct: Number(replyRate.toFixed(2)),
       bounce_rate_pct: Number(bounceRate.toFixed(2)),
     },
+    source_provider_scope: providerScope,
+    provider_breakdown: providerBreakdown.map((row) => ({
+      source_provider: row.source_provider ?? "instantly",
+      active_campaign_count: Number(row.active_campaign_count ?? 0) || 0,
+      total_sent: Number(row.total_sent ?? 0) || 0,
+      total_unique_replies: Number(row.total_unique_replies ?? 0) || 0,
+      total_bounces: Number(row.total_bounces ?? 0) || 0,
+      unique_reply_rate_pct: Number(row.unique_reply_rate_pct ?? 0) || 0,
+      bounce_rate_pct: Number(row.bounce_rate_pct ?? 0) || 0,
+    })),
+    provider_capabilities: providerCapabilities,
+    rate_caveats: rateCaveats,
     output_limits: {
       campaign_limit: SCOPED_SNAPSHOT_CAMPAIGN_LIMIT,
       response_max_chars: MCP_TEXT_RESPONSE_MAX_CHARS,
     },
     coverage: visibleCampaignRows.map((row) => ({
       campaign_id: row.campaign_id,
+      source_provider: row.source_provider ?? "instantly",
+      provider_campaign_id: row.provider_campaign_id ?? row.campaign_id,
+      campaign_source_id: row.campaign_source_id ?? row.campaign_id,
       campaign_name: row.campaign_name,
       reply_lead_rows: row.reply_lead_rows,
       nonreply_rows_sampled: row.nonreply_rows_sampled,

@@ -29,8 +29,11 @@ Where relevant, SendLens responses should include:
 
 - `schema_version: "workspace_snapshot.v1"`
 - exact workspace/campaign/account metrics
+- optional `provider` input: `all`, `instantly`, or `smartlead`
+- `source_provider_scope`, `provider_breakdown`, and `provider_capabilities` for mixed-provider workspaces
 - bounded `campaigns` rows from `campaign_overview` for ranking and campaign selection
 - bounded campaign coverage rows
+- `rate_caveats` when cross-provider rates are recomputed from normalized counts
 - optional scope metadata for tag or campaign-name filters
 - warnings when scoped output is capped or no active workspace exists
 
@@ -79,7 +82,8 @@ Where relevant, SendLens responses should include:
 `fetch_reply_text`
 
 - resolves exactly one campaign by `campaign_id` or unambiguous `campaign_name`
-- for Instantly, writes exact inbound reply rows into `reply_emails`; default `sync_newest` mode fetches the newest page and upserts by email ID
+- ambiguous provider-qualified campaign selectors return `campaign_id`, `source_provider`, `provider_campaign_id`, `campaign_source_id`, and `campaign_name` matches instead of guessing
+- writes exact inbound reply rows from supported provider reply surfaces into `reply_emails`; default `sync_newest` mode fetches the newest page and upserts by email ID
 - preserves pagination/cache state in `reply_email_hydration_state`
 - returns `fetch_result` counts by `i_status`, new-vs-updated row counts, cursor/exhaustion state, readiness metadata, output limits, and a bounded `fetched_reply_sample`
 - default statuses are `1`, `-1`, and `-2`; out-of-office status `0` is excluded unless explicitly requested
@@ -88,6 +92,7 @@ Where relevant, SendLens responses should include:
 
 - `schema_version: "campaign_analysis_preparation.v1"`
 - resolves exactly one campaign by `campaign_id` or unambiguous `campaign_name`
+- ambiguous provider-qualified campaign selectors return provider-qualified matches instead of guessing
 - default `analysis_depth` is balanced: statuses `1`, `-1`, and `-2`, up to 3 email pages/status, and target 30 stored non-auto reply bodies/status
 - calls the same rate-conscious email lane as `fetch_reply_text`; it is not part of session-start refresh
 - backfills lead context through `/leads/list` contacts/ids after reply bodies are stored
@@ -98,7 +103,10 @@ Where relevant, SendLens responses should include:
 Run `npm run test:mcp-response-contract` when changing MCP tools, response field names, warnings, caps, or this document. The test pins the response-contract terms that agents rely on for:
 
 - `workspace_snapshot` exact metrics, campaign rows, coverage, warnings, output limits, and readiness
+- `workspace_snapshot` provider-scoped/all-provider outputs, provider capability rows, cross-provider rate caveats, and unsupported Smartlead inbox placement limitations
 - `load_campaign_data` provider-qualified/native campaign handling, the `SENDLENS_PROVIDER=all` provider-qualified ID requirement, campaign overview, reply samples, rendered outbound reconstruction caveats, and output limits
+- campaign selector ambiguity responses with provider-qualified matches
+- provider overlap-risk public views for sampled cross-provider duplicate email/domain/company exposure
 - `analysis_starters` recipe metadata, exactness labels, SQL, and notes
 - `analyze_data` rationale, row caps, truncation state, warnings, and rows
 - `fetch_reply_text` hydration result metadata, sample caps, and bounded reply samples
@@ -106,13 +114,15 @@ Run `npm run test:mcp-response-contract` when changing MCP tools, response field
 
 ## Exactness Rules
 
-- `campaigns`, `campaign_analytics`, `step_analytics`, `campaign_variants`, `accounts`, `account_daily_metrics`, `custom_tags`, tag mapping views, `inbox_placement_tests`, and `inbox_placement_analytics` are exact local copies of Instantly-derived surfaces.
+- `campaigns`, `campaign_analytics`, `step_analytics`, `campaign_variants`, `accounts`, `account_daily_metrics`, `custom_tags`, and tag mapping views are exact provider-qualified local copies where the configured provider exposes those surfaces.
+- `inbox_placement_tests` and `inbox_placement_analytics` are exact local copies of Instantly-derived inbox-placement surfaces.
 - `campaign_overview` is the preferred exact campaign rollup plus tracking settings, deliverability guardrail settings, and sample coverage metadata.
 - `inbox_placement_test_overview` and `sender_deliverability_health` are exact semantic rollups over Instantly inbox placement analytics when those API surfaces are available.
 - `reply_emails` contains exact inbound email rows fetched from provider reply surfaces. Instantly rows are fetched on demand through List email; Smartlead rows can come from bounded message-history hydration during campaign refresh. Exact body text is present only when the provider returned body fields.
 - `reply_email_hydration_state` is exact local pagination state for continuing older reply fetches by campaign/status/thread mode. Use `sync_newest` or `restart` to check newly arrived replies above the saved cursor.
 - `lead_evidence` contains reply-signal leads found during bounded lead scans, explicit reply-email backfills, and bounded non-reply samples.
 - `lead_payload_kv` expands sampled lead `custom_payload` into campaign-scoped key/value rows so ICP analysis can stay inside SendLens tools without raw JSON table functions.
+- `provider_overlap_risk` and `provider_overlap_risk_details` are sampled cross-provider overlap primitives. They identify repeated normalized email/domain/company exposure across providers, expose both the overall sampled span and the closest cross-provider contact window, and are not full suppression or CRM dedupe audits unless all relevant campaigns were fully scanned.
 - `reply_context` is lead outcome evidence joined to fetched inbound reply text when available, templates, and reconstructed outbound context.
 - `reply_email_context` is email-anchored fetched reply context; use it after premium hydration because exact reply bodies remain visible even when lead/template context is missing.
 - `rendered_outbound_context` is locally reconstructed copy, not byte-for-byte delivered email text. Smartlead outbound message-history rows are counted in coverage, but rendered outbound bodies stay reconstructed from templates plus lead variables unless a future exact outbound surface is added.
