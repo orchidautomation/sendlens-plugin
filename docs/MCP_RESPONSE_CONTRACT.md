@@ -53,8 +53,9 @@ Where relevant, SendLens responses should include:
 - registered as a recovery/demo path even when production credentials are configured
 - `schema_version: "sendlens_demo_seed.v1"`
 - activates synthetic `demo_workspace` in the local cache
-- includes campaign IDs, seed timestamp, evidence note, and next steps
-- does not delete real workspace rows; real `refresh_data` can switch active analysis back to Instantly data
+- includes provider-aware campaign IDs, seed timestamp, evidence note, and next steps
+- demo rows are synthetic only and include provider-qualified Instantly/Smartlead campaigns, duplicate campaign names across providers for ambiguity handling, and an unsupported Smartlead inbox-placement capability row
+- does not delete real workspace rows; real `refresh_data` can switch active analysis back to configured provider data
 
 `load_campaign_data`
 

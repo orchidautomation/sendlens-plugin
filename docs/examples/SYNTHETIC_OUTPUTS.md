@@ -2,6 +2,8 @@
 
 All examples on this page are synthetic. Campaign names, metrics, copy, segments, and replies are demo placeholders and are not customer data. Use these examples for output shape and evidence language only, not as performance benchmarks.
 
+The demo workspace includes provider-qualified Instantly and Smartlead fixture rows. One healthcare campaign name appears under both providers to prove ambiguity handling, and Smartlead inbox placement is represented as an unsupported provider capability rather than fake placement data.
+
 Related: [catalog](../CATALOG.md), [skill docs](../skills/README.md), [trust and privacy](../TRUST_AND_PRIVACY.md).
 
 ## Workspace Health
@@ -13,7 +15,7 @@ The Demo CFO workspace has 4 active campaigns. Two are producing most positive r
 Top risks
 1. "Demo Finance Ops - Q2" has a synthetic bounce rate of 3.4%, above the 2% attention threshold.
 2. Sender coverage is missing for one active campaign, so capacity and deliverability conclusions are limited there.
-3. Inbox-placement tables are empty in this demo cache, which means no local inbox-placement evidence is available.
+3. Smartlead inbox placement is unsupported in V1, so Smartlead placement should be described as unavailable rather than healthy or stale.
 
 Next actions
 1. QA sender assignments on "Demo Finance Ops - Q2" before scaling.
@@ -22,6 +24,21 @@ Next actions
 
 Caveat
 Campaign/account metrics are synthetic exact aggregates in this example. Lead-level evidence would still need sampled-evidence caveats.
+```
+
+## Mixed Provider Snapshot
+
+```text
+Current read
+The demo workspace has both Instantly and Smartlead campaign rows. "Demo - Healthcare Operators" appears in both providers, so use the provider-qualified campaign IDs before loading a campaign:
+- instantly:demo-alpha
+- smartlead:demo-alpha
+
+Provider caveats
+Instantly has synthetic inbox-placement evidence in this demo. Smartlead inbox placement is unsupported in V1, so missing Smartlead placement rows are not stale data and do not prove placement health.
+
+Evidence basis
+This is synthetic provider-aware fixture data. Cross-provider rate comparisons use normalized counts and provider caveats because source-native denominators can differ.
 ```
 
 ## Campaign Performance

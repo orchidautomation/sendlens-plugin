@@ -2,7 +2,7 @@
 
 **The outbound analyst that lives inside the AI tool you already use.**
 
-SendLens turns your Instantly account into something you can talk to. Ask a question in plain English inside Claude Code, Cursor, Codex, or OpenCode, and you get a clear, evidence-backed answer about your actual campaigns, your actual senders, and what your actual prospects are saying back.
+SendLens turns your outbound provider data into something you can talk to. Ask a question in plain English inside Claude Code, Cursor, Codex, or OpenCode, and you get a clear, evidence-backed answer about your actual campaigns, your actual senders, and what your actual prospects are saying back.
 
 No spreadsheets. No dashboards. No SQL. Just answers.
 
@@ -106,7 +106,7 @@ After installing, type this in your AI tool:
 ```
 
 It will walk you through connecting your account (or starting in demo mode) and confirm everything is ready.
-The release curl installers ask for your Instantly API key during install and store it with the installed plugin, so you do not need to export it every time you start Codex, Claude Code, Cursor, or OpenCode. If `SENDLENS_INSTANTLY_API_KEY` is already exported in your shell, the installer uses that value and skips the secret prompt.
+The release curl installers ask for your provider API key during install and store it with the installed plugin, so you do not need to export it every time you start Codex, Claude Code, Cursor, or OpenCode. If `SENDLENS_INSTANTLY_API_KEY` is already exported in your shell, the installer uses that value and skips the secret prompt.
 They also prepare local runtime dependencies and run the first workspace refresh before asking you to restart or reload the host.
 When you rerun the same curl command to update SendLens, the installer reuses the saved plugin config instead of asking for the API key again.
 
@@ -125,9 +125,15 @@ curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/d
 
 ## Connect A Provider
 
-SendLens defaults to `SENDLENS_PROVIDER=instantly` and needs a read-only Instantly API key for real workspace analysis. The release installer stores it for you; use `SENDLENS_INSTANTLY_API_KEY` directly only for local development, custom launch scripts, or one-off overrides.
+SendLens supports provider-scoped read-only setup modes:
 
-Smartlead provider setup can be diagnosed with `SENDLENS_PROVIDER=smartlead` or `SENDLENS_PROVIDER=all` plus `SENDLENS_SMARTLEAD_API_KEY`. Smartlead uses query-string access, so SendLens suppresses that value in setup output, logs, and errors. Smartlead read-only ingest is provider-parity work in progress; Instantly remains the shipped refresh path in this release.
+- Instantly-only: leave `SENDLENS_PROVIDER` unset or set `SENDLENS_PROVIDER=instantly`, then provide `SENDLENS_INSTANTLY_API_KEY`.
+- Smartlead-only: set `SENDLENS_PROVIDER=smartlead`, then provide `SENDLENS_SMARTLEAD_API_KEY`.
+- Both providers: set `SENDLENS_PROVIDER=all`, then provide both keys.
+
+The release installer stores provider config for you. Use env vars directly only for local development, custom launch scripts, or one-off overrides. Smartlead uses query-string access, so SendLens suppresses that value in setup output, logs, traces, and errors.
+
+Smartlead V1 is read-only. SendLens can refresh Smartlead campaign, account, lead, analytics, and bounded message-history evidence where the provider exposes those surfaces. It does not add Smartlead write actions, webhook management, campaign mutation, lead mutation, account mutation, or email send paths. Smartlead inbox placement is explicitly unsupported in V1 because no checked equivalent read endpoint exists; empty inbox-placement rows are not evidence that Smartlead sender placement is healthy.
 
 For a one-session launch:
 
@@ -140,6 +146,21 @@ Or pass it only to the host process:
 
 ```bash
 SENDLENS_INSTANTLY_API_KEY="your_instantly_api_key" claude
+```
+
+For Smartlead-only local development:
+
+```bash
+SENDLENS_PROVIDER=smartlead SENDLENS_SMARTLEAD_API_KEY="your_smartlead_api_key" claude
+```
+
+For both providers:
+
+```bash
+SENDLENS_PROVIDER=all \
+SENDLENS_INSTANTLY_API_KEY="your_instantly_api_key" \
+SENDLENS_SMARTLEAD_API_KEY="your_smartlead_api_key" \
+claude
 ```
 
 For repeat use, put it in the folder where you launch your AI tool:
@@ -156,6 +177,8 @@ For multiple clients, give each client its own cache path:
 ```bash
 # ~/clients/acme/.env
 SENDLENS_INSTANTLY_API_KEY=your_acme_instantly_api_key
+SENDLENS_SMARTLEAD_API_KEY=your_acme_smartlead_api_key
+SENDLENS_PROVIDER=all
 SENDLENS_DB_PATH=$HOME/.sendlens/acme.duckdb
 SENDLENS_STATE_DIR=$HOME/.sendlens/acme-state
 ```
@@ -175,7 +198,7 @@ Demo results are synthetic. They are useful for seeing the experience, not for j
 
 ## Privacy in plain English
 
-- SendLens is read-only. It never sends emails or changes anything in your Instantly account.
+- SendLens is read-only. It never sends emails or changes campaigns, leads, accounts, webhooks, or provider settings.
 - Your data stays on your computer. Nothing is uploaded to a server we run.
 - Demo mode works without connecting any real account.
 - Whatever question you ask, the answer becomes part of the conversation in your AI tool — same as anything else you type there.
@@ -184,7 +207,14 @@ Full data-handling details: [Trust and privacy](./docs/TRUST_AND_PRIVACY.md).
 
 ## What it works with today
 
-This release works with **Instantly** — campaigns, daily metrics, senders, custom tags, deliverability tests, lead details, and reply text. Smartlead provider configuration and setup diagnosis are available for the provider-parity rollout, but Smartlead data ingest is not the shipped refresh path yet.
+This release works with **Instantly** for campaigns, daily metrics, senders, custom tags, deliverability tests, lead details, and reply text. It also includes **Smartlead V1 read-only support** for core campaign/account/lead/analytics and bounded message-history evidence, with provider-qualified rows for mixed workspaces.
+
+Known Smartlead V1 limitations:
+
+- No Smartlead write or mutation tools are exposed.
+- Smartlead inbox placement is unsupported unless a later checked read endpoint is added.
+- Cross-provider rate comparisons use normalized counts and provider caveats because source-native denominators can differ.
+- Live Smartlead response-shape risk remains until a real Smartlead key/account is available for bounded validation; the current OSS test posture uses synthetic fixtures and mocked responses only.
 
 ## Who builds SendLens
 
@@ -219,6 +249,12 @@ For real workspace analysis:
 ```bash
 export SENDLENS_INSTANTLY_API_KEY="your_instantly_api_key"
 npm run refresh:plugin
+```
+
+For Smartlead-only local development:
+
+```bash
+SENDLENS_PROVIDER=smartlead SENDLENS_SMARTLEAD_API_KEY="your_smartlead_api_key" npm run refresh:plugin
 ```
 
 For synthetic local demo data instead:

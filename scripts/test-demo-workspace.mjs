@@ -26,15 +26,33 @@ await resetDbConnectionForTests();
 const seeded = await seedDemoWorkspace();
 assert.equal(seeded.schema_version, "sendlens_demo_seed.v1");
 assert.equal(seeded.workspaceId, "demo_workspace");
-assert.equal(seeded.campaign_ids.length, 3);
+assert.equal(seeded.campaign_ids.length, 4);
+assert.ok(seeded.campaign_ids.includes("smartlead:demo-alpha"));
 
 const db = await getDb();
 try {
   const summary = await buildWorkspaceSummary(db);
   assert.equal(summary.workspaceId, "demo_workspace");
-  assert.equal(summary.exact_metrics.active_campaign_count, 3);
+  assert.equal(summary.exact_metrics.active_campaign_count, 4);
   assert.ok(summary.exact_metrics.total_sent > 0);
   assert.ok(summary.summary.includes("Sampled raw tables are evidence support only"));
+  assert.deepEqual(
+    summary.provider_breakdown.map((row) => row.source_provider).sort(),
+    ["instantly", "smartlead"],
+  );
+  assert.ok(
+    summary.provider_capabilities.some(
+      (row) =>
+        row.source_provider === "smartlead"
+        && row.capability === "inbox_placement"
+        && row.support_status === "unsupported",
+    ),
+  );
+  assert.ok(
+    summary.warnings.some((warning) =>
+      warning.includes("Smartlead inbox placement is explicitly unsupported"),
+    ),
+  );
 
   const emptyPublicSurfaces = [];
   const optionalDemoEmptySurfaces = new Set([
@@ -99,6 +117,33 @@ try {
   assert.equal(status.status, "succeeded");
   assert.equal(status.workspaceId, "demo_workspace");
   assert.match(String(status.message), /Synthetic SendLens demo workspace/);
+
+  const ambiguousNameRows = await query(
+    db,
+    `SELECT source_provider, provider_campaign_id, campaign_source_id
+     FROM sendlens.campaign_overview
+     WHERE campaign_name = 'Demo - Healthcare Operators'
+     ORDER BY source_provider`,
+  );
+  assert.deepEqual(
+    ambiguousNameRows.map((row) => row.source_provider),
+    ["instantly", "smartlead"],
+  );
+  assert.equal(ambiguousNameRows[1].campaign_source_id, "smartlead:demo-alpha");
+
+  const smartleadReplyRows = await query(
+    db,
+    `SELECT source_provider, reply_body_text
+     FROM sendlens.reply_context
+     WHERE campaign_id = 'smartlead:demo-alpha'
+       AND reply_email_id IS NOT NULL
+     LIMIT 1`,
+  );
+  assert.equal(smartleadReplyRows[0].source_provider, "smartlead");
+  assert.match(
+    String(smartleadReplyRows[0].reply_body_text),
+    /Smartlead demo thread/,
+  );
 } finally {
   closeDb(db);
 }

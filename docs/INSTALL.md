@@ -71,9 +71,28 @@ Set at least:
 SENDLENS_INSTANTLY_API_KEY=your_key
 ```
 
-Release installers ask for `SENDLENS_INSTANTLY_API_KEY` once and persist it into the installed plugin config. If the key is already exported in your shell, current Pluxx installers reuse it and skip the secret prompt. They also prepare runtime dependencies and run the first workspace refresh during install.
+Release installers ask for provider credentials once and persist them into the installed plugin config. If `SENDLENS_INSTANTLY_API_KEY` is already exported in your shell, current Pluxx installers reuse it and skip the Instantly secret prompt. They also prepare runtime dependencies and run the first workspace refresh during install.
 
-SendLens defaults to `SENDLENS_PROVIDER=instantly`. For Smartlead setup diagnosis, set `SENDLENS_PROVIDER=smartlead` or `SENDLENS_PROVIDER=all` and provide `SENDLENS_SMARTLEAD_API_KEY`. Smartlead uses a query-string access value, and setup output suppresses it. Smartlead read-only ingest is provider-parity work in progress; Instantly remains the shipped refresh path in this release.
+Provider setup paths:
+
+```bash
+# Instantly-only, also the default when SENDLENS_PROVIDER is unset
+SENDLENS_PROVIDER=instantly
+SENDLENS_INSTANTLY_API_KEY=your_instantly_key
+
+# Smartlead-only
+SENDLENS_PROVIDER=smartlead
+SENDLENS_SMARTLEAD_API_KEY=your_smartlead_key
+
+# Both providers in one local workspace cache
+SENDLENS_PROVIDER=all
+SENDLENS_INSTANTLY_API_KEY=your_instantly_key
+SENDLENS_SMARTLEAD_API_KEY=your_smartlead_key
+```
+
+Smartlead uses a query-string access value, and setup output suppresses it in URLs, logs, traces, errors, and tests. Smartlead V1 support is read-only: SendLens can refresh supported Smartlead campaign, account, lead, analytics, and bounded message-history evidence, but it does not expose campaign, lead, account, email, webhook, or provider-setting mutation paths.
+
+Smartlead inbox placement is unsupported in V1 because no checked equivalent read endpoint exists. Use `provider_capabilities` and `workspace_snapshot` warnings to explain that limitation; do not treat missing Smartlead inbox-placement rows as stale data or healthy placement.
 
 When you rerun the same curl command to update SendLens, the installer reuses the saved plugin config and does not ask for the Instantly key again. To force a new prompt:
 
@@ -131,7 +150,7 @@ The public release curl installers optimize for real workspace analysis and ask 
 /sendlens-setup
 ```
 
-If no Instantly API key and no local cache are configured, setup initializes a synthetic demo workspace through the `seed_demo_workspace` MCP tool.
+If no provider API key and no local cache are configured, setup initializes a synthetic demo workspace through the `seed_demo_workspace` MCP tool.
 
 From a local source checkout, you can also seed directly:
 
@@ -145,7 +164,7 @@ Then ask your host:
 Use SendLens to summarize what is working and not working in the demo workspace.
 ```
 
-All demo rows are synthetic. Treat the output as product proof and output-shape guidance, not customer evidence. See [synthetic example outputs](./examples/SYNTHETIC_OUTPUTS.md).
+All demo rows are synthetic. The demo includes provider-qualified Instantly and Smartlead fixture rows, duplicate campaign names across providers, and an explicit unsupported Smartlead inbox-placement capability row. Treat the output as product proof and output-shape guidance, not customer evidence. See [synthetic example outputs](./examples/SYNTHETIC_OUTPUTS.md).
 
 ## After Install
 
@@ -239,4 +258,4 @@ For a one-off host launch, `SENDLENS_INSTANTLY_API_KEY=your_key claude` passes t
 
 If a different API key is configured than the one that last refreshed the cache, SendLens preserves the old DuckDB but blocks cached analysis until a refresh succeeds for the current key. Use per-client `SENDLENS_DB_PATH` values when you want durable separate client caches.
 
-SendLens is local-first and read-only against Instantly. See [trust and privacy](./TRUST_AND_PRIVACY.md) for the full data-handling model.
+SendLens is local-first and read-only against configured providers. See [trust and privacy](./TRUST_AND_PRIVACY.md) for the full data-handling model.

@@ -69,7 +69,7 @@ MCP tools are registered by the local `sendlens` stdio server. Responses are JSO
 | Tool | Purpose | When to use |
 | --- | --- | --- |
 | `setup_doctor` | Read setup readiness without shell commands | First run, missing key diagnosis, local cache readiness, stale refresh state |
-| `seed_demo_workspace` | Seed synthetic proof data for demo or recovery | No usable API key, failed credential validation, or an explicit request for demo/sample data |
+| `seed_demo_workspace` | Seed synthetic provider-aware proof data for demo or recovery | No usable API key, failed credential validation, or an explicit request for demo/sample data |
 | `refresh_status` | Read local refresh lifecycle state | Stale data, startup refresh, or cache-readiness questions |
 | `refresh_data` | Refresh local cache from the configured source provider | Explicit fresh pull, client/workspace change, provider-scoped refresh, or stale/failed status |
 | `workspace_snapshot` | First high-level read of a workspace, provider, tag, or campaign-name scope | Broad triage, provider-scoped/all-provider reads, and campaign selection |
@@ -126,4 +126,4 @@ The plugin is authored once and generated into host-native bundles with Pluxx.
 | Codex | Skills, commands, agents, instructions, MCP server config, session-start hook |
 | OpenCode | Skills, commands, agents, instructions, MCP server config, session-start hook |
 
-The generated bundles preserve the same operating model: read-only provider access, local DuckDB cache, bounded MCP outputs, and one-campaign-at-a-time deep analysis.
+The generated bundles preserve the same operating model: read-only provider access, local DuckDB cache, bounded MCP outputs, provider-qualified campaign evidence, and one-campaign-at-a-time deep analysis.

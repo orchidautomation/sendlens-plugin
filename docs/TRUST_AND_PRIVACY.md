@@ -1,22 +1,24 @@
 # Trust And Privacy
 
-SendLens is designed as a local-first analysis plugin for Instantly. It reads workspace data with a user-provided Instantly API key, stores analysis state locally in DuckDB, and exposes bounded analysis results to the user's AI host through MCP tools.
+SendLens is designed as a local-first analysis plugin for outbound provider data. It reads workspace data with user-provided provider API keys, stores analysis state locally in DuckDB, and exposes bounded analysis results to the user's AI host through MCP tools.
 
 This page is intentionally precise. It describes the OSS plugin's data handling model without claiming that the user's AI host, model provider, shell, package manager, or Instantly account has the same privacy behavior.
 
 ## Short Version
 
-- SendLens provides read-oriented tools. The shipped MCP surface does not include tools that modify Instantly campaigns, accounts, leads, or emails.
+- SendLens provides read-oriented tools. The shipped MCP surface does not include tools that modify provider campaigns, accounts, leads, emails, webhooks, or settings.
 - The core cache is local DuckDB, defaulting to `~/.sendlens/workspace-cache.duckdb`.
 - SendLens does not require an Orchid-hosted cloud warehouse for the core workflow.
 - Tool results are returned to the user's AI host. The host/model provider may process that context according to its own settings and policies.
 - Exact reply body text is not fetched during the normal startup refresh. It is fetched only when `prepare_campaign_analysis` or `fetch_reply_text` is used for one campaign.
 
-## Instantly Access
+## Provider Access
 
 SendLens uses `SENDLENS_INSTANTLY_API_KEY` for Instantly API access. The key should be scoped and managed in Instantly according to the workspace owner's policy.
 
-Smartlead setup diagnosis can use `SENDLENS_PROVIDER=smartlead` or `SENDLENS_PROVIDER=all` plus `SENDLENS_SMARTLEAD_API_KEY`. Smartlead uses query-string API keys, so SendLens suppresses the value in URLs, traces, logs, setup output, errors, and tests. Smartlead read-only ingest is provider-parity work in progress; Instantly remains the shipped refresh path in this release.
+Smartlead access uses `SENDLENS_PROVIDER=smartlead` or `SENDLENS_PROVIDER=all` plus `SENDLENS_SMARTLEAD_API_KEY`. Smartlead uses query-string API keys, so SendLens suppresses the value in URLs, traces, logs, setup output, errors, fixtures, and tests.
+
+Smartlead V1 support is read-only. SendLens can refresh supported campaign, account, lead, analytics, and bounded message-history evidence, but it does not expose Smartlead campaign, lead, account, email, webhook, or provider-setting mutation paths. Smartlead inbox placement is unsupported in V1 unless a later checked read endpoint is added.
 
 The shipped tools are analysis and refresh tools:
 
@@ -32,7 +34,7 @@ The shipped tools are analysis and refresh tools:
 - `analyze_data`
 - `refresh_status`
 
-These tools read from Instantly or from the local cache. They do not expose mutation actions such as editing campaigns, changing senders, updating lead states, sending messages, or deleting Instantly records.
+These tools read from configured providers or from the local cache. They do not expose mutation actions such as editing campaigns, changing senders, updating lead states, sending messages, managing webhooks, or deleting provider records.
 
 ## Local Storage
 
@@ -56,13 +58,14 @@ Optional overrides:
 | `SENDLENS_CLIENTS_DIR` | Changes the directory used for client env overlays |
 | `SENDLENS_DEMO_MODE` | Enables synthetic demo-mode setup paths when supported by the installed bundle |
 | `SENDLENS_PROVIDER` | Selects source provider setup mode: `instantly`, `smartlead`, or `all`; defaults to `instantly` |
-| `SENDLENS_SMARTLEAD_API_KEY` | Dedicated Smartlead setup credential; suppress from URLs, traces, logs, setup output, errors, and tests |
+| `SENDLENS_SMARTLEAD_API_KEY` | Dedicated Smartlead setup credential; suppress from URLs, traces, logs, setup output, errors, fixtures, and tests |
 
 ## What Gets Stored Locally
 
 The local DuckDB cache can contain:
 
 - exact campaign metadata and aggregate analytics from Instantly
+- exact or provider-native campaign, account, lead, analytics, and bounded message-history evidence from Smartlead where supported
 - exact step, variant, account, tag, and inbox-placement surfaces when available from Instantly
 - semantic rollups such as `campaign_overview`, `sender_deliverability_health`, and `inbox_placement_test_overview`
 - reply-signal lead records found during bounded campaign lead scans or explicit reply-email lead backfills
@@ -85,7 +88,7 @@ Important boundary: when an AI host calls a SendLens MCP tool, the returned data
 
 Data can leave the machine through these expected paths:
 
-- Instantly API requests made with the configured API key.
+- Provider API requests made with the configured API key.
 - MCP tool results sent into the user's AI host session.
 - Model-provider requests made by the user's AI host after it receives tool results.
 - Package-manager and installer network requests during install or development.
@@ -106,7 +109,7 @@ Keep env files out of public commits. Do not put API keys, customer names, domai
 
 ## Synthetic Demo Mode
 
-When demo mode is enabled by setup tooling, production Instantly credentials are optional for the demo path and outputs must stay clearly labeled as synthetic. Demo data is useful for install proof and examples, not for customer or workspace conclusions.
+When demo mode is enabled by setup tooling, production provider credentials are optional for the demo path and outputs must stay clearly labeled as synthetic. Demo data is useful for install proof and examples, not for customer or workspace conclusions. The demo includes provider-qualified Instantly and Smartlead fixture rows and unsupported Smartlead inbox-placement capability evidence; all values are public-safe synthetic placeholders.
 
 ## Cleanup
 
@@ -126,10 +129,12 @@ To remove local credentials, delete the relevant `.env`, `.env.local`, `.env.cli
 
 Public docs and example outputs should use the same evidence language as the product:
 
-- Exact: campaign, account, step, variant, tag, and inbox-placement API surfaces when present locally.
+- Exact: campaign, account, step, variant, tag, reply, and provider capability API surfaces when present locally.
 - Sampled: non-reply lead evidence and sampled payload variables.
 - Hybrid: semantic views that combine exact aggregates with sampled evidence.
 - Reconstructed: outbound copy rendered locally from templates and stored variables.
 - Fetched: exact inbound reply body text only after `prepare_campaign_analysis` or `fetch_reply_text` writes it into local DuckDB.
 
 When evidence is missing, say what is missing. For example, empty inbox-placement tables mean no local inbox-placement evidence was available; they do not prove sender health is clean.
+
+For Smartlead, empty inbox-placement rows mean the surface is unsupported in V1, not that placement is healthy or that a refresh failed.
