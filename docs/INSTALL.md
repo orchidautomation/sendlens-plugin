@@ -29,7 +29,7 @@ Codex
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | bash
 ```
 
-The Codex installer checks for plugin-bundled hooks and prompts to enable `[features].plugin_hooks = true` when needed. To approve that in a noninteractive install:
+The Codex installer checks for plugin-bundled hooks and prompts to enable `[features].hooks = true` when needed. To approve that in a noninteractive install:
 
 ```bash
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | PLUXX_CODEX_ENABLE_PLUGIN_HOOKS=1 bash
@@ -189,10 +189,10 @@ Codex only runs hooks bundled by installed plugins when plugin hooks are enabled
 
 ```toml
 [features]
-plugin_hooks = true
+hooks = true
 ```
 
-Regular Codex hooks are enabled by default through `hooks`; the older `codex_hooks` flag is deprecated and does not replace `plugin_hooks` for plugin-bundled hooks.
+Codex hook support uses `hooks`; the older `codex_hooks` flag is deprecated and should not be treated as the current hook feature key.
 
 If tools do not appear, the API key is missing, refresh is still running, or the cache is empty, see the [troubleshooting guide](./TROUBLESHOOTING.md).
 

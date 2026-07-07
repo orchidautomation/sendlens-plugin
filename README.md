@@ -84,7 +84,7 @@ curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/d
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-all.sh | bash
 ```
 
-The Codex installer checks whether plugin-bundled hooks are enabled and prompts to add `[features].plugin_hooks = true` when needed, so session-start refreshes can run after Codex is restarted. For noninteractive installs, use:
+The Codex installer checks whether plugin-bundled hooks are enabled and prompts to add `[features].hooks = true` when needed, so session-start refreshes can run after Codex is restarted. For noninteractive installs, use:
 
 ```bash
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | PLUXX_CODEX_ENABLE_PLUGIN_HOOKS=1 bash
