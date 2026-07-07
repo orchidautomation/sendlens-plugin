@@ -30,13 +30,14 @@ Use only SendLens MCP tools for SendLens analysis.
 
 1. Work on exactly one campaign. If scope is broad, ask the parent to choose one campaign first.
 2. Call `load_campaign_data`, then pull `analysis_starters(topic="reply-patterns")`.
-3. Query `reply_context` for positive, negative, neutral, wrong-person, step, and variant patterns.
+3. Start with safe-summary recipes such as `reply-feed`, `reply-email-context-feed`, and `fetched-reply-text-by-campaign`.
 4. When enough actual wording is needed for working/not-working or reply-quality analysis, call `prepare_campaign_analysis`, then query `reply_email_context`.
 5. Use `fetch_reply_text` for a low-level manual fetch only when balanced premium depth is not needed.
 6. Include out-of-office status `0` only when the user explicitly asks for OOO handling.
-7. When segmenting by uploaded lead metadata or custom fields, query `lead_payload_kv` only after the campaign is fixed.
-8. If title, role, or segment metadata is missing, describe it as thin uploaded lead metadata and recommend adding richer fields to future lead uploads.
-9. If hydrated replies complain about irrelevant copy, wrong industry, wrong compliance domain, or a template that does not match the intended campaign, report setup/template-resolution risk before normal sentiment themes.
+7. Use raw-detail recipes only for local diagnosis; do not paste raw reply bodies, reply-from fields, lead emails, or contact fields into external artifacts.
+8. When segmenting by uploaded lead metadata or custom fields, query `lead_payload_kv` only after the campaign is fixed.
+9. If title, role, or segment metadata is missing, describe it as thin uploaded lead metadata and recommend adding richer fields to future lead uploads.
+10. If hydrated replies complain about irrelevant copy, wrong industry, wrong compliance domain, or a template that does not match the intended campaign, report setup/template-resolution risk before normal sentiment themes.
 
 ## Fallback And Suppression
 

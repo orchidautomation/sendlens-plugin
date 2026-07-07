@@ -2045,10 +2045,44 @@ ORDER BY sequence_index, step, variant;`,
   {
     id: "rendered-outbound-sample",
     topic: "copy-analysis",
-    title: "Rendered outbound sample",
-    question: "How are templates rendering when reconstructed against sampled lead variables?",
+    title: "Rendered outbound summary",
+    question: "How are templates rendering across sampled lead variables without exposing full recipient or body text?",
     exactness: "sampled",
-    rationale: "Use locally reconstructed copy to spot personalization drift or malformed rendering without paying the /emails cost.",
+    rationale: "Use aggregated local reconstruction coverage and short previews to spot personalization drift before opening raw rows.",
+    sql: `SELECT
+  campaign_id,
+  campaign_name,
+  step_resolved,
+  variant_resolved,
+  sample_source,
+  COUNT(*) AS sampled_rendered_rows,
+  COUNT(DISTINCT to_email) AS sampled_leads,
+  SUM(CASE WHEN regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}') THEN 1 ELSE 0 END) AS rows_with_unresolved_subject_token,
+  SUM(CASE WHEN regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}') THEN 1 ELSE 0 END) AS rows_with_unresolved_body_token,
+  ROUND(AVG(length(COALESCE(rendered_subject, ''))), 1) AS avg_rendered_subject_chars,
+  ROUND(AVG(length(COALESCE(rendered_body_text, ''))), 1) AS avg_rendered_body_chars,
+  MIN(sent_at) AS oldest_sample_sent_at,
+  MAX(sent_at) AS newest_sample_sent_at,
+  MIN(left(COALESCE(rendered_subject, ''), 160)) AS example_rendered_subject_preview,
+  MIN(left(COALESCE(rendered_body_text, ''), 240)) AS example_rendered_body_preview
+FROM sendlens.rendered_outbound_context
+WHERE campaign_id = '{{campaign_id}}'
+GROUP BY 1, 2, 3, 4, 5
+ORDER BY rows_with_unresolved_body_token DESC, sampled_rendered_rows DESC, step_resolved, variant_resolved;`,
+    notes: [
+      "This is sampled evidence only.",
+      "Rendered rows are reconstructed locally from templates plus lead variables, not exact delivered email bodies.",
+      "This safe summary intentionally omits recipient email, full rendered body text, and full template body text.",
+      "Use `rendered-outbound-raw-detail` only for local diagnosis when raw row inspection is necessary.",
+    ],
+  },
+  {
+    id: "rendered-outbound-raw-detail",
+    topic: "copy-analysis",
+    title: "Rendered outbound raw detail",
+    question: "Which raw reconstructed outbound rows should I inspect locally for copy QA?",
+    exactness: "sampled",
+    rationale: "Inspect locally reconstructed row-level copy only after the safe summary shows a reason to open raw details.",
     sql: `SELECT
   campaign_id,
   campaign_name,
@@ -2066,7 +2100,8 @@ WHERE campaign_id = '{{campaign_id}}'
 ORDER BY sent_at DESC
 LIMIT 50;`,
     notes: [
-      "This is sampled evidence only.",
+      "Raw detail mode can expose recipient emails, rendered outbound bodies, and template bodies.",
+      "Use only for local diagnosis; do not paste raw bodies or contact fields into Linear, docs, PRs, or external artifacts.",
       "Rendered rows are reconstructed locally from templates plus lead variables, not exact delivered email bodies.",
     ],
   },
@@ -2076,7 +2111,82 @@ LIMIT 50;`,
     title: "Personalization leak audit",
     question: "Did any reconstructed outbound copy still contain unresolved template tokens?",
     exactness: "sampled",
-    rationale: "Find sampled reconstructed outbound rows where template variables appear to have leaked through unresolved.",
+    rationale: "Summarize sampled reconstructed outbound rows where template variables appear to have leaked through unresolved before opening raw examples.",
+    sql: `WITH leaked_rows AS (
+  SELECT
+    campaign_id,
+    campaign_name,
+    step_resolved,
+    variant_resolved,
+    left(COALESCE(rendered_subject, ''), 160) AS rendered_subject_preview,
+    left(COALESCE(rendered_body_text, ''), 240) AS rendered_body_preview,
+    sample_source,
+    sent_at,
+    regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}') AS subject_has_unresolved_token,
+    regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}') AS body_has_unresolved_token
+  FROM sendlens.rendered_outbound_context
+  WHERE campaign_id = '{{campaign_id}}'
+    AND (
+      regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}')
+      OR regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}')
+    )
+),
+rollup AS (
+  SELECT
+    COUNT(DISTINCT campaign_id) AS affected_campaigns,
+    COUNT(DISTINCT COALESCE(step_resolved, 'unknown') || ':' || COALESCE(variant_resolved, 'unknown')) AS affected_step_variants,
+    COUNT(DISTINCT to_email) AS affected_leads,
+    COUNT(*) AS affected_rendered_rows
+  FROM sendlens.rendered_outbound_context
+  WHERE campaign_id = '{{campaign_id}}'
+    AND (
+      regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}')
+      OR regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}')
+    )
+)
+SELECT
+  lr.campaign_id,
+  lr.campaign_name,
+  lr.step_resolved,
+  lr.variant_resolved,
+  r.affected_campaigns,
+  r.affected_step_variants,
+  r.affected_leads,
+  r.affected_rendered_rows,
+  COUNT(*) AS leaked_rows_in_group,
+  SUM(CASE WHEN lr.subject_has_unresolved_token THEN 1 ELSE 0 END) AS subject_token_rows,
+  SUM(CASE WHEN lr.body_has_unresolved_token THEN 1 ELSE 0 END) AS body_token_rows,
+  MIN(lr.rendered_subject_preview) AS example_rendered_subject_preview,
+  MIN(lr.rendered_body_preview) AS example_rendered_body_preview,
+  MIN(lr.sample_source) AS example_sample_source,
+  MAX(lr.sent_at) AS newest_leak_sample_at
+FROM leaked_rows lr
+CROSS JOIN rollup r
+GROUP BY
+  lr.campaign_id,
+  lr.campaign_name,
+  lr.step_resolved,
+  lr.variant_resolved,
+  r.affected_campaigns,
+  r.affected_step_variants,
+  r.affected_leads,
+  r.affected_rendered_rows
+ORDER BY leaked_rows_in_group DESC, newest_leak_sample_at DESC NULLS LAST
+LIMIT 50;`,
+    notes: [
+      "This is sampled reconstructed-copy evidence, not exact delivered-email proof.",
+      "Replace '{{campaign_id}}' with one campaign ID; personalization variables are campaign-specific.",
+      "This safe summary intentionally omits recipient email, full rendered body text, and full template body text.",
+      "Use affected counts and previews for triage; use `personalization-leak-raw-detail` only for local row-level QA.",
+    ],
+  },
+  {
+    id: "personalization-leak-raw-detail",
+    topic: "copy-analysis",
+    title: "Personalization leak raw detail",
+    question: "Which raw reconstructed outbound rows contain unresolved template tokens?",
+    exactness: "sampled",
+    rationale: "Inspect row-level reconstructed outbound copy locally after the safe leak audit identifies affected steps or variants.",
     sql: `WITH leaked_rows AS (
   SELECT
     campaign_id,
@@ -2130,10 +2240,11 @@ CROSS JOIN rollup r
 ORDER BY lr.sent_at DESC NULLS LAST, lr.to_email
 LIMIT 50;`,
     notes: [
+      "Raw detail mode can expose recipient emails, rendered outbound bodies, and template bodies.",
+      "Use only for local diagnosis; do not paste raw bodies or contact fields into Linear, docs, PRs, or external artifacts.",
       "This is sampled reconstructed-copy evidence, not exact delivered-email proof.",
       "Replace '{{campaign_id}}' with one campaign ID; personalization variables are campaign-specific.",
       "Rows indicate unresolved `{{...}}` patterns in locally reconstructed subject or body text.",
-      "Use the affected counts for triage and the sample rows for concrete QA examples.",
     ],
   },
   {
@@ -2193,10 +2304,52 @@ ORDER BY i_status DESC;`,
   {
     id: "reply-email-context-feed",
     topic: "reply-patterns",
-    title: "Reply email context feed",
-    question: "What fetched reply bodies are available, and where is lead/template context missing?",
+    title: "Reply email context summary",
+    question: "What fetched reply coverage and context gaps are available without exposing raw reply bodies or contact fields?",
     exactness: "hybrid",
-    rationale: "Use the email-anchored reply view so fetched reply bodies remain visible even when bounded lead evidence missed the lead.",
+    rationale: "Use the email-anchored reply view to summarize fetched body coverage and context gaps before opening raw rows.",
+    sql: `SELECT
+  campaign_id,
+  campaign_name,
+  reply_email_i_status,
+  reply_email_i_status_label,
+  reply_outcome_label,
+  step_resolved,
+  variant_resolved,
+  has_lead_context,
+  has_template_context,
+  hydrated_reply_body,
+  context_gap_reason,
+  COUNT(*) AS reply_email_rows,
+  COUNT(DISTINCT lead_id) AS matched_leads,
+  SUM(CASE WHEN hydrated_reply_body THEN 1 ELSE 0 END) AS hydrated_reply_body_rows,
+  SUM(CASE WHEN reply_content_preview IS NOT NULL AND trim(reply_content_preview) <> '' THEN 1 ELSE 0 END) AS rows_with_reply_preview,
+  MIN(reply_received_at) AS oldest_reply_received_at,
+  MAX(reply_received_at) AS newest_reply_received_at,
+  MIN(left(COALESCE(reply_subject, ''), 160)) AS example_reply_subject_preview,
+  MIN(left(COALESCE(reply_content_preview, ''), 240)) AS example_reply_content_preview,
+  MIN(left(COALESCE(rendered_subject, template_subject, ''), 160)) AS example_outbound_subject_preview
+FROM sendlens.reply_email_context
+WHERE campaign_id = '{{campaign_id}}'
+  AND reply_email_i_status IN (1, -1, -2)
+GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+ORDER BY newest_reply_received_at DESC NULLS LAST, reply_email_rows DESC
+LIMIT 150;`,
+    notes: [
+      "Fetched reply previews are exact snippets for rows stored from Instantly List Email.",
+      "Lead and rendered-copy context may be sampled or backfilled; use has_lead_context and context_gap_reason before overclaiming.",
+      "Prefer this view over reply_context after prepare_campaign_analysis because it is anchored on reply_emails.",
+      "This safe summary intentionally omits lead email, reply-from email, and full reply body text.",
+      "Use `reply-email-context-raw-detail` only for local diagnosis when raw row inspection is necessary.",
+    ],
+  },
+  {
+    id: "reply-email-context-raw-detail",
+    topic: "reply-patterns",
+    title: "Reply email context raw detail",
+    question: "Which fetched reply rows and context fields should I inspect locally?",
+    exactness: "hybrid",
+    rationale: "Inspect email-anchored raw reply rows locally only after the safe context summary shows a reason to open details.",
     sql: `SELECT
   campaign_id,
   campaign_name,
@@ -2228,9 +2381,10 @@ WHERE campaign_id = '{{campaign_id}}'
 ORDER BY reply_received_at DESC NULLS LAST, lead_email
 LIMIT 150;`,
     notes: [
+      "Raw detail mode can expose lead emails, reply-from emails, company/person context, and full reply bodies.",
+      "Use only for local diagnosis; do not paste raw bodies or contact fields into Linear, docs, PRs, or external artifacts.",
       "Fetched reply body text is exact for rows stored from Instantly List Email.",
       "Lead and rendered-copy context may be sampled or backfilled; use has_lead_context and context_gap_reason before overclaiming.",
-      "Prefer this view over reply_context after prepare_campaign_analysis because it is anchored on reply_emails.",
     ],
   },
   {
@@ -2346,10 +2500,42 @@ WHERE campaign_id = '{{campaign_id}}';`,
   {
     id: "reply-feed",
     topic: "reply-patterns",
-    title: "Reply outcome feed",
-    question: "Which leads replied positively, negatively, or neutrally, and what copy did they receive?",
+    title: "Reply outcome summary",
+    question: "How do positive, negative, and neutral replies cluster by step and variant without exposing raw contacts or bodies?",
     exactness: "hybrid",
-    rationale: "Use lead reply outcomes plus locally reconstructed template copy to compare positive and negative cohorts.",
+    rationale: "Use lead reply outcomes plus local reconstruction coverage to compare positive and negative cohorts before opening raw rows.",
+    sql: `SELECT
+  campaign_id,
+  campaign_name,
+  reply_outcome_label,
+  lt_interest_label,
+  reply_email_i_status,
+  step_resolved,
+  variant_resolved,
+  COUNT(*) AS replied_leads,
+  SUM(CASE WHEN reply_body_text IS NOT NULL AND trim(reply_body_text) <> '' THEN 1 ELSE 0 END) AS fetched_reply_body_rows,
+  MIN(reply_received_at) AS oldest_reply_received_at,
+  MAX(reply_received_at) AS newest_reply_received_at,
+  MIN(left(COALESCE(reply_subject, ''), 160)) AS example_reply_subject_preview,
+  MIN(left(COALESCE(rendered_subject, template_subject, ''), 160)) AS example_outbound_subject_preview
+FROM sendlens.reply_context
+WHERE campaign_id = '{{campaign_id}}'
+GROUP BY 1, 2, 3, 4, 5, 6, 7
+ORDER BY replied_leads DESC, newest_reply_received_at DESC NULLS LAST
+LIMIT 100;`,
+    notes: [
+      "Run fetch_reply_text for this campaign in default sync_newest mode, then rerun the query when the user needs current reply wording.",
+      "This safe summary intentionally omits lead email, reply-from email, full reply body text, and full rendered/template body text.",
+      "Use it for positive/negative cohort triage; use `reply-feed-raw-detail` only for local row-level copy reconstruction.",
+    ],
+  },
+  {
+    id: "reply-feed-raw-detail",
+    topic: "reply-patterns",
+    title: "Reply outcome raw detail",
+    question: "Which raw reply outcome rows should I inspect locally for copy reconstruction?",
+    exactness: "hybrid",
+    rationale: "Inspect lead reply outcomes plus locally reconstructed copy only after the safe reply summary identifies cohorts worth opening.",
     sql: `SELECT
   campaign_id,
   campaign_name,
@@ -2373,7 +2559,8 @@ WHERE campaign_id = '{{campaign_id}}'
 ORDER BY reply_at DESC
 LIMIT 100;`,
     notes: [
-      "Run fetch_reply_text for this campaign in default sync_newest mode, then rerun the query when the user needs current reply wording.",
+      "Raw detail mode can expose lead emails, reply-from emails, company/person context, reply bodies, and reconstructed outbound bodies.",
+      "Use only for local diagnosis; do not paste raw bodies or contact fields into Linear, docs, PRs, or external artifacts.",
       "Fetched inbound reply text is exact when available; rendered outbound copy remains reconstructed evidence.",
       "Use it for positive/negative cohort analysis and copy reconstruction.",
     ],
@@ -2381,10 +2568,43 @@ LIMIT 100;`,
   {
     id: "fetched-reply-text-by-campaign",
     topic: "reply-patterns",
-    title: "Fetched reply text by campaign",
-    question: "What are prospects actually saying in fetched positive and negative replies?",
+    title: "Fetched reply text summary by campaign",
+    question: "What reply wording previews and coverage are available for fetched positive and negative replies?",
     exactness: "exact",
-    rationale: "Use fetched inbound reply bodies after running fetch_reply_text for one campaign.",
+    rationale: "Use fetched inbound reply previews and counts after running fetch_reply_text for one campaign before opening raw bodies.",
+    sql: `SELECT
+  campaign_id,
+  campaign_name,
+  reply_email_i_status,
+  reply_outcome_label,
+  COUNT(*) AS fetched_reply_rows,
+  SUM(CASE WHEN reply_body_text IS NOT NULL AND trim(reply_body_text) <> '' THEN 1 ELSE 0 END) AS fetched_reply_body_rows,
+  MIN(reply_received_at) AS oldest_reply_received_at,
+  MAX(reply_received_at) AS newest_reply_received_at,
+  MIN(left(COALESCE(reply_subject, ''), 160)) AS example_reply_subject_preview,
+  MIN(left(COALESCE(reply_content_preview, ''), 240)) AS example_reply_content_preview
+FROM sendlens.reply_context
+WHERE campaign_id = '{{campaign_id}}'
+  AND reply_email_id IS NOT NULL
+  AND reply_email_i_status IN (1, -1, -2)
+GROUP BY 1, 2, 3, 4
+ORDER BY fetched_reply_rows DESC, newest_reply_received_at DESC NULLS LAST
+LIMIT 100;`,
+    notes: [
+      "Run fetch_reply_text for this campaign in default sync_newest mode first if no rows are returned or the user wants the newest reply wording.",
+      "This is exact for fetched inbound email rows stored in reply_emails, but returns previews and counts by default.",
+      "Status 0 out-of-office is intentionally excluded.",
+      "This safe summary intentionally omits lead email, reply-from email, and full reply body text.",
+      "Use `fetched-reply-text-raw-detail-by-campaign` only for local diagnosis when raw reply bodies are necessary.",
+    ],
+  },
+  {
+    id: "fetched-reply-text-raw-detail-by-campaign",
+    topic: "reply-patterns",
+    title: "Fetched reply text raw detail by campaign",
+    question: "What raw fetched reply bodies should I inspect locally?",
+    exactness: "exact",
+    rationale: "Inspect fetched inbound reply bodies locally after the safe fetched-reply summary identifies statuses or outcomes worth opening.",
     sql: `SELECT
   campaign_id,
   campaign_name,
@@ -2402,6 +2622,8 @@ WHERE campaign_id = '{{campaign_id}}'
 ORDER BY reply_received_at DESC NULLS LAST
 LIMIT 100;`,
     notes: [
+      "Raw detail mode can expose lead emails, reply-from emails, and full reply bodies.",
+      "Use only for local diagnosis; do not paste raw bodies or contact fields into Linear, docs, PRs, or external artifacts.",
       "Run fetch_reply_text for this campaign in default sync_newest mode first if no rows are returned or the user wants the newest reply wording.",
       "This is exact for fetched inbound email rows stored in reply_emails.",
       "Status 0 out-of-office is intentionally excluded.",
