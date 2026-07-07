@@ -124,6 +124,8 @@ for (const term of [
 for (const term of [
   "provider-qualified or native campaign ID",
   "SENDLENS_PROVIDER=all` requires a provider-qualified campaign ID",
+  'schema_version: "campaign_selector_error.v1"',
+  "`selector`, `workspace_id`, and `suggested_lookup_path`",
   "exact `campaign_overview`",
   "`human_reply_sample` grouped into positive, negative, and neutral buckets",
   "optional `rendered_outbound_sample`",
@@ -141,6 +143,9 @@ for (const term of [
   "loadCampaignScope",
   "refreshProvider",
   "CampaignIdScopeError",
+  'schema_version: "campaign_selector_error.v1"',
+  "suggested_lookup_path",
+  "resolveCampaignSelector(db, workspaceId",
   "load_campaign_data requires a provider-qualified campaign_id when SENDLENS_PROVIDER=all",
   "load_campaign_data requires a non-empty campaign_id",
   "campaignIdFilterSql",

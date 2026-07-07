@@ -198,7 +198,6 @@ function loadCampaignScope(campaignId: string) {
 
   return {
     refreshProvider: parsed?.provider,
-    refreshCampaignIds: [requestedId],
     queryCampaignIds,
   };
 }
@@ -588,26 +587,50 @@ server.registerTool(
     let db: Awaited<ReturnType<typeof getDb>> | null = null;
     try {
       const campaignScope = loadCampaignScope(campaign_id);
+      await ensureDemoWorkspaceForRead();
+      db = await getDb();
+      const cacheWarnings = await ensureCacheReadable(db);
+      const workspaceId = await getActiveWorkspaceId(db);
+      if (!workspaceId) {
+        return jsonResponse({
+          error: "No active workspace is loaded. Run refresh_data() first.",
+        });
+      }
+
+      const resolved = await resolveCampaignSelector(db, workspaceId, {
+        campaign_id,
+      });
+      if (!resolved.ok) {
+        return jsonResponse({
+          schema_version: "campaign_selector_error.v1",
+          ...resolved.payload,
+          workspace_id: workspaceId,
+          suggested_lookup_path:
+            "Call workspace_snapshot and use a returned campaign_source_id or campaign_id exactly.",
+        });
+      }
+      closeDb(db);
+      db = null;
+
       const refreshed = isDemoMode()
         ? await seedDemoWorkspace()
         : await refreshWorkspaceAtomically({
-          campaignIds: campaignScope.refreshCampaignIds,
+          campaignIds: [resolved.campaign_source_id],
           source: "manual",
-          provider: campaignScope.refreshProvider,
+          provider: campaignScope.refreshProvider ?? resolved.source_provider,
           forceHybrid: true,
           nonReplyLeadLimit: max_nonreply_leads,
         });
 
+      const refreshedWorkspaceId = refreshed.workspaceId ?? workspaceId;
       db = await getDb();
-      const cacheWarnings = await ensureCacheReadable(db);
-      const workspaceId = refreshed.workspaceId ?? (await getActiveWorkspaceId(db));
-      if (!workspaceId) {
+      if (!refreshedWorkspaceId) {
         return jsonResponse({
           error: "No active workspace is loaded after campaign load.",
         });
       }
 
-      const workspaceSafe = workspaceId.replace(/'/g, "''");
+      const workspaceSafe = refreshedWorkspaceId.replace(/'/g, "''");
       const overviewRows = await query(
         db,
         `SELECT *
