@@ -69,8 +69,8 @@ Read the evidence and metric-basis references before ranking campaigns, steps, v
 
 ### Stage 5: Handle Runway Correctly
 
-- For runway, exhaustion, "out of leads", capacity, or throttle questions, do not answer from leads remaining alone.
-- Report new-lead runway, volume runway, schedule-adjusted pace, and real capacity when relevant.
+- For runway, exhaustion, "out of leads", capacity, or throttle questions, do not answer from `leads_count - contacted_count`.
+- Report exact new-lead runway as unknown when the cache lacks a provider-specific remaining-lead field; use recent new-lead contact pace as caveated activity/proxy evidence, then separate volume runway, schedule-adjusted pace, and real capacity when relevant.
 - Distinguish "out of new prospects" from "out of send volume"; follow-up steps can continue after step 0 is exhausted.
 
 ### Stage 6: Narrow Specialist Questions

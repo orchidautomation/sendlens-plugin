@@ -29,7 +29,7 @@ Read the evidence and copy reconstruction references before marking a campaign r
 
 - Use this when the user asks whether a campaign is ready to turn on, scale, resume, clone, or hand to an AM/client.
 - If the user provides a campaign name, campaign ID, or Instantly tag, treat that as the scope.
-- Do not mark a campaign ready when sender inventory, lead supply, templates, or blocking settings are missing.
+- Do not mark a campaign ready when sender inventory, templates, or blocking settings are missing; treat lead supply as unknown unless exact remaining-lead evidence exists.
 
 ## Protocol
 
@@ -48,7 +48,7 @@ Read the evidence and copy reconstruction references before marking a campaign r
 
 ### Stage 3: Check Blockers Before Polish
 
-- Check sender assignment, uncontacted leads, sequence templates, blank copy, tracking settings, deliverability guardrails, schedule/timezone, sequence steps/delays, and sender health.
+- Check sender assignment, exact lead-supply evidence when available, recent new-lead contact activity as a caveated proxy, sequence templates, blank copy, tracking settings, deliverability guardrails, schedule/timezone, sequence steps/delays, and sender health.
 - Apply cold-email best practices when interpreting open tracking, link tracking, disabled bounce protection, allowed risky contacts, bounce risk, and text/HTML choices.
 - Treat `open_tracking`, `link_tracking`, `match_lead_esp`, `allow_risky_contacts`, `disable_bounce_protect`, and `insert_unsubscribe_header` as exact campaign settings when present in `campaign_overview`.
 - If the user asks for personalization safety, pair launch QA with the `personalization-leak-audit` copy-analysis recipe and the copy reconstruction caveat reference.
