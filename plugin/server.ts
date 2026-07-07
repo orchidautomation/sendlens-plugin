@@ -682,6 +682,28 @@ server.registerTool(
            LIMIT ${RENDERED_OUTBOUND_SAMPLE_LIMIT}`,
         )
         : [];
+      const renderedPreviewRows = include_rendered_outbound
+        ? renderedRows
+        : await query(
+          db,
+          `SELECT
+             campaign_id,
+             campaign_source_id,
+             source_provider,
+             step_resolved,
+             variant_resolved,
+             sample_source,
+             sent_at,
+             rendered_subject,
+             rendered_body_text,
+             template_subject,
+             template_body_text
+           FROM sendlens.rendered_outbound_context
+           WHERE workspace_id = '${workspaceSafe}'
+             AND ${campaignIdFilterSql("campaign_id", evidenceCampaignIds)}
+           ORDER BY sent_at DESC NULLS LAST
+           LIMIT ${RENDERED_OUTBOUND_REDACTED_PREVIEW_LIMIT}`,
+        );
       const renderedCountRows = await query(
         db,
         `SELECT COUNT(*) AS sampled_row_count
@@ -742,7 +764,7 @@ server.registerTool(
           sampled_row_count: renderedSampledRowCount,
           raw_rows_included: include_rendered_outbound,
           raw_row_limit: include_rendered_outbound ? RENDERED_OUTBOUND_SAMPLE_LIMIT : 0,
-          redacted_preview: renderedOutboundRedactedPreview(renderedRows),
+          redacted_preview: renderedOutboundRedactedPreview(renderedPreviewRows),
           redacted_fields: ["to_email", "from_email"],
           detail_hint:
             "Set include_rendered_outbound=true to include bounded raw reconstructed outbound rows, or use analyze_data for focused authorized queries.",

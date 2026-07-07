@@ -156,6 +156,7 @@ for (const term of [
   "human_reply_sample",
   "rendered_outbound_summary",
   "rendered_outbound_sample",
+  "renderedPreviewRows",
   "rendered_outbound_redacted_preview_limit",
   "Raw rendered outbound rows are omitted by default",
   "to_email",
@@ -172,6 +173,16 @@ assertPattern(
   source.server,
   /rendered_outbound_sample:\s*include_rendered_outbound\s*\?\s*renderedRows\s*:\s*undefined/,
   "load_campaign_data omits raw rendered outbound sample by default",
+);
+assertPattern(
+  source.server,
+  /const renderedPreviewRows = include_rendered_outbound[\s\S]*?SELECT\s+campaign_id,[\s\S]*?LIMIT \$\{RENDERED_OUTBOUND_REDACTED_PREVIEW_LIMIT\}/,
+  "load_campaign_data uses a bounded redacted preview query by default",
+);
+assertPattern(
+  source.server,
+  /redacted_preview:\s*renderedOutboundRedactedPreview\(renderedPreviewRows\)/,
+  "load_campaign_data summary preview is independent from raw rendered outbound inclusion",
 );
 assertPattern(
   source.server,
