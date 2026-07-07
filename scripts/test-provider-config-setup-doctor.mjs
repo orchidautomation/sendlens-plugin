@@ -336,6 +336,38 @@ try {
   assertNoSensitiveValue(report, "sendoso-instantly-client-value");
   assertNoSensitiveValue(report, "sendoso-smartlead-client-value");
 
+  tempDir = resetEnv("client-env-provider-filtering");
+  await fs.mkdir(path.join(tempDir, ".env.clients"), { recursive: true });
+  process.env.SENDLENS_CLIENT = "sendoso";
+  process.env.SENDLENS_PROVIDER = "instantly";
+  process.env.SENDLENS_INSTANTLY_API_KEY = "stale-instantly-process-value";
+  process.env.SENDLENS_SMARTLEAD_API_KEY = "stale-smartlead-process-value";
+  await fs.writeFile(
+    path.join(tempDir, ".env.clients", "sendoso.env"),
+    [
+      "SENDLENS_INSTANTLY_API_KEY=sendoso-instantly-client-value",
+      "SENDLENS_SMARTLEAD_API_KEY=sendoso-smartlead-client-value",
+    ].join("\n"),
+  );
+  loadClientEnv(tempDir);
+  assert.equal(process.env.SENDLENS_INSTANTLY_API_KEY, "sendoso-instantly-client-value");
+  assert.equal(process.env.SENDLENS_SMARTLEAD_API_KEY, "sendoso-smartlead-client-value");
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    assert.equal(parsed.hostname, "api.instantly.ai");
+    return responseJson({ items: [{ id: "instantly-campaign" }] });
+  };
+  report = await buildSetupDoctorReport();
+  const singleProviderClientIdentityCheck = findCheck(report, "Client env identity");
+  assert.equal(singleProviderClientIdentityCheck?.status, "pass");
+  assert.ok(
+    String(singleProviderClientIdentityCheck?.detail).includes(
+      fingerprintPrefix(currentApiKeyFingerprint()),
+    ),
+  );
+  assertNoSensitiveValue(report, "sendoso-instantly-client-value");
+  assertNoSensitiveValue(report, "sendoso-smartlead-client-value");
+
   tempDir = resetEnv("invalid-provider-check-env");
   await fs.mkdir(tempDir, { recursive: true });
   assertInvalidProviderResult(

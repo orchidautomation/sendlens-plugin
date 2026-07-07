@@ -2,7 +2,11 @@ import fs from "node:fs";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { isUnresolvedProviderMode } from "./provider-config";
+import {
+  isUnresolvedProviderMode,
+  providerModeIncludes,
+  resolveSourceProviderMode,
+} from "./provider-config";
 
 type EnvMap = Record<string, string>;
 export type LoadedSendLensEnv = {
@@ -183,14 +187,24 @@ export function getLastLoadedSendLensEnv() {
 }
 
 function providerSecretFingerprint(values: EnvMap) {
+  const providerMode = resolveSourceProviderMode();
   const fingerprints: Array<{ provider: "instantly" | "smartlead"; value: string }> = [];
   const instantlyKey = values.SENDLENS_INSTANTLY_API_KEY?.trim();
   const smartleadKey = values.SENDLENS_SMARTLEAD_API_KEY?.trim();
 
-  if (instantlyKey && !isUnresolvedEnvValue(instantlyKey)) {
+  if (
+    (!providerMode.valid || providerModeIncludes(providerMode.mode, "instantly")) &&
+    instantlyKey &&
+    !isUnresolvedEnvValue(instantlyKey)
+  ) {
     fingerprints.push({ provider: "instantly", value: instantlyKey });
   }
-  if (smartleadKey && !isUnresolvedEnvValue(smartleadKey)) {
+  if (
+    providerMode.valid &&
+    providerModeIncludes(providerMode.mode, "smartlead") &&
+    smartleadKey &&
+    !isUnresolvedEnvValue(smartleadKey)
+  ) {
     fingerprints.push({ provider: "smartlead", value: smartleadKey });
   }
 

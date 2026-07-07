@@ -531,6 +531,9 @@ server.registerTool(
         readiness: readinessPayload(readiness),
       });
     } catch (error) {
+      if (error instanceof CacheReadinessError) {
+        return cacheReadinessResponse(error);
+      }
       if (error instanceof LocalDbUnavailableError) {
         return dbUnavailableResponse(error);
       }
