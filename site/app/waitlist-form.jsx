@@ -6,17 +6,17 @@ const INSTALL_COMMANDS = [
   {
     host: "All hosts",
     command:
-      "bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --agents -y"
+      "bash <(curl -fsSL https://sendlens.app/install.sh) --agents -y"
   },
   {
     host: "Claude Code",
     command:
-      "bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --claude-code -y"
+      "bash <(curl -fsSL https://sendlens.app/install.sh) --claude-code -y"
   },
   {
     host: "Codex",
     command:
-      "bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --codex -y"
+      "bash <(curl -fsSL https://sendlens.app/install.sh) --codex -y"
   }
 ];
 

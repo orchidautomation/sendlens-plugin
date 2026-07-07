@@ -68,16 +68,16 @@ Latest release: [release page](https://github.com/orchidautomation/sendlens-plug
 Preferred installer:
 
 ```bash
-bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --agents -y
+bash <(curl -fsSL https://sendlens.app/install.sh) --agents -y
 ```
 
 Single-host installs:
 
 ```bash
-bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --claude-code -y
-bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --cursor -y
-bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --codex -y
-bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --opencode -y
+bash <(curl -fsSL https://sendlens.app/install.sh) --claude-code -y
+bash <(curl -fsSL https://sendlens.app/install.sh) --cursor -y
+bash <(curl -fsSL https://sendlens.app/install.sh) --codex -y
+bash <(curl -fsSL https://sendlens.app/install.sh) --opencode -y
 ```
 
 Direct GitHub installers also work:
@@ -125,7 +125,7 @@ For noninteractive installs that should also run the first refresh, export the k
 
 ```bash
 export SENDLENS_INSTANTLY_API_KEY="your_instantly_api_key"
-bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --codex -y
+bash <(curl -fsSL https://sendlens.app/install.sh) --codex -y
 ```
 
 
