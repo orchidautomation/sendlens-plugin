@@ -3112,12 +3112,26 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
           "SENDLENS_PROVIDER=all requires SENDLENS_INSTANTLY_API_KEY, SENDLENS_SMARTLEAD_API_KEY, or both.",
         );
       }
+      const aggregateEndedAt = summaries[summaries.length - 1]?.last_refreshed_at ??
+        new Date().toISOString();
+      const aggregateWorkspaceId = summaries[summaries.length - 1]?.workspaceId ?? null;
+      const missSuffix = scopedMisses.length
+        ? ` Scoped lookup missed ${scopedMisses.join(", ")} and was skipped.`
+        : "";
       await writeRefreshStatus({
+        status: "succeeded",
+        source: options.source ?? (options.campaignIds?.length ? "manual" : "session_start"),
         lastRefreshScope: options.campaignIds?.length ? "campaign" : "workspace",
         refreshScope: buildRefreshScope({
           provider: "all",
           campaignIds: options.campaignIds,
         }),
+        workspaceId: aggregateWorkspaceId,
+        endedAt: aggregateEndedAt,
+        lastSuccessAt: aggregateEndedAt,
+        currentCampaignId: null,
+        currentCampaignName: null,
+        message: `Refresh completed for ${summaries.length} configured provider${summaries.length === 1 ? "" : "s"}.${missSuffix}`,
       });
       return summaries[summaries.length - 1];
     }
