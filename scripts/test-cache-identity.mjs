@@ -551,6 +551,33 @@ try {
     },
   };
 
+  process.env.SENDLENS_CLIENT = "sendoso";
+  process.env.SENDLENS_SMARTLEAD_API_KEY = "stale-smartlead-client-env-secret";
+  process.env.SENDLENS_DB_PATH = path.join(tempDir, "smartlead-provider-override-stale-client.duckdb");
+  await fs.writeFile(
+    path.join(tempDir, ".env.clients", "sendoso.env"),
+    "SENDLENS_SMARTLEAD_API_KEY=selected-smartlead-client-env-secret\n",
+  );
+  await assert.rejects(
+    refreshWorkspaceAtomically({
+      provider: "smartlead",
+      source: "manual",
+      campaignIds: ["901"],
+      client: smartleadProviderOverrideClient,
+    }),
+    (error) =>
+      error instanceof CacheReadinessError &&
+      error.issue === "client_env_mismatch" &&
+      error.selectedClientEnv?.apiKeyFingerprint ===
+        providerScopedFingerprint("smartlead", "selected-smartlead-client-env-secret") &&
+      !String(error.message).includes("stale-smartlead-client-env-secret") &&
+      !String(error.message).includes("selected-smartlead-client-env-secret"),
+  );
+  assert.equal(smartleadProviderCalls.length, 0);
+  process.env.SENDLENS_SMARTLEAD_API_KEY = "smartlead-override-secret";
+  delete process.env.SENDLENS_CLIENT;
+  process.env.SENDLENS_DB_PATH = path.join(tempDir, "smartlead-provider-override.duckdb");
+
   const smartleadOverrideRefresh = await refreshWorkspaceAtomically({
     provider: "smartlead",
     source: "manual",

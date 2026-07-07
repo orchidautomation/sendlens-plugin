@@ -13,6 +13,7 @@ import {
 import {
   providerModeIncludes,
   resolveSourceProviderMode,
+  type ProviderModeResolution,
   type SourceProviderMode,
 } from "./provider-config";
 import { getSelectedClientEnvIdentity, type SelectedClientEnvIdentity } from "./env";
@@ -2233,9 +2234,9 @@ function normalizeNullable(value: string | undefined | null) {
   return trimmed ? trimmed : null;
 }
 
-export function currentApiKeyFingerprint() {
+function currentProviderModeResolution(): ProviderModeResolution {
   const activeProviderMode = cacheProviderModeContext.getStore();
-  const providerMode = activeProviderMode
+  return activeProviderMode
     ? {
         mode: activeProviderMode,
         raw: activeProviderMode,
@@ -2243,6 +2244,10 @@ export function currentApiKeyFingerprint() {
         defaulted: false,
       }
     : resolveSourceProviderMode();
+}
+
+export function currentApiKeyFingerprint() {
+  const providerMode = currentProviderModeResolution();
   const instantlyKey = normalizeNullable(process.env.SENDLENS_INSTANTLY_API_KEY);
   const smartleadKey = normalizeNullable(process.env.SENDLENS_SMARTLEAD_API_KEY);
   const fingerprints: Array<{ provider: "instantly" | "smartlead"; value: string }> = [];
@@ -2271,7 +2276,7 @@ export function fingerprintPrefix(fingerprint: string | undefined | null) {
 
 function selectedClientEnvIdentityForCurrentContext() {
   const rootDir = normalizeNullable(process.env.SENDLENS_CONTEXT_ROOT) ?? process.cwd();
-  return getSelectedClientEnvIdentity(path.resolve(rootDir));
+  return getSelectedClientEnvIdentity(path.resolve(rootDir), currentProviderModeResolution());
 }
 
 function emptyCacheOwnerMetadata(): CacheOwnerMetadata {

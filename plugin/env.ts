@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   isUnresolvedProviderMode,
+  type ProviderModeResolution,
   providerModeIncludes,
   resolveSourceProviderMode,
 } from "./provider-config";
@@ -186,8 +187,10 @@ export function getLastLoadedSendLensEnv() {
   return lastLoadedSendLensEnv;
 }
 
-function providerSecretFingerprint(values: EnvMap) {
-  const providerMode = resolveSourceProviderMode();
+function providerSecretFingerprint(
+  values: EnvMap,
+  providerMode: ProviderModeResolution = resolveSourceProviderMode(),
+) {
   const fingerprints: Array<{ provider: "instantly" | "smartlead"; value: string }> = [];
   const instantlyKey = values.SENDLENS_INSTANTLY_API_KEY?.trim();
   const smartleadKey = values.SENDLENS_SMARTLEAD_API_KEY?.trim();
@@ -218,7 +221,10 @@ function providerSecretFingerprint(values: EnvMap) {
     .digest("hex");
 }
 
-export function getSelectedClientEnvIdentity(rootDir = process.cwd()): SelectedClientEnvIdentity | null {
+export function getSelectedClientEnvIdentity(
+  rootDir = process.cwd(),
+  providerMode: ProviderModeResolution = resolveSourceProviderMode(),
+): SelectedClientEnvIdentity | null {
   const resolved = getClientEnvPaths(rootDir);
   if (!resolved.client) return null;
 
@@ -235,7 +241,7 @@ export function getSelectedClientEnvIdentity(rootDir = process.cwd()): SelectedC
     const value = values[key]?.trim();
     return value && !isUnresolvedEnvValue(value);
   });
-  const apiKeyFingerprint = providerSecretFingerprint(values);
+  const apiKeyFingerprint = providerSecretFingerprint(values, providerMode);
 
   return {
     client: resolved.client,
