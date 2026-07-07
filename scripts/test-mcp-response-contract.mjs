@@ -13,6 +13,7 @@ const files = {
   summary: "plugin/summary.ts",
   localDb: "plugin/local-db.ts",
   recipes: "plugin/query-recipes.ts",
+  catalog: "plugin/catalog.ts",
   constants: "plugin/constants.ts",
   replyTextContract: "plugin/reply-text-contract.ts",
   replyFetchTest: "scripts/test-reply-fetch-contract.mjs",
@@ -218,6 +219,30 @@ for (const term of [
     `${source.server}\n${source.recipes}`,
     term,
     "analysis_starters runtime",
+  );
+}
+
+for (const term of [
+  "partial matches for broad multi-token queries",
+  "`search_terms` and `suggested_narrower_terms`",
+  "`analysis_starter_suggestions`",
+  "workflow concepts such as runway, scale, refill, deliverability, sender accounts, rendered outbound, reply body, payload, and tags",
+  "`guidance` that points to relevant `analysis_starters` topics",
+]) {
+  assertIncludes(source.docs, term, "search_catalog docs");
+}
+for (const term of [
+  "buildCatalogSearchGuidance",
+  "suggested_narrower_terms",
+  "analysis_starter_suggestions",
+  "campaign-tag-runway-inputs",
+  "rendered_outbound_context",
+  "reply_email_context",
+]) {
+  assertIncludes(
+    `${source.server}\n${source.catalog}`,
+    term,
+    "search_catalog runtime",
   );
 }
 

@@ -14,6 +14,10 @@ const {
 } = require("../build/plugin/local-db.js");
 const { getQueryRecipes } = require("../build/plugin/query-recipes.js");
 const {
+  buildCatalogSearchGuidance,
+  searchCatalog,
+} = require("../build/plugin/catalog.js");
+const {
   normalizeStepAnalyticsRows,
   toPlainText,
 } = require("../build/plugin/instantly-ingest.js");
@@ -168,6 +172,42 @@ await run(
 );
 
 await setActiveWorkspaceId(db, "ws_test");
+
+const broadCatalogMatches = await searchCatalog(
+  db,
+  "website visitor campaign reply payload rendered outbound inbox placement tags sender account runway",
+);
+assert.ok(broadCatalogMatches.length > 0);
+assert.ok(broadCatalogMatches.some((match) => match.table === "reply_emails" || match.table === "reply_context"));
+assert.ok(broadCatalogMatches.some((match) => match.table === "lead_payload_kv"));
+assert.ok(broadCatalogMatches.some((match) => match.table === "rendered_outbound_context"));
+assert.ok(broadCatalogMatches.some((match) => match.table === "inbox_placement_tests"));
+assert.ok(broadCatalogMatches.some((match) => match.table === "campaign_accounts" || match.table === "accounts"));
+const broadCatalogGuidance = buildCatalogSearchGuidance(
+  "website visitor campaign reply payload rendered outbound inbox placement tags sender account runway",
+  broadCatalogMatches,
+);
+assert.ok(broadCatalogGuidance.search_terms.includes("campaign_overview"));
+assert.ok(
+  broadCatalogGuidance.analysis_starter_suggestions.some(
+    (suggestion) =>
+      suggestion.concept === "runway"
+      && suggestion.topics.includes("campaign-performance")
+      && suggestion.recipe_ids.includes("campaign-tag-runway-inputs"),
+  ),
+);
+const runwayGuidance = buildCatalogSearchGuidance("runway", []);
+assert.match(runwayGuidance.message ?? "", /No direct schema matches/);
+assert.ok(runwayGuidance.suggested_narrower_terms.includes("campaign_overview"));
+assert.ok(
+  runwayGuidance.analysis_starter_suggestions.some(
+    (suggestion) =>
+      suggestion.concept === "runway"
+      && suggestion.recipe_ids.includes("campaign-tag-runway-daily-history"),
+  ),
+);
+const runwayCatalogMatches = await searchCatalog(db, "runway");
+assert.equal(runwayCatalogMatches.length, 0);
 
 const summary = await buildWorkspaceSummary(db);
 assert.equal(summary.schema_version, "workspace_snapshot.v1");
