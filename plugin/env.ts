@@ -1,7 +1,13 @@
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { isUnresolvedProviderMode } from "./provider-config";
+import {
+  isUnresolvedProviderMode,
+  type ProviderModeResolution,
+  providerModeIncludes,
+  resolveSourceProviderMode,
+} from "./provider-config";
 
 type EnvMap = Record<string, string>;
 export type LoadedSendLensEnv = {
@@ -10,8 +16,30 @@ export type LoadedSendLensEnv = {
   contextRoot: string;
   loaded: string[];
 };
+export type SelectedClientEnvIdentity = {
+  client: string;
+  clientsDir: string;
+  loaded: string[];
+  apiKeyFingerprint: string | null;
+  apiKeyFingerprintPrefix: string | null;
+  configuredKeys: string[];
+};
 
 let lastLoadedSendLensEnv: LoadedSendLensEnv | null = null;
+
+const SENDLENS_CLIENT_LOCKED_KEYS = new Set([
+  "SENDLENS_CLIENT",
+  "SENDLENS_CLIENTS_DIR",
+  "SENDLENS_CONTEXT_ROOT",
+]);
+const SENDLENS_PROVIDER_SECRET_KEYS = [
+  "SENDLENS_INSTANTLY_API_KEY",
+  "SENDLENS_SMARTLEAD_API_KEY",
+] as const;
+
+function isSendLensClientOverrideKey(key: string) {
+  return key.startsWith("SENDLENS_") && !SENDLENS_CLIENT_LOCKED_KEYS.has(key);
+}
 
 function parseEnvFile(filePath: string): EnvMap {
   const content = fs.readFileSync(filePath, "utf8");
@@ -50,9 +78,9 @@ function expandEnvValue(value: string) {
   });
 }
 
-function applyEnv(values: EnvMap, lockedKeys: Set<string>) {
+function applyEnv(values: EnvMap, lockedKeys: Set<string>, overrideKeys = new Set<string>()) {
   for (const [key, value] of Object.entries(values)) {
-    if (lockedKeys.has(key)) continue;
+    if (lockedKeys.has(key) && !overrideKeys.has(key)) continue;
     process.env[key] = value;
   }
 }
@@ -128,7 +156,11 @@ export function loadClientEnv(rootDir = process.cwd()) {
   const resolved = getClientEnvPaths(rootDir);
   for (const filePath of resolved.clientPaths) {
     if (!fs.existsSync(filePath)) continue;
-    applyEnv(parseEnvFile(filePath), lockedKeys);
+    const values = parseEnvFile(filePath);
+    const clientOverrideKeys = new Set(
+      Object.keys(values).filter((key) => isSendLensClientOverrideKey(key)),
+    );
+    applyEnv(values, lockedKeys, resolved.client ? clientOverrideKeys : new Set());
     loaded.push(filePath);
   }
 
@@ -153,4 +185,70 @@ export function loadSendLensEnv() {
 
 export function getLastLoadedSendLensEnv() {
   return lastLoadedSendLensEnv;
+}
+
+function providerSecretFingerprint(
+  values: EnvMap,
+  providerMode: ProviderModeResolution = resolveSourceProviderMode(),
+) {
+  const fingerprints: Array<{ provider: "instantly" | "smartlead"; value: string }> = [];
+  const instantlyKey = values.SENDLENS_INSTANTLY_API_KEY?.trim();
+  const smartleadKey = values.SENDLENS_SMARTLEAD_API_KEY?.trim();
+
+  if (
+    (!providerMode.valid || providerModeIncludes(providerMode.mode, "instantly")) &&
+    instantlyKey &&
+    !isUnresolvedEnvValue(instantlyKey)
+  ) {
+    fingerprints.push({ provider: "instantly", value: instantlyKey });
+  }
+  if (
+    providerMode.valid &&
+    providerModeIncludes(providerMode.mode, "smartlead") &&
+    smartleadKey &&
+    !isUnresolvedEnvValue(smartleadKey)
+  ) {
+    fingerprints.push({ provider: "smartlead", value: smartleadKey });
+  }
+
+  if (fingerprints.length === 0) return null;
+  if (fingerprints.length === 1 && fingerprints[0].provider === "instantly") {
+    return createHash("sha256").update(fingerprints[0].value, "utf8").digest("hex");
+  }
+
+  return createHash("sha256")
+    .update(fingerprints.map(({ provider, value }) => `${provider}:${value}`).join("\n"), "utf8")
+    .digest("hex");
+}
+
+export function getSelectedClientEnvIdentity(
+  rootDir = process.cwd(),
+  providerMode: ProviderModeResolution = resolveSourceProviderMode(),
+): SelectedClientEnvIdentity | null {
+  const resolved = getClientEnvPaths(rootDir);
+  if (!resolved.client) return null;
+
+  const values: EnvMap = {};
+  const loaded: string[] = [];
+  for (const filePath of resolved.clientPaths) {
+    if (!fs.existsSync(filePath)) continue;
+    Object.assign(values, parseEnvFile(filePath));
+    loaded.push(filePath);
+  }
+  if (loaded.length === 0) return null;
+
+  const configuredKeys = SENDLENS_PROVIDER_SECRET_KEYS.filter((key) => {
+    const value = values[key]?.trim();
+    return value && !isUnresolvedEnvValue(value);
+  });
+  const apiKeyFingerprint = providerSecretFingerprint(values, providerMode);
+
+  return {
+    client: resolved.client,
+    clientsDir: resolved.clientsDir,
+    loaded,
+    apiKeyFingerprint,
+    apiKeyFingerprintPrefix: apiKeyFingerprint ? apiKeyFingerprint.slice(0, 12) : null,
+    configuredKeys,
+  };
 }

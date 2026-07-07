@@ -57,6 +57,7 @@ const source = Object.fromEntries(
 );
 
 for (const toolName of [
+  "refresh_data",
   "workspace_snapshot",
   "load_campaign_data",
   "analysis_starters",
@@ -67,6 +68,12 @@ for (const toolName of [
   assertRegisteredTool(source.server, toolName);
   assertIncludes(source.docs, `\`${toolName}\``, "docs/MCP_RESPONSE_CONTRACT.md");
 }
+
+assertPattern(
+  source.server,
+  /server\.registerTool\(\s*["']refresh_data["'][\s\S]*?catch \(error\) \{[\s\S]*?error instanceof CacheReadinessError[\s\S]*?return cacheReadinessResponse\(error\);/,
+  "refresh_data formats cache readiness failures",
+);
 
 for (const term of [
   'schema_version: "workspace_snapshot.v1"',

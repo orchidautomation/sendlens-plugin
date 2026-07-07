@@ -17,7 +17,9 @@ import {
   MAX_INBOX_PLACEMENT_ANALYTICS_PAGES_PER_TEST,
 } from "./constants";
 import {
+  assertSelectedClientEnvMatchesProcess,
   appendSyncLog,
+  CacheReadinessError,
   closeDb,
   clearWorkspaceData,
   clearWorkspaceMetadata,
@@ -2882,7 +2884,10 @@ async function shouldSeedShadowFromLive(liveDbPath: string) {
         await run(db, "CHECKPOINT");
       }
       return shouldCopy;
-    } catch {
+    } catch (error) {
+      if (error instanceof CacheReadinessError) {
+        throw error;
+      }
       return false;
     } finally {
       if (db) closeDb(db);
@@ -2986,6 +2991,7 @@ async function refreshWorkspaceAtomicallyWithProviderMode(options: RefreshOption
     `.${path.basename(liveDbPath)}.refreshing`,
   );
 
+  assertSelectedClientEnvMatchesProcess();
   await fs.mkdir(path.dirname(liveDbPath), { recursive: true });
   await removeDuckDbFileSet(shadowDbPath);
 
