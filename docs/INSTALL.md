@@ -71,7 +71,7 @@ Set at least:
 SENDLENS_INSTANTLY_API_KEY=your_key
 ```
 
-Release installers ask for provider credentials once and persist them into the installed plugin config. If `SENDLENS_INSTANTLY_API_KEY` is already exported in your shell, current Pluxx installers reuse it and skip the Instantly secret prompt. They also prepare runtime dependencies and run the first workspace refresh during install.
+Release installers prepare runtime dependencies. Pluxx-owned runtime launchers resolve provider env when the MCP server starts: first from launch-folder env files for Codex, Claude Code, Cursor, or OpenCode, then from the inherited/global host environment. If `SENDLENS_INSTANTLY_API_KEY` is exported during install, the installer can run the first workspace refresh immediately; otherwise install still completes and the restarted host reads runtime env from its launch context.
 
 Provider setup paths:
 
@@ -97,11 +97,7 @@ Smartlead uses a query-string access value, and setup output suppresses it in UR
 
 Smartlead inbox placement is unsupported in V1 because no checked equivalent read endpoint exists. Use `provider_capabilities` and `workspace_snapshot` warnings to explain that limitation; do not treat missing Smartlead inbox-placement rows as stale data or healthy placement.
 
-When you rerun the same curl command to update SendLens, the installer reuses the saved plugin config and does not ask for the Instantly key again. To force a new prompt:
-
-```bash
-curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | PLUXX_RECONFIGURE=1 bash
-```
+When you rerun the same curl command to update SendLens, the installer refreshes the global plugin bundle without baking one workspace's provider config into the installed plugin.
 
 Then build and install:
 
@@ -147,7 +143,7 @@ The doctor checks provider mode, provider credentials, env loading, runtime depe
 
 ## Demo Mode Without Production Credentials
 
-The public release curl installers optimize for real workspace analysis and ask for an Instantly API key up front. To prove the workflow without connecting a real outbound workspace, use a local/source install or an already-installed plugin with no API key configured, then run:
+To prove the workflow without connecting a real outbound workspace, use a local/source install or an installed plugin with no API key configured, then run:
 
 ```text
 /sendlens-setup
@@ -180,7 +176,7 @@ Reload your host:
 
 Expected startup behavior:
 
-- the release installer runs the first foreground refresh after the API key is saved
+- the release installer runs the first foreground refresh only when provider env is available during install
 - every new session triggers a fresh background refresh
 - the local cache updates in a few seconds
 - `refresh_status` reports the current session-start refresh

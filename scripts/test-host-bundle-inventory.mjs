@@ -151,6 +151,7 @@ async function assertHostFiles({ skills, commands, agents }) {
       ".mcp.json",
       "CLAUDE.md",
       "hooks/hooks.json",
+      "runtime/pluxx-mcp-env.mjs",
       "scripts/start-mcp.sh",
       "build/plugin/server.js",
       ...commonSkillFiles,
@@ -162,6 +163,7 @@ async function assertHostFiles({ skills, commands, agents }) {
       "AGENTS.md",
       "mcp.json",
       "hooks/hooks.json",
+      "runtime/pluxx-mcp-env.mjs",
       "scripts/start-mcp.sh",
       "build/plugin/server.js",
       ...commonSkillFiles,
@@ -176,6 +178,7 @@ async function assertHostFiles({ skills, commands, agents }) {
       ".codex/hooks.generated.json",
       "hooks/hooks.json",
       "hooks/pluxx-hook-command-1.mjs",
+      "runtime/pluxx-mcp-env.mjs",
       "scripts/start-mcp.sh",
       "build/plugin/server.js",
       ...commonSkillFiles,
@@ -185,6 +188,7 @@ async function assertHostFiles({ skills, commands, agents }) {
     opencode: [
       "package.json",
       "index.ts",
+      "runtime/pluxx-mcp-env.mjs",
       "scripts/start-mcp.sh",
       "build/plugin/server.js",
       ...commonSkillFiles,
@@ -468,12 +472,12 @@ async function assertExplicitHostDegradation() {
     ["docs/INSTALL.md", installDocs],
   ]) {
     assert(
-      /reuses? the saved plugin config/i.test(text),
-      `${relativePath}: expected release update flow to mention saved plugin config reuse`,
+      /launch-folder env files|folder where you launch/i.test(text),
+      `${relativePath}: expected release docs to explain launch-folder env resolution`,
     );
     assert(
-      /PLUXX_RECONFIGURE=1/.test(text),
-      `${relativePath}: expected release update flow to document forced reconfiguration`,
+      /inherited\/global host environment|inherited\/global environment/.test(text),
+      `${relativePath}: expected release docs to explain inherited/global env fallback`,
     );
   }
 }
@@ -489,9 +493,19 @@ async function assertNoCredentialsRequired() {
   for (const relativePath of credentialFiles) {
     const text = await readText(relativePath);
     assert(
-      text.includes("${SENDLENS_INSTANTLY_API_KEY}"),
-      `${relativePath}: expected placeholder Instantly API key reference`,
+      text.includes("pluxx-mcp-env.mjs"),
+      `${relativePath}: expected Pluxx runtime env launcher`,
     );
+    assert(
+      text.includes("SENDLENS_INSTANTLY_API_KEY"),
+      `${relativePath}: expected runtime Instantly env var name`,
+    );
+    if (!relativePath.includes("opencode")) {
+      assert(
+        !text.includes("${SENDLENS_INSTANTLY_API_KEY}"),
+        `${relativePath}: expected no materialized Instantly placeholder in host MCP env`,
+      );
+    }
     assert(
       !/instly_[A-Za-z0-9_-]{12,}|sk_[A-Za-z0-9_-]{12,}/.test(text),
       `${relativePath}: appears to contain a real credential instead of a placeholder`,
@@ -503,7 +517,11 @@ async function assertDemoModeContracts() {
   const config = await readText("pluxx.config.ts");
   assert(
     /key:\s*"instantly-api-key"[\s\S]*?required:\s*true/.test(config),
-    "pluxx.config.ts: Instantly API key userConfig must be required so release curl installers prompt once and persist it",
+    "pluxx.config.ts: Instantly API key userConfig must stay required for real refresh readiness while Pluxx keeps core-host stdio env runtime-inherited",
+  );
+  assert(
+    /launch-folder env files or the inherited host environment/.test(config),
+    "pluxx.config.ts: Instantly API key description must point to Pluxx runtime env resolution",
   );
   assert(
     /repository:\s*"https:\/\/github\.com\/orchidautomation\/sendlens-plugin"/.test(
@@ -582,8 +600,8 @@ async function assertInstallerFirstRefreshContract() {
     "scripts/bootstrap-runtime.sh: expected installer first refresh opt-out",
   );
   assert(
-    /\^0\.1\.26/.test(packageJson.devDependencies?.["@orchid-labs/pluxx"] ?? ""),
-    "package.json: expected Pluxx 0.1.26+ so generated installers preserve saved userConfig and stale cache guards on updates",
+    /\^0\.1\.27/.test(packageJson.devDependencies?.["@orchid-labs/pluxx"] ?? ""),
+    "package.json: expected Pluxx 0.1.27+ so generated installers use core-host runtime env launchers",
   );
   assert(
     /build\/plugin\/refresh-cli\.js/.test(bootstrap),

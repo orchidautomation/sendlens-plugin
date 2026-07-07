@@ -106,22 +106,17 @@ After installing, type this in your AI tool:
 ```
 
 It will walk you through connecting your account (or starting in demo mode) and confirm everything is ready.
-The release curl installers ask for your provider API key during install and store it with the installed plugin, so you do not need to export it every time you start Codex, Claude Code, Cursor, or OpenCode. If `SENDLENS_INSTANTLY_API_KEY` is already exported in your shell, the installer uses that value and skips the secret prompt.
-They also prepare local runtime dependencies and run the first workspace refresh before asking you to restart or reload the host.
-When you rerun the same curl command to update SendLens, the installer reuses the saved plugin config instead of asking for the API key again.
+The release curl installers prepare local runtime dependencies. Pluxx-owned runtime launchers resolve provider env when the MCP server starts: first from launch-folder env files for Codex, Claude Code, Cursor, or OpenCode, then from the inherited/global host environment.
+If `SENDLENS_INSTANTLY_API_KEY` is exported during install, the installer can run the first workspace refresh immediately. Otherwise install still completes, and SendLens uses the key from the launch folder or host environment when you restart or reload the host.
+When you rerun the same curl command to update SendLens, the installer refreshes the global plugin bundle without baking one workspace's provider config into the installed plugin.
 
-For noninteractive installs, export the key first:
+For noninteractive installs that should also run the first refresh, export the key first:
 
 ```bash
 export SENDLENS_INSTANTLY_API_KEY="your_instantly_api_key"
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | bash
 ```
 
-To force a fresh prompt and replace saved install config, set `PLUXX_RECONFIGURE=1` on the installer process:
-
-```bash
-curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | PLUXX_RECONFIGURE=1 bash
-```
 
 ## Connect A Provider
 
@@ -131,7 +126,7 @@ SendLens supports provider-scoped read-only setup modes:
 - Smartlead-only: set `SENDLENS_PROVIDER=smartlead`, then provide `SENDLENS_SMARTLEAD_API_KEY`.
 - Both providers: set `SENDLENS_PROVIDER=all`, set `SENDLENS_CLIENT` for the shared local workspace, then provide both keys.
 
-The release installer stores provider config for you. Use env vars directly only for local development, custom launch scripts, or one-off overrides. Smartlead uses query-string access, so SendLens suppresses that value in setup output, logs, traces, and errors.
+Provider config is runtime env, not installed plugin state. For repeat use, put the variables in the folder where you launch your AI tool, or export them in the shell/global environment that starts the host. Smartlead uses query-string access, so SendLens suppresses that value in setup output, logs, traces, and errors.
 
 Smartlead V1 is read-only. SendLens can refresh Smartlead campaign, account, lead, analytics, and bounded message-history evidence where the provider exposes those surfaces. It does not add Smartlead write actions, webhook management, campaign mutation, lead mutation, account mutation, or email send paths. Smartlead inbox placement is explicitly unsupported in V1 because no checked equivalent read endpoint exists; empty inbox-placement rows are not evidence that Smartlead sender placement is healthy.
 
@@ -196,7 +191,7 @@ claude
 
 Do not paste API keys into chat. If you change keys, restart or reload the host before asking SendLens to refresh.
 
-Want to try SendLens without connecting Instantly? Demo mode is still available from a local/source install or an already-installed plugin with no API key configured. The public release curl installers optimize for real workspace analysis and ask for the Instantly API key up front.
+Want to try SendLens without connecting Instantly? Demo mode is available from a local/source install or an installed plugin with no API key configured.
 
 Demo results are synthetic. They are useful for seeing the experience, not for judging a real campaign or customer. Seeding demo data does not delete real workspace rows from the local cache; it activates a synthetic workspace named `demo_workspace`, and a real `refresh_data` later switches active analysis back to live Instantly data.
 

@@ -73,7 +73,7 @@ export default definePlugin({
       key: "instantly-api-key",
       title: "Instantly API Key",
       description:
-        "Bearer token for read-only Instantly workspace access. The release installer prompts once and persists it into the installed plugin.",
+        "Provider value for read-only Instantly workspace access. Pluxx resolves it at MCP runtime from launch-folder env files or the inherited host environment; installers must not store the value.",
       type: "secret",
       required: true,
       envVar: "SENDLENS_INSTANTLY_API_KEY",
