@@ -31,6 +31,11 @@ export type RefreshStatus = {
   source?: "session_start" | "manual";
   lastRefreshScope?: RefreshScopeType;
   refreshScope?: RefreshScope;
+  partialFailures?: Array<{
+    provider: "instantly" | "smartlead";
+    refreshScope: RefreshScope;
+    message: string;
+  }>;
   pid?: number;
   workspaceId?: string | null;
   startedAt?: string | null;

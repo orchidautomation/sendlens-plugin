@@ -3060,7 +3060,10 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
       }
 
       const summaries = [];
-      const scopedMisses: string[] = [];
+      const scopedMisses: Array<{
+        provider: "instantly" | "smartlead";
+        message: string;
+      }> = [];
       const configuredProviderCount = Number(instantlyConfigured) + Number(smartleadConfigured);
       const instantlyOptions = refreshOptionsForProvider(options, "instantly");
       if (instantlyConfigured && instantlyOptions) {
@@ -3073,7 +3076,10 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
           ) {
             throw error;
           }
-          scopedMisses.push("instantly");
+          scopedMisses.push({
+            provider: "instantly",
+            message: error instanceof Error ? error.message : String(error),
+          });
         }
       }
       const smartleadOptions = refreshOptionsForProvider(options, "smartlead");
@@ -3087,11 +3093,15 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
           ) {
             throw error;
           }
-          scopedMisses.push("smartlead");
+          scopedMisses.push({
+            provider: "smartlead",
+            message: error instanceof Error ? error.message : String(error),
+          });
         }
       }
       if (summaries.length === 0) {
         if (scopedMisses.length > 0) {
+          const missedProviders = scopedMisses.map((miss) => miss.provider);
           await writeRefreshStatus({
             status: "failed",
             source: options.source ?? "manual",
@@ -3102,10 +3112,10 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
               failedScopedLookup: true,
             }),
             endedAt: new Date().toISOString(),
-            message: `No campaigns matched the requested refresh scope across configured providers: ${scopedMisses.join(", ")}.`,
+            message: `No campaigns matched the requested refresh scope across configured providers: ${missedProviders.join(", ")}.`,
           });
           throw new Error(
-            `No campaigns matched the requested refresh scope across configured providers: ${scopedMisses.join(", ")}.`,
+            `No campaigns matched the requested refresh scope across configured providers: ${missedProviders.join(", ")}.`,
           );
         }
         throw new Error(
@@ -3115,9 +3125,15 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
       const aggregateEndedAt = summaries[summaries.length - 1]?.last_refreshed_at ??
         new Date().toISOString();
       const aggregateWorkspaceId = summaries[summaries.length - 1]?.workspaceId ?? null;
-      const missSuffix = scopedMisses.length
-        ? ` Scoped lookup missed ${scopedMisses.join(", ")} and was skipped.`
-        : "";
+      const partialFailures = scopedMisses.map((miss) => ({
+        provider: miss.provider,
+        refreshScope: buildRefreshScope({
+          provider: miss.provider,
+          campaignIds: options.campaignIds,
+          failedScopedLookup: true,
+        }),
+        message: miss.message,
+      }));
       await writeRefreshStatus({
         status: "succeeded",
         source: options.source ?? (options.campaignIds?.length ? "manual" : "session_start"),
@@ -3131,7 +3147,10 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
         lastSuccessAt: aggregateEndedAt,
         currentCampaignId: null,
         currentCampaignName: null,
-        message: `Refresh completed for ${summaries.length} configured provider${summaries.length === 1 ? "" : "s"}.${missSuffix}`,
+        partialFailures: partialFailures.length ? partialFailures : undefined,
+        message: partialFailures.length
+          ? `All-provider scoped refresh completed for at least one configured provider; scoped lookup missed ${partialFailures.map((failure) => failure.provider).join(", ")}.`
+          : "All-provider refresh completed.",
       });
       return summaries[summaries.length - 1];
     }
