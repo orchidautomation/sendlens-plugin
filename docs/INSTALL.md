@@ -12,7 +12,7 @@ SendLens ships as native host bundles for:
 Install all supported hosts:
 
 ```bash
-bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --agents -y
+bash <(curl -fsSL https://sendlens.app/install.sh) --agents -y
 ```
 
 Or install one host:
@@ -20,25 +20,25 @@ Or install one host:
 Claude Code
 
 ```bash
-bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --claude-code -y
+bash <(curl -fsSL https://sendlens.app/install.sh) --claude-code -y
 ```
 
 Cursor
 
 ```bash
-bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --cursor -y
+bash <(curl -fsSL https://sendlens.app/install.sh) --cursor -y
 ```
 
 Codex
 
 ```bash
-bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --codex -y
+bash <(curl -fsSL https://sendlens.app/install.sh) --codex -y
 ```
 
 OpenCode
 
 ```bash
-bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --opencode -y
+bash <(curl -fsSL https://sendlens.app/install.sh) --opencode -y
 ```
 
 Direct GitHub installers also work:

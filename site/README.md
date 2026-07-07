@@ -31,6 +31,6 @@ The live site is deployed on Vercel and currently serves:
 
 - `sendlens.app`
 - `app.sendlens.app`
-- `sendlens.orchidlabs.dev/install.sh` redirects to the latest GitHub Release installer when the domain is attached to this Vercel project
+- `sendlens.app/install.sh` redirects to the latest GitHub Release installer
 
 The waitlist form writes submissions to Vercel Blob.
