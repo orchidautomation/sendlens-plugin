@@ -973,6 +973,13 @@ await fs.writeFile(
   JSON.stringify({
     status: "succeeded",
     source: "manual",
+    lastRefreshScope: "provider_workspace",
+    refreshScope: {
+      type: "provider_workspace",
+      label: "Provider-scoped workspace refresh for instantly.",
+      provider: "instantly",
+      workspaceFreshness: "provider_workspace",
+    },
     lastSuccessAt: new Date().toISOString(),
     campaignsTotal: 8,
     campaignsProcessed: 8,
@@ -990,9 +997,43 @@ const doctorReport = await buildSetupDoctorReport();
 assert.equal(doctorReport.cache_freshness.status, "succeeded");
 assert.equal(doctorReport.cache_freshness.age_seconds < 60, true);
 assert.match(doctorReport.cache_freshness.label, /just now/);
+assert.equal(doctorReport.cache_freshness.last_refresh_scope, "provider_workspace");
+assert.equal(doctorReport.cache_freshness.workspace_freshness, "provider_workspace");
 assert.equal(doctorReport.capabilities.live_refresh, true);
 assert.equal(doctorReport.capabilities.instantly_key_validated, true);
 assert.match(String(doctorReport.next_steps[0]), /Current cache freshness: just now/);
+
+await fs.writeFile(
+  path.join(statusRoot, "refresh-status.json"),
+  JSON.stringify({
+    status: "succeeded",
+    source: "manual",
+    lastRefreshScope: "campaign",
+    refreshScope: {
+      type: "campaign",
+      label: "Campaign-scoped refresh matched 1 of 1 requested campaigns.",
+      provider: "instantly",
+      requestedCampaignIds: ["campaign_1"],
+      campaignIds: ["campaign_1"],
+      campaignsMatched: 1,
+      workspaceFreshness: "scoped",
+    },
+    lastSuccessAt: new Date().toISOString(),
+    campaignsTotal: 1,
+    campaignsProcessed: 1,
+    dbPath: process.env.SENDLENS_DB_PATH,
+  }),
+);
+const scopedDoctorReport = await buildSetupDoctorReport();
+assert.equal(scopedDoctorReport.cache_freshness.status, "succeeded");
+assert.equal(scopedDoctorReport.cache_freshness.last_refresh_scope, "campaign");
+assert.equal(scopedDoctorReport.cache_freshness.workspace_freshness, "scoped");
+assert.match(scopedDoctorReport.cache_freshness.label, /just now/);
+assert.match(String(scopedDoctorReport.next_steps[0]), /last refresh was campaign-scoped/);
+assert.match(
+  scopedDoctorReport.checks.find((check) => check.name === "Refresh status")?.message ?? "",
+  /Campaign-scoped refresh matched 1 of 1 requested campaigns/,
+);
 globalThis.fetch = originalFetch;
 delete process.env.SENDLENS_INSTANTLY_API_KEY;
 delete process.env.SENDLENS_DB_PATH;

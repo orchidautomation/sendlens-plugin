@@ -4,9 +4,33 @@ import { isUnresolvedDbPath, resolveDbPath } from "./local-db";
 import { getRateLimitStats, type RateLimitStats } from "./instantly-client";
 import { resolveSourceProviderMode } from "./provider-config";
 
+export type RefreshScopeType =
+  | "workspace"
+  | "provider_workspace"
+  | "campaign"
+  | "failed_scoped_lookup";
+
+export type RefreshScopeFreshness =
+  | "workspace"
+  | "provider_workspace"
+  | "scoped"
+  | "unknown";
+
+export type RefreshScope = {
+  type: RefreshScopeType;
+  label: string;
+  provider?: "instantly" | "smartlead" | "all" | null;
+  requestedCampaignIds?: string[];
+  campaignIds?: string[];
+  campaignsMatched?: number | null;
+  workspaceFreshness: RefreshScopeFreshness;
+};
+
 export type RefreshStatus = {
   status: "idle" | "running" | "succeeded" | "failed";
   source?: "session_start" | "manual";
+  lastRefreshScope?: RefreshScopeType;
+  refreshScope?: RefreshScope;
   pid?: number;
   workspaceId?: string | null;
   startedAt?: string | null;
@@ -20,6 +44,62 @@ export type RefreshStatus = {
   dbPath?: string;
   rateLimit?: RateLimitStats;
 };
+
+export function buildRefreshScope(options: {
+  provider?: RefreshScope["provider"];
+  campaignIds?: string[] | null;
+  campaignsMatched?: number | null;
+  failedScopedLookup?: boolean;
+}): RefreshScope {
+  const campaignIds = (options.campaignIds ?? []).filter(Boolean);
+  const provider = options.provider ?? "instantly";
+  const providerLabel = provider === "all"
+    ? "all configured providers"
+    : provider ?? "configured provider";
+
+  if (options.failedScopedLookup) {
+    return {
+      type: "failed_scoped_lookup",
+      label: `Failed scoped campaign lookup for ${providerLabel}.`,
+      provider,
+      requestedCampaignIds: campaignIds,
+      campaignIds,
+      campaignsMatched: 0,
+      workspaceFreshness: "unknown",
+    };
+  }
+
+  if (campaignIds.length > 0) {
+    const matched = options.campaignsMatched ?? null;
+    return {
+      type: "campaign",
+      label: matched == null
+        ? `Campaign-scoped refresh for ${campaignIds.length} requested campaigns.`
+        : `Campaign-scoped refresh matched ${matched} of ${campaignIds.length} requested campaigns.`,
+      provider,
+      requestedCampaignIds: campaignIds,
+      campaignIds,
+      campaignsMatched: matched,
+      workspaceFreshness: "scoped",
+    };
+  }
+
+  if (provider === "all") {
+    return {
+      type: "workspace",
+      label: "Full workspace refresh across all configured providers.",
+      provider,
+      workspaceFreshness: "workspace",
+    };
+  }
+
+  return {
+    type: "provider_workspace",
+    label: `Provider-scoped workspace refresh for ${providerLabel}.`,
+    provider,
+    workspaceFreshness: "provider_workspace",
+  };
+}
 
 function getStateDir() {
   const override = process.env.SENDLENS_STATE_DIR?.trim();
@@ -54,6 +134,9 @@ function normalizeStatus(status: RefreshStatus): RefreshStatus {
         ? status.dbPath
         : activeDbPath,
   };
+  if (normalized.refreshScope && !normalized.lastRefreshScope) {
+    normalized.lastRefreshScope = normalized.refreshScope.type;
+  }
 
   // Always attach a fresh rate-limit snapshot so callers can see
   // the current limiter state without re-querying the client.
