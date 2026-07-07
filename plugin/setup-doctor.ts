@@ -1,7 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DEMO_WORKSPACE_ID } from "./demo-workspace";
-import { getLastLoadedSendLensEnv, isUnresolvedEnvValue } from "./env";
+import {
+  getLastLoadedSendLensEnv,
+  getSelectedClientEnvIdentity,
+  isUnresolvedEnvValue,
+} from "./env";
 import { validateApiKey } from "./instantly-client";
 import {
   CacheReadinessError,
@@ -207,6 +211,9 @@ export async function buildSetupDoctorReport() {
       : null;
   const activeCacheIsDemo = refreshStatus.workspaceId === DEMO_WORKSPACE_ID;
   const envLoad = getLastLoadedSendLensEnv();
+  const selectedClientEnv = getSelectedClientEnvIdentity(
+    envLoad?.contextRoot ?? process.env.SENDLENS_CONTEXT_ROOT ?? process.cwd(),
+  );
   let cacheOwner: CacheOwnerMetadata | null = null;
   let cacheReadinessError: CacheReadinessError | null = null;
   if (dbExists) {
@@ -338,6 +345,30 @@ export async function buildSetupDoctorReport() {
       ? `Exists at ${dbPath}${dbSize ? ` (${dbSize})` : ""}.`
       : `No local DuckDB cache found at ${dbPath}.`,
   });
+  checks.push({
+    name: "Client env identity",
+    status: !selectedClient || selectedClientEnv?.apiKeyFingerprint === currentApiKeyFingerprint()
+      ? "pass"
+      : "fail",
+    message: selectedClient
+      ? selectedClientEnv
+        ? selectedClientEnv.apiKeyFingerprint === currentApiKeyFingerprint()
+          ? "Selected client env fingerprint matches the active process provider fingerprint."
+          : "Selected client env fingerprint does not match the active process provider fingerprint."
+        : "SENDLENS_CLIENT is set, but no matching client env file was loaded."
+      : "No SENDLENS_CLIENT selected.",
+    detail: JSON.stringify({
+      selected_client: selectedClient,
+      loaded_env_files: selectedClientEnv?.loaded ?? [],
+      configured_keys: selectedClientEnv?.configuredKeys ?? [],
+      process_api_key_fingerprint_prefix: fingerprintPrefix(currentApiKeyFingerprint()),
+      selected_client_env_fingerprint_prefix: selectedClientEnv?.apiKeyFingerprintPrefix ?? null,
+      recovery:
+        selectedClient && selectedClientEnv?.apiKeyFingerprint !== currentApiKeyFingerprint()
+          ? "Restart or reload the host so .env.clients/<client>.env overrides stale SendLens process env values, then rerun setup_doctor before refresh_data."
+          : null,
+    }),
+  });
   if (cacheOwner || cacheReadinessError) {
     checks.push({
       name: "Cache owner",
@@ -352,6 +383,10 @@ export async function buildSetupDoctorReport() {
         owner_mode: cacheOwner?.ownerMode ?? null,
         owner_api_key_fingerprint_prefix: fingerprintPrefix(cacheOwner?.apiKeyFingerprint),
         current_api_key_fingerprint_prefix: fingerprintPrefix(currentApiKeyFingerprint()),
+        selected_client_env_fingerprint_prefix:
+          cacheReadinessError?.clientEnvFingerprintPrefix ??
+          selectedClientEnv?.apiKeyFingerprintPrefix ??
+          null,
         context_root: cacheOwner?.contextRoot ?? null,
         db_path: cacheOwner?.dbPath ?? null,
         refreshed_at: cacheOwner?.refreshedAt ?? null,
@@ -474,8 +509,13 @@ export async function buildSetupDoctorReport() {
     nextSteps.push("Smartlead provider configuration is ready. Run refresh_data now to pull read-only Smartlead campaign, account, lead, analytics, and bounded message-history evidence.");
     nextSteps.push("No readable cache was found. Run refresh_data before real analysis, or call seed_demo_workspace only when you intentionally want synthetic proof data.");
   } else if (cacheReadinessError) {
-    nextSteps.push("Run refresh_data now to rebuild and stamp the local cache for the currently configured Instantly API key.");
-    nextSteps.push("Unset SENDLENS_INSTANTLY_API_KEY before starting the host only if you intentionally want to inspect the preserved legacy cache.");
+    if (cacheReadinessError.issue === "client_env_mismatch") {
+      nextSteps.push("Restart or reload the host so the selected client env file replaces stale SendLens process env values.");
+      nextSteps.push("After restart, rerun setup_doctor and only then run refresh_data for the selected client.");
+    } else {
+      nextSteps.push("Run refresh_data now to rebuild and stamp the local cache for the currently configured Instantly API key.");
+      nextSteps.push("Unset SENDLENS_INSTANTLY_API_KEY before starting the host only if you intentionally want to inspect the preserved legacy cache.");
+    }
   } else if (smartleadSelected && !instantlySelected && smartleadConfigReady) {
     nextSteps.push("Smartlead provider configuration is ready. Use workspace_snapshot against the existing local cache, or run refresh_data when you explicitly need a fresh Smartlead pull.");
   } else if (instantlySelected && !apiKeyConfigured && !demoMode && dbExists) {

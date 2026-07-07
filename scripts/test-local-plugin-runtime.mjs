@@ -842,7 +842,7 @@ process.env.SENDLENS_INSTANTLY_API_KEY = "ambient-key";
 delete process.env.SENDLENS_DB_PATH;
 delete process.env.SENDLENS_CLIENT;
 loadClientEnv(envRoot);
-assert.equal(process.env.SENDLENS_INSTANTLY_API_KEY, "ambient-key");
+assert.equal(process.env.SENDLENS_INSTANTLY_API_KEY, "client-key");
 assert.equal(
   process.env.SENDLENS_DB_PATH,
   path.join(os.homedir(), ".sendlens", "workspace-cache.duckdb"),

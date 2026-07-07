@@ -300,6 +300,32 @@ try {
     closeDb(db);
   }
 
+  process.env.SENDLENS_CLIENT = "sendoso";
+  await fs.mkdir(path.join(tempDir, ".env.clients"), { recursive: true });
+  await fs.writeFile(
+    path.join(tempDir, ".env.clients", "sendoso.env"),
+    "SENDLENS_INSTANTLY_API_KEY=sendoso-client-key-secret\n",
+  );
+  db = await openDb();
+  try {
+    await assert.rejects(
+      assertCacheReadableForCurrentEnv(db),
+      (error) =>
+        error instanceof CacheReadinessError &&
+        error.issue === "client_env_mismatch" &&
+        error.selectedClientEnv?.client === "sendoso" &&
+        !String(error.message).includes("sendoso-client-key-secret") &&
+        !String(error.message).includes("old-key-secret"),
+    );
+  } finally {
+    closeDb(db);
+  }
+  await assert.rejects(
+    refreshWorkspaceAtomically({ source: "manual" }),
+    (error) => error instanceof CacheReadinessError && error.issue === "client_env_mismatch",
+  );
+  delete process.env.SENDLENS_CLIENT;
+
   installFailingRefresh();
   await assert.rejects(
     refreshWorkspaceAtomically({ source: "manual" }),

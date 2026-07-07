@@ -470,8 +470,18 @@ function cacheReadinessResponse(error: CacheReadinessError) {
       refreshed_at: error.cacheOwner.refreshedAt,
     },
     expected_api_key_fingerprint_prefix: error.expectedFingerprintPrefix,
+    selected_client_env: error.selectedClientEnv
+      ? {
+        client: error.selectedClientEnv.client,
+        loaded_env_files: error.selectedClientEnv.loaded,
+        configured_keys: error.selectedClientEnv.configuredKeys,
+        api_key_fingerprint_prefix: error.clientEnvFingerprintPrefix,
+      }
+      : undefined,
     hint:
-      "Run refresh_data with the currently configured Instantly key to rebuild and stamp the local cache. If you intentionally want the old cached data, unset SENDLENS_INSTANTLY_API_KEY before starting the host.",
+      error.issue === "client_env_mismatch"
+        ? "Restart or reload the host so .env.clients/<client>.env replaces stale SendLens process env values, then run setup_doctor before refresh_data."
+        : "Run refresh_data with the currently configured Instantly key to rebuild and stamp the local cache. If you intentionally want the old cached data, unset SENDLENS_INSTANTLY_API_KEY before starting the host.",
   });
 }
 

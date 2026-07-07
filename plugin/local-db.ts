@@ -15,6 +15,7 @@ import {
   resolveSourceProviderMode,
   type SourceProviderMode,
 } from "./provider-config";
+import { getSelectedClientEnvIdentity, type SelectedClientEnvIdentity } from "./env";
 
 const DEFAULT_DB_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_DB_CONNECT_RETRY_MS = 250;
@@ -67,7 +68,11 @@ export type CacheOwnerMetadata = {
   refreshedAt: string | null;
 };
 
-export type CacheReadinessIssue = "schema_mismatch" | "legacy_unowned_cache" | "api_key_mismatch";
+export type CacheReadinessIssue =
+  | "schema_mismatch"
+  | "legacy_unowned_cache"
+  | "api_key_mismatch"
+  | "client_env_mismatch";
 
 export class CacheReadinessError extends Error {
   code = "cache_readiness_failed" as const;
@@ -75,6 +80,8 @@ export class CacheReadinessError extends Error {
   cacheOwner: CacheOwnerMetadata;
   expectedFingerprintPrefix: string | null;
   ownerFingerprintPrefix: string | null;
+  clientEnvFingerprintPrefix: string | null;
+  selectedClientEnv: SelectedClientEnvIdentity | null;
 
   constructor(
     issue: CacheReadinessIssue,
@@ -83,6 +90,8 @@ export class CacheReadinessError extends Error {
       cacheOwner: CacheOwnerMetadata;
       expectedFingerprintPrefix?: string | null;
       ownerFingerprintPrefix?: string | null;
+      clientEnvFingerprintPrefix?: string | null;
+      selectedClientEnv?: SelectedClientEnvIdentity | null;
     },
   ) {
     super(message);
@@ -91,6 +100,8 @@ export class CacheReadinessError extends Error {
     this.cacheOwner = details.cacheOwner;
     this.expectedFingerprintPrefix = details.expectedFingerprintPrefix ?? null;
     this.ownerFingerprintPrefix = details.ownerFingerprintPrefix ?? null;
+    this.clientEnvFingerprintPrefix = details.clientEnvFingerprintPrefix ?? null;
+    this.selectedClientEnv = details.selectedClientEnv ?? null;
   }
 }
 
@@ -2258,6 +2269,45 @@ export function fingerprintPrefix(fingerprint: string | undefined | null) {
   return fingerprint ? fingerprint.slice(0, 12) : null;
 }
 
+function selectedClientEnvIdentityForCurrentContext() {
+  const rootDir = normalizeNullable(process.env.SENDLENS_CONTEXT_ROOT) ?? process.cwd();
+  return getSelectedClientEnvIdentity(path.resolve(rootDir));
+}
+
+function emptyCacheOwnerMetadata(): CacheOwnerMetadata {
+  return {
+    schemaVersion: null,
+    apiKeyFingerprint: null,
+    workspaceId: null,
+    client: normalizeNullable(process.env.SENDLENS_CLIENT),
+    contextRoot: path.resolve(normalizeNullable(process.env.SENDLENS_CONTEXT_ROOT) ?? process.cwd()),
+    dbPath: resolveDbPath(),
+    ownerMode: null,
+    refreshedAt: null,
+  };
+}
+
+export function assertSelectedClientEnvMatchesProcess(cacheOwner = emptyCacheOwnerMetadata()) {
+  const expectedFingerprint = currentApiKeyFingerprint();
+  const selectedClientEnv = selectedClientEnvIdentityForCurrentContext();
+  if (
+    selectedClientEnv?.apiKeyFingerprint &&
+    expectedFingerprint &&
+    selectedClientEnv.apiKeyFingerprint !== expectedFingerprint
+  ) {
+    throw new CacheReadinessError(
+      "client_env_mismatch",
+      "The selected SendLens client env file fingerprint does not match the active process provider fingerprint. Restart or reload the host so the selected client env is loaded before using workspace_snapshot or refresh_data.",
+      {
+        cacheOwner,
+        expectedFingerprintPrefix: fingerprintPrefix(expectedFingerprint),
+        clientEnvFingerprintPrefix: selectedClientEnv.apiKeyFingerprintPrefix,
+        selectedClientEnv,
+      },
+    );
+  }
+}
+
 function cacheOwnerMode() {
   const demoMode = normalizeNullable(process.env.SENDLENS_DEMO_MODE)?.toLowerCase();
   if (demoMode === "1" || demoMode === "true" || demoMode === "yes") {
@@ -2334,6 +2384,8 @@ export async function getCacheReadiness(
   conn: DuckDBConnection,
 ): Promise<{ readable: true; owner: CacheOwnerMetadata; warning?: string }> {
   const owner = await getCacheOwnerMetadata(conn);
+  assertSelectedClientEnvMatchesProcess(owner);
+
   if (owner.schemaVersion && owner.schemaVersion !== CURRENT_CACHE_SCHEMA_VERSION) {
     throw new CacheReadinessError(
       "schema_mismatch",
@@ -2385,6 +2437,7 @@ export async function assertCacheReadableForCurrentEnv(conn: DuckDBConnection) {
 export async function shouldCopyLiveCacheForRefresh(conn: DuckDBConnection) {
   const owner = await getCacheOwnerMetadata(conn);
   const expectedFingerprint = currentApiKeyFingerprint();
+  assertSelectedClientEnvMatchesProcess(owner);
   if (owner.schemaVersion && owner.schemaVersion !== CURRENT_CACHE_SCHEMA_VERSION) {
     return false;
   }
