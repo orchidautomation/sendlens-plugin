@@ -25,6 +25,7 @@ Pluxx generates these assets for SendLens:
 - `install-cursor.sh`
 - `install-codex.sh`
 - `install-opencode.sh`
+- `install.sh`
 - `install-all.sh`
 - `release-manifest.json`
 - `SHA256SUMS.txt`
@@ -90,9 +91,12 @@ The GitHub Actions release workflow will then:
 - this repo does not publish an npm package today
 - the public distribution surface is GitHub Releases
 - direct installer URLs should always point at `/releases/latest/download/...`
+- the hosted install URL should serve `https://sendlens.orchidlabs.dev/install.sh` as a redirect to the latest GitHub Release `install.sh` asset
 
 ## Typical Download Links
 
+- `https://sendlens.orchidlabs.dev/install.sh`
+- `https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install.sh`
 - `https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-all.sh`
 - `https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-claude-code.sh`
 - `https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-cursor.sh`

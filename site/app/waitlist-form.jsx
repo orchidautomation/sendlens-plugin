@@ -4,14 +4,19 @@ import { useMemo, useState } from "react";
 
 const INSTALL_COMMANDS = [
   {
+    host: "All hosts",
+    command:
+      "bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --agents -y"
+  },
+  {
     host: "Claude Code",
     command:
-      "curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-claude-code.sh | bash"
+      "bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --claude-code -y"
   },
   {
     host: "Codex",
     command:
-      "curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | bash"
+      "bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --codex -y"
   }
 ];
 
