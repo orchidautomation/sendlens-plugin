@@ -2332,7 +2332,7 @@ ORDER BY i_status DESC;`,
 FROM sendlens.reply_email_context
 WHERE campaign_id = '{{campaign_id}}'
   AND reply_email_i_status IN (1, -1, -2)
-GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
 ORDER BY newest_reply_received_at DESC NULLS LAST, reply_email_rows DESC
 LIMIT 150;`,
     notes: [

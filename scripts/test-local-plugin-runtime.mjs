@@ -479,6 +479,24 @@ for (const recipeId of [
   assert.ok(recipe, `${recipeId} should exist`);
   assert.doesNotMatch(recipe.sql, /^\s*(lead_email|reply_from_email|reply_body_text)\b/im);
 }
+const replyEmailContextFeedRecipe = replyRecipes.find((recipe) => recipe.id === "reply-email-context-feed");
+assert.ok(replyEmailContextFeedRecipe);
+const replyEmailContextFeedRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(replyEmailContextFeedRecipe.sql.replaceAll("{{campaign_id}}", "c1"), "ws_test"),
+);
+assert.equal(replyEmailContextFeedRows.length > 0, true);
+const coveredReplyEmailContextFeedRow = replyEmailContextFeedRows.find(
+  (row) => row.context_gap_reason === "covered",
+);
+assert.ok(coveredReplyEmailContextFeedRow);
+assert.equal(coveredReplyEmailContextFeedRow.campaign_id, "c1");
+assert.equal(Number(coveredReplyEmailContextFeedRow.reply_email_rows), 1);
+assert.equal(Number(coveredReplyEmailContextFeedRow.matched_leads), 1);
+for (const row of replyEmailContextFeedRows) {
+  assert.ok(!("lead_email" in row));
+  assert.ok(!("reply_body_text" in row));
+}
 const icpRecipes = getQueryRecipes("icp-signals");
 const leadListSourceRecipe = icpRecipes.find((recipe) => recipe.id === "lead-list-source-quality");
 assert.ok(leadListSourceRecipe);
