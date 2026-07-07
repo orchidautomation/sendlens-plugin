@@ -51,6 +51,7 @@ const ANALYZE_DATA_ROW_LIMIT = 1_000;
 const REPLY_CONTEXT_SCAN_LIMIT = 500;
 const RENDERED_OUTBOUND_SAMPLE_LIMIT = 25;
 const SCOPED_SNAPSHOT_CAMPAIGN_LIMIT = 100;
+const RENDERED_OUTBOUND_REDACTED_PREVIEW_LIMIT = 3;
 const PLUXX_READINESS_FOLLOWUP = [
   "Temporary SendLens readiness gate in effect.",
   "If startup refresh is still running, this tool may wait briefly for the local snapshot before answering.",
@@ -147,6 +148,38 @@ function sqlNumberList(values: number[]) {
 
 function uniqueStrings(values: string[]) {
   return [...new Set(values.filter(Boolean))];
+}
+
+function numberFromRowValue(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function compactPreview(value: unknown, maxChars = 160) {
+  if (typeof value !== "string") return null;
+  const compacted = value.replace(/\s+/g, " ").trim();
+  if (!compacted) return null;
+  return compacted.length > maxChars
+    ? `${compacted.slice(0, maxChars).trimEnd()}...`
+    : compacted;
+}
+
+function renderedOutboundRedactedPreview(rows: Array<Record<string, unknown>>) {
+  return rows.slice(0, RENDERED_OUTBOUND_REDACTED_PREVIEW_LIMIT).map((row) => ({
+    campaign_id: row.campaign_id ?? null,
+    campaign_source_id: row.campaign_source_id ?? null,
+    source_provider: row.source_provider ?? null,
+    step_resolved: row.step_resolved ?? null,
+    variant_resolved: row.variant_resolved ?? null,
+    sample_source: row.sample_source ?? null,
+    sent_at: row.sent_at ?? null,
+    rendered_subject_preview: compactPreview(row.rendered_subject, 120),
+    rendered_body_preview: compactPreview(row.rendered_body_text),
+    template_subject_preview: compactPreview(row.template_subject, 120),
+    template_body_preview: compactPreview(row.template_body_text),
+    recipient: "[redacted]",
+    sender: "[redacted]",
+  }));
 }
 
 function parseProviderQualifiedCampaignId(value: string) {
@@ -549,15 +582,20 @@ server.registerTool(
       [
         "Load and return one campaign's analysis context when the user has chosen a campaign and wants copy, ICP, reply outcome, or next-test diagnosis.",
         "Use this after workspace_snapshot or campaign ranking, not for broad workspace comparisons.",
-        "Returns campaign_overview, a stratified human_reply_sample, optional rendered_outbound_sample, output limits, warnings, and refresh/readiness metadata.",
-        "campaign_overview uses exact Instantly aggregates; human replies use lead-level reply outcome state; rendered outbound rows are locally reconstructed/sampled evidence, not exact delivered email bodies.",
+        "Returns campaign_overview, a stratified human_reply_sample, compact rendered outbound coverage/preview metadata, output limits, warnings, and refresh/readiness metadata.",
+        "Rendered outbound raw rows and the broad refresh result are opt-in so default responses stay compact and privacy-aware.",
+        "campaign_overview uses exact Instantly aggregates; human replies use lead-level reply outcome state; rendered outbound previews are locally reconstructed/sampled evidence, not exact delivered email bodies.",
       ].join(" "),
     inputSchema: {
       campaign_id: z.string().describe("Provider-qualified or native campaign ID to load."),
       include_rendered_outbound: z
         .boolean()
         .optional()
-        .describe("Whether to include locally reconstructed outbound copy for this campaign in the response."),
+        .describe("Whether to include raw locally reconstructed outbound rows. Defaults to false; the default response includes only compact redacted coverage/previews."),
+      include_refresh_metadata: z
+        .boolean()
+        .optional()
+        .describe("Whether to include the full refresh result. Defaults to false; the default response includes scoped refresh metadata only."),
       max_nonreply_leads: z
         .number()
         .int()
@@ -576,7 +614,8 @@ server.registerTool(
   },
   async ({
     campaign_id,
-    include_rendered_outbound = true,
+    include_rendered_outbound = false,
+    include_refresh_metadata = false,
     max_nonreply_leads = 350,
     reply_bucket_limit = 10,
   }) => {
@@ -643,11 +682,21 @@ server.registerTool(
            LIMIT ${RENDERED_OUTBOUND_SAMPLE_LIMIT}`,
         )
         : [];
+      const renderedCountRows = await query(
+        db,
+        `SELECT COUNT(*) AS sampled_row_count
+         FROM sendlens.rendered_outbound_context
+         WHERE workspace_id = '${workspaceSafe}'
+           AND ${campaignIdFilterSql("campaign_id", evidenceCampaignIds)}`,
+      );
 
       const replyRowsTruncated = replyRows.length > REPLY_CONTEXT_SCAN_LIMIT;
       const replySample = stratifyHumanReplies(
         replyRows.slice(0, REPLY_CONTEXT_SCAN_LIMIT),
         reply_bucket_limit,
+      );
+      const renderedSampledRowCount = numberFromRowValue(
+        renderedCountRows[0]?.sampled_row_count,
       );
       const warnings: string[] = [];
       if (replyRowsTruncated) {
@@ -655,25 +704,50 @@ server.registerTool(
           `Reply context scan was truncated to the ${REPLY_CONTEXT_SCAN_LIMIT} most recent rows before stratified sampling. Narrow the campaign question or use analyze_data for a tighter slice.`,
         );
       }
-      if (include_rendered_outbound) {
+      warnings.push(
+        "Campaign overview metrics are exact local rollups; reply samples are bounded lead-level samples.",
+      );
+      warnings.push(
+        "Rendered outbound evidence is locally reconstructed sample evidence, not byte-for-byte delivered email text.",
+      );
+      if (!include_rendered_outbound && renderedSampledRowCount > 0) {
         warnings.push(
-          "Rendered outbound rows are locally reconstructed sample evidence, not byte-for-byte delivered email text.",
+          "Raw rendered outbound rows are omitted by default. Set include_rendered_outbound=true only when authorized operator diagnosis needs recipient-level reconstructed rows.",
         );
       }
       if (cacheWarnings) warnings.push(...cacheWarnings);
       return jsonResponse({
-        refreshed,
+        schema_version: "load_campaign_data.v2",
+        refreshed: include_refresh_metadata ? refreshed : undefined,
         demo_mode: isDemoMode() ? true : undefined,
         readiness: readinessPayload(readiness),
+        refresh_metadata: {
+          workspace_id: workspaceId,
+          requested_campaign_id: campaign_id,
+          loaded_campaign_id: loadedCampaignId,
+          refresh_campaign_ids: campaignScope.refreshCampaignIds,
+          refresh_provider: campaignScope.refreshProvider ?? null,
+          full_refresh_result_included: include_refresh_metadata,
+        },
         output_limits: {
           reply_context_scan_limit: REPLY_CONTEXT_SCAN_LIMIT,
           rendered_outbound_sample_limit: RENDERED_OUTBOUND_SAMPLE_LIMIT,
+          rendered_outbound_redacted_preview_limit: RENDERED_OUTBOUND_REDACTED_PREVIEW_LIMIT,
           response_max_chars: MCP_TEXT_RESPONSE_MAX_CHARS,
         },
         warnings: warnings.length > 0 ? warnings : undefined,
         campaign_overview: overviewRows[0] ?? null,
         human_reply_sample: replySample,
-        rendered_outbound_sample: renderedRows,
+        rendered_outbound_summary: {
+          sampled_row_count: renderedSampledRowCount,
+          raw_rows_included: include_rendered_outbound,
+          raw_row_limit: include_rendered_outbound ? RENDERED_OUTBOUND_SAMPLE_LIMIT : 0,
+          redacted_preview: renderedOutboundRedactedPreview(renderedRows),
+          redacted_fields: ["to_email", "from_email"],
+          detail_hint:
+            "Set include_rendered_outbound=true to include bounded raw reconstructed outbound rows, or use analyze_data for focused authorized queries.",
+        },
+        rendered_outbound_sample: include_rendered_outbound ? renderedRows : undefined,
       });
     } catch (error) {
       if (error instanceof CampaignIdScopeError) {
