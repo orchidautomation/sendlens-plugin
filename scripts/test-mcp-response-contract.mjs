@@ -15,7 +15,9 @@ const files = {
   recipes: "plugin/query-recipes.ts",
   constants: "plugin/constants.ts",
   replyTextContract: "plugin/reply-text-contract.ts",
+  campaignAnalysisResponse: "plugin/campaign-analysis-response.ts",
   replyFetchTest: "scripts/test-reply-fetch-contract.mjs",
+  campaignAnalysisResponseTest: "scripts/test-campaign-analysis-response.mjs",
   docs: "docs/MCP_RESPONSE_CONTRACT.md",
 };
 
@@ -275,6 +277,9 @@ for (const term of [
   "`hydration_coverage`",
   "`context_gap_counts`",
   "`reply_email_context_sample`",
+  "`reply_evidence_detail`",
+  "redacted by default",
+  "full reply bodies and raw email addresses require explicit opt-in",
   "recommended next recipes",
   "warnings, and output limits",
 ]) {
@@ -290,12 +295,17 @@ for (const term of [
   "hydration_coverage",
   "context_gap_counts",
   "reply_email_context_sample",
+  "reply_evidence_detail",
+  "full_reply_bodies",
+  "redacted_preview",
+  "redactCampaignAnalysisReplySample",
+  "reply_body_preview_max_chars",
   "reply_email_context_sample_limit",
   "reply-hydration-coverage",
   "reply-email-context-feed",
 ]) {
   assertIncludes(
-    `${source.server}\n${source.recipes}`,
+    `${source.server}\n${source.recipes}\n${source.campaignAnalysisResponse}\n${source.campaignAnalysisResponseTest}`,
     term,
     "prepare_campaign_analysis runtime/recipes",
   );

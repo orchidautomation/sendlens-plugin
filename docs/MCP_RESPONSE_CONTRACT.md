@@ -98,6 +98,8 @@ Where relevant, SendLens responses should include:
 - calls the same rate-conscious email lane as `fetch_reply_text`; it is not part of session-start refresh
 - backfills lead context through `/leads/list` contacts/ids after reply bodies are stored
 - returns `fetch_result`, `lead_context_backfill`, `hydration_coverage`, `context_gap_counts`, exact `campaign_overview`, bounded `reply_email_context_sample`, recommended next recipes, warnings, and output limits
+- `reply_email_context_sample` is redacted by default: full `reply_body_text`, raw email address fields, and long quoted bodies are omitted while short redacted `reply_body_preview` values preserve diagnostic signal
+- `reply_evidence_detail` defaults to `redacted_preview`; full reply bodies and raw email addresses require explicit opt-in with `full_reply_bodies`
 
 ## Runtime Regression Coverage
 
@@ -111,7 +113,7 @@ Run `npm run test:mcp-response-contract` when changing MCP tools, response field
 - `analysis_starters` recipe metadata, exactness labels, SQL, and notes
 - `analyze_data` rationale, row caps, truncation state, warnings, and rows
 - `fetch_reply_text` hydration result metadata, sample caps, and bounded reply samples
-- `prepare_campaign_analysis` premium-depth coverage, context gaps, backfill metadata, warnings, output limits, and bounded reply-email samples
+- `prepare_campaign_analysis` premium-depth coverage, context gaps, backfill metadata, warnings, output limits, and bounded redacted reply-email samples unless full evidence is explicitly requested
 
 ## Exactness Rules
 
