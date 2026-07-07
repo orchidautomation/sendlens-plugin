@@ -12,7 +12,7 @@ const {
   run,
   setActiveWorkspaceId,
 } = require("../build/plugin/local-db.js");
-const { getQueryRecipes } = require("../build/plugin/query-recipes.js");
+const { buildQueryRecipeResponse, getQueryRecipes } = require("../build/plugin/query-recipes.js");
 const {
   normalizeStepAnalyticsRows,
   toPlainText,
@@ -461,6 +461,26 @@ assert.equal(
   replyRecipes.some((recipe) => recipe.id === "fetched-reply-text-by-campaign" && recipe.sql.includes("reply_body_text")),
   true,
 );
+const campaignPerformanceIndex = buildQueryRecipeResponse({ topic: "campaign-performance" });
+assert.equal(campaignPerformanceIndex.output_shape, "compact_recipe_index");
+assert.equal(campaignPerformanceIndex.mode, "summary");
+assert.equal(campaignPerformanceIndex.recipe_count >= 10, true);
+assert.equal(campaignPerformanceIndex.returned_count, 10);
+assert.equal(campaignPerformanceIndex.page_size, 10);
+assert.equal(campaignPerformanceIndex.has_more, true);
+assert.equal(
+  campaignPerformanceIndex.recipes.every((recipe) => recipe.sql === undefined && recipe.sql_available === true),
+  true,
+);
+assert.equal(JSON.stringify(campaignPerformanceIndex).length < 25_000, true);
+const stepFatigueLookup = buildQueryRecipeResponse({
+  topic: "campaign-performance",
+  recipe_id: "step-fatigue-by-campaign",
+});
+assert.equal(stepFatigueLookup.output_shape, "single_recipe");
+assert.equal(stepFatigueLookup.returned_count, 1);
+assert.equal(stepFatigueLookup.recipes[0].id, "step-fatigue-by-campaign");
+assert.equal(stepFatigueLookup.recipes[0].sql.includes("{{campaign_id}}"), true);
 const icpRecipes = getQueryRecipes("icp-signals");
 const leadListSourceRecipe = icpRecipes.find((recipe) => recipe.id === "lead-list-source-quality");
 assert.ok(leadListSourceRecipe);
