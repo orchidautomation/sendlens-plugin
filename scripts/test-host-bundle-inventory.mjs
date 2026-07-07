@@ -175,7 +175,7 @@ async function assertHostFiles({ skills, commands, agents }) {
       ".codex/commands.generated.json",
       ".codex/hooks.generated.json",
       "hooks/hooks.json",
-      "hooks/pluxx-hook-command-1.sh",
+      "hooks/pluxx-hook-command-1.mjs",
       "scripts/start-mcp.sh",
       "build/plugin/server.js",
       ...commonSkillFiles,
@@ -397,8 +397,8 @@ async function assertExplicitHostDegradation() {
     "dist/codex/.codex/hooks.generated.json: expected hooks to be marked as bundled by Pluxx",
   );
   assert(
-    codexHooks.pluginBundleFeatureFlag === "plugin_hooks",
-    "dist/codex/.codex/hooks.generated.json: expected plugin-bundled hook activation to use plugin_hooks",
+    codexHooks.pluginBundleFeatureFlag === "hooks",
+    "dist/codex/.codex/hooks.generated.json: expected plugin-bundled hook activation to use hooks",
   );
   assert(
     codexHooks.generalFeatureFlag === "hooks",
@@ -413,8 +413,8 @@ async function assertExplicitHostDegradation() {
     "dist/codex/.codex/hooks.generated.json: expected explicit bundled-hook note",
   );
   assert(
-    /plugin_hooks\s*=\s*true/i.test(codexHooks.note ?? ""),
-    "dist/codex/.codex/hooks.generated.json: expected plugin_hooks enablement note",
+    /\[features\]\.hooks\s*=\s*true/i.test(codexHooks.note ?? ""),
+    "dist/codex/.codex/hooks.generated.json: expected hooks enablement note",
   );
   assert(
     /codex_hooks[^.]*deprecated/i.test(codexHooks.note ?? ""),
@@ -454,7 +454,7 @@ async function assertExplicitHostDegradation() {
     ["docs/TROUBLESHOOTING.md", troubleshootingDocs],
   ]) {
     assert(
-      /\[features\][\s\S]*plugin_hooks\s*=\s*true/.test(text),
+      /\[features\][\s\S]*hooks\s*=\s*true/.test(text),
       `${relativePath}: expected Codex plugin-bundled hook opt-in guidance`,
     );
     assert(
@@ -582,8 +582,8 @@ async function assertInstallerFirstRefreshContract() {
     "scripts/bootstrap-runtime.sh: expected installer first refresh opt-out",
   );
   assert(
-    /\^0\.1\.20/.test(packageJson.devDependencies?.["@orchid-labs/pluxx"] ?? ""),
-    "package.json: expected Pluxx 0.1.20+ so generated installers preserve saved userConfig on updates",
+    /\^0\.1\.26/.test(packageJson.devDependencies?.["@orchid-labs/pluxx"] ?? ""),
+    "package.json: expected Pluxx 0.1.26+ so generated installers preserve saved userConfig and stale cache guards on updates",
   );
   assert(
     /build\/plugin\/refresh-cli\.js/.test(bootstrap),

@@ -57,10 +57,10 @@ For Codex, plugin-bundled hooks have a separate opt-in. The release `install-cod
 
 ```toml
 [features]
-plugin_hooks = true
+hooks = true
 ```
 
-The general `hooks` feature defaults on; `codex_hooks` is deprecated and is not the plugin-bundled hook gate.
+Codex hook support uses `hooks`; `codex_hooks` is deprecated and should not be treated as the current hook feature key.
 
 Expected core tools:
 
