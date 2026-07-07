@@ -65,7 +65,22 @@ When the data isn't there yet, SendLens says *that*, instead of guessing — and
 
 Latest release: [release page](https://github.com/orchidautomation/sendlens-plugin/releases/latest)
 
-Copy-paste installers — pick the AI tool you use:
+Preferred installer:
+
+```bash
+bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --agents -y
+```
+
+Single-host installs:
+
+```bash
+bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --claude-code -y
+bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --cursor -y
+bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --codex -y
+bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --opencode -y
+```
+
+Direct GitHub installers also work:
 
 ```bash
 # Claude Code
@@ -84,11 +99,7 @@ curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/d
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-all.sh | bash
 ```
 
-The Codex installer checks whether plugin-bundled hooks are enabled and prompts to add `[features].hooks = true` when needed, so session-start refreshes can run after Codex is restarted. For noninteractive installs, use:
-
-```bash
-curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | PLUXX_CODEX_ENABLE_PLUGIN_HOOKS=1 bash
-```
+The Codex installer checks whether plugin-bundled hooks are enabled and prompts to add `[features].hooks = true` when needed, so session-start refreshes can run after Codex is restarted. The top-level `install.sh -y` path handles that noninteractively through Pluxx-owned installer behavior.
 
 Direct downloads:
 
@@ -114,7 +125,7 @@ For noninteractive installs that should also run the first refresh, export the k
 
 ```bash
 export SENDLENS_INSTANTLY_API_KEY="your_instantly_api_key"
-curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | bash
+bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --codex -y
 ```
 
 

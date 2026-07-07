@@ -9,43 +9,58 @@ SendLens ships as native host bundles for:
 
 ## Fastest Path
 
-Paste one of these:
+Install all supported hosts:
+
+```bash
+bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --agents -y
+```
+
+Or install one host:
 
 Claude Code
 
 ```bash
-curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-claude-code.sh | bash
+bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --claude-code -y
 ```
 
 Cursor
 
 ```bash
-curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-cursor.sh | bash
+bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --cursor -y
 ```
 
 Codex
 
 ```bash
-curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | bash
-```
-
-The Codex installer checks for plugin-bundled hooks and prompts to enable `[features].hooks = true` when needed. To approve that in a noninteractive install:
-
-```bash
-curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | PLUXX_CODEX_ENABLE_PLUGIN_HOOKS=1 bash
+bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --codex -y
 ```
 
 OpenCode
 
 ```bash
-curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-opencode.sh | bash
+bash <(curl -fsSL https://sendlens.orchidlabs.dev/install.sh) --opencode -y
 ```
 
-All supported hosts
+Direct GitHub installers also work:
 
 ```bash
+# Claude Code
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-claude-code.sh | bash
+
+# Cursor
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-cursor.sh | bash
+
+# Codex
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-codex.sh | bash
+
+# OpenCode
+curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-opencode.sh | bash
+
+# All supported hosts
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-all.sh | bash
 ```
+
+The Codex installer checks for plugin-bundled hooks and prompts to enable `[features].hooks = true` when needed. The top-level `install.sh -y` path handles that noninteractively through Pluxx-owned installer behavior.
 
 ## Bundle Downloads
 

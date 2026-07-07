@@ -124,6 +124,20 @@ function sameSet(actual, expected, label) {
   }
 }
 
+function satisfiesMinimumVersion(specifier, minimum) {
+  const actual = String(specifier || "").match(/(\d+)\.(\d+)\.(\d+)/);
+  const expected = String(minimum || "").match(/(\d+)\.(\d+)\.(\d+)/);
+  if (!actual || !expected) return false;
+
+  const actualParts = actual.slice(1).map(Number);
+  const expectedParts = expected.slice(1).map(Number);
+  for (let index = 0; index < expectedParts.length; index += 1) {
+    if (actualParts[index] > expectedParts[index]) return true;
+    if (actualParts[index] < expectedParts[index]) return false;
+  }
+  return true;
+}
+
 async function sourceInventory() {
   const skills = await listFiles("skills", (entry) => entry.isDirectory());
   const commands = (await listFiles(
@@ -600,8 +614,8 @@ async function assertInstallerFirstRefreshContract() {
     "scripts/bootstrap-runtime.sh: expected installer first refresh opt-out",
   );
   assert(
-    /\^0\.1\.27/.test(packageJson.devDependencies?.["@orchid-labs/pluxx"] ?? ""),
-    "package.json: expected Pluxx 0.1.27+ so generated installers use core-host runtime env launchers",
+    satisfiesMinimumVersion(packageJson.devDependencies?.["@orchid-labs/pluxx"], "0.1.28"),
+    "package.json: expected Pluxx 0.1.28+ so generated release assets include install.sh and core-host runtime env launchers",
   );
   assert(
     /build\/plugin\/refresh-cli\.js/.test(bootstrap),
