@@ -17,6 +17,8 @@ const {
 const { buildWorkspaceSummary } = require("../build/plugin/summary.js");
 
 const workspaceId = "mixed_provider_workspace";
+const instantlyOnlyWorkspaceId = "instantly_only_workspace";
+const smartleadEmptyWorkspaceId = "smartlead_configured_empty_workspace";
 
 process.env.SENDLENS_DB_PATH = path.join(
   os.tmpdir(),
@@ -74,6 +76,30 @@ try {
      ('${workspaceId}', 'smartlead:101', 'smartlead', '101', 'smartlead:101', '1001', '1001', 'shared@example.com', 'shared@example.com', 'example.com', 'Sam', 'Shared', 'Acme Health', 'acme.example', 'active', 1, 1, '2026-06-06 09:00:00'::TIMESTAMP, '2026-06-07 09:00:00'::TIMESTAMP, 'VP Ops', '{"segment":"health"}', 'reply_full', '2026-06-06 09:00:00'::TIMESTAMP)`,
   );
   await setActiveWorkspaceId(db, workspaceId, "fast");
+
+  await run(
+    db,
+    `INSERT OR REPLACE INTO sendlens.campaigns
+     (id, workspace_id, source_provider, provider_campaign_id, campaign_source_id, organization_id, name, status, daily_limit, open_tracking, link_tracking, synced_at)
+     VALUES
+     ('inst-only-1', '${instantlyOnlyWorkspaceId}', 'instantly', 'inst-only-1', 'instantly:inst-only-1', 'inst-only-org', 'Instantly Only Campaign', 'active', 20, true, true, CURRENT_TIMESTAMP),
+     ('inst-empty-1', '${smartleadEmptyWorkspaceId}', 'instantly', 'inst-empty-1', 'instantly:inst-empty-1', 'smartlead-empty-org', 'Smartlead Empty Control Campaign', 'active', 20, true, true, CURRENT_TIMESTAMP)`,
+  );
+  await run(
+    db,
+    `INSERT OR REPLACE INTO sendlens.campaign_analytics
+     (workspace_id, campaign_id, source_provider, provider_campaign_id, campaign_source_id, campaign_name, leads_count, contacted_count, emails_sent_count, reply_count_unique, bounced_count, total_opportunities, synced_at)
+     VALUES
+     ('${instantlyOnlyWorkspaceId}', 'inst-only-1', 'instantly', 'inst-only-1', 'instantly:inst-only-1', 'Instantly Only Campaign', 25, 10, 10, 1, 0, 0, CURRENT_TIMESTAMP),
+     ('${smartleadEmptyWorkspaceId}', 'inst-empty-1', 'instantly', 'inst-empty-1', 'instantly:inst-empty-1', 'Smartlead Empty Control Campaign', 25, 10, 10, 1, 0, 0, CURRENT_TIMESTAMP)`,
+  );
+  await run(
+    db,
+    `INSERT OR REPLACE INTO sendlens.provider_capabilities
+     (workspace_id, source_provider, capability, support_status, confidence, coverage_note, synced_at)
+     VALUES
+     ('${smartleadEmptyWorkspaceId}', 'smartlead', 'inbox_placement', 'unsupported', 'high', 'Smartlead was configured but returned no active campaigns for this fixture.', CURRENT_TIMESTAMP)`,
+  );
 
   const overview = await query(
     db,
@@ -139,6 +165,42 @@ try {
   assert.deepEqual(
     smartleadSummary.campaigns.map((row) => row.source_provider),
     ["smartlead"],
+  );
+
+  const smartleadNotConfiguredSummary = await buildWorkspaceSummary(
+    db,
+    instantlyOnlyWorkspaceId,
+    "smartlead",
+  );
+  assert.equal(smartleadNotConfiguredSummary.exact_metrics.active_campaign_count, 0);
+  assert.equal(smartleadNotConfiguredSummary.exact_metrics.total_sent, 0);
+  assert.ok(
+    !smartleadNotConfiguredSummary.warnings.some((warning) =>
+      warning.includes("unique reply rate is below 1%")
+    ),
+  );
+  assert.ok(
+    smartleadNotConfiguredSummary.warnings.some((warning) =>
+      warning.includes("Smartlead is not configured")
+    ),
+  );
+
+  const smartleadConfiguredEmptySummary = await buildWorkspaceSummary(
+    db,
+    smartleadEmptyWorkspaceId,
+    "smartlead",
+  );
+  assert.equal(smartleadConfiguredEmptySummary.exact_metrics.active_campaign_count, 0);
+  assert.equal(smartleadConfiguredEmptySummary.exact_metrics.total_sent, 0);
+  assert.ok(
+    !smartleadConfiguredEmptySummary.warnings.some((warning) =>
+      warning.includes("unique reply rate is below 1%")
+    ),
+  );
+  assert.ok(
+    smartleadConfiguredEmptySummary.warnings.some((warning) =>
+      warning.includes("Smartlead capability rows exist")
+    ),
   );
 
   const overlapRows = await query(
