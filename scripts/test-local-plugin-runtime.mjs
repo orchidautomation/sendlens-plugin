@@ -458,9 +458,45 @@ assert.equal(
 );
 const replyRecipes = getQueryRecipes("reply-patterns");
 assert.equal(
-  replyRecipes.some((recipe) => recipe.id === "fetched-reply-text-by-campaign" && recipe.sql.includes("reply_body_text")),
+  replyRecipes.some((recipe) => recipe.id === "fetched-reply-text-by-campaign" && recipe.sql.includes("reply_content_preview")),
   true,
 );
+assert.equal(
+  replyRecipes.some(
+    (recipe) =>
+      recipe.id === "fetched-reply-text-raw-detail-by-campaign" &&
+      recipe.sql.includes("reply_body_text") &&
+      recipe.notes.some((note) => /do not paste raw bodies or contact fields/i.test(note)),
+  ),
+  true,
+);
+for (const recipeId of [
+  "reply-email-context-feed",
+  "reply-feed",
+  "fetched-reply-text-by-campaign",
+]) {
+  const recipe = replyRecipes.find((candidate) => candidate.id === recipeId);
+  assert.ok(recipe, `${recipeId} should exist`);
+  assert.doesNotMatch(recipe.sql, /^\s*(lead_email|reply_from_email|reply_body_text)\b/im);
+}
+const replyEmailContextFeedRecipe = replyRecipes.find((recipe) => recipe.id === "reply-email-context-feed");
+assert.ok(replyEmailContextFeedRecipe);
+const replyEmailContextFeedRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(replyEmailContextFeedRecipe.sql.replaceAll("{{campaign_id}}", "c1"), "ws_test"),
+);
+assert.equal(replyEmailContextFeedRows.length > 0, true);
+const coveredReplyEmailContextFeedRow = replyEmailContextFeedRows.find(
+  (row) => row.context_gap_reason === "covered",
+);
+assert.ok(coveredReplyEmailContextFeedRow);
+assert.equal(coveredReplyEmailContextFeedRow.campaign_id, "c1");
+assert.equal(Number(coveredReplyEmailContextFeedRow.reply_email_rows), 1);
+assert.equal(Number(coveredReplyEmailContextFeedRow.matched_leads), 1);
+for (const row of replyEmailContextFeedRows) {
+  assert.ok(!("lead_email" in row));
+  assert.ok(!("reply_body_text" in row));
+}
 const campaignPerformanceIndex = buildQueryRecipeResponse({ topic: "campaign-performance" });
 assert.equal(campaignPerformanceIndex.output_shape, "compact_recipe_index");
 assert.equal(campaignPerformanceIndex.mode, "summary");
@@ -748,6 +784,19 @@ assert.equal(Number(stepFatigueRows[0].metric_value_pct), 4);
 assert.equal(Number(stepFatigueRows[1].previous_step_metric_value_pct), 4);
 assert.equal(Number(stepFatigueRows[1].metric_delta_from_previous_step_pct_points), -2.75);
 const copyRecipes = getQueryRecipes("copy-analysis");
+for (const recipeId of ["rendered-outbound-sample", "personalization-leak-audit"]) {
+  const recipe = copyRecipes.find((candidate) => candidate.id === recipeId);
+  assert.ok(recipe, `${recipeId} should exist`);
+  assert.doesNotMatch(recipe.sql, /^\s*(to_email|rendered_body_text|template_body_text)\b/im);
+}
+for (const recipeId of ["rendered-outbound-raw-detail", "personalization-leak-raw-detail"]) {
+  const recipe = copyRecipes.find((candidate) => candidate.id === recipeId);
+  assert.ok(recipe, `${recipeId} should exist`);
+  assert.equal(
+    recipe.notes.some((note) => /do not paste raw bodies or contact fields/i.test(note)),
+    true,
+  );
+}
 const leakRecipe = copyRecipes.find((recipe) => recipe.id === "personalization-leak-audit");
 assert.ok(leakRecipe);
 assert.match(leakRecipe.sql, /sendlens\.rendered_outbound_context/);
@@ -761,9 +810,23 @@ assert.equal(Number(leakRows[0].affected_campaigns), 1);
 assert.equal(Number(leakRows[0].affected_step_variants), 1);
 assert.equal(Number(leakRows[0].affected_leads), 1);
 assert.equal(Number(leakRows[0].affected_rendered_rows), 1);
-assert.equal(leakRows[0].sample_email, "b@example.com");
-assert.equal(Boolean(leakRows[0].subject_has_unresolved_token), true);
-assert.equal(Boolean(leakRows[0].body_has_unresolved_token), true);
+assert.equal(Number(leakRows[0].subject_token_rows), 1);
+assert.equal(Number(leakRows[0].body_token_rows), 1);
+assert.equal(
+  String(leakRows[0].example_rendered_subject_preview).includes("{{missing_first_name}}"),
+  true,
+);
+
+const rawLeakRecipe = copyRecipes.find((recipe) => recipe.id === "personalization-leak-raw-detail");
+assert.ok(rawLeakRecipe);
+const rawLeakRows = await runQuery(
+  db,
+  rawLeakRecipe.sql.replaceAll("{{campaign_id}}", "c1"),
+);
+assert.equal(rawLeakRows.length, 1);
+assert.equal(rawLeakRows[0].sample_email, "b@example.com");
+assert.equal(Boolean(rawLeakRows[0].subject_has_unresolved_token), true);
+assert.equal(Boolean(rawLeakRows[0].body_has_unresolved_token), true);
 
 const normalizedStepAnalytics = normalizeStepAnalyticsRows([
   {

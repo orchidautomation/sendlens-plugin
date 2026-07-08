@@ -21,10 +21,11 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 1. Scope to one campaign unless the user explicitly asks for a workspace-wide comparison.
 2. Pull `analysis_starters(topic="reply-patterns")`.
-3. Query `reply_context` first for reply outcome evidence.
+3. Start with safe-summary recipes such as `reply-feed`, `reply-email-context-feed`, and `fetched-reply-text-by-campaign` for cohorts, coverage, and previews.
 4. Run `prepare_campaign_analysis` when enough exact reply wording is needed for working/not-working or reply-quality diagnosis.
 5. Run `fetch_reply_text` for exactly one campaign only when a low-level manual fetch is enough.
 6. Separate positive, negative, and neutral outcomes from Instantly lead status before grouping by step or variant.
+7. Use raw-detail recipes only for local diagnosis; do not paste raw reply bodies, reply-from fields, lead emails, or contact fields into external artifacts.
 
 ## Output Shape
 
