@@ -23,6 +23,23 @@ export type QueryRecipe = {
   notes: string[];
 };
 
+export type QueryRecipeSummary = Omit<QueryRecipe, "sql" | "notes"> & {
+  sql_available: true;
+};
+
+export type QueryRecipeMode = "summary" | "full";
+
+export type QueryRecipeResponseOptions = {
+  topic?: string;
+  recipe_id?: string;
+  mode?: QueryRecipeMode;
+  page?: number;
+  page_size?: number;
+};
+
+const DEFAULT_RECIPE_PAGE_SIZE = 10;
+const MAX_RECIPE_PAGE_SIZE = 25;
+
 const QUERY_RECIPES: QueryRecipe[] = [
   {
     id: "workspace-overview",
@@ -3075,4 +3092,71 @@ export function getQueryRecipes(topic?: string): QueryRecipe[] {
 
   const normalized = topic.trim().toLowerCase();
   return QUERY_RECIPES.filter((recipe) => recipe.topic === normalized);
+}
+
+export function summarizeQueryRecipe(recipe: QueryRecipe): QueryRecipeSummary {
+  return {
+    id: recipe.id,
+    topic: recipe.topic,
+    title: recipe.title,
+    question: recipe.question,
+    exactness: recipe.exactness,
+    rationale: recipe.rationale,
+    sql_available: true,
+  };
+}
+
+export function getQueryRecipeById(recipeId: string, topic?: string): QueryRecipe | undefined {
+  const normalizedRecipeId = recipeId.trim().toLowerCase();
+  return getQueryRecipes(topic).find((recipe) => recipe.id.toLowerCase() === normalizedRecipeId);
+}
+
+export function buildQueryRecipeResponse(options: QueryRecipeResponseOptions = {}) {
+  const mode = options.mode ?? (options.recipe_id ? "full" : "summary");
+  const page = Math.max(1, Math.trunc(options.page ?? 1));
+  const pageSize = Math.min(
+    MAX_RECIPE_PAGE_SIZE,
+    Math.max(1, Math.trunc(options.page_size ?? DEFAULT_RECIPE_PAGE_SIZE)),
+  );
+
+  if (options.recipe_id) {
+    const recipe = getQueryRecipeById(options.recipe_id, options.topic);
+    return {
+      topic: options.topic ?? "all",
+      mode: "full" as const,
+      output_shape: "single_recipe" as const,
+      recipe_id: options.recipe_id,
+      recipe_count: recipe ? 1 : 0,
+      returned_count: recipe ? 1 : 0,
+      page: null,
+      page_size: null,
+      has_more: false,
+      next_page: null,
+      recipes: recipe ? [recipe] : [],
+      guidance:
+        "Exact recipe lookup returns full SQL. Replace placeholders before calling analyze_data.",
+    };
+  }
+
+  const recipes = getQueryRecipes(options.topic);
+  const startIndex = (page - 1) * pageSize;
+  const pagedRecipes = recipes.slice(startIndex, startIndex + pageSize);
+  const hasMore = startIndex + pageSize < recipes.length;
+
+  return {
+    topic: options.topic ?? "all",
+    mode,
+    output_shape: mode === "full" ? "paged_full_recipes" : "compact_recipe_index",
+    recipe_count: recipes.length,
+    returned_count: pagedRecipes.length,
+    page,
+    page_size: pageSize,
+    has_more: hasMore,
+    next_page: hasMore ? page + 1 : null,
+    recipes: mode === "full" ? pagedRecipes : pagedRecipes.map(summarizeQueryRecipe),
+    guidance:
+      mode === "full"
+        ? "Full SQL is included for this bounded page. Replace placeholders before calling analyze_data."
+        : "Compact summaries omit SQL. Pass recipe_id for one full recipe, mode='full' for a bounded SQL page, or next_page to continue.",
+  };
 }
