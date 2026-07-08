@@ -8,7 +8,7 @@ import {
   setActiveWorkspaceId,
   stampCacheOwner,
 } from "./local-db";
-import { writeRefreshStatus } from "./refresh-status";
+import { buildRefreshScope, writeRefreshStatus } from "./refresh-status";
 
 export const DEMO_WORKSPACE_ID = "demo_workspace";
 export const DEMO_CAMPAIGN_ALPHA_ID = "demo-alpha";
@@ -53,6 +53,8 @@ export async function seedDemoWorkspace() {
     await writeRefreshStatus({
       status: "succeeded",
       source: "manual",
+      lastRefreshScope: "workspace",
+      refreshScope: buildRefreshScope({ provider: "all" }),
       workspaceId: DEMO_WORKSPACE_ID,
       startedAt: startedAt.toISOString(),
       endedAt: endedAt.toISOString(),

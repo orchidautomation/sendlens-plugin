@@ -674,6 +674,32 @@ try {
   assert.equal(allProviderUnqualifiedInstantlyRefresh.workspaceId, "all_scoped_ws");
   assert.deepEqual(smartleadProviderCalls, [{ method: "listCampaigns", campaignId: null }]);
   assert.deepEqual(smartleadRequestedCampaignIds, []);
+  const allProviderPartialStatus = await readRefreshStatus();
+  assert.equal(allProviderPartialStatus.status, "succeeded");
+  assert.equal(allProviderPartialStatus.lastRefreshScope, "campaign");
+  assert.equal(allProviderPartialStatus.refreshScope.type, "campaign");
+  assert.equal(allProviderPartialStatus.refreshScope.provider, "all");
+  assert.equal(allProviderPartialStatus.refreshScope.workspaceFreshness, "scoped");
+  assert.match(
+    allProviderPartialStatus.message,
+    /scoped lookup missed smartlead/,
+  );
+  assert.deepEqual(
+    allProviderPartialStatus.partialFailures?.map((failure) => ({
+      provider: failure.provider,
+      type: failure.refreshScope.type,
+      workspaceFreshness: failure.refreshScope.workspaceFreshness,
+      message: failure.message,
+    })),
+    [
+      {
+        provider: "smartlead",
+        type: "failed_scoped_lookup",
+        workspaceFreshness: "unknown",
+        message: "No Smartlead campaigns matched the requested refresh scope.",
+      },
+    ],
+  );
   resetSmartleadProviderTracking();
 
   process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-explicit-smartlead-miss.duckdb");
