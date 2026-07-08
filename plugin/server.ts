@@ -235,6 +235,7 @@ function loadCampaignScope(campaignId: string) {
 
   return {
     refreshProvider: parsed?.provider,
+    selectorProvider: provider,
     refreshCampaignIds: [requestedId],
     queryCampaignIds,
   };
@@ -314,7 +315,11 @@ function campaignSelectorAmbiguityPayload(
 async function resolveCampaignSelector(
   db: Awaited<ReturnType<typeof getDb>>,
   workspaceId: string,
-  selector: { campaign_id?: string; campaign_name?: string },
+  selector: {
+    campaign_id?: string;
+    campaign_name?: string;
+    source_provider?: SourceProvider | null;
+  },
 ): Promise<CampaignResolution> {
   const hasCampaignId = Boolean(selector.campaign_id?.trim());
   const hasCampaignName = Boolean(selector.campaign_name?.trim());
@@ -333,12 +338,14 @@ async function resolveCampaignSelector(
     const requestedCampaignId = selector.campaign_id!.trim();
     const campaignSafe = sqlSafe(requestedCampaignId);
     const parsed = parseProviderQualifiedCampaignId(requestedCampaignId);
-    const whereSql = parsed
-      ? `COALESCE(c.source_provider, 'instantly') = '${sqlSafe(parsed.provider)}'
+    const providerScope = parsed?.provider ?? selector.source_provider ?? null;
+    const nativeCampaignId = parsed?.nativeId ?? requestedCampaignId;
+    const whereSql = providerScope
+      ? `COALESCE(c.source_provider, 'instantly') = '${sqlSafe(providerScope)}'
           AND (
-            c.id = '${sqlSafe(storedCampaignIdForProvider(parsed.provider, parsed.nativeId))}'
+            c.id = '${sqlSafe(storedCampaignIdForProvider(providerScope, nativeCampaignId))}'
             OR c.id = '${campaignSafe}'
-            OR c.provider_campaign_id = '${sqlSafe(parsed.nativeId)}'
+            OR c.provider_campaign_id = '${sqlSafe(nativeCampaignId)}'
             OR c.campaign_source_id = '${campaignSafe}'
             OR ${campaignSourceIdSql("c")} = '${campaignSafe}'
           )`
@@ -643,6 +650,7 @@ server.registerTool(
 
       const resolved = await resolveCampaignSelector(db, workspaceId, {
         campaign_id,
+        source_provider: campaignScope.selectorProvider,
       });
       if (!resolved.ok) {
         return jsonResponse({
