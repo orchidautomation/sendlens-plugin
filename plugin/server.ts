@@ -29,7 +29,7 @@ import {
   resolveCampaignAnalysisDepth,
   type CampaignAnalysisDepth,
 } from "./campaign-analysis-depth";
-import { getQueryRecipes, QUERY_RECIPE_TOPICS } from "./query-recipes";
+import { buildQueryRecipeResponse, QUERY_RECIPE_TOPICS } from "./query-recipes";
 import { toReplyTextFetchResult } from "./reply-text-contract";
 import { readRefreshStatus } from "./refresh-status";
 import { buildSetupDoctorReport } from "./setup-doctor";
@@ -1341,30 +1341,50 @@ server.registerTool(
         "Return curated SendLens SQL recipes for common workspace-health, campaign-performance, copy, reply-pattern, ICP-signal, and tag questions.",
         "Use this before writing custom SQL when the user's question matches a known analysis path.",
         "Do not run recipe SQL blindly; replace placeholders like campaign_id, tag_name, or payload_key and preserve the recipe exactness notes in the final answer.",
-        "Returns recipe metadata, exact/sample/hybrid classification, SQL, and usage notes; it does not query the database.",
+        "By default returns a compact recipe index without SQL; pass recipe_id for one full recipe or mode='full' with page/page_size for a bounded SQL page.",
+        "Returns recipe metadata, exact/sample/hybrid classification, output-shape metadata, and SQL on demand; it does not query the database.",
       ].join(" "),
     inputSchema: {
       topic: z
         .enum(QUERY_RECIPE_TOPICS)
         .optional()
         .describe("Optional recipe topic filter."),
+      recipe_id: z
+        .string()
+        .optional()
+        .describe("Optional exact recipe id. When set, returns that recipe with full SQL."),
+      mode: z
+        .enum(["summary", "full"])
+        .optional()
+        .describe("summary returns a compact index without SQL; full returns bounded pages with SQL."),
+      page: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Optional 1-based page number for topic or all-recipes listings."),
+      page_size: z
+        .number()
+        .int()
+        .positive()
+        .max(25)
+        .optional()
+        .describe("Optional page size for listings. Maximum 25."),
     },
   },
-  async ({ topic }) => {
-    const recipes = getQueryRecipes(topic);
+  async ({ topic, recipe_id, mode, page, page_size }) => {
+    const response = buildQueryRecipeResponse({
+      topic,
+      recipe_id,
+      mode,
+      page,
+      page_size,
+    });
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify(
-            {
-              topic: topic ?? "all",
-              recipe_count: recipes.length,
-              recipes,
-            },
-            null,
-            2,
-          ),
+          text: JSON.stringify(response, null, 2),
         },
       ],
     };

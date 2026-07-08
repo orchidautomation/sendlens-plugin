@@ -202,15 +202,24 @@ for (const term of [
 for (const term of [
   "recipe metadata",
   "recipe `exactness`: `exact`, `sampled`, or `hybrid`",
-  "SQL with explicit placeholders",
+  "compact recipe index by default",
+  "`recipe_id` exact lookup",
+  "`mode=\"full\"` bounded pages with SQL",
   "notes the agent must preserve",
 ]) {
   assertIncludes(source.docs, term, "analysis_starters docs");
 }
 for (const term of [
   "topic",
+  "recipe_id",
+  "mode",
   "recipe_count",
+  "returned_count",
+  "output_shape",
+  "page_size",
+  "has_more",
   "recipes",
+  "sql_available",
   'exactness: "exact" | "sampled" | "hybrid"',
   "notes: string[]",
 ]) {
