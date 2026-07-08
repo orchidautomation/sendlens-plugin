@@ -15,7 +15,9 @@ const files = {
   recipes: "plugin/query-recipes.ts",
   constants: "plugin/constants.ts",
   replyTextContract: "plugin/reply-text-contract.ts",
+  campaignAnalysisResponse: "plugin/campaign-analysis-response.ts",
   replyFetchTest: "scripts/test-reply-fetch-contract.mjs",
+  campaignAnalysisResponseTest: "scripts/test-campaign-analysis-response.mjs",
   docs: "docs/MCP_RESPONSE_CONTRACT.md",
 };
 
@@ -323,6 +325,9 @@ for (const term of [
   "`hydration_coverage`",
   "`context_gap_counts`",
   "`reply_email_context_sample`",
+  "`reply_evidence_detail`",
+  "redacted by default",
+  "full reply bodies and raw email addresses require explicit opt-in",
   "recommended next recipes",
   "warnings, and output limits",
 ]) {
@@ -338,16 +343,32 @@ for (const term of [
   "hydration_coverage",
   "context_gap_counts",
   "reply_email_context_sample",
+  "reply_evidence_detail",
+  "full_reply_bodies",
+  "redacted_preview",
+  "redactCampaignAnalysisReplySample",
+  "reply_body_preview_max_chars",
   "reply_email_context_sample_limit",
+  "recommendedNextAnalysisRecipes",
   "reply-hydration-coverage",
   "reply-email-context-feed",
 ]) {
   assertIncludes(
-    `${source.server}\n${source.recipes}`,
+    `${source.server}\n${source.recipes}\n${source.campaignAnalysisResponse}\n${source.campaignAnalysisResponseTest}`,
     term,
     "prepare_campaign_analysis runtime/recipes",
   );
 }
+assertPattern(
+  source.server,
+  /const recommendedNextAnalysisRecipes =\s*reply_evidence_detail === "full_reply_bodies"[\s\S]*?\?\s*\[[\s\S]*?"reply-email-context-feed"[\s\S]*?\][\s\S]*?:\s*\[[\s\S]*?"reply-hydration-coverage"[\s\S]*?"campaign-evidence-coverage-audit"[\s\S]*?\]/,
+  "prepare_campaign_analysis only recommends raw reply feed in full evidence mode",
+);
+assertIncludes(
+  source.docs,
+  'reply-email-context-feed` is recommended only when `reply_evidence_detail="full_reply_bodies"`',
+  "prepare_campaign_analysis raw recipe recommendation docs",
+);
 
 for (const term of [
   "readiness",

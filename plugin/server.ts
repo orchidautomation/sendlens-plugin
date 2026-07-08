@@ -29,6 +29,10 @@ import {
   resolveCampaignAnalysisDepth,
   type CampaignAnalysisDepth,
 } from "./campaign-analysis-depth";
+import {
+  CAMPAIGN_ANALYSIS_REPLY_PREVIEW_MAX_CHARS,
+  redactCampaignAnalysisReplySample,
+} from "./campaign-analysis-response";
 import { buildQueryRecipeResponse, QUERY_RECIPE_TOPICS } from "./query-recipes";
 import { toReplyTextFetchResult } from "./reply-text-contract";
 import { readRefreshStatus } from "./refresh-status";
@@ -823,6 +827,12 @@ server.registerTool(
         .boolean()
         .optional()
         .describe("Include out-of-office status 0 in addition to requested/default statuses. Defaults to false."),
+      reply_evidence_detail: z
+        .enum(["redacted_preview", "full_reply_bodies"])
+        .optional()
+        .describe(
+          "Reply evidence detail returned in reply_email_context_sample. Defaults to redacted_preview, which omits full reply bodies and raw email addresses. Use full_reply_bodies only when private reply evidence is explicitly required.",
+        ),
     },
   },
   async ({
@@ -831,6 +841,7 @@ server.registerTool(
     analysis_depth,
     statuses,
     include_ooo = false,
+    reply_evidence_detail = "redacted_preview",
   }) => {
     const readiness = await waitForSessionSnapshot();
     if (readiness.timedOut) {
@@ -872,6 +883,15 @@ server.registerTool(
       if (isDemoMode()) {
         warnings.push(
           "Demo mode uses pre-seeded synthetic reply bodies and does not call Instantly.",
+        );
+      }
+      if (reply_evidence_detail === "full_reply_bodies") {
+        warnings.push(
+          "Explicit full reply evidence mode is enabled. reply_email_context_sample may include raw email addresses, full fetched reply bodies, and quoted thread content.",
+        );
+      } else {
+        warnings.push(
+          "Exact reply bodies may be fetched and stored locally for analysis coverage, but the default response redacts full reply bodies and raw email addresses. Set reply_evidence_detail to full_reply_bodies only when private reply evidence is explicitly required.",
         );
       }
 
@@ -1040,6 +1060,25 @@ server.registerTool(
           "At least one reply status hit the page cap before meeting the target. Treat status themes as partial coverage and continue at maximum depth before making strong claims.",
         );
       }
+      const replyEmailContextSample =
+        reply_evidence_detail === "full_reply_bodies"
+          ? contextRows
+          : redactCampaignAnalysisReplySample(contextRows);
+      const recommendedNextAnalysisRecipes =
+        reply_evidence_detail === "full_reply_bodies"
+          ? [
+            "reply-hydration-coverage",
+            "reply-email-context-feed",
+            "campaign-evidence-coverage-audit",
+            "campaign-daily-health-trend",
+            "campaign-funnel-quality",
+          ]
+          : [
+            "reply-hydration-coverage",
+            "campaign-evidence-coverage-audit",
+            "campaign-daily-health-trend",
+            "campaign-funnel-quality",
+          ];
 
       return jsonResponse({
         schema_version: "campaign_analysis_preparation.v1",
@@ -1069,17 +1108,16 @@ server.registerTool(
         },
         context_gap_counts: contextGapCounts,
         campaign_overview: overviewRows[0] ?? null,
-        reply_email_context_sample: contextRows,
-        recommended_next_analysis_recipes: [
-          "reply-hydration-coverage",
-          "reply-email-context-feed",
-          "campaign-evidence-coverage-audit",
-          "campaign-daily-health-trend",
-          "campaign-funnel-quality",
-        ],
+        reply_email_context_sample: replyEmailContextSample,
+        recommended_next_analysis_recipes: recommendedNextAnalysisRecipes,
         warnings: warnings.length > 0 ? warnings : undefined,
         output_limits: {
           reply_email_context_sample_limit: depth.contextSampleLimit,
+          reply_body_preview_max_chars:
+            reply_evidence_detail === "redacted_preview"
+              ? CAMPAIGN_ANALYSIS_REPLY_PREVIEW_MAX_CHARS
+              : undefined,
+          reply_evidence_detail,
           response_max_chars: MCP_TEXT_RESPONSE_MAX_CHARS,
         },
         readiness: readinessPayload(readiness),
