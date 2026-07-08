@@ -124,9 +124,13 @@ for (const term of [
 for (const term of [
   "provider-qualified or native campaign ID",
   "SENDLENS_PROVIDER=all` requires a provider-qualified campaign ID",
+  "scoped refresh metadata for the requested campaign",
+  "broad refresh result is only returned when `include_refresh_metadata=true`",
   "exact `campaign_overview`",
   "`human_reply_sample` grouped into positive, negative, and neutral buckets",
-  "optional `rendered_outbound_sample`",
+  "compact `rendered_outbound_summary`",
+  "optional raw `rendered_outbound_sample` only when `include_rendered_outbound=true`",
+  "the default response must not include recipient-level fields such as `to_email`, `from_email`, or raw rendered body rows",
   "output caps and reconstruction warnings",
 ]) {
   assertIncludes(source.docs, term, "load_campaign_data docs");
@@ -145,16 +149,51 @@ for (const term of [
   "load_campaign_data requires a non-empty campaign_id",
   "campaignIdFilterSql",
   "Provider-qualified or native campaign ID to load.",
+  "include_rendered_outbound = false",
+  "include_refresh_metadata = false",
+  "full_refresh_result_included",
   "campaign_overview",
   "human_reply_sample",
+  "rendered_outbound_summary",
   "rendered_outbound_sample",
+  "renderedPreviewRows",
+  "rendered_outbound_redacted_preview_limit",
+  "Raw rendered outbound rows are omitted by default",
+  "to_email",
+  "from_email",
   "reply_context_scan_limit",
   "rendered_outbound_sample_limit",
   "Reply context scan was truncated",
-  "Rendered outbound rows are locally reconstructed sample evidence",
+  "Rendered outbound evidence is locally reconstructed sample evidence",
 ]) {
   assertIncludes(source.server, term, "load_campaign_data runtime");
 }
+
+assertPattern(
+  source.server,
+  /rendered_outbound_sample:\s*include_rendered_outbound\s*\?\s*renderedRows\s*:\s*undefined/,
+  "load_campaign_data omits raw rendered outbound sample by default",
+);
+assertPattern(
+  source.server,
+  /const renderedPreviewRows = include_rendered_outbound[\s\S]*?SELECT\s+campaign_id,[\s\S]*?LIMIT \$\{RENDERED_OUTBOUND_REDACTED_PREVIEW_LIMIT\}/,
+  "load_campaign_data uses a bounded redacted preview query by default",
+);
+assertPattern(
+  source.server,
+  /redacted_preview:\s*renderedOutboundRedactedPreview\(renderedPreviewRows\)/,
+  "load_campaign_data summary preview is independent from raw rendered outbound inclusion",
+);
+assertPattern(
+  source.server,
+  /refreshed:\s*include_refresh_metadata\s*\?\s*refreshed\s*:\s*undefined/,
+  "load_campaign_data omits broad refresh result by default",
+);
+assertPattern(
+  source.server,
+  /redacted_fields:\s*\[\s*["']to_email["'],\s*["']from_email["']\s*\]/,
+  "load_campaign_data redacts private rendered outbound row fields in summary",
+);
 
 for (const term of [
   "Campaign selector matched multiple provider-qualified campaigns",
