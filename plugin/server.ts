@@ -1064,6 +1064,21 @@ server.registerTool(
         reply_evidence_detail === "full_reply_bodies"
           ? contextRows
           : redactCampaignAnalysisReplySample(contextRows);
+      const recommendedNextAnalysisRecipes =
+        reply_evidence_detail === "full_reply_bodies"
+          ? [
+            "reply-hydration-coverage",
+            "reply-email-context-feed",
+            "campaign-evidence-coverage-audit",
+            "campaign-daily-health-trend",
+            "campaign-funnel-quality",
+          ]
+          : [
+            "reply-hydration-coverage",
+            "campaign-evidence-coverage-audit",
+            "campaign-daily-health-trend",
+            "campaign-funnel-quality",
+          ];
 
       return jsonResponse({
         schema_version: "campaign_analysis_preparation.v1",
@@ -1094,13 +1109,7 @@ server.registerTool(
         context_gap_counts: contextGapCounts,
         campaign_overview: overviewRows[0] ?? null,
         reply_email_context_sample: replyEmailContextSample,
-        recommended_next_analysis_recipes: [
-          "reply-hydration-coverage",
-          "reply-email-context-feed",
-          "campaign-evidence-coverage-audit",
-          "campaign-daily-health-trend",
-          "campaign-funnel-quality",
-        ],
+        recommended_next_analysis_recipes: recommendedNextAnalysisRecipes,
         warnings: warnings.length > 0 ? warnings : undefined,
         output_limits: {
           reply_email_context_sample_limit: depth.contextSampleLimit,

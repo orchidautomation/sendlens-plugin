@@ -103,6 +103,7 @@ Where relevant, SendLens responses should include:
 - returns `fetch_result`, `lead_context_backfill`, `hydration_coverage`, `context_gap_counts`, exact `campaign_overview`, bounded `reply_email_context_sample`, recommended next recipes, warnings, and output limits
 - `reply_email_context_sample` is redacted by default: full `reply_body_text`, raw email address fields, and long quoted bodies are omitted while short redacted `reply_body_preview` values preserve diagnostic signal
 - `reply_evidence_detail` defaults to `redacted_preview`; full reply bodies and raw email addresses require explicit opt-in with `full_reply_bodies`
+- default recommended next recipes do not include raw reply-body feed recipes; `reply-email-context-feed` is recommended only when `reply_evidence_detail="full_reply_bodies"`
 
 ## Runtime Regression Coverage
 

@@ -349,6 +349,7 @@ for (const term of [
   "redactCampaignAnalysisReplySample",
   "reply_body_preview_max_chars",
   "reply_email_context_sample_limit",
+  "recommendedNextAnalysisRecipes",
   "reply-hydration-coverage",
   "reply-email-context-feed",
 ]) {
@@ -358,6 +359,16 @@ for (const term of [
     "prepare_campaign_analysis runtime/recipes",
   );
 }
+assertPattern(
+  source.server,
+  /const recommendedNextAnalysisRecipes =\s*reply_evidence_detail === "full_reply_bodies"[\s\S]*?\?\s*\[[\s\S]*?"reply-email-context-feed"[\s\S]*?\][\s\S]*?:\s*\[[\s\S]*?"reply-hydration-coverage"[\s\S]*?"campaign-evidence-coverage-audit"[\s\S]*?\]/,
+  "prepare_campaign_analysis only recommends raw reply feed in full evidence mode",
+);
+assertIncludes(
+  source.docs,
+  'reply-email-context-feed` is recommended only when `reply_evidence_detail="full_reply_bodies"`',
+  "prepare_campaign_analysis raw recipe recommendation docs",
+);
 
 for (const term of [
   "readiness",
