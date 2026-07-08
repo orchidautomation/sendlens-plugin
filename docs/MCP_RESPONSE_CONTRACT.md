@@ -60,6 +60,8 @@ Where relevant, SendLens responses should include:
 `load_campaign_data`
 
 - accepts a provider-qualified or native campaign ID; `SENDLENS_PROVIDER=all` requires a provider-qualified campaign ID
+- validates campaign selectors against the active local cache before refresh when possible; invalid selectors return `schema_version: "campaign_selector_error.v1"` with `selector`, `workspace_id`, and `suggested_lookup_path`
+- refresh result for the requested campaign
 - scoped refresh metadata for the requested campaign; the broad refresh result is only returned when `include_refresh_metadata=true`
 - exact `campaign_overview`
 - `human_reply_sample` grouped into positive, negative, and neutral buckets
@@ -118,7 +120,7 @@ Run `npm run test:mcp-response-contract` when changing MCP tools, response field
 
 - `workspace_snapshot` exact metrics, campaign rows, coverage, warnings, output limits, and readiness
 - `workspace_snapshot` provider-scoped/all-provider outputs, provider capability rows, cross-provider rate caveats, and unsupported Smartlead inbox placement limitations
-- `load_campaign_data` provider-qualified/native campaign handling, the `SENDLENS_PROVIDER=all` provider-qualified ID requirement, campaign overview, reply samples, rendered outbound reconstruction caveats, and output limits
+- `load_campaign_data` provider-qualified/native campaign handling, the `SENDLENS_PROVIDER=all` provider-qualified ID requirement, structured selector errors, campaign overview, reply samples, rendered outbound reconstruction caveats, and output limits
 - campaign selector ambiguity responses with provider-qualified matches
 - provider overlap-risk public views for sampled cross-provider duplicate email/domain/company exposure
 - `analysis_starters` recipe metadata, exactness labels, SQL, and notes

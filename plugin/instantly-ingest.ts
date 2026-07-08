@@ -41,7 +41,11 @@ import {
   reservoirSample,
   shouldUseFullRawIngest,
 } from "./sampling";
-import { buildRefreshScope, writeRefreshStatus } from "./refresh-status";
+import {
+  buildRefreshScope,
+  readRefreshStatus,
+  writeRefreshStatus,
+} from "./refresh-status";
 import { buildWorkspaceSummary } from "./summary";
 import { appendTraceLog } from "./debug-log";
 import {
@@ -2999,17 +3003,28 @@ async function refreshWorkspaceAtomicallyWithProviderMode(options: RefreshOption
     await fs.copyFile(liveDbPath, shadowDbPath);
   }
 
+  const previousRefreshStatus = options.campaignIds?.length
+    ? await readRefreshStatus()
+    : null;
   const previousDbPath = process.env.SENDLENS_DB_PATH;
   process.env.SENDLENS_DB_PATH = shadowDbPath;
   let summary;
   try {
-    summary = await refreshWorkspace(options);
-  } finally {
-    if (previousDbPath == null) {
-      delete process.env.SENDLENS_DB_PATH;
-    } else {
-      process.env.SENDLENS_DB_PATH = previousDbPath;
+    try {
+      summary = await refreshWorkspace(options);
+    } finally {
+      if (previousDbPath == null) {
+        delete process.env.SENDLENS_DB_PATH;
+      } else {
+        process.env.SENDLENS_DB_PATH = previousDbPath;
+      }
     }
+  } catch (error) {
+    if (previousRefreshStatus && isScopedCampaignMiss(error)) {
+      await removeDuckDbFileSet(shadowDbPath);
+      await writeRefreshStatus(previousRefreshStatus);
+    }
+    throw error;
   }
 
   if (await fileExists(shadowDbPath)) {

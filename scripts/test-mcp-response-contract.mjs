@@ -127,6 +127,8 @@ for (const term of [
 for (const term of [
   "provider-qualified or native campaign ID",
   "SENDLENS_PROVIDER=all` requires a provider-qualified campaign ID",
+  'schema_version: "campaign_selector_error.v1"',
+  "`selector`, `workspace_id`, and `suggested_lookup_path`",
   "scoped refresh metadata for the requested campaign",
   "broad refresh result is only returned when `include_refresh_metadata=true`",
   "exact `campaign_overview`",
@@ -148,6 +150,9 @@ for (const term of [
   "loadCampaignScope",
   "refreshProvider",
   "CampaignIdScopeError",
+  'schema_version: "campaign_selector_error.v1"',
+  "suggested_lookup_path",
+  "resolveCampaignSelector(db, workspaceId",
   "load_campaign_data requires a provider-qualified campaign_id when SENDLENS_PROVIDER=all",
   "load_campaign_data requires a non-empty campaign_id",
   "campaignIdFilterSql",

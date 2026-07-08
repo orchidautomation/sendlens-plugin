@@ -235,6 +235,7 @@ function loadCampaignScope(campaignId: string) {
 
   return {
     refreshProvider: parsed?.provider,
+    selectorProvider: provider,
     refreshCampaignIds: [requestedId],
     queryCampaignIds,
   };
@@ -311,10 +312,25 @@ function campaignSelectorAmbiguityPayload(
   };
 }
 
+function campaignResolutionFilterSql(resolved: Extract<CampaignResolution, { ok: true }>) {
+  return [
+    `source_provider = '${sqlSafe(resolved.source_provider)}'`,
+    `AND (`,
+    `  campaign_source_id = '${sqlSafe(resolved.campaign_source_id)}'`,
+    `  OR provider_campaign_id = '${sqlSafe(resolved.provider_campaign_id)}'`,
+    `  OR campaign_id = '${sqlSafe(resolved.campaign_id)}'`,
+    `)`,
+  ].join("\n");
+}
+
 async function resolveCampaignSelector(
   db: Awaited<ReturnType<typeof getDb>>,
   workspaceId: string,
-  selector: { campaign_id?: string; campaign_name?: string },
+  selector: {
+    campaign_id?: string;
+    campaign_name?: string;
+    source_provider?: SourceProvider | null;
+  },
 ): Promise<CampaignResolution> {
   const hasCampaignId = Boolean(selector.campaign_id?.trim());
   const hasCampaignName = Boolean(selector.campaign_name?.trim());
@@ -333,21 +349,23 @@ async function resolveCampaignSelector(
     const requestedCampaignId = selector.campaign_id!.trim();
     const campaignSafe = sqlSafe(requestedCampaignId);
     const parsed = parseProviderQualifiedCampaignId(requestedCampaignId);
-    const whereSql = parsed
-      ? `COALESCE(c.source_provider, 'instantly') = '${sqlSafe(parsed.provider)}'
+    const providerScope = parsed?.provider ?? selector.source_provider ?? null;
+    const nativeCampaignId = parsed?.nativeId ?? requestedCampaignId;
+    const whereSql = providerScope
+      ? `COALESCE(c.source_provider, 'instantly') = '${sqlSafe(providerScope)}'
           AND (
-            c.id = '${sqlSafe(storedCampaignIdForProvider(parsed.provider, parsed.nativeId))}'
+            c.id = '${sqlSafe(storedCampaignIdForProvider(providerScope, nativeCampaignId))}'
             OR c.id = '${campaignSafe}'
-            OR c.provider_campaign_id = '${sqlSafe(parsed.nativeId)}'
+            OR c.provider_campaign_id = '${sqlSafe(nativeCampaignId)}'
             OR c.campaign_source_id = '${campaignSafe}'
             OR ${campaignSourceIdSql("c")} = '${campaignSafe}'
           )`
-      : [
-          `c.id = '${campaignSafe}'`,
-          `OR c.provider_campaign_id = '${campaignSafe}'`,
-          `OR c.campaign_source_id = '${campaignSafe}'`,
-          `OR ${campaignSourceIdSql("c")} = '${campaignSafe}'`,
-        ].join("\n          ");
+      : `(
+            c.id = '${campaignSafe}'
+            OR c.provider_campaign_id = '${campaignSafe}'
+            OR c.campaign_source_id = '${campaignSafe}'
+            OR ${campaignSourceIdSql("c")} = '${campaignSafe}'
+          )`;
     campaignRows = await query(
       db,
       `SELECT
@@ -631,47 +649,69 @@ server.registerTool(
     let db: Awaited<ReturnType<typeof getDb>> | null = null;
     try {
       const campaignScope = loadCampaignScope(campaign_id);
+      await ensureDemoWorkspaceForRead();
+      db = await getDb();
+      const cacheWarnings = await ensureCacheReadable(db);
+      const workspaceId = await getActiveWorkspaceId(db);
+      if (!workspaceId) {
+        return jsonResponse({
+          error: "No active workspace is loaded. Run refresh_data() first.",
+        });
+      }
+
+      const resolved = await resolveCampaignSelector(db, workspaceId, {
+        campaign_id,
+        source_provider: campaignScope.selectorProvider,
+      });
+      if (!resolved.ok) {
+        return jsonResponse({
+          schema_version: "campaign_selector_error.v1",
+          ...resolved.payload,
+          workspace_id: workspaceId,
+          suggested_lookup_path:
+            "Call workspace_snapshot and use a returned campaign_source_id or campaign_id exactly.",
+        });
+      }
+      closeDb(db);
+      db = null;
+
       const refreshed = isDemoMode()
         ? await seedDemoWorkspace()
         : await refreshWorkspaceAtomically({
-          campaignIds: campaignScope.refreshCampaignIds,
+          campaignIds: [resolved.campaign_source_id],
           source: "manual",
-          provider: campaignScope.refreshProvider,
+          provider: campaignScope.refreshProvider ?? resolved.source_provider,
           forceHybrid: true,
           nonReplyLeadLimit: max_nonreply_leads,
         });
 
+      const refreshedWorkspaceId = refreshed.workspaceId ?? workspaceId;
       db = await getDb();
-      const cacheWarnings = await ensureCacheReadable(db);
-      const workspaceId = refreshed.workspaceId ?? (await getActiveWorkspaceId(db));
-      if (!workspaceId) {
+      if (!refreshedWorkspaceId) {
         return jsonResponse({
           error: "No active workspace is loaded after campaign load.",
         });
       }
 
-      const workspaceSafe = workspaceId.replace(/'/g, "''");
+      const workspaceSafe = refreshedWorkspaceId.replace(/'/g, "''");
+      const resolvedCampaignFilter = campaignResolutionFilterSql(resolved);
       const overviewRows = await query(
         db,
         `SELECT *
          FROM sendlens.campaign_overview
          WHERE workspace_id = '${workspaceSafe}'
-           AND ${campaignIdFilterSql("campaign_id", campaignScope.queryCampaignIds)}
-         ORDER BY ${campaignIdOrderSql("campaign_id", campaignScope.queryCampaignIds)}
+           AND ${resolvedCampaignFilter}
          LIMIT 1`,
       );
       const loadedCampaignId = typeof overviewRows[0]?.campaign_id === "string"
         ? String(overviewRows[0].campaign_id)
         : null;
-      const evidenceCampaignIds = loadedCampaignId
-        ? [loadedCampaignId]
-        : campaignScope.queryCampaignIds;
       const replyRows = await query(
         db,
         `SELECT *
          FROM sendlens.reply_context
          WHERE workspace_id = '${workspaceSafe}'
-           AND ${campaignIdFilterSql("campaign_id", evidenceCampaignIds)}
+           AND ${resolvedCampaignFilter}
          ORDER BY reply_at DESC NULLS LAST, lead_email
          LIMIT ${REPLY_CONTEXT_SCAN_LIMIT + 1}`,
       );
@@ -681,7 +721,7 @@ server.registerTool(
           `SELECT *
            FROM sendlens.rendered_outbound_context
            WHERE workspace_id = '${workspaceSafe}'
-             AND ${campaignIdFilterSql("campaign_id", evidenceCampaignIds)}
+             AND ${resolvedCampaignFilter}
            ORDER BY sent_at DESC NULLS LAST
            LIMIT ${RENDERED_OUTBOUND_SAMPLE_LIMIT}`,
         )
@@ -704,7 +744,7 @@ server.registerTool(
              template_body_text
            FROM sendlens.rendered_outbound_context
            WHERE workspace_id = '${workspaceSafe}'
-             AND ${campaignIdFilterSql("campaign_id", evidenceCampaignIds)}
+             AND ${resolvedCampaignFilter}
            ORDER BY sent_at DESC NULLS LAST
            LIMIT ${RENDERED_OUTBOUND_REDACTED_PREVIEW_LIMIT}`,
         );
@@ -713,7 +753,7 @@ server.registerTool(
         `SELECT COUNT(*) AS sampled_row_count
          FROM sendlens.rendered_outbound_context
          WHERE workspace_id = '${workspaceSafe}'
-           AND ${campaignIdFilterSql("campaign_id", evidenceCampaignIds)}`,
+           AND ${resolvedCampaignFilter}`,
       );
 
       const replyRowsTruncated = replyRows.length > REPLY_CONTEXT_SCAN_LIMIT;
@@ -751,8 +791,8 @@ server.registerTool(
           workspace_id: workspaceId,
           requested_campaign_id: campaign_id,
           loaded_campaign_id: loadedCampaignId,
-          refresh_campaign_ids: campaignScope.refreshCampaignIds,
-          refresh_provider: campaignScope.refreshProvider ?? null,
+          refresh_campaign_ids: [resolved.campaign_source_id],
+          refresh_provider: campaignScope.refreshProvider ?? resolved.source_provider,
           full_refresh_result_included: include_refresh_metadata,
         },
         output_limits: {
