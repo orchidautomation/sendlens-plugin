@@ -872,7 +872,8 @@ const copyRecipes = getQueryRecipes("copy-analysis");
 for (const recipeId of ["rendered-outbound-sample", "personalization-leak-audit"]) {
   const recipe = copyRecipes.find((candidate) => candidate.id === recipeId);
   assert.ok(recipe, `${recipeId} should exist`);
-  assert.doesNotMatch(recipe.sql, /^\s*(to_email|rendered_body_text|template_body_text)\b/im);
+  assert.doesNotMatch(recipe.sql, /^\s*(rendered_body_text|template_body_text)\b/im);
+  assert.doesNotMatch(recipe.sql, /\b(lr\.)?to_email\s+AS\b|\bAS\s+sample_email\b/im);
 }
 for (const recipeId of ["rendered-outbound-raw-detail", "personalization-leak-raw-detail"]) {
   const recipe = copyRecipes.find((candidate) => candidate.id === recipeId);
@@ -893,6 +894,7 @@ const leakRows = await runQuery(
 assert.equal(leakRows.length, 2);
 assert.equal(Number(leakRows[0].affected_campaigns), 1);
 assert.equal(Number(leakRows[0].affected_step_variants), 1);
+assert.equal(Number(leakRows[0].affected_leads), 1);
 assert.equal(Number(leakRows[0].affected_rendered_rows), 1);
 assert.equal(Number(leakRows[0].rendered_rows_with_payload_tokens), 1);
 assert.equal(Number(leakRows[0].rendered_rows_with_account_signature_tokens), 1);

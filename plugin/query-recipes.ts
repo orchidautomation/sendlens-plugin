@@ -2122,6 +2122,7 @@ LIMIT 50;`,
   SELECT
     campaign_id,
     campaign_name,
+    to_email,
     step_resolved,
     variant_resolved,
     left(COALESCE(rendered_subject, ''), 160) AS rendered_subject_preview,
@@ -2139,6 +2140,7 @@ LIMIT 50;`,
   SELECT
     campaign_id,
     campaign_name,
+    to_email,
     step_resolved,
     variant_resolved,
     left(COALESCE(rendered_subject, ''), 160) AS rendered_subject_preview,
@@ -2168,6 +2170,7 @@ leaked_rows AS (
   SELECT
     campaign_id,
     campaign_name,
+    to_email,
     step_resolved,
     variant_resolved,
     rendered_subject_preview,
@@ -2195,6 +2198,7 @@ leaked_rows AS (
   GROUP BY
     campaign_id,
     campaign_name,
+    to_email,
     step_resolved,
     variant_resolved,
     rendered_subject_preview,
@@ -2206,6 +2210,7 @@ rollup AS (
   SELECT
     COUNT(DISTINCT CASE WHEN payload_unresolved_token_count > 0 THEN campaign_id END) AS affected_campaigns,
     COUNT(DISTINCT CASE WHEN payload_unresolved_token_count > 0 THEN COALESCE(step_resolved, 'unknown') || ':' || COALESCE(variant_resolved, 'unknown') END) AS affected_step_variants,
+    COUNT(DISTINCT CASE WHEN payload_unresolved_token_count > 0 THEN to_email END) AS affected_leads,
     SUM(CASE WHEN payload_unresolved_token_count > 0 THEN 1 ELSE 0 END) AS affected_rendered_rows,
     SUM(CASE WHEN payload_unresolved_token_count > 0 THEN 1 ELSE 0 END) AS rendered_rows_with_payload_tokens,
     SUM(CASE WHEN account_signature_token_count > 0 THEN 1 ELSE 0 END) AS rendered_rows_with_account_signature_tokens
@@ -2218,6 +2223,7 @@ SELECT
   lr.variant_resolved,
   r.affected_campaigns,
   r.affected_step_variants,
+  r.affected_leads,
   r.affected_rendered_rows,
   r.rendered_rows_with_payload_tokens,
   r.rendered_rows_with_account_signature_tokens,
@@ -2252,6 +2258,7 @@ GROUP BY
   lr.variant_resolved,
   r.affected_campaigns,
   r.affected_step_variants,
+  r.affected_leads,
   r.affected_rendered_rows,
   r.rendered_rows_with_payload_tokens,
   r.rendered_rows_with_account_signature_tokens
