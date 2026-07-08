@@ -60,18 +60,21 @@ Where relevant, SendLens responses should include:
 `load_campaign_data`
 
 - accepts a provider-qualified or native campaign ID; `SENDLENS_PROVIDER=all` requires a provider-qualified campaign ID
-- refresh result for the requested campaign
+- scoped refresh metadata for the requested campaign; the broad refresh result is only returned when `include_refresh_metadata=true`
 - exact `campaign_overview`
 - `human_reply_sample` grouped into positive, negative, and neutral buckets
-- optional `rendered_outbound_sample`
-- output caps and reconstruction warnings; when rendered outbound samples are included, preserve that they are locally reconstructed sample evidence, not byte-for-byte delivered email text
+- compact `rendered_outbound_summary` with row counts and redacted preview metadata
+- optional raw `rendered_outbound_sample` only when `include_rendered_outbound=true`; the default response must not include recipient-level fields such as `to_email`, `from_email`, or raw rendered body rows
+- output caps and reconstruction warnings; preserve that rendered outbound evidence is locally reconstructed sample evidence, not byte-for-byte delivered email text
 
 `analysis_starters`
 
 - recipe metadata
 - recipe `exactness`: `exact`, `sampled`, or `hybrid`
-- SQL with explicit placeholders
-- notes the agent must preserve when answering
+- compact recipe index by default with `output_shape`, `returned_count`, `page`, `page_size`, `has_more`, and `next_page`
+- `recipe_id` exact lookup for one full recipe
+- `mode="full"` bounded pages with SQL and explicit placeholders
+- notes the agent must preserve when answering are included with full recipes
 
 `analyze_data`
 
