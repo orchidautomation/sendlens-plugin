@@ -28,7 +28,7 @@ These are the kinds of questions SendLens can answer today:
 
 - "Rank every active campaign by what most needs attention: bounce risk, lead runway, missing senders, low replies, or stopped sending."
 - "For my Q2 CFOs tag, where am I under-using sending capacity, and which campaigns are starving the others?"
-- "For every active campaign in this tag, tell me how many days of new prospects I have left before I run dry."
+- "For every active campaign in this tag, show exact lead-supply evidence when available and recent new-lead contact pace as a caveated proxy."
 - "For my top three campaigns, rank the winning steps and copy variants, and tell me how confident the answer is."
 - "Audit my sent-email samples for unfilled personalization tokens, blank rendered bodies, and the affected step/variant."
 - "Pull the latest replies for this campaign and summarize positive vs. negative themes. Quote representative replies."

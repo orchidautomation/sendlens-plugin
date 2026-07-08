@@ -31,12 +31,13 @@ Use only SendLens MCP tools for SendLens analysis.
 1. Work on exactly one campaign. If the prompt is broad, stop and ask the parent to narrow.
 2. Call `load_campaign_data` before custom analysis.
 3. Pull `analysis_starters(topic="copy-analysis")`.
-4. Inspect `campaign_variants` as exact intended template evidence.
-5. Inspect `rendered_outbound_context` only as reconstructed sampled evidence.
-6. If personalization depends on campaign variables, inspect values through `lead_payload_kv` for that campaign instead of assuming shared payload columns.
-7. If title, role, segment, or trigger variables are missing, describe it as missing uploaded lead metadata/custom fields and recommend adding those fields to future lead uploads.
-8. If hydrated reply bodies already present in `reply_context` point to a different topic, industry, compliance domain, or value proposition than the intended template, report possible wrong-template delivery before copy recommendations.
-9. Anchor rewrite ideas in exact templates, sampled reconstructed issues, reply outcome cohorts, or hydrated reply bodies already available.
+4. Start with safe-summary recipes such as `rendered-outbound-sample` and `personalization-leak-audit`.
+5. Inspect `campaign_variants` as exact intended template evidence.
+6. Use raw-detail recipes only for local diagnosis; do not paste raw rendered bodies, template bodies, or recipient fields into external artifacts.
+7. If personalization depends on campaign variables, inspect values through `lead_payload_kv` for that campaign instead of assuming shared payload columns.
+8. If title, role, segment, or trigger variables are missing, describe it as missing uploaded lead metadata/custom fields and recommend adding those fields to future lead uploads.
+9. If hydrated reply bodies already present in `reply_context` point to a different topic, industry, compliance domain, or value proposition than the intended template, report possible wrong-template delivery before copy recommendations.
+10. Anchor rewrite ideas in exact templates, sampled reconstructed issues, reply outcome cohorts, or hydrated reply bodies already available.
 
 ## Allowed Language
 

@@ -1,6 +1,10 @@
 import type { DuckDBConnection } from "@duckdb/node-api";
 import { getActiveWorkspaceId, getPluginState, query } from "./local-db";
-import type { SourceProviderMode } from "./provider-config";
+import {
+  providerModeIncludes,
+  resolveSourceProviderMode,
+  type SourceProviderMode,
+} from "./provider-config";
 
 const WORKSPACE_COVERAGE_LIMIT = 100;
 const WORKSPACE_CAMPAIGN_LIMIT = 100;
@@ -30,6 +34,43 @@ function rateCaveats(providerScope: SourceProviderMode, providerCount: number) {
     "Cross-provider rates are recomputed from normalized SendLens count fields in the local cache.",
     "Do not compare provider-native rates directly unless their denominator/source definitions have been verified.",
   ];
+}
+
+export function providerEvidenceWarnings(
+  providerScope: SourceProviderMode,
+  activeCampaignCount: number,
+  providerCapabilities: Array<Record<string, unknown>>,
+) {
+  if (providerScope === "all" || activeCampaignCount > 0) return [];
+
+  const warnings = [
+    `No ${providerScope} campaign evidence is stored locally for this active workspace scope.`,
+  ];
+
+  if (providerScope === "smartlead") {
+    const hasSmartleadCapabilities = providerCapabilities.some((row) =>
+      row.source_provider === "smartlead"
+    );
+    const configuredMode = resolveSourceProviderMode();
+    const smartleadConfigured = providerModeIncludes(configuredMode.mode, "smartlead")
+      && Boolean(process.env.SENDLENS_SMARTLEAD_API_KEY?.trim());
+
+    if (hasSmartleadCapabilities) {
+      warnings.push(
+        "Smartlead capability rows exist in the local cache, but no active Smartlead campaigns are stored for this workspace.",
+      );
+    } else if (smartleadConfigured) {
+      warnings.push(
+        "Smartlead is configured for this process, but this local cache has no active Smartlead campaign rows for the current workspace.",
+      );
+    } else {
+      warnings.push(
+        "Smartlead is not configured in the current SendLens provider environment, and no local Smartlead evidence is available.",
+      );
+    }
+  }
+
+  return warnings;
 }
 
 export async function buildWorkspaceSummary(
@@ -239,6 +280,7 @@ export async function buildWorkspaceSummary(
   const totalBounces = num(metrics.total_bounces);
   const replyRate = pct(totalUniqueReplies, totalSent);
   const bounceRate = pct(totalBounces, totalSent);
+  const activeCampaignCount = num(metrics.active_campaign_count);
   const campaignRowsTruncated = bestCampaignRows.length > WORKSPACE_CAMPAIGN_LIMIT;
   const campaignRows = bestCampaignRows.slice(0, WORKSPACE_CAMPAIGN_LIMIT);
   const bestCampaign = campaignRows[0];
@@ -250,9 +292,13 @@ export async function buildWorkspaceSummary(
     warnings.push("Workspace bounce rate is above 2%, which deserves list-quality review.");
   }
 
-  if (replyRate < 1) {
+  if (activeCampaignCount > 0 && totalSent > 0 && replyRate < 1) {
     warnings.push("Workspace unique reply rate is below 1%, so copy and targeting need attention.");
   }
+
+  warnings.push(
+    ...providerEvidenceWarnings(providerScope, activeCampaignCount, providerCapabilities),
+  );
 
   const activeProviderCount = providerBreakdown.filter((row) =>
     num(row.active_campaign_count) > 0
@@ -313,8 +359,8 @@ export async function buildWorkspaceSummary(
       "Reply analysis uses lead reply outcomes plus locally reconstructed template copy. Sampled raw tables are evidence support only and should not be treated as population totals.",
     ].join("\n"),
     exact_metrics: {
-      active_campaign_count: num(metrics.active_campaign_count),
-      campaign_count: num(metrics.active_campaign_count),
+      active_campaign_count: activeCampaignCount,
+      campaign_count: activeCampaignCount,
       total_sent: totalSent,
       total_unique_replies: totalUniqueReplies,
       total_auto_replies: num(metrics.total_auto_replies),

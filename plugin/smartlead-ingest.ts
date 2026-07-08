@@ -9,7 +9,7 @@ import {
   stampCacheOwner,
   withCacheProviderMode,
 } from "./local-db";
-import { writeRefreshStatus } from "./refresh-status";
+import { buildRefreshScope, writeRefreshStatus } from "./refresh-status";
 import {
   createSmartleadClient,
   type SmartleadClient,
@@ -2074,6 +2074,10 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
   const db = await getDb();
   const source: RefreshSource = options.source ?? (options.campaignIds?.length ? "manual" : "session_start");
   const mode: RefreshMode = "fast";
+  const initialRefreshScope = buildRefreshScope({
+    provider: "smartlead",
+    campaignIds: options.campaignIds,
+  });
   const startedAt = new Date().toISOString();
   const refreshStartedAt = Date.now();
   const syncLogId = buildSyncLogId(source, mode);
@@ -2086,6 +2090,8 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
     await writeRefreshStatus({
       status: "running",
       source,
+      lastRefreshScope: initialRefreshScope.type,
+      refreshScope: initialRefreshScope,
       pid: process.pid,
       workspaceId: null,
       startedAt,
@@ -2120,6 +2126,12 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
 
     await writeRefreshStatus({
       workspaceId,
+      lastRefreshScope: initialRefreshScope.type,
+      refreshScope: buildRefreshScope({
+        provider: "smartlead",
+        campaignIds: options.campaignIds,
+        campaignsMatched: selectedCampaigns.length,
+      }),
       campaignsTotal: selectedCampaigns.length,
       campaignsProcessed: 0,
       message: "Refreshing Smartlead campaign details and analytics.",
@@ -2136,6 +2148,12 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
       const nativeId = providerCampaignId(campaign) ?? "unknown";
       await writeRefreshStatus({
         workspaceId,
+        lastRefreshScope: initialRefreshScope.type,
+        refreshScope: buildRefreshScope({
+          provider: "smartlead",
+          campaignIds: options.campaignIds,
+          campaignsMatched: selectedCampaigns.length,
+        }),
         campaignsProcessed: bundles.length,
         currentCampaignId: campaignSourceId(nativeId),
         currentCampaignName: pickString(campaign, ["name", "campaign_name"]),
@@ -2206,6 +2224,12 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
     await writeRefreshStatus({
       status: "succeeded",
       source,
+      lastRefreshScope: initialRefreshScope.type,
+      refreshScope: buildRefreshScope({
+        provider: "smartlead",
+        campaignIds: options.campaignIds,
+        campaignsMatched: selectedCampaigns.length,
+      }),
       workspaceId,
       startedAt,
       endedAt,
@@ -2217,6 +2241,11 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
     });
     return await buildWorkspaceSummary(db, workspaceId);
   } catch (error) {
+    const failedScopedLookup = options.campaignIds?.length
+      ? /No Smartlead campaigns matched the requested refresh scope\./.test(
+        error instanceof Error ? error.message : String(error),
+      )
+      : false;
     await appendSyncLog(db, {
       id: syncLogId,
       source,
@@ -2233,6 +2262,14 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
     await writeRefreshStatus({
       status: "failed",
       source,
+      lastRefreshScope: failedScopedLookup
+        ? "failed_scoped_lookup"
+        : initialRefreshScope.type,
+      refreshScope: buildRefreshScope({
+        provider: "smartlead",
+        campaignIds: options.campaignIds,
+        failedScopedLookup,
+      }),
       startedAt,
       endedAt: new Date().toISOString(),
       message: error instanceof Error ? error.message : String(error),

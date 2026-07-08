@@ -31,7 +31,7 @@ Read the evidence, metric, and relevant specialist references before proposing a
 
 - Use this when the user asks what to test next, how to improve a campaign, what experiment to run, or how to evaluate a change.
 - Pick one campaign before designing the actual experiment. Use broad recipes only to choose the lane.
-- Do not propose a copy test if unresolved deliverability, sender, lead supply, or launch QA blockers are more likely to constrain results.
+- Do not propose a copy test if unresolved deliverability, sender, exact lead-supply evidence, or launch QA blockers are more likely to constrain results; do not infer a lead-supply blocker from `leads_count - contacted_count`.
 
 ## Protocol
 

@@ -12,6 +12,147 @@ export type ColumnInfo = {
   type: string;
 };
 
+export type CatalogMatch = {
+  kind: "table" | "column";
+  table: string;
+  column?: string;
+  description: string;
+  matched_terms?: string[];
+};
+
+export type CatalogStarterSuggestion = {
+  concept: string;
+  topics: string[];
+  recipe_ids: string[];
+  reason: string;
+};
+
+export type CatalogSearchGuidance = {
+  search_terms: string[];
+  suggested_narrower_terms: string[];
+  analysis_starter_suggestions: CatalogStarterSuggestion[];
+  message?: string;
+};
+
+type ConceptHint = {
+  concept: string;
+  triggers: string[];
+  searchTerms: string[];
+  topics: string[];
+  recipeIds: string[];
+  reason: string;
+};
+
+const STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "by",
+  "can",
+  "do",
+  "does",
+  "for",
+  "from",
+  "how",
+  "in",
+  "is",
+  "of",
+  "on",
+  "or",
+  "the",
+  "to",
+  "what",
+  "when",
+  "where",
+  "which",
+  "with",
+]);
+
+const CONCEPT_HINTS: ConceptHint[] = [
+  {
+    concept: "runway",
+    triggers: ["runway", "lead runway", "out of leads", "lead supply"],
+    searchTerms: ["campaign_overview", "campaign_daily_metrics", "campaign_tags", "lead_evidence", "daily volume"],
+    topics: ["campaign-performance"],
+    recipeIds: ["campaign-tag-runway-inputs", "campaign-tag-runway-daily-history", "campaign-tag-account-tag-capacity-runway"],
+    reason: "Runway is a workflow concept; use campaign-performance starters before estimating lead exhaustion or capacity.",
+  },
+  {
+    concept: "scale",
+    triggers: ["scale", "scaling", "increase volume"],
+    searchTerms: ["campaign_overview", "campaign_accounts", "account_daily_metrics", "sender_deliverability_health"],
+    topics: ["campaign-performance", "campaign-launch-qa"],
+    recipeIds: ["campaign-tag-daily-volume-utilization", "campaign-launch-qa-checklist"],
+    reason: "Scale decisions need campaign performance, sender capacity, launch readiness, and deliverability context.",
+  },
+  {
+    concept: "refill",
+    triggers: ["refill", "lead refill", "more leads", "lead supply"],
+    searchTerms: ["campaign_overview", "lead_evidence", "sampled_leads", "campaign_daily_metrics"],
+    topics: ["campaign-performance", "account-manager-brief"],
+    recipeIds: ["campaign-tag-runway-inputs", "account-manager-client-brief"],
+    reason: "Refill questions are usually lead-supply or runway questions, not a single schema column.",
+  },
+  {
+    concept: "deliverability",
+    triggers: ["deliverability", "spam", "inbox placement", "sender health", "bounce"],
+    searchTerms: ["inbox_placement", "sender_deliverability_health", "accounts", "bounce", "tracking"],
+    topics: ["workspace-health", "campaign-launch-qa"],
+    recipeIds: ["sender-deliverability-health", "inbox-placement-test-overview", "campaign-tracking-deliverability-settings"],
+    reason: "Deliverability questions should inspect sender health, inbox-placement evidence, and campaign guardrails.",
+  },
+  {
+    concept: "sender",
+    triggers: ["sender", "sender account", "inbox", "inboxes"],
+    searchTerms: ["accounts", "campaign_accounts", "campaign_account_assignments", "account_daily_metrics"],
+    topics: ["workspace-health", "campaign-launch-qa"],
+    recipeIds: ["campaign-sender-inventory-by-tag", "campaign-tag-sender-coverage", "sender-load-balance-by-campaign-tag"],
+    reason: "Sender account discovery usually maps to account inventory, campaign assignments, and sender coverage recipes.",
+  },
+  {
+    concept: "rendered outbound",
+    triggers: ["rendered outbound", "rendered copy", "outbound copy", "personalization"],
+    searchTerms: ["rendered_outbound_context", "sampled_outbound_emails", "campaign_variants", "template"],
+    topics: ["copy-analysis"],
+    recipeIds: ["rendered-outbound-sample", "personalization-leak-audit", "copy-template-review"],
+    reason: "Rendered outbound is reconstructed sample evidence; copy-analysis starters preserve that caveat.",
+  },
+  {
+    concept: "reply",
+    triggers: ["reply", "replies", "reply rate"],
+    searchTerms: ["reply_emails", "reply_email_context", "reply_context", "reply_count", "unique_replies"],
+    topics: ["reply-patterns", "campaign-performance"],
+    recipeIds: ["reply-feed", "reply-patterns-by-variant", "fetched-reply-text-by-campaign"],
+    reason: "Reply questions can map to exact reply aggregates, fetched reply text, or reply-pattern starters depending on depth.",
+  },
+  {
+    concept: "reply body",
+    triggers: ["reply body", "reply text", "inbound reply", "reply wording"],
+    searchTerms: ["reply_emails", "reply_email_context", "reply_context", "fetch_reply_text"],
+    topics: ["reply-patterns", "copy-analysis"],
+    recipeIds: ["reply-feed", "fetched-reply-text-by-campaign", "reply-email-context-feed"],
+    reason: "Reply body analysis depends on fetched reply text and reply context, often after one-campaign hydration.",
+  },
+  {
+    concept: "payload",
+    triggers: ["payload", "lead payload", "variables"],
+    searchTerms: ["lead_payload_kv", "lead_evidence", "sampled_leads", "payload"],
+    topics: ["icp-signals"],
+    recipeIds: ["campaign-payload-key-inventory", "campaign-payload-key-signals", "campaign-payload-presence-signals"],
+    reason: "Payload discovery maps to sampled lead evidence and ICP starter recipes.",
+  },
+  {
+    concept: "tag",
+    triggers: ["tag", "tags", "tagged"],
+    searchTerms: ["custom_tags", "custom_tag_mappings", "campaign_tags", "account_tags", "tag_scope_audit"],
+    topics: ["workspace-health", "campaign-performance"],
+    recipeIds: ["tag-catalog", "tag-scope-audit", "campaign-tag-sender-coverage"],
+    reason: "Tag questions should start from the tag catalog and tag-scope audit before scoped analysis.",
+  },
+];
+
 export async function listTables(): Promise<TableInfo[]> {
   return PUBLIC_TABLES.map((name) => ({
     name,
@@ -40,32 +181,177 @@ export async function listColumns(
 export async function searchCatalog(
   conn: DuckDBConnection,
   search: string,
-): Promise<Array<{ kind: "table" | "column"; table: string; column?: string; description: string }>> {
+): Promise<CatalogMatch[]> {
   const needle = search.trim().toLowerCase();
   if (!needle) return [];
 
-  const matches: Array<{ kind: "table" | "column"; table: string; column?: string; description: string }> = [];
+  const rawTerms = buildRawSearchTerms(needle);
+  const terms = buildSearchTerms(needle, rawTerms.length > 1);
+  const scoredMatches: Array<{ match: CatalogMatch; score: number }> = [];
 
   for (const table of PUBLIC_TABLES) {
     const description = TABLE_DESCRIPTIONS[table as PublicTableName];
-    if (table.includes(needle) || description.toLowerCase().includes(needle)) {
-      matches.push({ kind: "table", table, description });
+    const scored = scoreCatalogEntry(table, description, terms, needle);
+    if (scored.score > 0) {
+      scoredMatches.push({
+        match: {
+          kind: "table",
+          table,
+          description,
+          matched_terms: scored.matchedTerms,
+        },
+        score: scored.score + 20,
+      });
     }
   }
 
   for (const table of PUBLIC_TABLES) {
     const columns = await listColumns(conn, table);
     for (const column of columns) {
-      if (column.name.toLowerCase().includes(needle) || column.type.toLowerCase().includes(needle)) {
-        matches.push({
-          kind: "column",
-          table,
-          column: column.name,
-          description: `${column.name} (${column.type})`,
+      const description = `${column.name} (${column.type})`;
+      const scored = scoreCatalogEntry(`${table} ${column.name}`, description, terms, needle);
+      if (scored.score > 0) {
+        scoredMatches.push({
+          match: {
+            kind: "column",
+            table,
+            column: column.name,
+            description,
+            matched_terms: scored.matchedTerms,
+          },
+          score: scored.score,
         });
       }
     }
   }
 
-  return matches.slice(0, 25);
+  const sortedMatches = scoredMatches
+    .sort((left, right) => right.score - left.score || formatMatch(left.match).localeCompare(formatMatch(right.match)))
+    .map(({ match }) => match);
+
+  return limitCatalogMatches(sortedMatches, terms.length > 1 ? 4 : 25, 25);
+}
+
+export function buildCatalogSearchGuidance(search: string, matches: CatalogMatch[]): CatalogSearchGuidance {
+  const needle = search.trim().toLowerCase();
+  if (!needle) {
+    return {
+      search_terms: [],
+      suggested_narrower_terms: [],
+      analysis_starter_suggestions: [],
+    };
+  }
+
+  const terms = buildSearchTerms(needle);
+  const conceptHints = matchingConceptHints(needle);
+  const matchedTerms = new Set(matches.flatMap((match) => match.matched_terms ?? []));
+  const suggestedNarrowerTerms = unique([
+    ...conceptHints.flatMap((hint) => hint.searchTerms),
+    ...terms,
+  ])
+    .filter((term) => !matchedTerms.has(term) || matches.length === 0)
+    .slice(0, 10);
+
+  const analysisStarterSuggestions = conceptHints.map((hint) => ({
+    concept: hint.concept,
+    topics: hint.topics,
+    recipe_ids: hint.recipeIds,
+    reason: hint.reason,
+  }));
+
+  return {
+    search_terms: terms,
+    suggested_narrower_terms: suggestedNarrowerTerms,
+    analysis_starter_suggestions: analysisStarterSuggestions,
+    message: buildGuidanceMessage(matches, analysisStarterSuggestions),
+  };
+}
+
+function buildSearchTerms(needle: string, includeConceptTerms = true): string[] {
+  const rawTerms = buildRawSearchTerms(needle);
+  const conceptTerms = includeConceptTerms
+    ? matchingConceptHints(needle).flatMap((hint) => hint.searchTerms)
+    : [];
+  return unique([...rawTerms, ...conceptTerms]);
+}
+
+function buildRawSearchTerms(needle: string): string[] {
+  return needle
+    .split(/[^a-z0-9_]+/i)
+    .map((term) => term.trim().toLowerCase())
+    .filter((term) => term.length >= 3 && !STOP_WORDS.has(term));
+}
+
+function matchingConceptHints(needle: string): ConceptHint[] {
+  return CONCEPT_HINTS.filter((hint) =>
+    hint.triggers.some((trigger) => {
+      const normalizedTrigger = trigger.toLowerCase();
+      return normalizedTrigger.includes(" ")
+        ? needle.includes(normalizedTrigger)
+        : new RegExp(`\\b${escapeRegExp(normalizedTrigger)}\\b`).test(needle);
+    }),
+  );
+}
+
+function scoreCatalogEntry(name: string, description: string, terms: string[], needle: string) {
+  const haystack = `${name} ${description}`.toLowerCase();
+  const matchedTerms: string[] = [];
+  let score = haystack.includes(needle) ? 100 : 0;
+
+  for (const term of terms) {
+    if (!haystack.includes(term)) continue;
+    matchedTerms.push(term);
+    score += name.toLowerCase().includes(term) ? 8 : 3;
+  }
+
+  return {
+    score,
+    matchedTerms: unique(matchedTerms),
+  };
+}
+
+function buildGuidanceMessage(matches: CatalogMatch[], suggestions: CatalogStarterSuggestion[]) {
+  if (matches.length === 0 && suggestions.length > 0) {
+    return "No direct schema matches found. The query looks like a workflow concept, so use the suggested analysis_starters topics or retry one of the narrower schema terms.";
+  }
+  if (matches.length === 0) {
+    return "No direct schema matches found. Retry with one narrower table, column, or workflow term.";
+  }
+  if (suggestions.length > 0) {
+    return "Schema matches were found. The query also includes workflow concepts, so consider the suggested analysis_starters topics before custom SQL.";
+  }
+  return undefined;
+}
+
+function formatMatch(match: CatalogMatch) {
+  return `${match.kind}:${match.table}:${match.column ?? ""}`;
+}
+
+function limitCatalogMatches(matches: CatalogMatch[], perTableLimit: number, totalLimit: number) {
+  const selected: CatalogMatch[] = [];
+  const counts = new Map<string, number>();
+
+  for (const match of matches) {
+    const count = counts.get(match.table) ?? 0;
+    if (count >= perTableLimit) continue;
+    selected.push(match);
+    counts.set(match.table, count + 1);
+    if (selected.length >= totalLimit) return selected;
+  }
+
+  for (const match of matches) {
+    if (selected.includes(match)) continue;
+    selected.push(match);
+    if (selected.length >= totalLimit) return selected;
+  }
+
+  return selected;
+}
+
+function unique(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

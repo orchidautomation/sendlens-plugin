@@ -1,7 +1,7 @@
 import * as z from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { listColumns, listTables, searchCatalog } from "./catalog";
+import { buildCatalogSearchGuidance, listColumns, listTables, searchCatalog } from "./catalog";
 import { isDemoMode, seedDemoWorkspace } from "./demo-workspace";
 import { loadSendLensEnv } from "./env";
 import {
@@ -29,12 +29,16 @@ import {
   resolveCampaignAnalysisDepth,
   type CampaignAnalysisDepth,
 } from "./campaign-analysis-depth";
-import { getQueryRecipes, QUERY_RECIPE_TOPICS } from "./query-recipes";
+import {
+  CAMPAIGN_ANALYSIS_REPLY_PREVIEW_MAX_CHARS,
+  redactCampaignAnalysisReplySample,
+} from "./campaign-analysis-response";
+import { buildQueryRecipeResponse, QUERY_RECIPE_TOPICS } from "./query-recipes";
 import { toReplyTextFetchResult } from "./reply-text-contract";
 import { readRefreshStatus } from "./refresh-status";
 import { buildSetupDoctorReport } from "./setup-doctor";
 import { enforceLocalWorkspaceScope, LocalSqlGuardError } from "./sql-guard";
-import { buildWorkspaceSummary } from "./summary";
+import { buildWorkspaceSummary, providerEvidenceWarnings } from "./summary";
 import { PLUGIN_VERSION } from "./version";
 
 loadSendLensEnv();
@@ -51,6 +55,7 @@ const ANALYZE_DATA_ROW_LIMIT = 1_000;
 const REPLY_CONTEXT_SCAN_LIMIT = 500;
 const RENDERED_OUTBOUND_SAMPLE_LIMIT = 25;
 const SCOPED_SNAPSHOT_CAMPAIGN_LIMIT = 100;
+const RENDERED_OUTBOUND_REDACTED_PREVIEW_LIMIT = 3;
 const PLUXX_READINESS_FOLLOWUP = [
   "Temporary SendLens readiness gate in effect.",
   "If startup refresh is still running, this tool may wait briefly for the local snapshot before answering.",
@@ -149,6 +154,38 @@ function uniqueStrings(values: string[]) {
   return [...new Set(values.filter(Boolean))];
 }
 
+function numberFromRowValue(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function compactPreview(value: unknown, maxChars = 160) {
+  if (typeof value !== "string") return null;
+  const compacted = value.replace(/\s+/g, " ").trim();
+  if (!compacted) return null;
+  return compacted.length > maxChars
+    ? `${compacted.slice(0, maxChars).trimEnd()}...`
+    : compacted;
+}
+
+function renderedOutboundRedactedPreview(rows: Array<Record<string, unknown>>) {
+  return rows.slice(0, RENDERED_OUTBOUND_REDACTED_PREVIEW_LIMIT).map((row) => ({
+    campaign_id: row.campaign_id ?? null,
+    campaign_source_id: row.campaign_source_id ?? null,
+    source_provider: row.source_provider ?? null,
+    step_resolved: row.step_resolved ?? null,
+    variant_resolved: row.variant_resolved ?? null,
+    sample_source: row.sample_source ?? null,
+    sent_at: row.sent_at ?? null,
+    rendered_subject_preview: compactPreview(row.rendered_subject, 120),
+    rendered_body_preview: compactPreview(row.rendered_body_text),
+    template_subject_preview: compactPreview(row.template_subject, 120),
+    template_body_preview: compactPreview(row.template_body_text),
+    recipient: "[redacted]",
+    sender: "[redacted]",
+  }));
+}
+
 function parseProviderQualifiedCampaignId(value: string) {
   const campaignId = value.trim();
   const separatorIndex = campaignId.indexOf(":");
@@ -198,6 +235,7 @@ function loadCampaignScope(campaignId: string) {
 
   return {
     refreshProvider: parsed?.provider,
+    refreshCampaignIds: [requestedId],
     queryCampaignIds,
   };
 }
@@ -548,15 +586,20 @@ server.registerTool(
       [
         "Load and return one campaign's analysis context when the user has chosen a campaign and wants copy, ICP, reply outcome, or next-test diagnosis.",
         "Use this after workspace_snapshot or campaign ranking, not for broad workspace comparisons.",
-        "Returns campaign_overview, a stratified human_reply_sample, optional rendered_outbound_sample, output limits, warnings, and refresh/readiness metadata.",
-        "campaign_overview uses exact Instantly aggregates; human replies use lead-level reply outcome state; rendered outbound rows are locally reconstructed/sampled evidence, not exact delivered email bodies.",
+        "Returns campaign_overview, a stratified human_reply_sample, compact rendered outbound coverage/preview metadata, output limits, warnings, and refresh/readiness metadata.",
+        "Rendered outbound raw rows and the broad refresh result are opt-in so default responses stay compact and privacy-aware.",
+        "campaign_overview uses exact Instantly aggregates; human replies use lead-level reply outcome state; rendered outbound previews are locally reconstructed/sampled evidence, not exact delivered email bodies.",
       ].join(" "),
     inputSchema: {
       campaign_id: z.string().describe("Provider-qualified or native campaign ID to load."),
       include_rendered_outbound: z
         .boolean()
         .optional()
-        .describe("Whether to include locally reconstructed outbound copy for this campaign in the response."),
+        .describe("Whether to include raw locally reconstructed outbound rows. Defaults to false; the default response includes only compact redacted coverage/previews."),
+      include_refresh_metadata: z
+        .boolean()
+        .optional()
+        .describe("Whether to include the full refresh result. Defaults to false; the default response includes scoped refresh metadata only."),
       max_nonreply_leads: z
         .number()
         .int()
@@ -575,7 +618,8 @@ server.registerTool(
   },
   async ({
     campaign_id,
-    include_rendered_outbound = true,
+    include_rendered_outbound = false,
+    include_refresh_metadata = false,
     max_nonreply_leads = 350,
     reply_bucket_limit = 10,
   }) => {
@@ -666,11 +710,43 @@ server.registerTool(
            LIMIT ${RENDERED_OUTBOUND_SAMPLE_LIMIT}`,
         )
         : [];
+      const renderedPreviewRows = include_rendered_outbound
+        ? renderedRows
+        : await query(
+          db,
+          `SELECT
+             campaign_id,
+             campaign_source_id,
+             source_provider,
+             step_resolved,
+             variant_resolved,
+             sample_source,
+             sent_at,
+             rendered_subject,
+             rendered_body_text,
+             template_subject,
+             template_body_text
+           FROM sendlens.rendered_outbound_context
+           WHERE workspace_id = '${workspaceSafe}'
+             AND ${campaignIdFilterSql("campaign_id", evidenceCampaignIds)}
+           ORDER BY sent_at DESC NULLS LAST
+           LIMIT ${RENDERED_OUTBOUND_REDACTED_PREVIEW_LIMIT}`,
+        );
+      const renderedCountRows = await query(
+        db,
+        `SELECT COUNT(*) AS sampled_row_count
+         FROM sendlens.rendered_outbound_context
+         WHERE workspace_id = '${workspaceSafe}'
+           AND ${campaignIdFilterSql("campaign_id", evidenceCampaignIds)}`,
+      );
 
       const replyRowsTruncated = replyRows.length > REPLY_CONTEXT_SCAN_LIMIT;
       const replySample = stratifyHumanReplies(
         replyRows.slice(0, REPLY_CONTEXT_SCAN_LIMIT),
         reply_bucket_limit,
+      );
+      const renderedSampledRowCount = numberFromRowValue(
+        renderedCountRows[0]?.sampled_row_count,
       );
       const warnings: string[] = [];
       if (replyRowsTruncated) {
@@ -678,25 +754,50 @@ server.registerTool(
           `Reply context scan was truncated to the ${REPLY_CONTEXT_SCAN_LIMIT} most recent rows before stratified sampling. Narrow the campaign question or use analyze_data for a tighter slice.`,
         );
       }
-      if (include_rendered_outbound) {
+      warnings.push(
+        "Campaign overview metrics are exact local rollups; reply samples are bounded lead-level samples.",
+      );
+      warnings.push(
+        "Rendered outbound evidence is locally reconstructed sample evidence, not byte-for-byte delivered email text.",
+      );
+      if (!include_rendered_outbound && renderedSampledRowCount > 0) {
         warnings.push(
-          "Rendered outbound rows are locally reconstructed sample evidence, not byte-for-byte delivered email text.",
+          "Raw rendered outbound rows are omitted by default. Set include_rendered_outbound=true only when authorized operator diagnosis needs recipient-level reconstructed rows.",
         );
       }
       if (cacheWarnings) warnings.push(...cacheWarnings);
       return jsonResponse({
-        refreshed,
+        schema_version: "load_campaign_data.v2",
+        refreshed: include_refresh_metadata ? refreshed : undefined,
         demo_mode: isDemoMode() ? true : undefined,
         readiness: readinessPayload(readiness),
+        refresh_metadata: {
+          workspace_id: workspaceId,
+          requested_campaign_id: campaign_id,
+          loaded_campaign_id: loadedCampaignId,
+          refresh_campaign_ids: campaignScope.refreshCampaignIds,
+          refresh_provider: campaignScope.refreshProvider ?? null,
+          full_refresh_result_included: include_refresh_metadata,
+        },
         output_limits: {
           reply_context_scan_limit: REPLY_CONTEXT_SCAN_LIMIT,
           rendered_outbound_sample_limit: RENDERED_OUTBOUND_SAMPLE_LIMIT,
+          rendered_outbound_redacted_preview_limit: RENDERED_OUTBOUND_REDACTED_PREVIEW_LIMIT,
           response_max_chars: MCP_TEXT_RESPONSE_MAX_CHARS,
         },
         warnings: warnings.length > 0 ? warnings : undefined,
         campaign_overview: overviewRows[0] ?? null,
         human_reply_sample: replySample,
-        rendered_outbound_sample: renderedRows,
+        rendered_outbound_summary: {
+          sampled_row_count: renderedSampledRowCount,
+          raw_rows_included: include_rendered_outbound,
+          raw_row_limit: include_rendered_outbound ? RENDERED_OUTBOUND_SAMPLE_LIMIT : 0,
+          redacted_preview: renderedOutboundRedactedPreview(renderedPreviewRows),
+          redacted_fields: ["to_email", "from_email"],
+          detail_hint:
+            "Set include_rendered_outbound=true to include bounded raw reconstructed outbound rows, or use analyze_data for focused authorized queries.",
+        },
+        rendered_outbound_sample: include_rendered_outbound ? renderedRows : undefined,
       });
     } catch (error) {
       if (error instanceof CampaignIdScopeError) {
@@ -750,6 +851,12 @@ server.registerTool(
         .boolean()
         .optional()
         .describe("Include out-of-office status 0 in addition to requested/default statuses. Defaults to false."),
+      reply_evidence_detail: z
+        .enum(["redacted_preview", "full_reply_bodies"])
+        .optional()
+        .describe(
+          "Reply evidence detail returned in reply_email_context_sample. Defaults to redacted_preview, which omits full reply bodies and raw email addresses. Use full_reply_bodies only when private reply evidence is explicitly required.",
+        ),
     },
   },
   async ({
@@ -758,6 +865,7 @@ server.registerTool(
     analysis_depth,
     statuses,
     include_ooo = false,
+    reply_evidence_detail = "redacted_preview",
   }) => {
     const readiness = await waitForSessionSnapshot();
     if (readiness.timedOut) {
@@ -799,6 +907,15 @@ server.registerTool(
       if (isDemoMode()) {
         warnings.push(
           "Demo mode uses pre-seeded synthetic reply bodies and does not call Instantly.",
+        );
+      }
+      if (reply_evidence_detail === "full_reply_bodies") {
+        warnings.push(
+          "Explicit full reply evidence mode is enabled. reply_email_context_sample may include raw email addresses, full fetched reply bodies, and quoted thread content.",
+        );
+      } else {
+        warnings.push(
+          "Exact reply bodies may be fetched and stored locally for analysis coverage, but the default response redacts full reply bodies and raw email addresses. Set reply_evidence_detail to full_reply_bodies only when private reply evidence is explicitly required.",
         );
       }
 
@@ -967,6 +1084,25 @@ server.registerTool(
           "At least one reply status hit the page cap before meeting the target. Treat status themes as partial coverage and continue at maximum depth before making strong claims.",
         );
       }
+      const replyEmailContextSample =
+        reply_evidence_detail === "full_reply_bodies"
+          ? contextRows
+          : redactCampaignAnalysisReplySample(contextRows);
+      const recommendedNextAnalysisRecipes =
+        reply_evidence_detail === "full_reply_bodies"
+          ? [
+            "reply-hydration-coverage",
+            "reply-email-context-feed",
+            "campaign-evidence-coverage-audit",
+            "campaign-daily-health-trend",
+            "campaign-funnel-quality",
+          ]
+          : [
+            "reply-hydration-coverage",
+            "campaign-evidence-coverage-audit",
+            "campaign-daily-health-trend",
+            "campaign-funnel-quality",
+          ];
 
       return jsonResponse({
         schema_version: "campaign_analysis_preparation.v1",
@@ -996,17 +1132,16 @@ server.registerTool(
         },
         context_gap_counts: contextGapCounts,
         campaign_overview: overviewRows[0] ?? null,
-        reply_email_context_sample: contextRows,
-        recommended_next_analysis_recipes: [
-          "reply-hydration-coverage",
-          "reply-email-context-feed",
-          "campaign-evidence-coverage-audit",
-          "campaign-daily-health-trend",
-          "campaign-funnel-quality",
-        ],
+        reply_email_context_sample: replyEmailContextSample,
+        recommended_next_analysis_recipes: recommendedNextAnalysisRecipes,
         warnings: warnings.length > 0 ? warnings : undefined,
         output_limits: {
           reply_email_context_sample_limit: depth.contextSampleLimit,
+          reply_body_preview_max_chars:
+            reply_evidence_detail === "redacted_preview"
+              ? CAMPAIGN_ANALYSIS_REPLY_PREVIEW_MAX_CHARS
+              : undefined,
+          reply_evidence_detail,
           response_max_chars: MCP_TEXT_RESPONSE_MAX_CHARS,
         },
         readiness: readinessPayload(readiness),
@@ -1321,11 +1456,12 @@ server.registerTool(
       [
         "Search public SendLens table and column names when the user gives a concept like reply, bounce, tag, variant, opportunity, or payload.",
         "Use this before custom SQL when the exact schema surface is unclear.",
+        "For broad or workflow-style queries, it returns partial schema matches plus narrower search terms and analysis_starters suggestions.",
         "Do not use it as a data read; it only returns schema matches.",
         "Returns up to 25 table/column matches plus readiness metadata and does not read lead, reply, or campaign rows.",
       ].join(" "),
     inputSchema: {
-      query: z.string().describe("Search string such as reply, bounce, variant, or opportunity."),
+      query: z.string().describe("Search string such as reply, bounce, variant, opportunity, runway, or rendered outbound."),
     },
   },
   async ({ query: search }) => {
@@ -1336,11 +1472,16 @@ server.registerTool(
       db = await getDb();
       const cacheWarnings = await ensureCacheReadable(db);
       const matches = await searchCatalog(db, search);
+      const guidance = buildCatalogSearchGuidance(search, matches);
       return jsonResponse({
         query: search,
         readiness: readinessPayload(readiness),
         warnings: cacheWarnings,
         matches,
+        search_terms: guidance.search_terms,
+        suggested_narrower_terms: guidance.suggested_narrower_terms,
+        analysis_starter_suggestions: guidance.analysis_starter_suggestions,
+        guidance: guidance.message,
       });
     } catch (error) {
       if (error instanceof CacheReadinessError) {
@@ -1364,30 +1505,50 @@ server.registerTool(
         "Return curated SendLens SQL recipes for common workspace-health, campaign-performance, copy, reply-pattern, ICP-signal, and tag questions.",
         "Use this before writing custom SQL when the user's question matches a known analysis path.",
         "Do not run recipe SQL blindly; replace placeholders like campaign_id, tag_name, or payload_key and preserve the recipe exactness notes in the final answer.",
-        "Returns recipe metadata, exact/sample/hybrid classification, SQL, and usage notes; it does not query the database.",
+        "By default returns a compact recipe index without SQL; pass recipe_id for one full recipe or mode='full' with page/page_size for a bounded SQL page.",
+        "Returns recipe metadata, exact/sample/hybrid classification, output-shape metadata, and SQL on demand; it does not query the database.",
       ].join(" "),
     inputSchema: {
       topic: z
         .enum(QUERY_RECIPE_TOPICS)
         .optional()
         .describe("Optional recipe topic filter."),
+      recipe_id: z
+        .string()
+        .optional()
+        .describe("Optional exact recipe id. When set, returns that recipe with full SQL."),
+      mode: z
+        .enum(["summary", "full"])
+        .optional()
+        .describe("summary returns a compact index without SQL; full returns bounded pages with SQL."),
+      page: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Optional 1-based page number for topic or all-recipes listings."),
+      page_size: z
+        .number()
+        .int()
+        .positive()
+        .max(25)
+        .optional()
+        .describe("Optional page size for listings. Maximum 25."),
     },
   },
-  async ({ topic }) => {
-    const recipes = getQueryRecipes(topic);
+  async ({ topic, recipe_id, mode, page, page_size }) => {
+    const response = buildQueryRecipeResponse({
+      topic,
+      recipe_id,
+      mode,
+      page,
+      page_size,
+    });
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify(
-            {
-              topic: topic ?? "all",
-              recipe_count: recipes.length,
-              recipes,
-            },
-            null,
-            2,
-          ),
+          text: JSON.stringify(response, null, 2),
         },
       ],
     };
@@ -1746,7 +1907,30 @@ async function buildScopedWorkspaceSnapshot(
      ORDER BY source_provider`,
   );
 
+  const capabilityWhere = providerScope === "all"
+    ? "TRUE"
+    : `source_provider = '${providerScope}'`;
+  const providerCapabilities = await query(
+    db,
+    `SELECT
+       source_provider,
+       capability,
+       support_status,
+       confidence,
+       coverage_note,
+       synced_at
+     FROM sendlens.provider_capabilities
+     WHERE workspace_id = '${workspace}'
+       AND ${capabilityWhere}
+     ORDER BY source_provider, capability`,
+  );
+
   if (campaignRows.length === 0) {
+    const warnings = providerEvidenceWarnings(providerScope, 0, providerCapabilities);
+    if (warnings.length === 0) {
+      warnings.push("No campaigns matched the requested scoped filter in the local cache.");
+    }
+
     return {
       schema_version: "workspace_snapshot.v1",
       workspaceId,
@@ -1755,10 +1939,10 @@ async function buildScopedWorkspaceSnapshot(
       exact_metrics: {},
       source_provider_scope: providerScope,
       provider_breakdown: [],
-      provider_capabilities: [],
+      provider_capabilities: providerCapabilities,
       rate_caveats: [],
       coverage: [],
-      warnings: ["No campaigns matched the requested scoped filter in the local cache."],
+      warnings,
       last_refreshed_at: await readRefreshStatus().then((s) => s.lastSuccessAt ?? null),
       campaigns: [],
     };
@@ -1801,9 +1985,16 @@ async function buildScopedWorkspaceSnapshot(
   if (bounceRate > 2) {
     warnings.push("Scoped bounce rate is above 2%, which deserves list-quality review.");
   }
-  if (replyRate < 1) {
+  if (totalSent > 0 && replyRate < 1) {
     warnings.push("Scoped unique reply rate is below 1%, so copy and targeting need attention.");
   }
+  warnings.push(
+    ...providerEvidenceWarnings(
+      providerScope,
+      Number(metrics.active_campaign_count ?? 0) || 0,
+      providerCapabilities,
+    ),
+  );
   if (campaignRowsTruncated) {
     warnings.push(
       `Scoped campaign list was truncated to ${SCOPED_SNAPSHOT_CAMPAIGN_LIMIT} campaigns. Add a narrower tag or campaign-name filter for more detail.`,
@@ -1817,23 +2008,6 @@ async function buildScopedWorkspaceSnapshot(
     : [];
   if (rateCaveats.length > 0) warnings.push(rateCaveats[0]);
 
-  const capabilityWhere = providerScope === "all"
-    ? "TRUE"
-    : `source_provider = '${providerScope}'`;
-  const providerCapabilities = await query(
-    db,
-    `SELECT
-       source_provider,
-       capability,
-       support_status,
-       confidence,
-       coverage_note,
-       synced_at
-     FROM sendlens.provider_capabilities
-     WHERE workspace_id = '${workspace}'
-       AND ${capabilityWhere}
-     ORDER BY source_provider, capability`,
-  );
   if (
     providerCapabilities.some((row) =>
       row.source_provider === "smartlead"

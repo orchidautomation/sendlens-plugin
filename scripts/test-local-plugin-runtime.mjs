@@ -12,7 +12,11 @@ const {
   run,
   setActiveWorkspaceId,
 } = require("../build/plugin/local-db.js");
-const { getQueryRecipes } = require("../build/plugin/query-recipes.js");
+const { buildQueryRecipeResponse, getQueryRecipes } = require("../build/plugin/query-recipes.js");
+const {
+  buildCatalogSearchGuidance,
+  searchCatalog,
+} = require("../build/plugin/catalog.js");
 const {
   normalizeStepAnalyticsRows,
   toPlainText,
@@ -37,16 +41,18 @@ await run(
    (id, workspace_id, organization_id, name, status, daily_limit, synced_at)
    VALUES ('c1', 'ws_test', 'ws_test', 'Alpha', 'active', 50, CURRENT_TIMESTAMP),
           ('c2', 'ws_test', 'ws_test', 'Beta', 'paused', 25, CURRENT_TIMESTAMP),
-          ('c3', 'ws_test', 'ws_test', 'Gamma', 'active', 5, CURRENT_TIMESTAMP)`,
+          ('c3', 'ws_test', 'ws_test', 'Gamma', 'active', 5, CURRENT_TIMESTAMP),
+          ('c4', 'ws_test', 'ws_test', 'Runway Active', 'active', 40, CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
   `INSERT OR REPLACE INTO sendlens.campaign_analytics
-   (workspace_id, campaign_id, campaign_name, leads_count, emails_sent_count, reply_count_unique, reply_count_automatic, bounced_count, total_opportunities, total_opportunity_value, synced_at)
+   (workspace_id, campaign_id, campaign_name, leads_count, contacted_count, emails_sent_count, new_leads_contacted_count, reply_count_unique, reply_count_automatic, bounced_count, total_opportunities, total_opportunity_value, synced_at)
    VALUES
-   ('ws_test', 'c1', 'Alpha', 400, 800, 24, 5, 8, 2, 25000, CURRENT_TIMESTAMP),
-   ('ws_test', 'c2', 'Beta', 300, 200, 1, 0, 7, 0, 0, CURRENT_TIMESTAMP),
-   ('ws_test', 'c3', 'Gamma', 50, 0, 0, 0, 0, 0, 0, CURRENT_TIMESTAMP)`,
+   ('ws_test', 'c1', 'Alpha', 400, 320, 800, 40, 24, 5, 8, 2, 25000, CURRENT_TIMESTAMP),
+   ('ws_test', 'c2', 'Beta', 300, 100, 200, 10, 1, 0, 7, 0, 0, CURRENT_TIMESTAMP),
+   ('ws_test', 'c3', 'Gamma', 50, 0, 0, 0, 0, 0, 0, 0, 0, CURRENT_TIMESTAMP),
+   ('ws_test', 'c4', 'Runway Active', 970, 2475, 2475, 340, 30, 1, 2, 3, 50000, CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
@@ -54,7 +60,9 @@ await run(
    (workspace_id, campaign_id, date, sent, contacted, new_leads_contacted, opened, unique_opened, replies, unique_replies, replies_automatic, unique_replies_automatic, clicks, unique_clicks, opportunities, unique_opportunities, synced_at)
    VALUES ('ws_test', 'c1', '2026-05-01'::DATE, 25, 25, 25, 5, 4, 2, 2, 0, 0, 1, 1, 1, 1, CURRENT_TIMESTAMP),
           ('ws_test', 'c1', '2026-05-02'::DATE, 15, 15, 15, 3, 2, 1, 1, 0, 0, 0, 0, 0, 0, CURRENT_TIMESTAMP),
-          ('ws_test', 'c3', '2026-05-01'::DATE, 5, 5, 5, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, CURRENT_TIMESTAMP)`,
+          ('ws_test', 'c3', '2026-05-01'::DATE, 5, 5, 5, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, CURRENT_TIMESTAMP),
+          ('ws_test', 'c4', CURRENT_DATE - INTERVAL 1 DAY, 170, 170, 170, 40, 30, 5, 5, 0, 0, 1, 1, 2, 2, CURRENT_TIMESTAMP),
+          ('ws_test', 'c4', CURRENT_DATE - INTERVAL 8 DAY, 170, 170, 170, 42, 31, 4, 4, 0, 0, 1, 1, 1, 1, CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
@@ -84,7 +92,8 @@ await run(
   db,
   `INSERT OR REPLACE INTO sendlens.campaign_variants
    (workspace_id, campaign_id, sequence_index, step, variant, subject, body_text, synced_at)
-   VALUES ('ws_test', 'c1', 0, 0, 0, 'Alpha intro', 'Hi {{firstName}}', CURRENT_TIMESTAMP)`,
+   VALUES ('ws_test', 'c1', 0, 0, 0, 'Alpha intro', 'Hi {{firstName}}', CURRENT_TIMESTAMP),
+          ('ws_test', 'c4', 0, 0, 0, 'Runway intro', 'Hi {{firstName}}', CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
@@ -140,7 +149,8 @@ await run(
   `INSERT OR REPLACE INTO sendlens.campaign_account_assignments
    (workspace_id, campaign_id, assignment_type, assignment_key, account_email, tag_id, synced_at)
    VALUES ('ws_test', 'c1', 'email', 'direct@example.com', 'direct@example.com', NULL, CURRENT_TIMESTAMP),
-          ('ws_test', 'c1', 'tag', 't2', NULL, 't2', CURRENT_TIMESTAMP)`,
+          ('ws_test', 'c1', 'tag', 't2', NULL, 't2', CURRENT_TIMESTAMP),
+          ('ws_test', 'c4', 'email', 'direct@example.com', 'direct@example.com', NULL, CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
@@ -169,13 +179,49 @@ await run(
 
 await setActiveWorkspaceId(db, "ws_test");
 
+const broadCatalogMatches = await searchCatalog(
+  db,
+  "website visitor campaign reply payload rendered outbound inbox placement tags sender account runway",
+);
+assert.ok(broadCatalogMatches.length > 0);
+assert.ok(broadCatalogMatches.some((match) => match.table === "reply_emails" || match.table === "reply_context"));
+assert.ok(broadCatalogMatches.some((match) => match.table === "lead_payload_kv"));
+assert.ok(broadCatalogMatches.some((match) => match.table === "rendered_outbound_context"));
+assert.ok(broadCatalogMatches.some((match) => match.table === "inbox_placement_tests"));
+assert.ok(broadCatalogMatches.some((match) => match.table === "campaign_accounts" || match.table === "accounts"));
+const broadCatalogGuidance = buildCatalogSearchGuidance(
+  "website visitor campaign reply payload rendered outbound inbox placement tags sender account runway",
+  broadCatalogMatches,
+);
+assert.ok(broadCatalogGuidance.search_terms.includes("campaign_overview"));
+assert.ok(
+  broadCatalogGuidance.analysis_starter_suggestions.some(
+    (suggestion) =>
+      suggestion.concept === "runway"
+      && suggestion.topics.includes("campaign-performance")
+      && suggestion.recipe_ids.includes("campaign-tag-runway-inputs"),
+  ),
+);
+const runwayGuidance = buildCatalogSearchGuidance("runway", []);
+assert.match(runwayGuidance.message ?? "", /No direct schema matches/);
+assert.ok(runwayGuidance.suggested_narrower_terms.includes("campaign_overview"));
+assert.ok(
+  runwayGuidance.analysis_starter_suggestions.some(
+    (suggestion) =>
+      suggestion.concept === "runway"
+      && suggestion.recipe_ids.includes("campaign-tag-runway-daily-history"),
+  ),
+);
+const runwayCatalogMatches = await searchCatalog(db, "runway");
+assert.equal(runwayCatalogMatches.length, 0);
+
 const summary = await buildWorkspaceSummary(db);
 assert.equal(summary.schema_version, "workspace_snapshot.v1");
 assert.equal(summary.workspaceId, "ws_test");
-assert.equal(summary.exact_metrics.campaign_count, 2);
-assert.equal(summary.exact_metrics.active_campaign_count, 2);
-assert.equal(summary.exact_metrics.total_sent, 800);
-assert.equal(summary.exact_metrics.total_unique_replies, 24);
+assert.equal(summary.exact_metrics.campaign_count, 3);
+assert.equal(summary.exact_metrics.active_campaign_count, 3);
+assert.equal(summary.exact_metrics.total_sent, 3275);
+assert.equal(summary.exact_metrics.total_unique_replies, 54);
 assert.ok(summary.summary.includes("2 custom tags stored locally"));
 assert.ok(summary.summary.includes("1 inbox placement tests and 4 inbox placement analytics rows"));
 assert.ok(summary.summary.includes("Sampled raw tables are evidence support only"));
@@ -183,13 +229,14 @@ assert.ok(summary.summary.includes("reply-signal leads found during bounded lead
 assert.equal(summary.exact_metrics.inbox_placement_test_count, 1);
 assert.equal(summary.exact_metrics.inbox_placement_analytics_rows, 4);
 assert.equal(summary.coverage.length, 1);
-assert.equal(summary.campaigns.length, 2);
-assert.equal(summary.campaigns[0].campaign_id, "c1");
-assert.equal(summary.campaigns[0].campaign_name, "Alpha");
-assert.equal(summary.campaigns[0].emails_sent_count, 800);
-assert.equal(summary.campaigns[0].reply_count_unique, 24);
-assert.equal(summary.campaigns[0].unique_reply_rate_pct, 3);
-assert.equal(summary.campaigns[0].total_opportunity_value, 25000);
+assert.equal(summary.campaigns.length, 3);
+const alphaSummaryCampaign = summary.campaigns.find((campaign) => campaign.campaign_id === "c1");
+assert.ok(alphaSummaryCampaign);
+assert.equal(alphaSummaryCampaign.campaign_name, "Alpha");
+assert.equal(alphaSummaryCampaign.emails_sent_count, 800);
+assert.equal(alphaSummaryCampaign.reply_count_unique, 24);
+assert.equal(alphaSummaryCampaign.unique_reply_rate_pct, 3);
+assert.equal(alphaSummaryCampaign.total_opportunity_value, 25000);
 assert.equal(summary.output_limits.campaign_limit, 100);
 
 const campaignOverview = await runQuery(
@@ -458,9 +505,65 @@ assert.equal(
 );
 const replyRecipes = getQueryRecipes("reply-patterns");
 assert.equal(
-  replyRecipes.some((recipe) => recipe.id === "fetched-reply-text-by-campaign" && recipe.sql.includes("reply_body_text")),
+  replyRecipes.some((recipe) => recipe.id === "fetched-reply-text-by-campaign" && recipe.sql.includes("reply_content_preview")),
   true,
 );
+assert.equal(
+  replyRecipes.some(
+    (recipe) =>
+      recipe.id === "fetched-reply-text-raw-detail-by-campaign" &&
+      recipe.sql.includes("reply_body_text") &&
+      recipe.notes.some((note) => /do not paste raw bodies or contact fields/i.test(note)),
+  ),
+  true,
+);
+for (const recipeId of [
+  "reply-email-context-feed",
+  "reply-feed",
+  "fetched-reply-text-by-campaign",
+]) {
+  const recipe = replyRecipes.find((candidate) => candidate.id === recipeId);
+  assert.ok(recipe, `${recipeId} should exist`);
+  assert.doesNotMatch(recipe.sql, /^\s*(lead_email|reply_from_email|reply_body_text)\b/im);
+}
+const replyEmailContextFeedRecipe = replyRecipes.find((recipe) => recipe.id === "reply-email-context-feed");
+assert.ok(replyEmailContextFeedRecipe);
+const replyEmailContextFeedRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(replyEmailContextFeedRecipe.sql.replaceAll("{{campaign_id}}", "c1"), "ws_test"),
+);
+assert.equal(replyEmailContextFeedRows.length > 0, true);
+const coveredReplyEmailContextFeedRow = replyEmailContextFeedRows.find(
+  (row) => row.context_gap_reason === "covered",
+);
+assert.ok(coveredReplyEmailContextFeedRow);
+assert.equal(coveredReplyEmailContextFeedRow.campaign_id, "c1");
+assert.equal(Number(coveredReplyEmailContextFeedRow.reply_email_rows), 1);
+assert.equal(Number(coveredReplyEmailContextFeedRow.matched_leads), 1);
+for (const row of replyEmailContextFeedRows) {
+  assert.ok(!("lead_email" in row));
+  assert.ok(!("reply_body_text" in row));
+}
+const campaignPerformanceIndex = buildQueryRecipeResponse({ topic: "campaign-performance" });
+assert.equal(campaignPerformanceIndex.output_shape, "compact_recipe_index");
+assert.equal(campaignPerformanceIndex.mode, "summary");
+assert.equal(campaignPerformanceIndex.recipe_count >= 10, true);
+assert.equal(campaignPerformanceIndex.returned_count, 10);
+assert.equal(campaignPerformanceIndex.page_size, 10);
+assert.equal(campaignPerformanceIndex.has_more, true);
+assert.equal(
+  campaignPerformanceIndex.recipes.every((recipe) => recipe.sql === undefined && recipe.sql_available === true),
+  true,
+);
+assert.equal(JSON.stringify(campaignPerformanceIndex).length < 25_000, true);
+const stepFatigueLookup = buildQueryRecipeResponse({
+  topic: "campaign-performance",
+  recipe_id: "step-fatigue-by-campaign",
+});
+assert.equal(stepFatigueLookup.output_shape, "single_recipe");
+assert.equal(stepFatigueLookup.returned_count, 1);
+assert.equal(stepFatigueLookup.recipes[0].id, "step-fatigue-by-campaign");
+assert.equal(stepFatigueLookup.recipes[0].sql.includes("{{campaign_id}}"), true);
 const icpRecipes = getQueryRecipes("icp-signals");
 const leadListSourceRecipe = icpRecipes.find((recipe) => recipe.id === "lead-list-source-quality");
 assert.ok(leadListSourceRecipe);
@@ -525,7 +628,9 @@ await runQuery(
 );
 
 const campaignRecipes = getQueryRecipes("campaign-performance");
+const accountManagerRecipes = getQueryRecipes("account-manager-brief");
 const launchQaRecipes = getQueryRecipes("campaign-launch-qa");
+const experimentPlannerRecipes = getQueryRecipes("experiment-planner");
 const workspaceHealthRecipes = getQueryRecipes("workspace-health");
 const tagCatalogRecipe = tagRecipes.find((recipe) => recipe.id === "tag-catalog");
 assert.ok(tagCatalogRecipe);
@@ -709,6 +814,40 @@ const launchQaRows = await runQuery(
   ),
 );
 assert.equal(launchQaRows[0].launch_qa_status, "review_settings_unknown");
+const runwayLaunchQaRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(
+    launchQaChecklistRecipe.sql.replaceAll("{{campaign_name}}", "Runway Active"),
+    "ws_test",
+  ),
+);
+assert.equal(runwayLaunchQaRows.length, 1);
+assert.equal(runwayLaunchQaRows[0].launch_qa_status, "review_settings_unknown");
+assert.equal(runwayLaunchQaRows[0].exact_uncontacted_leads, null);
+assert.equal(runwayLaunchQaRows[0].lead_supply_exactness, "unknown_no_exact_uncontacted_lead_field");
+assert.equal(Number(runwayLaunchQaRows[0].new_leads_contacted_count), 340);
+const accountManagerBriefRecipe = accountManagerRecipes.find((recipe) => recipe.id === "account-manager-client-brief");
+assert.ok(accountManagerBriefRecipe);
+const accountManagerBriefRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(accountManagerBriefRecipe.sql, "ws_test"),
+);
+const runwayAccountManagerBrief = accountManagerBriefRows.find((row) => row.campaign_id === "c4");
+assert.ok(runwayAccountManagerBrief);
+assert.equal(runwayAccountManagerBrief.am_attention_reason, "monitor");
+assert.equal(runwayAccountManagerBrief.exact_uncontacted_leads, null);
+assert.equal(runwayAccountManagerBrief.lead_supply_exactness, "unknown_no_exact_uncontacted_lead_field");
+const experimentPlannerRecipe = experimentPlannerRecipes.find((recipe) => recipe.id === "experiment-planner-candidates");
+assert.ok(experimentPlannerRecipe);
+const experimentPlannerRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(experimentPlannerRecipe.sql, "ws_test"),
+);
+const runwayExperimentCandidate = experimentPlannerRows.find((row) => row.campaign_id === "c4");
+assert.ok(runwayExperimentCandidate);
+assert.notEqual(runwayExperimentCandidate.recommended_test_lane, "lead_supply_or_segment_refill_test");
+assert.equal(runwayExperimentCandidate.exact_uncontacted_leads, null);
+assert.equal(runwayExperimentCandidate.lead_supply_exactness, "unknown_no_exact_uncontacted_lead_field");
 const settingsRecipe = launchQaRecipes.find((recipe) => recipe.id === "campaign-tracking-deliverability-settings");
 assert.ok(settingsRecipe);
 const settingsRows = await runQuery(db, enforceLocalWorkspaceScope(settingsRecipe.sql, "ws_test"));
@@ -728,6 +867,19 @@ assert.equal(Number(stepFatigueRows[0].metric_value_pct), 4);
 assert.equal(Number(stepFatigueRows[1].previous_step_metric_value_pct), 4);
 assert.equal(Number(stepFatigueRows[1].metric_delta_from_previous_step_pct_points), -2.75);
 const copyRecipes = getQueryRecipes("copy-analysis");
+for (const recipeId of ["rendered-outbound-sample", "personalization-leak-audit"]) {
+  const recipe = copyRecipes.find((candidate) => candidate.id === recipeId);
+  assert.ok(recipe, `${recipeId} should exist`);
+  assert.doesNotMatch(recipe.sql, /^\s*(to_email|rendered_body_text|template_body_text)\b/im);
+}
+for (const recipeId of ["rendered-outbound-raw-detail", "personalization-leak-raw-detail"]) {
+  const recipe = copyRecipes.find((candidate) => candidate.id === recipeId);
+  assert.ok(recipe, `${recipeId} should exist`);
+  assert.equal(
+    recipe.notes.some((note) => /do not paste raw bodies or contact fields/i.test(note)),
+    true,
+  );
+}
 const leakRecipe = copyRecipes.find((recipe) => recipe.id === "personalization-leak-audit");
 assert.ok(leakRecipe);
 assert.match(leakRecipe.sql, /sendlens\.rendered_outbound_context/);
@@ -741,9 +893,23 @@ assert.equal(Number(leakRows[0].affected_campaigns), 1);
 assert.equal(Number(leakRows[0].affected_step_variants), 1);
 assert.equal(Number(leakRows[0].affected_leads), 1);
 assert.equal(Number(leakRows[0].affected_rendered_rows), 1);
-assert.equal(leakRows[0].sample_email, "b@example.com");
-assert.equal(Boolean(leakRows[0].subject_has_unresolved_token), true);
-assert.equal(Boolean(leakRows[0].body_has_unresolved_token), true);
+assert.equal(Number(leakRows[0].subject_token_rows), 1);
+assert.equal(Number(leakRows[0].body_token_rows), 1);
+assert.equal(
+  String(leakRows[0].example_rendered_subject_preview).includes("{{missing_first_name}}"),
+  true,
+);
+
+const rawLeakRecipe = copyRecipes.find((recipe) => recipe.id === "personalization-leak-raw-detail");
+assert.ok(rawLeakRecipe);
+const rawLeakRows = await runQuery(
+  db,
+  rawLeakRecipe.sql.replaceAll("{{campaign_id}}", "c1"),
+);
+assert.equal(rawLeakRows.length, 1);
+assert.equal(rawLeakRows[0].sample_email, "b@example.com");
+assert.equal(Boolean(rawLeakRows[0].subject_has_unresolved_token), true);
+assert.equal(Boolean(rawLeakRows[0].body_has_unresolved_token), true);
 
 const normalizedStepAnalytics = normalizeStepAnalyticsRows([
   {
@@ -973,6 +1139,13 @@ await fs.writeFile(
   JSON.stringify({
     status: "succeeded",
     source: "manual",
+    lastRefreshScope: "provider_workspace",
+    refreshScope: {
+      type: "provider_workspace",
+      label: "Provider-scoped workspace refresh for instantly.",
+      provider: "instantly",
+      workspaceFreshness: "provider_workspace",
+    },
     lastSuccessAt: new Date().toISOString(),
     campaignsTotal: 8,
     campaignsProcessed: 8,
@@ -990,9 +1163,43 @@ const doctorReport = await buildSetupDoctorReport();
 assert.equal(doctorReport.cache_freshness.status, "succeeded");
 assert.equal(doctorReport.cache_freshness.age_seconds < 60, true);
 assert.match(doctorReport.cache_freshness.label, /just now/);
+assert.equal(doctorReport.cache_freshness.last_refresh_scope, "provider_workspace");
+assert.equal(doctorReport.cache_freshness.workspace_freshness, "provider_workspace");
 assert.equal(doctorReport.capabilities.live_refresh, true);
 assert.equal(doctorReport.capabilities.instantly_key_validated, true);
 assert.match(String(doctorReport.next_steps[0]), /Current cache freshness: just now/);
+
+await fs.writeFile(
+  path.join(statusRoot, "refresh-status.json"),
+  JSON.stringify({
+    status: "succeeded",
+    source: "manual",
+    lastRefreshScope: "campaign",
+    refreshScope: {
+      type: "campaign",
+      label: "Campaign-scoped refresh matched 1 of 1 requested campaigns.",
+      provider: "instantly",
+      requestedCampaignIds: ["campaign_1"],
+      campaignIds: ["campaign_1"],
+      campaignsMatched: 1,
+      workspaceFreshness: "scoped",
+    },
+    lastSuccessAt: new Date().toISOString(),
+    campaignsTotal: 1,
+    campaignsProcessed: 1,
+    dbPath: process.env.SENDLENS_DB_PATH,
+  }),
+);
+const scopedDoctorReport = await buildSetupDoctorReport();
+assert.equal(scopedDoctorReport.cache_freshness.status, "succeeded");
+assert.equal(scopedDoctorReport.cache_freshness.last_refresh_scope, "campaign");
+assert.equal(scopedDoctorReport.cache_freshness.workspace_freshness, "scoped");
+assert.match(scopedDoctorReport.cache_freshness.label, /just now/);
+assert.match(String(scopedDoctorReport.next_steps[0]), /last refresh was campaign-scoped/);
+assert.match(
+  scopedDoctorReport.checks.find((check) => check.name === "Refresh status")?.message ?? "",
+  /Campaign-scoped refresh matched 1 of 1 requested campaigns/,
+);
 globalThis.fetch = originalFetch;
 delete process.env.SENDLENS_INSTANTLY_API_KEY;
 delete process.env.SENDLENS_DB_PATH;

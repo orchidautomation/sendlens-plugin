@@ -23,7 +23,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 1. Start with `workspace_snapshot` for broad context.
 2. Pull `analysis_starters(topic="account-manager-brief")`.
 3. Scope by campaign name or Instantly tag when provided.
-4. Use campaign-performance runway recipes before making runway claims.
+4. Use campaign-performance runway recipes before making runway claims; do not call a campaign dry unless exact remaining-lead evidence supports it.
 5. Use workspace-health deliverability recipes before attributing weak replies to copy or targeting.
 6. Switch to copy, ICP, or reply specialists before making detailed claims in those lanes.
 

@@ -24,7 +24,7 @@ import {
   resolveSourceProviderMode,
   validateSmartleadApiKey,
 } from "./provider-config";
-import { readRefreshStatus, type RefreshStatus } from "./refresh-status";
+import { readRefreshStatus, type RefreshScope, type RefreshStatus } from "./refresh-status";
 
 type CheckStatus = "pass" | "warn" | "fail" | "info";
 
@@ -38,6 +38,9 @@ type DoctorCheck = {
 type CacheFreshness = {
   status: RefreshStatus["status"];
   source?: RefreshStatus["source"];
+  last_refresh_scope?: RefreshStatus["lastRefreshScope"];
+  refresh_scope?: RefreshScope;
+  workspace_freshness: RefreshScope["workspaceFreshness"] | "unknown";
   timestamp: string | null;
   age_seconds: number | null;
   label: string;
@@ -92,7 +95,12 @@ function statusSummary(status: RefreshStatus) {
   const timestampWithAge = timestamp && freshness.age_seconds != null
     ? `${timestamp} (${freshness.label})`
     : timestamp;
-  return [status.status, status.source, timestampWithAge].filter(Boolean).join(" | ");
+  return [
+    status.status,
+    status.source,
+    status.refreshScope?.label,
+    timestampWithAge,
+  ].filter(Boolean).join(" | ");
 }
 
 function refreshTimestamp(status: RefreshStatus) {
@@ -119,6 +127,9 @@ function buildCacheFreshness(status: RefreshStatus): CacheFreshness {
     return {
       status: status.status,
       source: status.source,
+      last_refresh_scope: status.lastRefreshScope ?? status.refreshScope?.type,
+      refresh_scope: status.refreshScope,
+      workspace_freshness: status.refreshScope?.workspaceFreshness ?? "unknown",
       timestamp: null,
       age_seconds: null,
       label: "No successful refresh timestamp is available.",
@@ -130,6 +141,9 @@ function buildCacheFreshness(status: RefreshStatus): CacheFreshness {
     return {
       status: status.status,
       source: status.source,
+      last_refresh_scope: status.lastRefreshScope ?? status.refreshScope?.type,
+      refresh_scope: status.refreshScope,
+      workspace_freshness: status.refreshScope?.workspaceFreshness ?? "unknown",
       timestamp,
       age_seconds: null,
       label: "Refresh timestamp could not be parsed.",
@@ -141,6 +155,9 @@ function buildCacheFreshness(status: RefreshStatus): CacheFreshness {
   return {
     status: status.status,
     source: status.source,
+    last_refresh_scope: status.lastRefreshScope ?? status.refreshScope?.type,
+    refresh_scope: status.refreshScope,
+    workspace_freshness: status.refreshScope?.workspaceFreshness ?? "unknown",
     timestamp,
     age_seconds: ageSeconds,
     label: ageSeconds < 60 ? `just now (${age} ago)` : `${age} ago`,
@@ -175,6 +192,7 @@ export async function buildSetupDoctorReport() {
   const stateDirWritable = await checkWritableDir(stateDir);
   const refreshStatus = await readRefreshStatus();
   const cacheFreshness = buildCacheFreshness(refreshStatus);
+  const lastRefreshWasScoped = cacheFreshness.workspace_freshness === "scoped";
   const shadowDbExists = await exists(shadowDbPath);
   const lockDir = path.join(stateDir, "session-start-refresh.lock");
   const lockPidPath = path.join(lockDir, "pid");
@@ -422,7 +440,9 @@ export async function buildSetupDoctorReport() {
           ? "fail"
           : refreshStatus.status === "failed"
             ? "warn"
-            : "pass",
+            : lastRefreshWasScoped
+              ? "warn"
+              : "pass",
     message: statusSummary(refreshStatus) || "No refresh status found.",
     detail: refreshStatus.message ?? undefined,
   });
@@ -539,7 +559,11 @@ export async function buildSetupDoctorReport() {
   } else if (demoMode && !dbExists) {
     nextSteps.push("Call seed_demo_workspace before analysis.");
   } else {
-    nextSteps.push(`Current cache freshness: ${cacheFreshness.label}. Use workspace_snapshot as the first read; run refresh_data only when you explicitly need another fresh pull.`);
+    if (lastRefreshWasScoped) {
+      nextSteps.push(`Current cache age is ${cacheFreshness.label}, but the last refresh was campaign-scoped. Use workspace_snapshot to confirm the active workspace before treating the whole workspace as fresh.`);
+    } else {
+      nextSteps.push(`Current cache freshness: ${cacheFreshness.label}. Use workspace_snapshot as the first read; run refresh_data only when you explicitly need another fresh pull.`);
+    }
   }
 
   return {

@@ -62,17 +62,28 @@ Where relevant, SendLens responses should include:
 - accepts a provider-qualified or native campaign ID; `SENDLENS_PROVIDER=all` requires a provider-qualified campaign ID
 - validates campaign selectors against the active local cache before refresh when possible; invalid selectors return `schema_version: "campaign_selector_error.v1"` with `selector`, `workspace_id`, and `suggested_lookup_path`
 - refresh result for the requested campaign
+- scoped refresh metadata for the requested campaign; the broad refresh result is only returned when `include_refresh_metadata=true`
 - exact `campaign_overview`
 - `human_reply_sample` grouped into positive, negative, and neutral buckets
-- optional `rendered_outbound_sample`
-- output caps and reconstruction warnings; when rendered outbound samples are included, preserve that they are locally reconstructed sample evidence, not byte-for-byte delivered email text
+- compact `rendered_outbound_summary` with row counts and redacted preview metadata
+- optional raw `rendered_outbound_sample` only when `include_rendered_outbound=true`; the default response must not include recipient-level fields such as `to_email`, `from_email`, or raw rendered body rows
+- output caps and reconstruction warnings; preserve that rendered outbound evidence is locally reconstructed sample evidence, not byte-for-byte delivered email text
 
 `analysis_starters`
 
 - recipe metadata
 - recipe `exactness`: `exact`, `sampled`, or `hybrid`
-- SQL with explicit placeholders
-- notes the agent must preserve when answering
+- compact recipe index by default with `output_shape`, `returned_count`, `page`, `page_size`, `has_more`, and `next_page`
+- `recipe_id` exact lookup for one full recipe
+- `mode="full"` bounded pages with SQL and explicit placeholders
+- notes the agent must preserve when answering are included with full recipes
+
+`search_catalog`
+
+- returns `matches` for table and column hits, including partial matches for broad multi-token queries
+- returns `search_terms` and `suggested_narrower_terms` so operators can retry with schema-specific language
+- returns `analysis_starter_suggestions` for workflow concepts such as runway, scale, refill, deliverability, sender accounts, rendered outbound, reply body, payload, and tags
+- when schema search finds no direct match for a workflow concept, returns `guidance` that points to relevant `analysis_starters` topics instead of silently failing
 
 `analyze_data`
 
@@ -99,6 +110,9 @@ Where relevant, SendLens responses should include:
 - calls the same rate-conscious email lane as `fetch_reply_text`; it is not part of session-start refresh
 - backfills lead context through `/leads/list` contacts/ids after reply bodies are stored
 - returns `fetch_result`, `lead_context_backfill`, `hydration_coverage`, `context_gap_counts`, exact `campaign_overview`, bounded `reply_email_context_sample`, recommended next recipes, warnings, and output limits
+- `reply_email_context_sample` is redacted by default: full `reply_body_text`, raw email address fields, and long quoted bodies are omitted while short redacted `reply_body_preview` values preserve diagnostic signal
+- `reply_evidence_detail` defaults to `redacted_preview`; full reply bodies and raw email addresses require explicit opt-in with `full_reply_bodies`
+- default recommended next recipes do not include raw reply-body feed recipes; `reply-email-context-feed` is recommended only when `reply_evidence_detail="full_reply_bodies"`
 
 ## Runtime Regression Coverage
 
@@ -110,9 +124,10 @@ Run `npm run test:mcp-response-contract` when changing MCP tools, response field
 - campaign selector ambiguity responses with provider-qualified matches
 - provider overlap-risk public views for sampled cross-provider duplicate email/domain/company exposure
 - `analysis_starters` recipe metadata, exactness labels, SQL, and notes
+- `search_catalog` partial matches, narrower search terms, and workflow concept starter suggestions
 - `analyze_data` rationale, row caps, truncation state, warnings, and rows
 - `fetch_reply_text` hydration result metadata, sample caps, and bounded reply samples
-- `prepare_campaign_analysis` premium-depth coverage, context gaps, backfill metadata, warnings, output limits, and bounded reply-email samples
+- `prepare_campaign_analysis` premium-depth coverage, context gaps, backfill metadata, warnings, output limits, and bounded redacted reply-email samples unless full evidence is explicitly requested
 
 ## Exactness Rules
 

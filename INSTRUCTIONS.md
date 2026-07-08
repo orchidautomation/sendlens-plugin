@@ -96,7 +96,7 @@ If the host degrades command or skill routing to guidance, explicitly invoke the
 - If hydrated reply bodies show prospects objecting to the wrong topic, industry, compliance domain, or template, prioritize that as setup/template-resolution risk. Do not count those replies as signal that the intended angle worked.
 - For step or sequence ranking, use `step_analytics.unique_replies` only when coverage is clearly present for that campaign. If step-level reply counts are sparse or null, switch the ranking basis to `step_analytics.opportunities` and derived opportunity rate, and say so explicitly.
 - For AM briefs, separate internal action priority from client-safe wording. Include an action queue when the user asks what to do next.
-- For launch QA, blockers come first. Do not mark a campaign ready when sender inventory, lead supply, or templates are missing.
+- For launch QA, blockers come first. Do not mark a campaign ready when sender inventory or templates are missing; treat lead supply as unknown unless exact remaining-lead evidence exists.
 - For experiment planning, choose one campaign and one test lane before prescribing changes. Include hypothesis, metric, guardrail, stop condition, and evidence basis.
 - Treat `custom_tags` and `custom_tag_mappings` as the exact tag-filter layer. Use them to scope analyses by campaign or sampled lead tags.
 - Treat `lead_evidence`, `lead_payload_kv`, `reply_context`, and `rendered_outbound_context` as the preferred semantic evidence layer.
