@@ -38,7 +38,7 @@ import { toReplyTextFetchResult } from "./reply-text-contract";
 import { readRefreshStatus } from "./refresh-status";
 import { buildSetupDoctorReport } from "./setup-doctor";
 import { enforceLocalWorkspaceScope, LocalSqlGuardError } from "./sql-guard";
-import { buildWorkspaceSummary } from "./summary";
+import { buildWorkspaceSummary, providerEvidenceWarnings } from "./summary";
 import { PLUGIN_VERSION } from "./version";
 
 loadSendLensEnv();
@@ -1877,7 +1877,30 @@ async function buildScopedWorkspaceSnapshot(
      ORDER BY source_provider`,
   );
 
+  const capabilityWhere = providerScope === "all"
+    ? "TRUE"
+    : `source_provider = '${providerScope}'`;
+  const providerCapabilities = await query(
+    db,
+    `SELECT
+       source_provider,
+       capability,
+       support_status,
+       confidence,
+       coverage_note,
+       synced_at
+     FROM sendlens.provider_capabilities
+     WHERE workspace_id = '${workspace}'
+       AND ${capabilityWhere}
+     ORDER BY source_provider, capability`,
+  );
+
   if (campaignRows.length === 0) {
+    const warnings = providerEvidenceWarnings(providerScope, 0, providerCapabilities);
+    if (warnings.length === 0) {
+      warnings.push("No campaigns matched the requested scoped filter in the local cache.");
+    }
+
     return {
       schema_version: "workspace_snapshot.v1",
       workspaceId,
@@ -1886,10 +1909,10 @@ async function buildScopedWorkspaceSnapshot(
       exact_metrics: {},
       source_provider_scope: providerScope,
       provider_breakdown: [],
-      provider_capabilities: [],
+      provider_capabilities: providerCapabilities,
       rate_caveats: [],
       coverage: [],
-      warnings: ["No campaigns matched the requested scoped filter in the local cache."],
+      warnings,
       last_refreshed_at: await readRefreshStatus().then((s) => s.lastSuccessAt ?? null),
       campaigns: [],
     };
@@ -1932,9 +1955,16 @@ async function buildScopedWorkspaceSnapshot(
   if (bounceRate > 2) {
     warnings.push("Scoped bounce rate is above 2%, which deserves list-quality review.");
   }
-  if (replyRate < 1) {
+  if (totalSent > 0 && replyRate < 1) {
     warnings.push("Scoped unique reply rate is below 1%, so copy and targeting need attention.");
   }
+  warnings.push(
+    ...providerEvidenceWarnings(
+      providerScope,
+      Number(metrics.active_campaign_count ?? 0) || 0,
+      providerCapabilities,
+    ),
+  );
   if (campaignRowsTruncated) {
     warnings.push(
       `Scoped campaign list was truncated to ${SCOPED_SNAPSHOT_CAMPAIGN_LIMIT} campaigns. Add a narrower tag or campaign-name filter for more detail.`,
@@ -1948,23 +1978,6 @@ async function buildScopedWorkspaceSnapshot(
     : [];
   if (rateCaveats.length > 0) warnings.push(rateCaveats[0]);
 
-  const capabilityWhere = providerScope === "all"
-    ? "TRUE"
-    : `source_provider = '${providerScope}'`;
-  const providerCapabilities = await query(
-    db,
-    `SELECT
-       source_provider,
-       capability,
-       support_status,
-       confidence,
-       coverage_note,
-       synced_at
-     FROM sendlens.provider_capabilities
-     WHERE workspace_id = '${workspace}'
-       AND ${capabilityWhere}
-     ORDER BY source_provider, capability`,
-  );
   if (
     providerCapabilities.some((row) =>
       row.source_provider === "smartlead"
