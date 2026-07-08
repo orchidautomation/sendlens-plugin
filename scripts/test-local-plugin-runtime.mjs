@@ -892,8 +892,8 @@ const leakRows = await runQuery(
 );
 assert.equal(leakRows.length, 2);
 assert.equal(Number(leakRows[0].affected_campaigns), 1);
-assert.equal(Number(leakRows[0].affected_step_variants), 2);
-assert.equal(Number(leakRows[0].affected_rendered_rows), 2);
+assert.equal(Number(leakRows[0].affected_step_variants), 1);
+assert.equal(Number(leakRows[0].affected_rendered_rows), 1);
 assert.equal(Number(leakRows[0].rendered_rows_with_payload_tokens), 1);
 assert.equal(Number(leakRows[0].rendered_rows_with_account_signature_tokens), 1);
 const safeLeakRowsByClassification = new Map(

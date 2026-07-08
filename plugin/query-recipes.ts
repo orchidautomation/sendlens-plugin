@@ -2204,9 +2204,9 @@ leaked_rows AS (
 ),
 rollup AS (
   SELECT
-    COUNT(DISTINCT campaign_id) AS affected_campaigns,
-    COUNT(DISTINCT COALESCE(step_resolved, 'unknown') || ':' || COALESCE(variant_resolved, 'unknown')) AS affected_step_variants,
-    COUNT(*) AS affected_rendered_rows,
+    COUNT(DISTINCT CASE WHEN payload_unresolved_token_count > 0 THEN campaign_id END) AS affected_campaigns,
+    COUNT(DISTINCT CASE WHEN payload_unresolved_token_count > 0 THEN COALESCE(step_resolved, 'unknown') || ':' || COALESCE(variant_resolved, 'unknown') END) AS affected_step_variants,
+    SUM(CASE WHEN payload_unresolved_token_count > 0 THEN 1 ELSE 0 END) AS affected_rendered_rows,
     SUM(CASE WHEN payload_unresolved_token_count > 0 THEN 1 ELSE 0 END) AS rendered_rows_with_payload_tokens,
     SUM(CASE WHEN account_signature_token_count > 0 THEN 1 ELSE 0 END) AS rendered_rows_with_account_signature_tokens
   FROM leaked_rows
@@ -2262,6 +2262,7 @@ LIMIT 50;`,
       "Replace '{{campaign_id}}' with one campaign ID; personalization variables are campaign-specific.",
       "`token_classification = 'payload_personalization_unresolved'` means campaign/lead payload variables still appear unresolved.",
       "`token_classification = 'signature_unresolved_reconstruction_caveat'` means only known account signature tokens remained in the local reconstruction; do not treat that as proof lead personalization failed.",
+      "`affected_*` counts include unresolved campaign/lead payload rows, not signature-only reconstruction caveats.",
       "This safe summary intentionally omits recipient email, full rendered body text, and full template body text.",
       "Use affected counts and previews for triage; use `personalization-leak-raw-detail` only for local row-level QA.",
     ],
