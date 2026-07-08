@@ -23,6 +23,23 @@ export type QueryRecipe = {
   notes: string[];
 };
 
+export type QueryRecipeSummary = Omit<QueryRecipe, "sql" | "notes"> & {
+  sql_available: true;
+};
+
+export type QueryRecipeMode = "summary" | "full";
+
+export type QueryRecipeResponseOptions = {
+  topic?: string;
+  recipe_id?: string;
+  mode?: QueryRecipeMode;
+  page?: number;
+  page_size?: number;
+};
+
+const DEFAULT_RECIPE_PAGE_SIZE = 10;
+const MAX_RECIPE_PAGE_SIZE = 25;
+
 const QUERY_RECIPES: QueryRecipe[] = [
   {
     id: "workspace-overview",
@@ -672,7 +689,8 @@ ORDER BY date DESC;`,
     co.daily_limit AS campaign_daily_limit,
     co.leads_count,
     co.contacted_count,
-    GREATEST(COALESCE(co.leads_count, 0) - COALESCE(co.contacted_count, 0), 0) AS leads_remaining,
+    CAST(NULL AS INTEGER) AS exact_uncontacted_leads,
+    'unknown_no_exact_uncontacted_lead_field' AS lead_supply_exactness,
     COALESCE(co.emails_sent_count, 0) AS emails_sent_count,
     co.reply_count_unique,
     co.unique_reply_rate_pct,
@@ -762,7 +780,8 @@ SELECT
   tc.schedule_timezone,
   tc.leads_count,
   tc.contacted_count,
-  tc.leads_remaining,
+  tc.exact_uncontacted_leads,
+  tc.lead_supply_exactness,
   tc.emails_sent_count,
   tc.reply_count_unique,
   tc.unique_reply_rate_pct,
@@ -779,13 +798,10 @@ SELECT
   p.peak_sent_single_day_30d,
   p.avg_new_leads_contacted_per_active_day_30d,
   p.peak_new_leads_contacted_single_day_30d,
-  ROUND(tc.leads_remaining / NULLIF(p.avg_new_leads_contacted_per_active_day_30d, 0), 1) AS new_lead_runway_observed_sending_days,
+  CAST(NULL AS DOUBLE) AS new_lead_runway_observed_sending_days,
   CASE
-    WHEN tc.leads_remaining = 0 THEN 'dry_on_new_prospects'
-    WHEN p.avg_new_leads_contacted_per_active_day_30d IS NULL THEN 'missing_recent_new_lead_pace'
-    WHEN tc.leads_remaining / NULLIF(p.avg_new_leads_contacted_per_active_day_30d, 0) < 2 THEN 'less_than_2_sending_days'
-    WHEN tc.leads_remaining / NULLIF(p.avg_new_leads_contacted_per_active_day_30d, 0) < 5 THEN 'less_than_1_work_week'
-    ELSE 'has_new_lead_buffer'
+    WHEN p.avg_new_leads_contacted_per_active_day_30d IS NOT NULL THEN 'recent_new_lead_contacting_observed_runway_unknown'
+    ELSE 'lead_runway_unknown_missing_recent_new_lead_pace'
   END AS new_lead_runway_status
 FROM tagged_campaigns tc
 LEFT JOIN pace p
@@ -799,10 +815,8 @@ LEFT JOIN sequence_rollup sr
  AND tc.campaign_id = sr.campaign_id
 ORDER BY
   CASE new_lead_runway_status
-    WHEN 'dry_on_new_prospects' THEN 1
-    WHEN 'less_than_2_sending_days' THEN 2
-    WHEN 'less_than_1_work_week' THEN 3
-    WHEN 'missing_recent_new_lead_pace' THEN 4
+    WHEN 'lead_runway_unknown_missing_recent_new_lead_pace' THEN 1
+    WHEN 'recent_new_lead_contacting_observed_runway_unknown' THEN 5
     ELSE 5
   END,
   new_lead_runway_observed_sending_days ASC NULLS LAST,
@@ -810,7 +824,7 @@ ORDER BY
     notes: [
       "Replace '{{tag_name}}' with a real campaign tag.",
       "This is the required first recipe for runway questions because it prevents confusing new-lead exhaustion with total send-volume exhaustion.",
-      "Use `leads_remaining` and `avg_new_leads_contacted_per_active_day_30d` for new-prospect runway.",
+      "Exact uncontacted lead supply is not cached; use recent `new_leads_contacted` pace only as observed demand/proxy evidence, not as proof that the campaign is dry.",
       "Use step analytics first/last step, configured step counts, and configured first/last step to explain whether there is a follow-up tail after step 0 is exhausted.",
       "Use observed sending weekday examples and peak daily sends as real schedule/capacity evidence before relying on configured campaign daily limits.",
     ],
@@ -846,7 +860,8 @@ SELECT
   strftime(cdm.date, '%w') AS weekday_number,
   strftime(cdm.date, '%A') AS weekday_name,
   tc.campaign_daily_limit,
-  GREATEST(COALESCE(tc.leads_count, 0) - COALESCE(tc.contacted_count, 0), 0) AS current_leads_remaining,
+  CAST(NULL AS INTEGER) AS exact_uncontacted_leads,
+  'unknown_no_exact_uncontacted_lead_field' AS lead_supply_exactness,
   COALESCE(cdm.sent, 0) AS campaign_attributed_sent,
   COALESCE(cdm.new_leads_contacted, 0) AS campaign_attributed_new_leads_contacted,
   COALESCE(cdm.contacted, 0) AS campaign_attributed_contacted,
@@ -1029,7 +1044,8 @@ SELECT
   sr.tagged_sender_avg_bounce_rate_30d_pct,
   tc.leads_count,
   tc.contacted_count,
-  GREATEST(COALESCE(tc.leads_count, 0) - COALESCE(tc.contacted_count, 0), 0) AS leads_remaining_to_contact,
+  CAST(NULL AS INTEGER) AS exact_uncontacted_leads,
+  'unknown_no_exact_uncontacted_lead_field' AS lead_supply_exactness,
   tc.completed_count,
   GREATEST(COALESCE(tc.contacted_count, 0) - COALESCE(tc.completed_count, 0), 0) AS contacted_not_completed,
   tc.emails_sent_count,
@@ -1045,15 +1061,8 @@ SELECT
   p.peak_new_leads_contacted_single_day_30d,
   p.sent_30d,
   p.new_leads_contacted_30d,
-  ROUND(GREATEST(COALESCE(tc.leads_count, 0) - COALESCE(tc.contacted_count, 0), 0) / NULLIF(p.avg_new_leads_contacted_per_active_day_30d, 0), 1) AS observed_new_lead_runway_sending_days,
-  ROUND(GREATEST(COALESCE(tc.leads_count, 0) - COALESCE(tc.contacted_count, 0), 0) / NULLIF(
-    CASE
-      WHEN COALESCE(sr.tagged_sender_daily_limit_total, 0) = 0 THEN tc.campaign_daily_limit
-      WHEN tc.campaign_daily_limit IS NULL THEN sr.tagged_sender_daily_limit_total
-      ELSE LEAST(tc.campaign_daily_limit, sr.tagged_sender_daily_limit_total)
-    END,
-    0
-  ), 1) AS configured_capacity_new_lead_runway_days,
+  CAST(NULL AS DOUBLE) AS observed_new_lead_runway_sending_days,
+  CAST(NULL AS DOUBLE) AS configured_capacity_new_lead_runway_days,
   steps.step_0_sent,
   steps.follow_up_sent,
   steps.step_analytics_sent_total,
@@ -1064,13 +1073,10 @@ SELECT
   seq.last_configured_step,
   CASE
     WHEN COALESCE(sr.tagged_sender_accounts, 0) = 0 THEN 'no_matching_tagged_senders_allocated'
-    WHEN GREATEST(COALESCE(tc.leads_count, 0) - COALESCE(tc.contacted_count, 0), 0) = 0 THEN 'all_leads_contacted'
-    WHEN p.avg_new_leads_contacted_per_active_day_30d IS NULL THEN 'missing_observed_new_lead_pace'
-    WHEN GREATEST(COALESCE(tc.leads_count, 0) - COALESCE(tc.contacted_count, 0), 0) / NULLIF(p.avg_new_leads_contacted_per_active_day_30d, 0) < 2 THEN 'less_than_2_sending_days'
-    WHEN GREATEST(COALESCE(tc.leads_count, 0) - COALESCE(tc.contacted_count, 0), 0) / NULLIF(p.avg_new_leads_contacted_per_active_day_30d, 0) < 5 THEN 'less_than_1_work_week'
-    ELSE 'has_new_lead_buffer'
+    WHEN p.avg_new_leads_contacted_per_active_day_30d IS NOT NULL THEN 'recent_new_lead_contacting_observed_runway_unknown'
+    ELSE 'lead_runway_unknown_missing_recent_new_lead_pace'
   END AS runway_status,
-  'current lead step is not exact from cached aggregates; contacted_not_completed includes in-flight plus replied/stopped/bounced/unsubscribed contacts' AS lead_state_caveat
+  'exact uncontacted lead supply is not cached; contacted_count can exceed leads_count, and contacted_not_completed includes in-flight plus replied/stopped/bounced/unsubscribed contacts' AS lead_state_caveat
 FROM tagged_campaigns tc
 LEFT JOIN sender_rollup sr
   ON tc.workspace_id = sr.workspace_id
@@ -1086,11 +1092,8 @@ LEFT JOIN sequence_rollup seq
  AND tc.campaign_id = seq.campaign_id
 ORDER BY
   CASE runway_status
-    WHEN 'all_leads_contacted' THEN 1
-    WHEN 'less_than_2_sending_days' THEN 2
-    WHEN 'less_than_1_work_week' THEN 3
-    WHEN 'no_matching_tagged_senders_allocated' THEN 4
-    WHEN 'missing_observed_new_lead_pace' THEN 5
+    WHEN 'no_matching_tagged_senders_allocated' THEN 1
+    WHEN 'lead_runway_unknown_missing_recent_new_lead_pace' THEN 5
     ELSE 6
   END,
   observed_new_lead_runway_sending_days ASC NULLS LAST,
@@ -1098,8 +1101,8 @@ ORDER BY
     notes: [
       "Replace '{{campaign_tag_name}}' and '{{account_tag_name}}' with real tag labels.",
       "This is the closest recipe for the complicated question: campaign tag, inbox tag, assigned inbox capacity, campaign daily limit, lead contact runway, completed count, observed pace, and follow-up tail.",
-      "The exact new-lead runway uses `leads_count - contacted_count` divided by observed new-lead contact pace.",
-      "Configured capacity runway uses the lower of campaign daily limit and matching tagged sender daily limits. Real throughput can be lower because follow-ups, schedules, throttles, and shared inboxes consume capacity.",
+      "Exact uncontacted lead supply is not cached; recent `new_leads_contacted` pace is observed activity/proxy evidence, not proof of remaining supply.",
+      "Configured capacity uses the lower of campaign daily limit and matching tagged sender daily limits. Real throughput can be lower because follow-ups, schedules, throttles, and shared inboxes consume capacity.",
       "`contacted_not_completed` is not a pure in-flight count; it can include replied/stopped/bounced/unsubscribed contacts because cached aggregates do not expose exact current lead step for every lead.",
     ],
   },
@@ -1154,7 +1157,8 @@ ORDER BY sampled_leads DESC, lead_status, email_replied_step NULLS LAST, email_o
     co.daily_limit,
     co.leads_count,
     co.contacted_count,
-    GREATEST(COALESCE(co.leads_count, 0) - COALESCE(co.contacted_count, 0), 0) AS leads_remaining,
+    CAST(NULL AS INTEGER) AS exact_uncontacted_leads,
+    'unknown_no_exact_uncontacted_lead_field' AS lead_supply_exactness,
     co.emails_sent_count,
     co.reply_count_unique,
     co.unique_reply_rate_pct,
@@ -1217,7 +1221,8 @@ SELECT
   ac.daily_limit,
   ac.leads_count,
   ac.contacted_count,
-  ac.leads_remaining,
+  ac.exact_uncontacted_leads,
+  ac.lead_supply_exactness,
   r7.sent_7d,
   r7.new_leads_contacted_7d,
   r7.unique_replies_7d,
@@ -1225,7 +1230,7 @@ SELECT
   r30.sending_days_30d,
   r30.avg_sent_per_sending_day_30d,
   r30.peak_sent_single_day_30d,
-  ROUND(ac.leads_remaining / NULLIF(r30.avg_new_leads_contacted_per_active_day_30d, 0), 1) AS new_lead_runway_sending_days,
+  CAST(NULL AS DOUBLE) AS new_lead_runway_sending_days,
   ac.emails_sent_count,
   ac.reply_count_unique,
   ac.unique_reply_rate_pct,
@@ -1241,10 +1246,9 @@ SELECT
   ac.reply_outbound_rows,
   CASE
     WHEN ac.bounce_rate_pct >= 5 THEN 'high_bounce_risk'
-    WHEN ac.leads_remaining = 0 THEN 'dry_on_new_prospects'
-    WHEN ac.leads_remaining / NULLIF(r30.avg_new_leads_contacted_per_active_day_30d, 0) < 5 THEN 'lead_refill_needed'
     WHEN COALESCE(sc.resolved_sender_accounts, 0) = 0 THEN 'sender_inventory_missing'
     WHEN COALESCE(r7.sent_7d, 0) = 0 THEN 'no_recent_volume'
+    WHEN r30.avg_new_leads_contacted_per_active_day_30d IS NULL THEN 'lead_runway_unknown_missing_recent_new_lead_pace'
     ELSE 'monitor'
   END AS am_attention_reason
 FROM active_campaigns ac
@@ -1263,10 +1267,9 @@ LEFT JOIN sender_coverage sc
 ORDER BY
   CASE am_attention_reason
     WHEN 'high_bounce_risk' THEN 1
-    WHEN 'dry_on_new_prospects' THEN 2
-    WHEN 'lead_refill_needed' THEN 3
-    WHEN 'sender_inventory_missing' THEN 4
-    WHEN 'no_recent_volume' THEN 5
+    WHEN 'sender_inventory_missing' THEN 2
+    WHEN 'no_recent_volume' THEN 3
+    WHEN 'lead_runway_unknown_missing_recent_new_lead_pace' THEN 4
     ELSE 6
   END,
   ac.unique_reply_rate_pct DESC NULLS LAST,
@@ -1274,7 +1277,7 @@ ORDER BY
     notes: [
       "Use this as the first exact data pull for account-manager briefs and daily action queues.",
       "Write the brief in client-safe language: wins, risks, current actions, asks, and next review date.",
-      "Do not expose internal caveats verbosely to a client; translate them into clear limitations or next checks.",
+      "Do not expose internal caveats verbosely to a client; translate unknown exact lead runway into clear limitations or next checks.",
       "For tag-specific briefs, add a join or WHERE filter on `campaign_tags` before ordering.",
     ],
   },
@@ -1309,7 +1312,9 @@ ORDER BY
     c.step_count,
     co.leads_count,
     co.contacted_count,
-    GREATEST(COALESCE(co.leads_count, 0) - COALESCE(co.contacted_count, 0), 0) AS leads_remaining,
+    CAST(NULL AS INTEGER) AS exact_uncontacted_leads,
+    'unknown_no_exact_uncontacted_lead_field' AS lead_supply_exactness,
+    COALESCE(co.new_leads_contacted_count, 0) AS new_leads_contacted_count,
     co.bounce_rate_pct,
     co.unique_reply_rate_pct
   FROM sendlens.campaigns c
@@ -1371,7 +1376,9 @@ SELECT
   tr.blank_body_templates,
   cb.leads_count,
   cb.contacted_count,
-  cb.leads_remaining,
+  cb.exact_uncontacted_leads,
+  cb.lead_supply_exactness,
+  cb.new_leads_contacted_count,
   sr.resolved_sender_accounts,
   sr.resolved_sender_daily_limit_total,
   sr.sender_rows_missing_status,
@@ -1381,7 +1388,6 @@ SELECT
   cb.unique_reply_rate_pct,
   CASE
     WHEN COALESCE(sr.resolved_sender_accounts, 0) = 0 THEN 'blocker_missing_senders'
-    WHEN COALESCE(cb.leads_remaining, 0) = 0 THEN 'blocker_no_uncontacted_leads'
     WHEN COALESCE(tr.template_steps, 0) = 0 THEN 'blocker_missing_templates'
     WHEN COALESCE(tr.blank_body_templates, 0) > 0 THEN 'blocker_blank_body'
     WHEN cb.tracking_status = 'tracking_unknown' OR cb.deliverability_settings_status = 'deliverability_settings_unknown' THEN 'review_settings_unknown'
@@ -1400,13 +1406,12 @@ LEFT JOIN sender_rollup sr
 ORDER BY
   CASE launch_qa_status
     WHEN 'blocker_missing_senders' THEN 1
-    WHEN 'blocker_no_uncontacted_leads' THEN 2
-    WHEN 'blocker_missing_templates' THEN 3
-    WHEN 'blocker_blank_body' THEN 4
-    WHEN 'review_settings_unknown' THEN 5
-    WHEN 'review_deliverability_guardrails_relaxed' THEN 6
-    WHEN 'review_tracking_enabled' THEN 7
-    WHEN 'review_sender_bounce_risk' THEN 8
+    WHEN 'blocker_missing_templates' THEN 2
+    WHEN 'blocker_blank_body' THEN 3
+    WHEN 'review_settings_unknown' THEN 4
+    WHEN 'review_deliverability_guardrails_relaxed' THEN 5
+    WHEN 'review_tracking_enabled' THEN 6
+    WHEN 'review_sender_bounce_risk' THEN 7
     ELSE 9
   END,
   cb.campaign_name;`,
@@ -1414,6 +1419,7 @@ ORDER BY
       "Replace '{{campaign_name}}' with a campaign name fragment, or swap the WHERE clause for `c.id = '{{campaign_id}}'`.",
       "Pair this with `personalization-leak-audit` when the campaign uses template variables.",
       "Launch QA should produce blockers, warnings, and ready checks; do not bury blockers under general analysis.",
+      "Do not mark a campaign blocked for no uncontacted leads from `leads_count - contacted_count`; exact uncontacted lead supply is not cached.",
       "Unknown tracking or deliverability settings mean the local cache lacks this field; ask for refresh_data before treating settings as ready.",
       "Open/link tracking warnings come from cold email best-practice policy, not a hard Instantly API error.",
       "Disabled bounce protection or allowed risky contacts are surfaced as deliverability guardrail review items.",
@@ -1636,7 +1642,8 @@ ORDER BY
     co.campaign_name,
     co.leads_count,
     co.contacted_count,
-    GREATEST(COALESCE(co.leads_count, 0) - COALESCE(co.contacted_count, 0), 0) AS leads_remaining,
+    CAST(NULL AS INTEGER) AS exact_uncontacted_leads,
+    'unknown_no_exact_uncontacted_lead_field' AS lead_supply_exactness,
     co.emails_sent_count,
     co.reply_count_unique,
     co.unique_reply_rate_pct,
@@ -1687,7 +1694,8 @@ SELECT
   tr.campaign_tag_example,
   ac.leads_count,
   ac.contacted_count,
-  ac.leads_remaining,
+  ac.exact_uncontacted_leads,
+  ac.lead_supply_exactness,
   rv.sent_14d,
   rv.new_leads_contacted_14d,
   rv.unique_replies_14d,
@@ -1708,7 +1716,6 @@ SELECT
   ac.reply_outbound_rows,
   CASE
     WHEN ac.bounce_rate_pct >= 5 THEN 'deliverability_or_lead_quality_test'
-    WHEN COALESCE(ac.leads_remaining, 0) < 100 THEN 'lead_supply_or_segment_refill_test'
     WHEN ac.emails_sent_count >= 300 AND ac.unique_reply_rate_pct < 0.5 THEN 'copy_or_icp_test'
     WHEN ac.emails_sent_count >= 300 AND ac.total_opportunities = 0 THEN 'reply_quality_or_offer_test'
     WHEN COALESCE(ac.reply_outbound_rows, 0) = 0 THEN 'hydrate_or_load_campaign_before_testing'
@@ -1729,7 +1736,6 @@ ORDER BY
     WHEN 'deliverability_or_lead_quality_test' THEN 1
     WHEN 'copy_or_icp_test' THEN 2
     WHEN 'reply_quality_or_offer_test' THEN 3
-    WHEN 'lead_supply_or_segment_refill_test' THEN 4
     WHEN 'hydrate_or_load_campaign_before_testing' THEN 5
     ELSE 6
   END,
@@ -1739,7 +1745,7 @@ ORDER BY
       "Use this as the first pass for experiment planning, then narrow to one campaign and use copy, reply, or ICP recipes for the actual hypothesis.",
       "This recipe is hybrid because it combines exact campaign metrics with sampled/evidence coverage fields to decide whether deeper evidence is ready.",
       "A good experiment plan should include hypothesis, change, target cohort, success metric, stop condition, owner, and evaluation date.",
-      "Do not recommend copy tests for campaigns with unresolved deliverability or lead-supply blockers until those blockers are addressed.",
+      "Do not recommend lead-supply refill tests solely from `leads_count - contacted_count`; exact uncontacted lead supply is not cached.",
     ],
   },
   {
@@ -2045,10 +2051,44 @@ ORDER BY sequence_index, step, variant;`,
   {
     id: "rendered-outbound-sample",
     topic: "copy-analysis",
-    title: "Rendered outbound sample",
-    question: "How are templates rendering when reconstructed against sampled lead variables?",
+    title: "Rendered outbound summary",
+    question: "How are templates rendering across sampled lead variables without exposing full recipient or body text?",
     exactness: "sampled",
-    rationale: "Use locally reconstructed copy to spot personalization drift or malformed rendering without paying the /emails cost.",
+    rationale: "Use aggregated local reconstruction coverage and short previews to spot personalization drift before opening raw rows.",
+    sql: `SELECT
+  campaign_id,
+  campaign_name,
+  step_resolved,
+  variant_resolved,
+  sample_source,
+  COUNT(*) AS sampled_rendered_rows,
+  COUNT(DISTINCT to_email) AS sampled_leads,
+  SUM(CASE WHEN regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}') THEN 1 ELSE 0 END) AS rows_with_unresolved_subject_token,
+  SUM(CASE WHEN regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}') THEN 1 ELSE 0 END) AS rows_with_unresolved_body_token,
+  ROUND(AVG(length(COALESCE(rendered_subject, ''))), 1) AS avg_rendered_subject_chars,
+  ROUND(AVG(length(COALESCE(rendered_body_text, ''))), 1) AS avg_rendered_body_chars,
+  MIN(sent_at) AS oldest_sample_sent_at,
+  MAX(sent_at) AS newest_sample_sent_at,
+  MIN(left(COALESCE(rendered_subject, ''), 160)) AS example_rendered_subject_preview,
+  MIN(left(COALESCE(rendered_body_text, ''), 240)) AS example_rendered_body_preview
+FROM sendlens.rendered_outbound_context
+WHERE campaign_id = '{{campaign_id}}'
+GROUP BY 1, 2, 3, 4, 5
+ORDER BY rows_with_unresolved_body_token DESC, sampled_rendered_rows DESC, step_resolved, variant_resolved;`,
+    notes: [
+      "This is sampled evidence only.",
+      "Rendered rows are reconstructed locally from templates plus lead variables, not exact delivered email bodies.",
+      "This safe summary intentionally omits recipient email, full rendered body text, and full template body text.",
+      "Use `rendered-outbound-raw-detail` only for local diagnosis when raw row inspection is necessary.",
+    ],
+  },
+  {
+    id: "rendered-outbound-raw-detail",
+    topic: "copy-analysis",
+    title: "Rendered outbound raw detail",
+    question: "Which raw reconstructed outbound rows should I inspect locally for copy QA?",
+    exactness: "sampled",
+    rationale: "Inspect locally reconstructed row-level copy only after the safe summary shows a reason to open raw details.",
     sql: `SELECT
   campaign_id,
   campaign_name,
@@ -2066,7 +2106,8 @@ WHERE campaign_id = '{{campaign_id}}'
 ORDER BY sent_at DESC
 LIMIT 50;`,
     notes: [
-      "This is sampled evidence only.",
+      "Raw detail mode can expose recipient emails, rendered outbound bodies, and template bodies.",
+      "Use only for local diagnosis; do not paste raw bodies or contact fields into Linear, docs, PRs, or external artifacts.",
       "Rendered rows are reconstructed locally from templates plus lead variables, not exact delivered email bodies.",
     ],
   },
@@ -2076,7 +2117,82 @@ LIMIT 50;`,
     title: "Personalization leak audit",
     question: "Did any reconstructed outbound copy still contain unresolved template tokens?",
     exactness: "sampled",
-    rationale: "Find sampled reconstructed outbound rows where template variables appear to have leaked through unresolved.",
+    rationale: "Summarize sampled reconstructed outbound rows where template variables appear to have leaked through unresolved before opening raw examples.",
+    sql: `WITH leaked_rows AS (
+  SELECT
+    campaign_id,
+    campaign_name,
+    step_resolved,
+    variant_resolved,
+    left(COALESCE(rendered_subject, ''), 160) AS rendered_subject_preview,
+    left(COALESCE(rendered_body_text, ''), 240) AS rendered_body_preview,
+    sample_source,
+    sent_at,
+    regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}') AS subject_has_unresolved_token,
+    regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}') AS body_has_unresolved_token
+  FROM sendlens.rendered_outbound_context
+  WHERE campaign_id = '{{campaign_id}}'
+    AND (
+      regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}')
+      OR regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}')
+    )
+),
+rollup AS (
+  SELECT
+    COUNT(DISTINCT campaign_id) AS affected_campaigns,
+    COUNT(DISTINCT COALESCE(step_resolved, 'unknown') || ':' || COALESCE(variant_resolved, 'unknown')) AS affected_step_variants,
+    COUNT(DISTINCT to_email) AS affected_leads,
+    COUNT(*) AS affected_rendered_rows
+  FROM sendlens.rendered_outbound_context
+  WHERE campaign_id = '{{campaign_id}}'
+    AND (
+      regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}')
+      OR regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}')
+    )
+)
+SELECT
+  lr.campaign_id,
+  lr.campaign_name,
+  lr.step_resolved,
+  lr.variant_resolved,
+  r.affected_campaigns,
+  r.affected_step_variants,
+  r.affected_leads,
+  r.affected_rendered_rows,
+  COUNT(*) AS leaked_rows_in_group,
+  SUM(CASE WHEN lr.subject_has_unresolved_token THEN 1 ELSE 0 END) AS subject_token_rows,
+  SUM(CASE WHEN lr.body_has_unresolved_token THEN 1 ELSE 0 END) AS body_token_rows,
+  MIN(lr.rendered_subject_preview) AS example_rendered_subject_preview,
+  MIN(lr.rendered_body_preview) AS example_rendered_body_preview,
+  MIN(lr.sample_source) AS example_sample_source,
+  MAX(lr.sent_at) AS newest_leak_sample_at
+FROM leaked_rows lr
+CROSS JOIN rollup r
+GROUP BY
+  lr.campaign_id,
+  lr.campaign_name,
+  lr.step_resolved,
+  lr.variant_resolved,
+  r.affected_campaigns,
+  r.affected_step_variants,
+  r.affected_leads,
+  r.affected_rendered_rows
+ORDER BY leaked_rows_in_group DESC, newest_leak_sample_at DESC NULLS LAST
+LIMIT 50;`,
+    notes: [
+      "This is sampled reconstructed-copy evidence, not exact delivered-email proof.",
+      "Replace '{{campaign_id}}' with one campaign ID; personalization variables are campaign-specific.",
+      "This safe summary intentionally omits recipient email, full rendered body text, and full template body text.",
+      "Use affected counts and previews for triage; use `personalization-leak-raw-detail` only for local row-level QA.",
+    ],
+  },
+  {
+    id: "personalization-leak-raw-detail",
+    topic: "copy-analysis",
+    title: "Personalization leak raw detail",
+    question: "Which raw reconstructed outbound rows contain unresolved template tokens?",
+    exactness: "sampled",
+    rationale: "Inspect row-level reconstructed outbound copy locally after the safe leak audit identifies affected steps or variants.",
     sql: `WITH tokenized_rows AS (
   SELECT
     campaign_id,
@@ -2216,11 +2332,14 @@ CROSS JOIN rollup r
 ORDER BY lr.sent_at DESC NULLS LAST, lr.to_email
 LIMIT 50;`,
     notes: [
+      "Raw detail mode can expose recipient emails, rendered outbound bodies, and template bodies.",
+      "Use only for local diagnosis; do not paste raw bodies or contact fields into Linear, docs, PRs, or external artifacts.",
       "This is sampled reconstructed-copy evidence, not exact delivered-email proof.",
       "Replace '{{campaign_id}}' with one campaign ID; personalization variables are campaign-specific.",
       "`token_classification = 'payload_personalization_unresolved'` means campaign/lead payload variables still appear unresolved.",
       "`token_classification = 'signature_unresolved_reconstruction_caveat'` means only known account signature tokens remained in the local reconstruction; do not treat that as proof lead personalization failed.",
       "Use the class-specific affected counts for triage and the sample rows for concrete QA examples.",
+      "Rows indicate unresolved `{{...}}` patterns in locally reconstructed subject or body text.",
     ],
   },
   {
@@ -2280,10 +2399,52 @@ ORDER BY i_status DESC;`,
   {
     id: "reply-email-context-feed",
     topic: "reply-patterns",
-    title: "Reply email context feed",
-    question: "What fetched reply bodies are available, and where is lead/template context missing?",
+    title: "Reply email context summary",
+    question: "What fetched reply coverage and context gaps are available without exposing raw reply bodies or contact fields?",
     exactness: "hybrid",
-    rationale: "Use the email-anchored reply view so fetched reply bodies remain visible even when bounded lead evidence missed the lead.",
+    rationale: "Use the email-anchored reply view to summarize fetched body coverage and context gaps before opening raw rows.",
+    sql: `SELECT
+  campaign_id,
+  campaign_name,
+  reply_email_i_status,
+  reply_email_i_status_label,
+  reply_outcome_label,
+  step_resolved,
+  variant_resolved,
+  has_lead_context,
+  has_template_context,
+  hydrated_reply_body,
+  context_gap_reason,
+  COUNT(*) AS reply_email_rows,
+  COUNT(DISTINCT lead_id) AS matched_leads,
+  SUM(CASE WHEN hydrated_reply_body THEN 1 ELSE 0 END) AS hydrated_reply_body_rows,
+  SUM(CASE WHEN reply_content_preview IS NOT NULL AND trim(reply_content_preview) <> '' THEN 1 ELSE 0 END) AS rows_with_reply_preview,
+  MIN(reply_received_at) AS oldest_reply_received_at,
+  MAX(reply_received_at) AS newest_reply_received_at,
+  MIN(left(COALESCE(reply_subject, ''), 160)) AS example_reply_subject_preview,
+  MIN(left(COALESCE(reply_content_preview, ''), 240)) AS example_reply_content_preview,
+  MIN(left(COALESCE(rendered_subject, template_subject, ''), 160)) AS example_outbound_subject_preview
+FROM sendlens.reply_email_context
+WHERE campaign_id = '{{campaign_id}}'
+  AND reply_email_i_status IN (1, -1, -2)
+GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
+ORDER BY newest_reply_received_at DESC NULLS LAST, reply_email_rows DESC
+LIMIT 150;`,
+    notes: [
+      "Fetched reply previews are exact snippets for rows stored from Instantly List Email.",
+      "Lead and rendered-copy context may be sampled or backfilled; use has_lead_context and context_gap_reason before overclaiming.",
+      "Prefer this view over reply_context after prepare_campaign_analysis because it is anchored on reply_emails.",
+      "This safe summary intentionally omits lead email, reply-from email, and full reply body text.",
+      "Use `reply-email-context-raw-detail` only for local diagnosis when raw row inspection is necessary.",
+    ],
+  },
+  {
+    id: "reply-email-context-raw-detail",
+    topic: "reply-patterns",
+    title: "Reply email context raw detail",
+    question: "Which fetched reply rows and context fields should I inspect locally?",
+    exactness: "hybrid",
+    rationale: "Inspect email-anchored raw reply rows locally only after the safe context summary shows a reason to open details.",
     sql: `SELECT
   campaign_id,
   campaign_name,
@@ -2315,9 +2476,10 @@ WHERE campaign_id = '{{campaign_id}}'
 ORDER BY reply_received_at DESC NULLS LAST, lead_email
 LIMIT 150;`,
     notes: [
+      "Raw detail mode can expose lead emails, reply-from emails, company/person context, and full reply bodies.",
+      "Use only for local diagnosis; do not paste raw bodies or contact fields into Linear, docs, PRs, or external artifacts.",
       "Fetched reply body text is exact for rows stored from Instantly List Email.",
       "Lead and rendered-copy context may be sampled or backfilled; use has_lead_context and context_gap_reason before overclaiming.",
-      "Prefer this view over reply_context after prepare_campaign_analysis because it is anchored on reply_emails.",
     ],
   },
   {
@@ -2433,10 +2595,42 @@ WHERE campaign_id = '{{campaign_id}}';`,
   {
     id: "reply-feed",
     topic: "reply-patterns",
-    title: "Reply outcome feed",
-    question: "Which leads replied positively, negatively, or neutrally, and what copy did they receive?",
+    title: "Reply outcome summary",
+    question: "How do positive, negative, and neutral replies cluster by step and variant without exposing raw contacts or bodies?",
     exactness: "hybrid",
-    rationale: "Use lead reply outcomes plus locally reconstructed template copy to compare positive and negative cohorts.",
+    rationale: "Use lead reply outcomes plus local reconstruction coverage to compare positive and negative cohorts before opening raw rows.",
+    sql: `SELECT
+  campaign_id,
+  campaign_name,
+  reply_outcome_label,
+  lt_interest_label,
+  reply_email_i_status,
+  step_resolved,
+  variant_resolved,
+  COUNT(*) AS replied_leads,
+  SUM(CASE WHEN reply_body_text IS NOT NULL AND trim(reply_body_text) <> '' THEN 1 ELSE 0 END) AS fetched_reply_body_rows,
+  MIN(reply_received_at) AS oldest_reply_received_at,
+  MAX(reply_received_at) AS newest_reply_received_at,
+  MIN(left(COALESCE(reply_subject, ''), 160)) AS example_reply_subject_preview,
+  MIN(left(COALESCE(rendered_subject, template_subject, ''), 160)) AS example_outbound_subject_preview
+FROM sendlens.reply_context
+WHERE campaign_id = '{{campaign_id}}'
+GROUP BY 1, 2, 3, 4, 5, 6, 7
+ORDER BY replied_leads DESC, newest_reply_received_at DESC NULLS LAST
+LIMIT 100;`,
+    notes: [
+      "Run fetch_reply_text for this campaign in default sync_newest mode, then rerun the query when the user needs current reply wording.",
+      "This safe summary intentionally omits lead email, reply-from email, full reply body text, and full rendered/template body text.",
+      "Use it for positive/negative cohort triage; use `reply-feed-raw-detail` only for local row-level copy reconstruction.",
+    ],
+  },
+  {
+    id: "reply-feed-raw-detail",
+    topic: "reply-patterns",
+    title: "Reply outcome raw detail",
+    question: "Which raw reply outcome rows should I inspect locally for copy reconstruction?",
+    exactness: "hybrid",
+    rationale: "Inspect lead reply outcomes plus locally reconstructed copy only after the safe reply summary identifies cohorts worth opening.",
     sql: `SELECT
   campaign_id,
   campaign_name,
@@ -2460,7 +2654,8 @@ WHERE campaign_id = '{{campaign_id}}'
 ORDER BY reply_at DESC
 LIMIT 100;`,
     notes: [
-      "Run fetch_reply_text for this campaign in default sync_newest mode, then rerun the query when the user needs current reply wording.",
+      "Raw detail mode can expose lead emails, reply-from emails, company/person context, reply bodies, and reconstructed outbound bodies.",
+      "Use only for local diagnosis; do not paste raw bodies or contact fields into Linear, docs, PRs, or external artifacts.",
       "Fetched inbound reply text is exact when available; rendered outbound copy remains reconstructed evidence.",
       "Use it for positive/negative cohort analysis and copy reconstruction.",
     ],
@@ -2468,10 +2663,43 @@ LIMIT 100;`,
   {
     id: "fetched-reply-text-by-campaign",
     topic: "reply-patterns",
-    title: "Fetched reply text by campaign",
-    question: "What are prospects actually saying in fetched positive and negative replies?",
+    title: "Fetched reply text summary by campaign",
+    question: "What reply wording previews and coverage are available for fetched positive and negative replies?",
     exactness: "exact",
-    rationale: "Use fetched inbound reply bodies after running fetch_reply_text for one campaign.",
+    rationale: "Use fetched inbound reply previews and counts after running fetch_reply_text for one campaign before opening raw bodies.",
+    sql: `SELECT
+  campaign_id,
+  campaign_name,
+  reply_email_i_status,
+  reply_outcome_label,
+  COUNT(*) AS fetched_reply_rows,
+  SUM(CASE WHEN reply_body_text IS NOT NULL AND trim(reply_body_text) <> '' THEN 1 ELSE 0 END) AS fetched_reply_body_rows,
+  MIN(reply_received_at) AS oldest_reply_received_at,
+  MAX(reply_received_at) AS newest_reply_received_at,
+  MIN(left(COALESCE(reply_subject, ''), 160)) AS example_reply_subject_preview,
+  MIN(left(COALESCE(reply_content_preview, ''), 240)) AS example_reply_content_preview
+FROM sendlens.reply_context
+WHERE campaign_id = '{{campaign_id}}'
+  AND reply_email_id IS NOT NULL
+  AND reply_email_i_status IN (1, -1, -2)
+GROUP BY 1, 2, 3, 4
+ORDER BY fetched_reply_rows DESC, newest_reply_received_at DESC NULLS LAST
+LIMIT 100;`,
+    notes: [
+      "Run fetch_reply_text for this campaign in default sync_newest mode first if no rows are returned or the user wants the newest reply wording.",
+      "This is exact for fetched inbound email rows stored in reply_emails, but returns previews and counts by default.",
+      "Status 0 out-of-office is intentionally excluded.",
+      "This safe summary intentionally omits lead email, reply-from email, and full reply body text.",
+      "Use `fetched-reply-text-raw-detail-by-campaign` only for local diagnosis when raw reply bodies are necessary.",
+    ],
+  },
+  {
+    id: "fetched-reply-text-raw-detail-by-campaign",
+    topic: "reply-patterns",
+    title: "Fetched reply text raw detail by campaign",
+    question: "What raw fetched reply bodies should I inspect locally?",
+    exactness: "exact",
+    rationale: "Inspect fetched inbound reply bodies locally after the safe fetched-reply summary identifies statuses or outcomes worth opening.",
     sql: `SELECT
   campaign_id,
   campaign_name,
@@ -2489,6 +2717,8 @@ WHERE campaign_id = '{{campaign_id}}'
 ORDER BY reply_received_at DESC NULLS LAST
 LIMIT 100;`,
     notes: [
+      "Raw detail mode can expose lead emails, reply-from emails, and full reply bodies.",
+      "Use only for local diagnosis; do not paste raw bodies or contact fields into Linear, docs, PRs, or external artifacts.",
       "Run fetch_reply_text for this campaign in default sync_newest mode first if no rows are returned or the user wants the newest reply wording.",
       "This is exact for fetched inbound email rows stored in reply_emails.",
       "Status 0 out-of-office is intentionally excluded.",
@@ -2940,4 +3170,71 @@ export function getQueryRecipes(topic?: string): QueryRecipe[] {
 
   const normalized = topic.trim().toLowerCase();
   return QUERY_RECIPES.filter((recipe) => recipe.topic === normalized);
+}
+
+export function summarizeQueryRecipe(recipe: QueryRecipe): QueryRecipeSummary {
+  return {
+    id: recipe.id,
+    topic: recipe.topic,
+    title: recipe.title,
+    question: recipe.question,
+    exactness: recipe.exactness,
+    rationale: recipe.rationale,
+    sql_available: true,
+  };
+}
+
+export function getQueryRecipeById(recipeId: string, topic?: string): QueryRecipe | undefined {
+  const normalizedRecipeId = recipeId.trim().toLowerCase();
+  return getQueryRecipes(topic).find((recipe) => recipe.id.toLowerCase() === normalizedRecipeId);
+}
+
+export function buildQueryRecipeResponse(options: QueryRecipeResponseOptions = {}) {
+  const mode = options.mode ?? (options.recipe_id ? "full" : "summary");
+  const page = Math.max(1, Math.trunc(options.page ?? 1));
+  const pageSize = Math.min(
+    MAX_RECIPE_PAGE_SIZE,
+    Math.max(1, Math.trunc(options.page_size ?? DEFAULT_RECIPE_PAGE_SIZE)),
+  );
+
+  if (options.recipe_id) {
+    const recipe = getQueryRecipeById(options.recipe_id, options.topic);
+    return {
+      topic: options.topic ?? "all",
+      mode: "full" as const,
+      output_shape: "single_recipe" as const,
+      recipe_id: options.recipe_id,
+      recipe_count: recipe ? 1 : 0,
+      returned_count: recipe ? 1 : 0,
+      page: null,
+      page_size: null,
+      has_more: false,
+      next_page: null,
+      recipes: recipe ? [recipe] : [],
+      guidance:
+        "Exact recipe lookup returns full SQL. Replace placeholders before calling analyze_data.",
+    };
+  }
+
+  const recipes = getQueryRecipes(options.topic);
+  const startIndex = (page - 1) * pageSize;
+  const pagedRecipes = recipes.slice(startIndex, startIndex + pageSize);
+  const hasMore = startIndex + pageSize < recipes.length;
+
+  return {
+    topic: options.topic ?? "all",
+    mode,
+    output_shape: mode === "full" ? "paged_full_recipes" : "compact_recipe_index",
+    recipe_count: recipes.length,
+    returned_count: pagedRecipes.length,
+    page,
+    page_size: pageSize,
+    has_more: hasMore,
+    next_page: hasMore ? page + 1 : null,
+    recipes: mode === "full" ? pagedRecipes : pagedRecipes.map(summarizeQueryRecipe),
+    guidance:
+      mode === "full"
+        ? "Full SQL is included for this bounded page. Replace placeholders before calling analyze_data."
+        : "Compact summaries omit SQL. Pass recipe_id for one full recipe, mode='full' for a bounded SQL page, or next_page to continue.",
+  };
 }

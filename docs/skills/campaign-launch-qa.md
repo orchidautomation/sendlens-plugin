@@ -36,4 +36,4 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 ## Evidence Boundaries
 
-Do not mark a campaign ready when sender inventory, lead supply, or templates are missing. Disabled bounce protection or allowed risky contacts are deliverability guardrail warnings. Missing inbox-placement evidence should be described as missing evidence, not a clean sender-health result.
+Do not mark a campaign ready when sender inventory or templates are missing. Treat lead supply as unknown unless exact remaining-lead evidence exists; recent new-lead contacts are activity evidence, not proof of remaining supply. Disabled bounce protection or allowed risky contacts are deliverability guardrail warnings. Missing inbox-placement evidence should be described as missing evidence, not a clean sender-health result.

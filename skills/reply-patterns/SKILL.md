@@ -40,6 +40,8 @@ Read the evidence and hydration references before quoting, paraphrasing, or grou
 - Start with `workspace_snapshot` when the campaign is ambiguous.
 - Pull `analysis_starters(topic="reply-patterns")` before custom analysis.
 - If the user narrows to one campaign and wants stronger reply evidence, run `load_campaign_data` for that campaign.
+- Treat `reply-email-context-feed`, `reply-feed`, and `fetched-reply-text-by-campaign` as the default safe-summary recipes; they return coverage, counts, cohorts, and previews rather than full contact/body fields.
+- Use `reply-email-context-raw-detail`, `reply-feed-raw-detail`, or `fetched-reply-text-raw-detail-by-campaign` only for local diagnosis when the safe summaries show a specific reason to inspect raw rows.
 
 ### Stage 2: Read Outcomes Before Bodies
 
@@ -65,6 +67,7 @@ Read the evidence and hydration references before quoting, paraphrasing, or grou
 - Prefer `reply_email_context` after premium hydration because it is anchored on fetched email rows and preserves bodies even when lead context is missing.
 - Label each material theme as hydrated reply body, exact reply outcome aggregate, sampled evidence, or inference.
 - Do not count complaint replies caused by wrong-template or wrong-topic mismatch as signal that the intended campaign angle worked.
+- Do not paste raw reply bodies, reply-from fields, lead emails, or contact fields from raw-detail recipes into external artifacts.
 
 ## Fallback Behavior
 

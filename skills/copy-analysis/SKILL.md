@@ -41,6 +41,8 @@ Read the evidence, output, and copy reconstruction references before making copy
 - Start with `workspace_snapshot` only when scope is broad or ambiguous.
 - Pull `analysis_starters(topic="copy-analysis")` before custom analysis.
 - If the user wants rendered copy, personalization safety, or campaign-specific reply evidence, run `load_campaign_data` for that campaign.
+- Treat `rendered-outbound-sample` and `personalization-leak-audit` as the default safe-summary recipes; they return aggregate coverage and previews rather than full contact/body fields.
+- Use `rendered-outbound-raw-detail` or `personalization-leak-raw-detail` only for local diagnosis when the safe summaries show a specific reason to inspect raw rows.
 
 ### Stage 2: Separate Copy Evidence Sources
 
@@ -52,12 +54,13 @@ Read the evidence, output, and copy reconstruction references before making copy
 
 ### Stage 3: Analyze Personalization Safely
 
-- If the user asks whether personalization broke, run the `personalization-leak-audit` starter before custom analysis.
+- If the user asks whether personalization broke, run the safe-summary `personalization-leak-audit` starter before custom analysis.
 - If personalization quality depends on campaign-specific variables, inspect values through `lead_payload_kv` for that campaign rather than assuming shared payload columns.
 - If variables such as role, title, segment, or trigger are missing, describe that as thin uploaded lead metadata/custom fields. Recommend adding those fields to future lead uploads for better copy QA and segment analysis.
 - Treat `token_classification = 'signature_unresolved_reconstruction_caveat'` as an account-signature reconstruction caveat, not as proof that lead or campaign payload personalization failed.
 - Treat `token_classification = 'payload_personalization_unresolved'` or `mixed_payload_and_signature_unresolved` as the rows that need lead/template variable investigation.
 - Preserve the reconstructed outbound caveat in any token leak or rendered-copy conclusion.
+- Do not paste raw rendered bodies, template bodies, or recipient fields from raw-detail recipes into external artifacts.
 
 ### Stage 4: Recommend With Cold-Email Discipline
 

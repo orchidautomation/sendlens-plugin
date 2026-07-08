@@ -41,7 +41,7 @@ import {
   reservoirSample,
   shouldUseFullRawIngest,
 } from "./sampling";
-import { writeRefreshStatus } from "./refresh-status";
+import { buildRefreshScope, writeRefreshStatus } from "./refresh-status";
 import { buildWorkspaceSummary } from "./summary";
 import { appendTraceLog } from "./debug-log";
 import {
@@ -3060,7 +3060,10 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
       }
 
       const summaries = [];
-      const scopedMisses: string[] = [];
+      const scopedMisses: Array<{
+        provider: "instantly" | "smartlead";
+        message: string;
+      }> = [];
       const configuredProviderCount = Number(instantlyConfigured) + Number(smartleadConfigured);
       const instantlyOptions = refreshOptionsForProvider(options, "instantly");
       if (instantlyConfigured && instantlyOptions) {
@@ -3073,7 +3076,10 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
           ) {
             throw error;
           }
-          scopedMisses.push("instantly");
+          scopedMisses.push({
+            provider: "instantly",
+            message: error instanceof Error ? error.message : String(error),
+          });
         }
       }
       const smartleadOptions = refreshOptionsForProvider(options, "smartlead");
@@ -3087,19 +3093,65 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
           ) {
             throw error;
           }
-          scopedMisses.push("smartlead");
+          scopedMisses.push({
+            provider: "smartlead",
+            message: error instanceof Error ? error.message : String(error),
+          });
         }
       }
       if (summaries.length === 0) {
         if (scopedMisses.length > 0) {
+          const missedProviders = scopedMisses.map((miss) => miss.provider);
+          await writeRefreshStatus({
+            status: "failed",
+            source: options.source ?? "manual",
+            lastRefreshScope: "failed_scoped_lookup",
+            refreshScope: buildRefreshScope({
+              provider: "all",
+              campaignIds: options.campaignIds,
+              failedScopedLookup: true,
+            }),
+            endedAt: new Date().toISOString(),
+            message: `No campaigns matched the requested refresh scope across configured providers: ${missedProviders.join(", ")}.`,
+          });
           throw new Error(
-            `No campaigns matched the requested refresh scope across configured providers: ${scopedMisses.join(", ")}.`,
+            `No campaigns matched the requested refresh scope across configured providers: ${missedProviders.join(", ")}.`,
           );
         }
         throw new Error(
           "SENDLENS_PROVIDER=all requires SENDLENS_INSTANTLY_API_KEY, SENDLENS_SMARTLEAD_API_KEY, or both.",
         );
       }
+      const aggregateEndedAt = summaries[summaries.length - 1]?.last_refreshed_at ??
+        new Date().toISOString();
+      const aggregateWorkspaceId = summaries[summaries.length - 1]?.workspaceId ?? null;
+      const partialFailures = scopedMisses.map((miss) => ({
+        provider: miss.provider,
+        refreshScope: buildRefreshScope({
+          provider: miss.provider,
+          campaignIds: options.campaignIds,
+          failedScopedLookup: true,
+        }),
+        message: miss.message,
+      }));
+      await writeRefreshStatus({
+        status: "succeeded",
+        source: options.source ?? (options.campaignIds?.length ? "manual" : "session_start"),
+        lastRefreshScope: options.campaignIds?.length ? "campaign" : "workspace",
+        refreshScope: buildRefreshScope({
+          provider: "all",
+          campaignIds: options.campaignIds,
+        }),
+        workspaceId: aggregateWorkspaceId,
+        endedAt: aggregateEndedAt,
+        lastSuccessAt: aggregateEndedAt,
+        currentCampaignId: null,
+        currentCampaignName: null,
+        partialFailures: partialFailures.length ? partialFailures : undefined,
+        message: partialFailures.length
+          ? `All-provider scoped refresh completed for at least one configured provider; scoped lookup missed ${partialFailures.map((failure) => failure.provider).join(", ")}.`
+          : "All-provider refresh completed.",
+      });
       return summaries[summaries.length - 1];
     }
 
@@ -3131,6 +3183,10 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
   const db = await getDb();
   const source: RefreshSource = options.source ?? (options.campaignIds?.length ? "manual" : "session_start");
   const mode: RefreshMode = "fast";
+  const initialRefreshScope = buildRefreshScope({
+    provider: "instantly",
+    campaignIds: options.campaignIds,
+  });
   const refreshStartedAt = Date.now();
   const syncLogId = buildSyncLogId(source, mode);
   try {
@@ -3144,6 +3200,8 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
     await writeRefreshStatus({
       status: "running",
       source,
+      lastRefreshScope: initialRefreshScope.type,
+      refreshScope: initialRefreshScope,
       pid: process.pid,
       workspaceId: null,
       startedAt: new Date().toISOString(),
@@ -3199,6 +3257,12 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
     ]);
     await writeRefreshStatus({
       workspaceId,
+      lastRefreshScope: initialRefreshScope.type,
+      refreshScope: buildRefreshScope({
+        provider: "instantly",
+        campaignIds: options.campaignIds,
+        campaignsMatched: selectedCampaigns.length,
+      }),
       campaignsTotal: selectedCampaigns.length,
       campaignsProcessed: 0,
       message: "Refreshing workspace metadata and campaign analytics.",
@@ -3250,6 +3314,12 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
     let campaignsProcessed = 0;
     await writeRefreshStatus({
       workspaceId,
+      lastRefreshScope: initialRefreshScope.type,
+      refreshScope: buildRefreshScope({
+        provider: "instantly",
+        campaignIds: options.campaignIds,
+        campaignsMatched: selectedCampaigns.length,
+      }),
       campaignsTotal: selectedCampaigns.length,
       campaignsProcessed,
       currentCampaignId: null,
@@ -3316,6 +3386,12 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
 
         await writeRefreshStatus({
           workspaceId,
+          lastRefreshScope: initialRefreshScope.type,
+          refreshScope: buildRefreshScope({
+            provider: "instantly",
+            campaignIds: options.campaignIds,
+            campaignsMatched: selectedCampaigns.length,
+          }),
           campaignsTotal: selectedCampaigns.length,
           campaignsProcessed,
           currentCampaignId: bundle.campaignId,
@@ -3353,6 +3429,12 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
     await writeRefreshStatus({
       status: "succeeded",
       source,
+      lastRefreshScope: initialRefreshScope.type,
+      refreshScope: buildRefreshScope({
+        provider: "instantly",
+        campaignIds: options.campaignIds,
+        campaignsMatched: selectedCampaigns.length,
+      }),
       workspaceId,
       endedAt: finishedAt,
       lastSuccessAt: finishedAt,
@@ -3364,6 +3446,9 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
     });
     return summary;
   } catch (error) {
+    const failedScopedLookup = options.campaignIds?.length
+      ? isScopedCampaignMiss(error)
+      : false;
     await appendSyncLog(db, {
       id: syncLogId,
       workspaceId: null,
@@ -3384,6 +3469,15 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
     });
     await writeRefreshStatus({
       status: "failed",
+      source,
+      lastRefreshScope: failedScopedLookup
+        ? "failed_scoped_lookup"
+        : initialRefreshScope.type,
+      refreshScope: buildRefreshScope({
+        provider: "instantly",
+        campaignIds: options.campaignIds,
+        failedScopedLookup,
+      }),
       endedAt: new Date().toISOString(),
       message: error instanceof Error ? error.message : String(error),
     });

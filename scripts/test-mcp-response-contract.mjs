@@ -13,9 +13,12 @@ const files = {
   summary: "plugin/summary.ts",
   localDb: "plugin/local-db.ts",
   recipes: "plugin/query-recipes.ts",
+  catalog: "plugin/catalog.ts",
   constants: "plugin/constants.ts",
   replyTextContract: "plugin/reply-text-contract.ts",
+  campaignAnalysisResponse: "plugin/campaign-analysis-response.ts",
   replyFetchTest: "scripts/test-reply-fetch-contract.mjs",
+  campaignAnalysisResponseTest: "scripts/test-campaign-analysis-response.mjs",
   docs: "docs/MCP_RESPONSE_CONTRACT.md",
 };
 
@@ -124,9 +127,13 @@ for (const term of [
 for (const term of [
   "provider-qualified or native campaign ID",
   "SENDLENS_PROVIDER=all` requires a provider-qualified campaign ID",
+  "scoped refresh metadata for the requested campaign",
+  "broad refresh result is only returned when `include_refresh_metadata=true`",
   "exact `campaign_overview`",
   "`human_reply_sample` grouped into positive, negative, and neutral buckets",
-  "optional `rendered_outbound_sample`",
+  "compact `rendered_outbound_summary`",
+  "optional raw `rendered_outbound_sample` only when `include_rendered_outbound=true`",
+  "the default response must not include recipient-level fields such as `to_email`, `from_email`, or raw rendered body rows",
   "output caps and reconstruction warnings",
 ]) {
   assertIncludes(source.docs, term, "load_campaign_data docs");
@@ -145,16 +152,51 @@ for (const term of [
   "load_campaign_data requires a non-empty campaign_id",
   "campaignIdFilterSql",
   "Provider-qualified or native campaign ID to load.",
+  "include_rendered_outbound = false",
+  "include_refresh_metadata = false",
+  "full_refresh_result_included",
   "campaign_overview",
   "human_reply_sample",
+  "rendered_outbound_summary",
   "rendered_outbound_sample",
+  "renderedPreviewRows",
+  "rendered_outbound_redacted_preview_limit",
+  "Raw rendered outbound rows are omitted by default",
+  "to_email",
+  "from_email",
   "reply_context_scan_limit",
   "rendered_outbound_sample_limit",
   "Reply context scan was truncated",
-  "Rendered outbound rows are locally reconstructed sample evidence",
+  "Rendered outbound evidence is locally reconstructed sample evidence",
 ]) {
   assertIncludes(source.server, term, "load_campaign_data runtime");
 }
+
+assertPattern(
+  source.server,
+  /rendered_outbound_sample:\s*include_rendered_outbound\s*\?\s*renderedRows\s*:\s*undefined/,
+  "load_campaign_data omits raw rendered outbound sample by default",
+);
+assertPattern(
+  source.server,
+  /const renderedPreviewRows = include_rendered_outbound[\s\S]*?SELECT\s+campaign_id,[\s\S]*?LIMIT \$\{RENDERED_OUTBOUND_REDACTED_PREVIEW_LIMIT\}/,
+  "load_campaign_data uses a bounded redacted preview query by default",
+);
+assertPattern(
+  source.server,
+  /redacted_preview:\s*renderedOutboundRedactedPreview\(renderedPreviewRows\)/,
+  "load_campaign_data summary preview is independent from raw rendered outbound inclusion",
+);
+assertPattern(
+  source.server,
+  /refreshed:\s*include_refresh_metadata\s*\?\s*refreshed\s*:\s*undefined/,
+  "load_campaign_data omits broad refresh result by default",
+);
+assertPattern(
+  source.server,
+  /redacted_fields:\s*\[\s*["']to_email["'],\s*["']from_email["']\s*\]/,
+  "load_campaign_data redacts private rendered outbound row fields in summary",
+);
 
 for (const term of [
   "Campaign selector matched multiple provider-qualified campaigns",
@@ -202,15 +244,24 @@ for (const term of [
 for (const term of [
   "recipe metadata",
   "recipe `exactness`: `exact`, `sampled`, or `hybrid`",
-  "SQL with explicit placeholders",
+  "compact recipe index by default",
+  "`recipe_id` exact lookup",
+  "`mode=\"full\"` bounded pages with SQL",
   "notes the agent must preserve",
 ]) {
   assertIncludes(source.docs, term, "analysis_starters docs");
 }
 for (const term of [
   "topic",
+  "recipe_id",
+  "mode",
   "recipe_count",
+  "returned_count",
+  "output_shape",
+  "page_size",
+  "has_more",
   "recipes",
+  "sql_available",
   'exactness: "exact" | "sampled" | "hybrid"',
   "notes: string[]",
 ]) {
@@ -218,6 +269,30 @@ for (const term of [
     `${source.server}\n${source.recipes}`,
     term,
     "analysis_starters runtime",
+  );
+}
+
+for (const term of [
+  "partial matches for broad multi-token queries",
+  "`search_terms` and `suggested_narrower_terms`",
+  "`analysis_starter_suggestions`",
+  "workflow concepts such as runway, scale, refill, deliverability, sender accounts, rendered outbound, reply body, payload, and tags",
+  "`guidance` that points to relevant `analysis_starters` topics",
+]) {
+  assertIncludes(source.docs, term, "search_catalog docs");
+}
+for (const term of [
+  "buildCatalogSearchGuidance",
+  "suggested_narrower_terms",
+  "analysis_starter_suggestions",
+  "campaign-tag-runway-inputs",
+  "rendered_outbound_context",
+  "reply_email_context",
+]) {
+  assertIncludes(
+    `${source.server}\n${source.catalog}`,
+    term,
+    "search_catalog runtime",
   );
 }
 
@@ -275,6 +350,9 @@ for (const term of [
   "`hydration_coverage`",
   "`context_gap_counts`",
   "`reply_email_context_sample`",
+  "`reply_evidence_detail`",
+  "redacted by default",
+  "full reply bodies and raw email addresses require explicit opt-in",
   "recommended next recipes",
   "warnings, and output limits",
 ]) {
@@ -290,16 +368,32 @@ for (const term of [
   "hydration_coverage",
   "context_gap_counts",
   "reply_email_context_sample",
+  "reply_evidence_detail",
+  "full_reply_bodies",
+  "redacted_preview",
+  "redactCampaignAnalysisReplySample",
+  "reply_body_preview_max_chars",
   "reply_email_context_sample_limit",
+  "recommendedNextAnalysisRecipes",
   "reply-hydration-coverage",
   "reply-email-context-feed",
 ]) {
   assertIncludes(
-    `${source.server}\n${source.recipes}`,
+    `${source.server}\n${source.recipes}\n${source.campaignAnalysisResponse}\n${source.campaignAnalysisResponseTest}`,
     term,
     "prepare_campaign_analysis runtime/recipes",
   );
 }
+assertPattern(
+  source.server,
+  /const recommendedNextAnalysisRecipes =\s*reply_evidence_detail === "full_reply_bodies"[\s\S]*?\?\s*\[[\s\S]*?"reply-email-context-feed"[\s\S]*?\][\s\S]*?:\s*\[[\s\S]*?"reply-hydration-coverage"[\s\S]*?"campaign-evidence-coverage-audit"[\s\S]*?\]/,
+  "prepare_campaign_analysis only recommends raw reply feed in full evidence mode",
+);
+assertIncludes(
+  source.docs,
+  'reply-email-context-feed` is recommended only when `reply_evidence_detail="full_reply_bodies"`',
+  "prepare_campaign_analysis raw recipe recommendation docs",
+);
 
 for (const term of [
   "readiness",

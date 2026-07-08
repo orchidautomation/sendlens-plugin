@@ -41,7 +41,7 @@ Read the evidence and output references before drafting a client-safe brief.
 ### Stage 2: Build The Evidence Basis
 
 - Use exact campaign/account/tag aggregates for the current read and action priority.
-- For runway risks, use campaign-performance runway recipes before claiming when volume will run out.
+- For runway risks, use campaign-performance runway recipes before claiming when volume will run out, and do not describe lead supply as dry unless exact remaining-lead evidence supports it.
 - For deliverability risks, use workspace-health deliverability recipes before blaming copy or targeting.
 - For copy, ICP, or reply-body conclusions, narrow to one campaign and switch to the relevant specialist skill before making detailed claims.
 

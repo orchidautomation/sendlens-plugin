@@ -21,7 +21,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 1. Pull `analysis_starters(topic="experiment-planner")` for candidate ranking.
 2. Pick one campaign before designing the experiment.
-3. Do not propose copy tests while launch, sender, deliverability, or lead-supply blockers remain unresolved.
+3. Do not propose copy tests while launch, sender, deliverability, or exact lead-supply blockers remain unresolved; do not infer a lead-supply blocker from `leads_count - contacted_count`.
 4. Switch to `copy-analysis`, `icp-signals`, or `reply-patterns` based on the selected test lane.
 5. State what must not change during the test.
 
