@@ -689,7 +689,8 @@ ORDER BY date DESC;`,
     co.daily_limit AS campaign_daily_limit,
     co.leads_count,
     co.contacted_count,
-    GREATEST(COALESCE(co.leads_count, 0) - COALESCE(co.contacted_count, 0), 0) AS leads_remaining,
+    CAST(NULL AS INTEGER) AS exact_uncontacted_leads,
+    'unknown_no_exact_uncontacted_lead_field' AS lead_supply_exactness,
     COALESCE(co.emails_sent_count, 0) AS emails_sent_count,
     co.reply_count_unique,
     co.unique_reply_rate_pct,
@@ -779,7 +780,8 @@ SELECT
   tc.schedule_timezone,
   tc.leads_count,
   tc.contacted_count,
-  tc.leads_remaining,
+  tc.exact_uncontacted_leads,
+  tc.lead_supply_exactness,
   tc.emails_sent_count,
   tc.reply_count_unique,
   tc.unique_reply_rate_pct,
@@ -796,13 +798,10 @@ SELECT
   p.peak_sent_single_day_30d,
   p.avg_new_leads_contacted_per_active_day_30d,
   p.peak_new_leads_contacted_single_day_30d,
-  ROUND(tc.leads_remaining / NULLIF(p.avg_new_leads_contacted_per_active_day_30d, 0), 1) AS new_lead_runway_observed_sending_days,
+  CAST(NULL AS DOUBLE) AS new_lead_runway_observed_sending_days,
   CASE
-    WHEN tc.leads_remaining = 0 THEN 'dry_on_new_prospects'
-    WHEN p.avg_new_leads_contacted_per_active_day_30d IS NULL THEN 'missing_recent_new_lead_pace'
-    WHEN tc.leads_remaining / NULLIF(p.avg_new_leads_contacted_per_active_day_30d, 0) < 2 THEN 'less_than_2_sending_days'
-    WHEN tc.leads_remaining / NULLIF(p.avg_new_leads_contacted_per_active_day_30d, 0) < 5 THEN 'less_than_1_work_week'
-    ELSE 'has_new_lead_buffer'
+    WHEN p.avg_new_leads_contacted_per_active_day_30d IS NOT NULL THEN 'recent_new_lead_contacting_observed_runway_unknown'
+    ELSE 'lead_runway_unknown_missing_recent_new_lead_pace'
   END AS new_lead_runway_status
 FROM tagged_campaigns tc
 LEFT JOIN pace p
@@ -816,10 +815,8 @@ LEFT JOIN sequence_rollup sr
  AND tc.campaign_id = sr.campaign_id
 ORDER BY
   CASE new_lead_runway_status
-    WHEN 'dry_on_new_prospects' THEN 1
-    WHEN 'less_than_2_sending_days' THEN 2
-    WHEN 'less_than_1_work_week' THEN 3
-    WHEN 'missing_recent_new_lead_pace' THEN 4
+    WHEN 'lead_runway_unknown_missing_recent_new_lead_pace' THEN 1
+    WHEN 'recent_new_lead_contacting_observed_runway_unknown' THEN 5
     ELSE 5
   END,
   new_lead_runway_observed_sending_days ASC NULLS LAST,
@@ -827,7 +824,7 @@ ORDER BY
     notes: [
       "Replace '{{tag_name}}' with a real campaign tag.",
       "This is the required first recipe for runway questions because it prevents confusing new-lead exhaustion with total send-volume exhaustion.",
-      "Use `leads_remaining` and `avg_new_leads_contacted_per_active_day_30d` for new-prospect runway.",
+      "Exact uncontacted lead supply is not cached; use recent `new_leads_contacted` pace only as observed demand/proxy evidence, not as proof that the campaign is dry.",
       "Use step analytics first/last step, configured step counts, and configured first/last step to explain whether there is a follow-up tail after step 0 is exhausted.",
       "Use observed sending weekday examples and peak daily sends as real schedule/capacity evidence before relying on configured campaign daily limits.",
     ],
@@ -863,7 +860,8 @@ SELECT
   strftime(cdm.date, '%w') AS weekday_number,
   strftime(cdm.date, '%A') AS weekday_name,
   tc.campaign_daily_limit,
-  GREATEST(COALESCE(tc.leads_count, 0) - COALESCE(tc.contacted_count, 0), 0) AS current_leads_remaining,
+  CAST(NULL AS INTEGER) AS exact_uncontacted_leads,
+  'unknown_no_exact_uncontacted_lead_field' AS lead_supply_exactness,
   COALESCE(cdm.sent, 0) AS campaign_attributed_sent,
   COALESCE(cdm.new_leads_contacted, 0) AS campaign_attributed_new_leads_contacted,
   COALESCE(cdm.contacted, 0) AS campaign_attributed_contacted,
@@ -1046,7 +1044,8 @@ SELECT
   sr.tagged_sender_avg_bounce_rate_30d_pct,
   tc.leads_count,
   tc.contacted_count,
-  GREATEST(COALESCE(tc.leads_count, 0) - COALESCE(tc.contacted_count, 0), 0) AS leads_remaining_to_contact,
+  CAST(NULL AS INTEGER) AS exact_uncontacted_leads,
+  'unknown_no_exact_uncontacted_lead_field' AS lead_supply_exactness,
   tc.completed_count,
   GREATEST(COALESCE(tc.contacted_count, 0) - COALESCE(tc.completed_count, 0), 0) AS contacted_not_completed,
   tc.emails_sent_count,
@@ -1062,15 +1061,8 @@ SELECT
   p.peak_new_leads_contacted_single_day_30d,
   p.sent_30d,
   p.new_leads_contacted_30d,
-  ROUND(GREATEST(COALESCE(tc.leads_count, 0) - COALESCE(tc.contacted_count, 0), 0) / NULLIF(p.avg_new_leads_contacted_per_active_day_30d, 0), 1) AS observed_new_lead_runway_sending_days,
-  ROUND(GREATEST(COALESCE(tc.leads_count, 0) - COALESCE(tc.contacted_count, 0), 0) / NULLIF(
-    CASE
-      WHEN COALESCE(sr.tagged_sender_daily_limit_total, 0) = 0 THEN tc.campaign_daily_limit
-      WHEN tc.campaign_daily_limit IS NULL THEN sr.tagged_sender_daily_limit_total
-      ELSE LEAST(tc.campaign_daily_limit, sr.tagged_sender_daily_limit_total)
-    END,
-    0
-  ), 1) AS configured_capacity_new_lead_runway_days,
+  CAST(NULL AS DOUBLE) AS observed_new_lead_runway_sending_days,
+  CAST(NULL AS DOUBLE) AS configured_capacity_new_lead_runway_days,
   steps.step_0_sent,
   steps.follow_up_sent,
   steps.step_analytics_sent_total,
@@ -1081,13 +1073,10 @@ SELECT
   seq.last_configured_step,
   CASE
     WHEN COALESCE(sr.tagged_sender_accounts, 0) = 0 THEN 'no_matching_tagged_senders_allocated'
-    WHEN GREATEST(COALESCE(tc.leads_count, 0) - COALESCE(tc.contacted_count, 0), 0) = 0 THEN 'all_leads_contacted'
-    WHEN p.avg_new_leads_contacted_per_active_day_30d IS NULL THEN 'missing_observed_new_lead_pace'
-    WHEN GREATEST(COALESCE(tc.leads_count, 0) - COALESCE(tc.contacted_count, 0), 0) / NULLIF(p.avg_new_leads_contacted_per_active_day_30d, 0) < 2 THEN 'less_than_2_sending_days'
-    WHEN GREATEST(COALESCE(tc.leads_count, 0) - COALESCE(tc.contacted_count, 0), 0) / NULLIF(p.avg_new_leads_contacted_per_active_day_30d, 0) < 5 THEN 'less_than_1_work_week'
-    ELSE 'has_new_lead_buffer'
+    WHEN p.avg_new_leads_contacted_per_active_day_30d IS NOT NULL THEN 'recent_new_lead_contacting_observed_runway_unknown'
+    ELSE 'lead_runway_unknown_missing_recent_new_lead_pace'
   END AS runway_status,
-  'current lead step is not exact from cached aggregates; contacted_not_completed includes in-flight plus replied/stopped/bounced/unsubscribed contacts' AS lead_state_caveat
+  'exact uncontacted lead supply is not cached; contacted_count can exceed leads_count, and contacted_not_completed includes in-flight plus replied/stopped/bounced/unsubscribed contacts' AS lead_state_caveat
 FROM tagged_campaigns tc
 LEFT JOIN sender_rollup sr
   ON tc.workspace_id = sr.workspace_id
@@ -1103,11 +1092,8 @@ LEFT JOIN sequence_rollup seq
  AND tc.campaign_id = seq.campaign_id
 ORDER BY
   CASE runway_status
-    WHEN 'all_leads_contacted' THEN 1
-    WHEN 'less_than_2_sending_days' THEN 2
-    WHEN 'less_than_1_work_week' THEN 3
-    WHEN 'no_matching_tagged_senders_allocated' THEN 4
-    WHEN 'missing_observed_new_lead_pace' THEN 5
+    WHEN 'no_matching_tagged_senders_allocated' THEN 1
+    WHEN 'lead_runway_unknown_missing_recent_new_lead_pace' THEN 5
     ELSE 6
   END,
   observed_new_lead_runway_sending_days ASC NULLS LAST,
@@ -1115,8 +1101,8 @@ ORDER BY
     notes: [
       "Replace '{{campaign_tag_name}}' and '{{account_tag_name}}' with real tag labels.",
       "This is the closest recipe for the complicated question: campaign tag, inbox tag, assigned inbox capacity, campaign daily limit, lead contact runway, completed count, observed pace, and follow-up tail.",
-      "The exact new-lead runway uses `leads_count - contacted_count` divided by observed new-lead contact pace.",
-      "Configured capacity runway uses the lower of campaign daily limit and matching tagged sender daily limits. Real throughput can be lower because follow-ups, schedules, throttles, and shared inboxes consume capacity.",
+      "Exact uncontacted lead supply is not cached; recent `new_leads_contacted` pace is observed activity/proxy evidence, not proof of remaining supply.",
+      "Configured capacity uses the lower of campaign daily limit and matching tagged sender daily limits. Real throughput can be lower because follow-ups, schedules, throttles, and shared inboxes consume capacity.",
       "`contacted_not_completed` is not a pure in-flight count; it can include replied/stopped/bounced/unsubscribed contacts because cached aggregates do not expose exact current lead step for every lead.",
     ],
   },
@@ -1171,7 +1157,8 @@ ORDER BY sampled_leads DESC, lead_status, email_replied_step NULLS LAST, email_o
     co.daily_limit,
     co.leads_count,
     co.contacted_count,
-    GREATEST(COALESCE(co.leads_count, 0) - COALESCE(co.contacted_count, 0), 0) AS leads_remaining,
+    CAST(NULL AS INTEGER) AS exact_uncontacted_leads,
+    'unknown_no_exact_uncontacted_lead_field' AS lead_supply_exactness,
     co.emails_sent_count,
     co.reply_count_unique,
     co.unique_reply_rate_pct,
@@ -1234,7 +1221,8 @@ SELECT
   ac.daily_limit,
   ac.leads_count,
   ac.contacted_count,
-  ac.leads_remaining,
+  ac.exact_uncontacted_leads,
+  ac.lead_supply_exactness,
   r7.sent_7d,
   r7.new_leads_contacted_7d,
   r7.unique_replies_7d,
@@ -1242,7 +1230,7 @@ SELECT
   r30.sending_days_30d,
   r30.avg_sent_per_sending_day_30d,
   r30.peak_sent_single_day_30d,
-  ROUND(ac.leads_remaining / NULLIF(r30.avg_new_leads_contacted_per_active_day_30d, 0), 1) AS new_lead_runway_sending_days,
+  CAST(NULL AS DOUBLE) AS new_lead_runway_sending_days,
   ac.emails_sent_count,
   ac.reply_count_unique,
   ac.unique_reply_rate_pct,
@@ -1258,10 +1246,9 @@ SELECT
   ac.reply_outbound_rows,
   CASE
     WHEN ac.bounce_rate_pct >= 5 THEN 'high_bounce_risk'
-    WHEN ac.leads_remaining = 0 THEN 'dry_on_new_prospects'
-    WHEN ac.leads_remaining / NULLIF(r30.avg_new_leads_contacted_per_active_day_30d, 0) < 5 THEN 'lead_refill_needed'
     WHEN COALESCE(sc.resolved_sender_accounts, 0) = 0 THEN 'sender_inventory_missing'
     WHEN COALESCE(r7.sent_7d, 0) = 0 THEN 'no_recent_volume'
+    WHEN r30.avg_new_leads_contacted_per_active_day_30d IS NULL THEN 'lead_runway_unknown_missing_recent_new_lead_pace'
     ELSE 'monitor'
   END AS am_attention_reason
 FROM active_campaigns ac
@@ -1280,10 +1267,9 @@ LEFT JOIN sender_coverage sc
 ORDER BY
   CASE am_attention_reason
     WHEN 'high_bounce_risk' THEN 1
-    WHEN 'dry_on_new_prospects' THEN 2
-    WHEN 'lead_refill_needed' THEN 3
-    WHEN 'sender_inventory_missing' THEN 4
-    WHEN 'no_recent_volume' THEN 5
+    WHEN 'sender_inventory_missing' THEN 2
+    WHEN 'no_recent_volume' THEN 3
+    WHEN 'lead_runway_unknown_missing_recent_new_lead_pace' THEN 4
     ELSE 6
   END,
   ac.unique_reply_rate_pct DESC NULLS LAST,
@@ -1291,7 +1277,7 @@ ORDER BY
     notes: [
       "Use this as the first exact data pull for account-manager briefs and daily action queues.",
       "Write the brief in client-safe language: wins, risks, current actions, asks, and next review date.",
-      "Do not expose internal caveats verbosely to a client; translate them into clear limitations or next checks.",
+      "Do not expose internal caveats verbosely to a client; translate unknown exact lead runway into clear limitations or next checks.",
       "For tag-specific briefs, add a join or WHERE filter on `campaign_tags` before ordering.",
     ],
   },
@@ -1326,7 +1312,9 @@ ORDER BY
     c.step_count,
     co.leads_count,
     co.contacted_count,
-    GREATEST(COALESCE(co.leads_count, 0) - COALESCE(co.contacted_count, 0), 0) AS leads_remaining,
+    CAST(NULL AS INTEGER) AS exact_uncontacted_leads,
+    'unknown_no_exact_uncontacted_lead_field' AS lead_supply_exactness,
+    COALESCE(co.new_leads_contacted_count, 0) AS new_leads_contacted_count,
     co.bounce_rate_pct,
     co.unique_reply_rate_pct
   FROM sendlens.campaigns c
@@ -1388,7 +1376,9 @@ SELECT
   tr.blank_body_templates,
   cb.leads_count,
   cb.contacted_count,
-  cb.leads_remaining,
+  cb.exact_uncontacted_leads,
+  cb.lead_supply_exactness,
+  cb.new_leads_contacted_count,
   sr.resolved_sender_accounts,
   sr.resolved_sender_daily_limit_total,
   sr.sender_rows_missing_status,
@@ -1398,7 +1388,6 @@ SELECT
   cb.unique_reply_rate_pct,
   CASE
     WHEN COALESCE(sr.resolved_sender_accounts, 0) = 0 THEN 'blocker_missing_senders'
-    WHEN COALESCE(cb.leads_remaining, 0) = 0 THEN 'blocker_no_uncontacted_leads'
     WHEN COALESCE(tr.template_steps, 0) = 0 THEN 'blocker_missing_templates'
     WHEN COALESCE(tr.blank_body_templates, 0) > 0 THEN 'blocker_blank_body'
     WHEN cb.tracking_status = 'tracking_unknown' OR cb.deliverability_settings_status = 'deliverability_settings_unknown' THEN 'review_settings_unknown'
@@ -1417,13 +1406,12 @@ LEFT JOIN sender_rollup sr
 ORDER BY
   CASE launch_qa_status
     WHEN 'blocker_missing_senders' THEN 1
-    WHEN 'blocker_no_uncontacted_leads' THEN 2
-    WHEN 'blocker_missing_templates' THEN 3
-    WHEN 'blocker_blank_body' THEN 4
-    WHEN 'review_settings_unknown' THEN 5
-    WHEN 'review_deliverability_guardrails_relaxed' THEN 6
-    WHEN 'review_tracking_enabled' THEN 7
-    WHEN 'review_sender_bounce_risk' THEN 8
+    WHEN 'blocker_missing_templates' THEN 2
+    WHEN 'blocker_blank_body' THEN 3
+    WHEN 'review_settings_unknown' THEN 4
+    WHEN 'review_deliverability_guardrails_relaxed' THEN 5
+    WHEN 'review_tracking_enabled' THEN 6
+    WHEN 'review_sender_bounce_risk' THEN 7
     ELSE 9
   END,
   cb.campaign_name;`,
@@ -1431,6 +1419,7 @@ ORDER BY
       "Replace '{{campaign_name}}' with a campaign name fragment, or swap the WHERE clause for `c.id = '{{campaign_id}}'`.",
       "Pair this with `personalization-leak-audit` when the campaign uses template variables.",
       "Launch QA should produce blockers, warnings, and ready checks; do not bury blockers under general analysis.",
+      "Do not mark a campaign blocked for no uncontacted leads from `leads_count - contacted_count`; exact uncontacted lead supply is not cached.",
       "Unknown tracking or deliverability settings mean the local cache lacks this field; ask for refresh_data before treating settings as ready.",
       "Open/link tracking warnings come from cold email best-practice policy, not a hard Instantly API error.",
       "Disabled bounce protection or allowed risky contacts are surfaced as deliverability guardrail review items.",
@@ -1653,7 +1642,8 @@ ORDER BY
     co.campaign_name,
     co.leads_count,
     co.contacted_count,
-    GREATEST(COALESCE(co.leads_count, 0) - COALESCE(co.contacted_count, 0), 0) AS leads_remaining,
+    CAST(NULL AS INTEGER) AS exact_uncontacted_leads,
+    'unknown_no_exact_uncontacted_lead_field' AS lead_supply_exactness,
     co.emails_sent_count,
     co.reply_count_unique,
     co.unique_reply_rate_pct,
@@ -1704,7 +1694,8 @@ SELECT
   tr.campaign_tag_example,
   ac.leads_count,
   ac.contacted_count,
-  ac.leads_remaining,
+  ac.exact_uncontacted_leads,
+  ac.lead_supply_exactness,
   rv.sent_14d,
   rv.new_leads_contacted_14d,
   rv.unique_replies_14d,
@@ -1725,7 +1716,6 @@ SELECT
   ac.reply_outbound_rows,
   CASE
     WHEN ac.bounce_rate_pct >= 5 THEN 'deliverability_or_lead_quality_test'
-    WHEN COALESCE(ac.leads_remaining, 0) < 100 THEN 'lead_supply_or_segment_refill_test'
     WHEN ac.emails_sent_count >= 300 AND ac.unique_reply_rate_pct < 0.5 THEN 'copy_or_icp_test'
     WHEN ac.emails_sent_count >= 300 AND ac.total_opportunities = 0 THEN 'reply_quality_or_offer_test'
     WHEN COALESCE(ac.reply_outbound_rows, 0) = 0 THEN 'hydrate_or_load_campaign_before_testing'
@@ -1746,7 +1736,6 @@ ORDER BY
     WHEN 'deliverability_or_lead_quality_test' THEN 1
     WHEN 'copy_or_icp_test' THEN 2
     WHEN 'reply_quality_or_offer_test' THEN 3
-    WHEN 'lead_supply_or_segment_refill_test' THEN 4
     WHEN 'hydrate_or_load_campaign_before_testing' THEN 5
     ELSE 6
   END,
@@ -1756,7 +1745,7 @@ ORDER BY
       "Use this as the first pass for experiment planning, then narrow to one campaign and use copy, reply, or ICP recipes for the actual hypothesis.",
       "This recipe is hybrid because it combines exact campaign metrics with sampled/evidence coverage fields to decide whether deeper evidence is ready.",
       "A good experiment plan should include hypothesis, change, target cohort, success metric, stop condition, owner, and evaluation date.",
-      "Do not recommend copy tests for campaigns with unresolved deliverability or lead-supply blockers until those blockers are addressed.",
+      "Do not recommend lead-supply refill tests solely from `leads_count - contacted_count`; exact uncontacted lead supply is not cached.",
     ],
   },
   {

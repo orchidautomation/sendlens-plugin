@@ -39,4 +39,4 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 For step or variant ranking, state whether the basis is `unique_reply_rate` or `opportunity_rate`. If step-level unique replies are sparse or null, use opportunity rate rather than pretending exact step reply-rate coverage exists.
 
-For runway, separate "out of new prospects" from "out of send volume." Multi-step sequences can continue follow-ups after step 0 is exhausted.
+For runway, separate exact lead-supply evidence from observed new-lead contact activity and send volume. Exact uncontacted lead supply is unknown unless a provider-specific remaining-lead field is available; multi-step sequences can continue follow-ups after step 0 is exhausted.

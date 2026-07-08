@@ -18,7 +18,7 @@ Use the metric that matches the question and evidence surface. Always name the b
 
 ## Runway and Capacity
 
-- New-lead runway is uncontacted lead supply divided by observed new-lead contact pace.
+- Exact uncontacted lead supply is not cached. Treat new-lead runway as unknown unless a provider-specific exact remaining-lead field is available; use recent new-lead contact pace only as observed activity/proxy evidence.
 - Volume runway is the remaining sequence/follow-up tail based on step count, sent-by-step distribution, and delays.
 - Schedule-adjusted pace should use observed campaign-attributed sending days, not a naive seven-calendar-day average.
 - Real capacity should be grounded in recent observed peak and sender/account coverage before treating configured `daily_limit` as deliverable capacity.
