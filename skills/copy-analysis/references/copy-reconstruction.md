@@ -13,6 +13,7 @@ SendLens exposes both intended templates and locally reconstructed outbound copy
 - From `campaign_variants`: "the live/intended template for step X variant Y says..."
 - From reconstructed outbound: "the local reconstruction rendered this way for sampled leads..."
 - From unresolved token scans: "sampled reconstructed rows show unresolved `{{...}}` tokens..."
+- From signature-only unresolved token scans: "sampled reconstructed rows show `accountSignature` remained unresolved locally; this is a signature reconstruction caveat, not proof lead personalization failed."
 - From hydrated replies: "fetched inbound replies objected to..."
 
 ## Disallowed Claims
@@ -27,3 +28,4 @@ SendLens exposes both intended templates and locally reconstructed outbound copy
 - Narrow to one campaign before inspecting variables.
 - Use `lead_payload_kv` for campaign-specific payload variables; do not assume shared payload keys across campaigns.
 - Pair token leak findings with affected sampled rows, step/variant, and whether the evidence is reconstructed or hydrated.
+- Separate account signature tokens from campaign payload tokens. Investigate `payload_personalization_unresolved` rows as possible broken lead/template variables; treat `signature_unresolved_reconstruction_caveat` rows as local reconstruction limits unless delivered-email evidence confirms a real leak.

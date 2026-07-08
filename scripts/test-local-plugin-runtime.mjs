@@ -93,6 +93,7 @@ await run(
   `INSERT OR REPLACE INTO sendlens.campaign_variants
    (workspace_id, campaign_id, sequence_index, step, variant, subject, body_text, synced_at)
    VALUES ('ws_test', 'c1', 0, 0, 0, 'Alpha intro', 'Hi {{firstName}}', CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', 1, 0, 1, 'Alpha signature', 'Hi {{firstName}} {{accountSignature}}', CURRENT_TIMESTAMP),
           ('ws_test', 'c4', 0, 0, 0, 'Runway intro', 'Hi {{firstName}}', CURRENT_TIMESTAMP)`,
 );
 await run(
@@ -100,7 +101,8 @@ await run(
   `INSERT OR REPLACE INTO sendlens.sampled_outbound_emails
    (workspace_id, campaign_id, id, to_email, subject, body_text, step_resolved, variant_resolved, sample_source, sampled_at)
    VALUES ('ws_test', 'c1', 'o1', 'a@example.com', 'Alpha intro', 'Hi Alex', '0', '0', 'reconstructed_reply_template', CURRENT_TIMESTAMP),
-          ('ws_test', 'c1', 'o2', 'b@example.com', 'Hi {{missing_first_name}}', 'Saw {{unknown_company_signal}}', '0', '0', 'reconstructed_nonreply_template', CURRENT_TIMESTAMP)`,
+          ('ws_test', 'c1', 'o2', 'b@example.com', 'Hi {{missing_first_name}}', 'Saw {{unknown_company_signal}}', '0', '0', 'reconstructed_nonreply_template', CURRENT_TIMESTAMP),
+          ('ws_test', 'c1', 'o3', 'completed@example.com', 'Alpha signature', 'Hi Casey {{accountSignature}}', '0', '1', 'reconstructed_reply_template', CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
@@ -870,7 +872,8 @@ const copyRecipes = getQueryRecipes("copy-analysis");
 for (const recipeId of ["rendered-outbound-sample", "personalization-leak-audit"]) {
   const recipe = copyRecipes.find((candidate) => candidate.id === recipeId);
   assert.ok(recipe, `${recipeId} should exist`);
-  assert.doesNotMatch(recipe.sql, /^\s*(to_email|rendered_body_text|template_body_text)\b/im);
+  assert.doesNotMatch(recipe.sql, /^\s*(rendered_body_text|template_body_text)\b/im);
+  assert.doesNotMatch(recipe.sql, /\b(lr\.)?to_email\s+AS\b|\bAS\s+sample_email\b/im);
 }
 for (const recipeId of ["rendered-outbound-raw-detail", "personalization-leak-raw-detail"]) {
   const recipe = copyRecipes.find((candidate) => candidate.id === recipeId);
@@ -888,15 +891,58 @@ const leakRows = await runQuery(
   db,
   leakRecipe.sql.replaceAll("{{campaign_id}}", "c1"),
 );
-assert.equal(leakRows.length, 1);
+assert.equal(leakRows.length, 2);
 assert.equal(Number(leakRows[0].affected_campaigns), 1);
 assert.equal(Number(leakRows[0].affected_step_variants), 1);
 assert.equal(Number(leakRows[0].affected_leads), 1);
 assert.equal(Number(leakRows[0].affected_rendered_rows), 1);
-assert.equal(Number(leakRows[0].subject_token_rows), 1);
-assert.equal(Number(leakRows[0].body_token_rows), 1);
+assert.equal(Number(leakRows[0].rendered_rows_with_payload_tokens), 1);
+assert.equal(Number(leakRows[0].rendered_rows_with_account_signature_tokens), 1);
+const safeLeakRowsByClassification = new Map(
+  leakRows.map((row) => [row.token_classification, row]),
+);
 assert.equal(
-  String(leakRows[0].example_rendered_subject_preview).includes("{{missing_first_name}}"),
+  safeLeakRowsByClassification.has("payload_personalization_unresolved"),
+  true,
+);
+assert.equal(
+  safeLeakRowsByClassification.has("signature_unresolved_reconstruction_caveat"),
+  true,
+);
+assert.equal(
+  Number(
+    safeLeakRowsByClassification.get("payload_personalization_unresolved")
+      .payload_token_rows,
+  ),
+  1,
+);
+assert.equal(
+  Number(
+    safeLeakRowsByClassification.get("signature_unresolved_reconstruction_caveat")
+      .account_signature_token_rows,
+  ),
+  1,
+);
+assert.equal(
+  safeLeakRowsByClassification.get("payload_personalization_unresolved")
+    .payload_unresolved_token_names,
+  "missing_first_name, unknown_company_signal",
+);
+assert.equal(
+  safeLeakRowsByClassification.get("signature_unresolved_reconstruction_caveat")
+    .account_signature_token_names,
+  "accountSignature",
+);
+assert.equal(
+  leakRows.some((row) =>
+    String(row.example_rendered_subject_preview).includes("{{missing_first_name}}")
+  ),
+  true,
+);
+assert.equal(
+  leakRows.some((row) =>
+    String(row.example_rendered_body_preview).includes("{{accountSignature}}")
+  ),
   true,
 );
 
@@ -906,10 +952,27 @@ const rawLeakRows = await runQuery(
   db,
   rawLeakRecipe.sql.replaceAll("{{campaign_id}}", "c1"),
 );
-assert.equal(rawLeakRows.length, 1);
-assert.equal(rawLeakRows[0].sample_email, "b@example.com");
-assert.equal(Boolean(rawLeakRows[0].subject_has_unresolved_token), true);
-assert.equal(Boolean(rawLeakRows[0].body_has_unresolved_token), true);
+assert.equal(rawLeakRows.length, 2);
+const rawLeakRowsByEmail = new Map(rawLeakRows.map((row) => [row.sample_email, row]));
+assert.equal(Boolean(rawLeakRowsByEmail.get("b@example.com").subject_has_unresolved_token), true);
+assert.equal(Boolean(rawLeakRowsByEmail.get("b@example.com").body_has_unresolved_token), true);
+assert.equal(
+  rawLeakRowsByEmail.get("b@example.com").unresolved_token_names,
+  "missing_first_name, unknown_company_signal",
+);
+assert.equal(rawLeakRowsByEmail.get("b@example.com").token_classification, "payload_personalization_unresolved");
+assert.equal(Number(rawLeakRowsByEmail.get("b@example.com").payload_unresolved_token_count), 2);
+assert.equal(Number(rawLeakRowsByEmail.get("b@example.com").account_signature_token_count), 0);
+assert.equal(
+  rawLeakRowsByEmail.get("completed@example.com").unresolved_token_names,
+  "accountSignature",
+);
+assert.equal(
+  rawLeakRowsByEmail.get("completed@example.com").token_classification,
+  "signature_unresolved_reconstruction_caveat",
+);
+assert.equal(Number(rawLeakRowsByEmail.get("completed@example.com").payload_unresolved_token_count), 0);
+assert.equal(Number(rawLeakRowsByEmail.get("completed@example.com").account_signature_token_count), 1);
 
 const normalizedStepAnalytics = normalizeStepAnalyticsRows([
   {
