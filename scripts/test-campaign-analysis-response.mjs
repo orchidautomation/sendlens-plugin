@@ -51,6 +51,17 @@ const quotedPreview = buildSafeReplyPreview({
 });
 assert.equal(quotedPreview, "Fresh sentence.");
 
+const leadingOnQuotePreview = buildSafeReplyPreview({
+  reply_body_text:
+    "On Tuesday, Seller <seller@example.net> wrote:\nquoted thread that should not be exposed",
+});
+assert.equal(leadingOnQuotePreview, null);
+
+const leadingFromQuotePreview = buildSafeReplyPreview({
+  reply_body_text: "From: Seller <seller@example.net>\nquoted thread",
+});
+assert.equal(leadingFromQuotePreview, null);
+
 const longPreview = buildSafeReplyPreview({
   reply_body_text: "x".repeat(CAMPAIGN_ANALYSIS_REPLY_PREVIEW_MAX_CHARS + 50),
 });

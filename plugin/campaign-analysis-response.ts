@@ -28,21 +28,24 @@ function redactEmailAddresses(value: string) {
 }
 
 function stripQuotedThreadContent(value: string) {
-  const quoteMarkers = [
-    "\nOn ",
-    "\nFrom:",
-    "\nSent:",
-    "\n-----Original Message-----",
-    "\n>",
-  ];
-  let end = value.length;
-  for (const marker of quoteMarkers) {
-    const markerIndex = value.indexOf(marker);
-    if (markerIndex >= 0) {
-      end = Math.min(end, markerIndex);
+  const lines = value.split(/\r?\n/);
+  const keptLines: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trimStart();
+    if (
+      /^On .+\bwrote:/i.test(trimmed)
+      || /^From:/i.test(trimmed)
+      || /^Sent:/i.test(trimmed)
+      || /^-----Original Message-----/i.test(trimmed)
+      || /^>/.test(trimmed)
+    ) {
+      break;
     }
+    keptLines.push(line);
   }
-  return value.slice(0, end);
+
+  return keptLines.join("\n");
 }
 
 export function buildSafeReplyPreview(row: ReplyContextRow) {
