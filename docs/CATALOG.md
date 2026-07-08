@@ -79,7 +79,7 @@ MCP tools are registered by the local `sendlens` stdio server. Responses are JSO
 | `analysis_starters` | Return curated SQL recipes and exactness notes | Before custom analysis for common questions |
 | `list_tables` | List public SendLens tables/views and descriptions | Schema orientation |
 | `list_columns` | List columns and DuckDB types for one table/view | Before custom SQL |
-| `search_catalog` | Search public schema names by concept | When the right table or column is unclear |
+| `search_catalog` | Search public schema names by concept, with partial matches and workflow starter hints | When the right table, column, or starter recipe is unclear |
 | `analyze_data` | Run guarded read-only DuckDB `SELECT`/`WITH` analysis | Focused questions after schema and filters are clear |
 
 ## Public Data Surfaces

@@ -76,6 +76,13 @@ Where relevant, SendLens responses should include:
 - `mode="full"` bounded pages with SQL and explicit placeholders
 - notes the agent must preserve when answering are included with full recipes
 
+`search_catalog`
+
+- returns `matches` for table and column hits, including partial matches for broad multi-token queries
+- returns `search_terms` and `suggested_narrower_terms` so operators can retry with schema-specific language
+- returns `analysis_starter_suggestions` for workflow concepts such as runway, scale, refill, deliverability, sender accounts, rendered outbound, reply body, payload, and tags
+- when schema search finds no direct match for a workflow concept, returns `guidance` that points to relevant `analysis_starters` topics instead of silently failing
+
 `analyze_data`
 
 - caller rationale
@@ -115,6 +122,7 @@ Run `npm run test:mcp-response-contract` when changing MCP tools, response field
 - campaign selector ambiguity responses with provider-qualified matches
 - provider overlap-risk public views for sampled cross-provider duplicate email/domain/company exposure
 - `analysis_starters` recipe metadata, exactness labels, SQL, and notes
+- `search_catalog` partial matches, narrower search terms, and workflow concept starter suggestions
 - `analyze_data` rationale, row caps, truncation state, warnings, and rows
 - `fetch_reply_text` hydration result metadata, sample caps, and bounded reply samples
 - `prepare_campaign_analysis` premium-depth coverage, context gaps, backfill metadata, warnings, output limits, and bounded redacted reply-email samples unless full evidence is explicitly requested

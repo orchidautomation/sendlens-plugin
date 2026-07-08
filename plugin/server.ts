@@ -1,7 +1,7 @@
 import * as z from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { listColumns, listTables, searchCatalog } from "./catalog";
+import { buildCatalogSearchGuidance, listColumns, listTables, searchCatalog } from "./catalog";
 import { isDemoMode, seedDemoWorkspace } from "./demo-workspace";
 import { loadSendLensEnv } from "./env";
 import {
@@ -1432,11 +1432,12 @@ server.registerTool(
       [
         "Search public SendLens table and column names when the user gives a concept like reply, bounce, tag, variant, opportunity, or payload.",
         "Use this before custom SQL when the exact schema surface is unclear.",
+        "For broad or workflow-style queries, it returns partial schema matches plus narrower search terms and analysis_starters suggestions.",
         "Do not use it as a data read; it only returns schema matches.",
         "Returns up to 25 table/column matches plus readiness metadata and does not read lead, reply, or campaign rows.",
       ].join(" "),
     inputSchema: {
-      query: z.string().describe("Search string such as reply, bounce, variant, or opportunity."),
+      query: z.string().describe("Search string such as reply, bounce, variant, opportunity, runway, or rendered outbound."),
     },
   },
   async ({ query: search }) => {
@@ -1447,11 +1448,16 @@ server.registerTool(
       db = await getDb();
       const cacheWarnings = await ensureCacheReadable(db);
       const matches = await searchCatalog(db, search);
+      const guidance = buildCatalogSearchGuidance(search, matches);
       return jsonResponse({
         query: search,
         readiness: readinessPayload(readiness),
         warnings: cacheWarnings,
         matches,
+        search_terms: guidance.search_terms,
+        suggested_narrower_terms: guidance.suggested_narrower_terms,
+        analysis_starter_suggestions: guidance.analysis_starter_suggestions,
+        guidance: guidance.message,
       });
     } catch (error) {
       if (error instanceof CacheReadinessError) {
