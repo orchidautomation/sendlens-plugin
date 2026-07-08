@@ -312,6 +312,17 @@ function campaignSelectorAmbiguityPayload(
   };
 }
 
+function campaignResolutionFilterSql(resolved: Extract<CampaignResolution, { ok: true }>) {
+  return [
+    `source_provider = '${sqlSafe(resolved.source_provider)}'`,
+    `AND (`,
+    `  campaign_source_id = '${sqlSafe(resolved.campaign_source_id)}'`,
+    `  OR provider_campaign_id = '${sqlSafe(resolved.provider_campaign_id)}'`,
+    `  OR campaign_id = '${sqlSafe(resolved.campaign_id)}'`,
+    `)`,
+  ].join("\n");
+}
+
 async function resolveCampaignSelector(
   db: Awaited<ReturnType<typeof getDb>>,
   workspaceId: string,
@@ -349,12 +360,12 @@ async function resolveCampaignSelector(
             OR c.campaign_source_id = '${campaignSafe}'
             OR ${campaignSourceIdSql("c")} = '${campaignSafe}'
           )`
-      : [
-          `c.id = '${campaignSafe}'`,
-          `OR c.provider_campaign_id = '${campaignSafe}'`,
-          `OR c.campaign_source_id = '${campaignSafe}'`,
-          `OR ${campaignSourceIdSql("c")} = '${campaignSafe}'`,
-        ].join("\n          ");
+      : `(
+            c.id = '${campaignSafe}'
+            OR c.provider_campaign_id = '${campaignSafe}'
+            OR c.campaign_source_id = '${campaignSafe}'
+            OR ${campaignSourceIdSql("c")} = '${campaignSafe}'
+          )`;
     campaignRows = await query(
       db,
       `SELECT
@@ -683,27 +694,24 @@ server.registerTool(
       }
 
       const workspaceSafe = refreshedWorkspaceId.replace(/'/g, "''");
+      const resolvedCampaignFilter = campaignResolutionFilterSql(resolved);
       const overviewRows = await query(
         db,
         `SELECT *
          FROM sendlens.campaign_overview
          WHERE workspace_id = '${workspaceSafe}'
-           AND ${campaignIdFilterSql("campaign_id", campaignScope.queryCampaignIds)}
-         ORDER BY ${campaignIdOrderSql("campaign_id", campaignScope.queryCampaignIds)}
+           AND ${resolvedCampaignFilter}
          LIMIT 1`,
       );
       const loadedCampaignId = typeof overviewRows[0]?.campaign_id === "string"
         ? String(overviewRows[0].campaign_id)
         : null;
-      const evidenceCampaignIds = loadedCampaignId
-        ? [loadedCampaignId]
-        : campaignScope.queryCampaignIds;
       const replyRows = await query(
         db,
         `SELECT *
          FROM sendlens.reply_context
          WHERE workspace_id = '${workspaceSafe}'
-           AND ${campaignIdFilterSql("campaign_id", evidenceCampaignIds)}
+           AND ${resolvedCampaignFilter}
          ORDER BY reply_at DESC NULLS LAST, lead_email
          LIMIT ${REPLY_CONTEXT_SCAN_LIMIT + 1}`,
       );
@@ -713,7 +721,7 @@ server.registerTool(
           `SELECT *
            FROM sendlens.rendered_outbound_context
            WHERE workspace_id = '${workspaceSafe}'
-             AND ${campaignIdFilterSql("campaign_id", evidenceCampaignIds)}
+             AND ${resolvedCampaignFilter}
            ORDER BY sent_at DESC NULLS LAST
            LIMIT ${RENDERED_OUTBOUND_SAMPLE_LIMIT}`,
         )
@@ -736,7 +744,7 @@ server.registerTool(
              template_body_text
            FROM sendlens.rendered_outbound_context
            WHERE workspace_id = '${workspaceSafe}'
-             AND ${campaignIdFilterSql("campaign_id", evidenceCampaignIds)}
+             AND ${resolvedCampaignFilter}
            ORDER BY sent_at DESC NULLS LAST
            LIMIT ${RENDERED_OUTBOUND_REDACTED_PREVIEW_LIMIT}`,
         );
@@ -745,7 +753,7 @@ server.registerTool(
         `SELECT COUNT(*) AS sampled_row_count
          FROM sendlens.rendered_outbound_context
          WHERE workspace_id = '${workspaceSafe}'
-           AND ${campaignIdFilterSql("campaign_id", evidenceCampaignIds)}`,
+           AND ${resolvedCampaignFilter}`,
       );
 
       const replyRowsTruncated = replyRows.length > REPLY_CONTEXT_SCAN_LIMIT;
@@ -783,8 +791,8 @@ server.registerTool(
           workspace_id: workspaceId,
           requested_campaign_id: campaign_id,
           loaded_campaign_id: loadedCampaignId,
-          refresh_campaign_ids: campaignScope.refreshCampaignIds,
-          refresh_provider: campaignScope.refreshProvider ?? null,
+          refresh_campaign_ids: [resolved.campaign_source_id],
+          refresh_provider: campaignScope.refreshProvider ?? resolved.source_provider,
           full_refresh_result_included: include_refresh_metadata,
         },
         output_limits: {
