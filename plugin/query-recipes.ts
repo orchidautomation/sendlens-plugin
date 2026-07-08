@@ -2118,7 +2118,7 @@ LIMIT 50;`,
     question: "Did any reconstructed outbound copy still contain unresolved template tokens?",
     exactness: "sampled",
     rationale: "Summarize sampled reconstructed outbound rows where template variables appear to have leaked through unresolved before opening raw examples.",
-    sql: `WITH leaked_rows AS (
+    sql: `WITH tokenized_rows AS (
   SELECT
     campaign_id,
     campaign_name,
@@ -2129,26 +2129,87 @@ LIMIT 50;`,
     sample_source,
     sent_at,
     regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}') AS subject_has_unresolved_token,
-    regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}') AS body_has_unresolved_token
+    regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}') AS body_has_unresolved_token,
+    trim(unnest(regexp_extract_all(COALESCE(rendered_subject, ''), '\\{\\{\\s*([^}]+?)\\s*\\}\\}', 1))) AS unresolved_token_name,
+    'subject' AS unresolved_token_location
   FROM sendlens.rendered_outbound_context
   WHERE campaign_id = '{{campaign_id}}'
-    AND (
-      regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}')
-      OR regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}')
-    )
+    AND regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}')
+  UNION ALL
+  SELECT
+    campaign_id,
+    campaign_name,
+    step_resolved,
+    variant_resolved,
+    left(COALESCE(rendered_subject, ''), 160) AS rendered_subject_preview,
+    left(COALESCE(rendered_body_text, ''), 240) AS rendered_body_preview,
+    sample_source,
+    sent_at,
+    regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}') AS subject_has_unresolved_token,
+    regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}') AS body_has_unresolved_token,
+    trim(unnest(regexp_extract_all(COALESCE(rendered_body_text, ''), '\\{\\{\\s*([^}]+?)\\s*\\}\\}', 1))) AS unresolved_token_name,
+    'body' AS unresolved_token_location
+  FROM sendlens.rendered_outbound_context
+  WHERE campaign_id = '{{campaign_id}}'
+    AND regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}')
+),
+classified_tokens AS (
+  SELECT
+    *,
+    CASE
+      WHEN regexp_replace(lower(unresolved_token_name), '[^a-z0-9]', '', 'g') = 'accountsignature'
+        THEN 'account_signature'
+      ELSE 'campaign_payload'
+    END AS unresolved_token_class
+  FROM tokenized_rows
+  WHERE unresolved_token_name <> ''
+),
+leaked_rows AS (
+  SELECT
+    campaign_id,
+    campaign_name,
+    step_resolved,
+    variant_resolved,
+    rendered_subject_preview,
+    rendered_body_preview,
+    sample_source,
+    sent_at,
+    bool_or(subject_has_unresolved_token) AS subject_has_unresolved_token,
+    bool_or(body_has_unresolved_token) AS body_has_unresolved_token,
+    string_agg(DISTINCT unresolved_token_class, ', ' ORDER BY unresolved_token_class) AS unresolved_token_classes,
+    string_agg(DISTINCT CASE WHEN unresolved_token_class = 'campaign_payload' THEN unresolved_token_name END, ', ' ORDER BY CASE WHEN unresolved_token_class = 'campaign_payload' THEN unresolved_token_name END) AS payload_unresolved_token_names,
+    string_agg(DISTINCT CASE WHEN unresolved_token_class = 'account_signature' THEN unresolved_token_name END, ', ' ORDER BY CASE WHEN unresolved_token_class = 'account_signature' THEN unresolved_token_name END) AS account_signature_token_names,
+    SUM(CASE WHEN unresolved_token_class = 'campaign_payload' THEN 1 ELSE 0 END) AS payload_unresolved_token_count,
+    SUM(CASE WHEN unresolved_token_class = 'account_signature' THEN 1 ELSE 0 END) AS account_signature_token_count,
+    CASE
+      WHEN SUM(CASE WHEN unresolved_token_class = 'campaign_payload' THEN 1 ELSE 0 END) > 0
+       AND SUM(CASE WHEN unresolved_token_class = 'account_signature' THEN 1 ELSE 0 END) > 0
+        THEN 'mixed_payload_and_signature_unresolved'
+      WHEN SUM(CASE WHEN unresolved_token_class = 'campaign_payload' THEN 1 ELSE 0 END) > 0
+        THEN 'payload_personalization_unresolved'
+      WHEN SUM(CASE WHEN unresolved_token_class = 'account_signature' THEN 1 ELSE 0 END) > 0
+        THEN 'signature_unresolved_reconstruction_caveat'
+      ELSE 'unclassified_unresolved_token'
+    END AS token_classification
+  FROM classified_tokens
+  GROUP BY
+    campaign_id,
+    campaign_name,
+    step_resolved,
+    variant_resolved,
+    rendered_subject_preview,
+    rendered_body_preview,
+    sample_source,
+    sent_at
 ),
 rollup AS (
   SELECT
     COUNT(DISTINCT campaign_id) AS affected_campaigns,
     COUNT(DISTINCT COALESCE(step_resolved, 'unknown') || ':' || COALESCE(variant_resolved, 'unknown')) AS affected_step_variants,
-    COUNT(DISTINCT to_email) AS affected_leads,
-    COUNT(*) AS affected_rendered_rows
-  FROM sendlens.rendered_outbound_context
-  WHERE campaign_id = '{{campaign_id}}'
-    AND (
-      regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}')
-      OR regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}')
-    )
+    COUNT(*) AS affected_rendered_rows,
+    SUM(CASE WHEN payload_unresolved_token_count > 0 THEN 1 ELSE 0 END) AS rendered_rows_with_payload_tokens,
+    SUM(CASE WHEN account_signature_token_count > 0 THEN 1 ELSE 0 END) AS rendered_rows_with_account_signature_tokens
+  FROM leaked_rows
 )
 SELECT
   lr.campaign_id,
@@ -2157,11 +2218,27 @@ SELECT
   lr.variant_resolved,
   r.affected_campaigns,
   r.affected_step_variants,
-  r.affected_leads,
   r.affected_rendered_rows,
+  r.rendered_rows_with_payload_tokens,
+  r.rendered_rows_with_account_signature_tokens,
   COUNT(*) AS leaked_rows_in_group,
   SUM(CASE WHEN lr.subject_has_unresolved_token THEN 1 ELSE 0 END) AS subject_token_rows,
   SUM(CASE WHEN lr.body_has_unresolved_token THEN 1 ELSE 0 END) AS body_token_rows,
+  SUM(CASE WHEN lr.payload_unresolved_token_count > 0 THEN 1 ELSE 0 END) AS payload_token_rows,
+  SUM(CASE WHEN lr.account_signature_token_count > 0 THEN 1 ELSE 0 END) AS account_signature_token_rows,
+  string_agg(DISTINCT lr.unresolved_token_classes, ', ' ORDER BY lr.unresolved_token_classes) AS unresolved_token_classes,
+  string_agg(DISTINCT lr.payload_unresolved_token_names, ', ' ORDER BY lr.payload_unresolved_token_names) AS payload_unresolved_token_names,
+  string_agg(DISTINCT lr.account_signature_token_names, ', ' ORDER BY lr.account_signature_token_names) AS account_signature_token_names,
+  CASE
+    WHEN SUM(CASE WHEN lr.payload_unresolved_token_count > 0 THEN 1 ELSE 0 END) > 0
+     AND SUM(CASE WHEN lr.account_signature_token_count > 0 THEN 1 ELSE 0 END) > 0
+      THEN 'mixed_payload_and_signature_unresolved'
+    WHEN SUM(CASE WHEN lr.payload_unresolved_token_count > 0 THEN 1 ELSE 0 END) > 0
+      THEN 'payload_personalization_unresolved'
+    WHEN SUM(CASE WHEN lr.account_signature_token_count > 0 THEN 1 ELSE 0 END) > 0
+      THEN 'signature_unresolved_reconstruction_caveat'
+    ELSE 'unclassified_unresolved_token'
+  END AS token_classification,
   MIN(lr.rendered_subject_preview) AS example_rendered_subject_preview,
   MIN(lr.rendered_body_preview) AS example_rendered_body_preview,
   MIN(lr.sample_source) AS example_sample_source,
@@ -2175,13 +2252,16 @@ GROUP BY
   lr.variant_resolved,
   r.affected_campaigns,
   r.affected_step_variants,
-  r.affected_leads,
-  r.affected_rendered_rows
-ORDER BY leaked_rows_in_group DESC, newest_leak_sample_at DESC NULLS LAST
+  r.affected_rendered_rows,
+  r.rendered_rows_with_payload_tokens,
+  r.rendered_rows_with_account_signature_tokens
+ORDER BY payload_token_rows DESC, account_signature_token_rows DESC, leaked_rows_in_group DESC, newest_leak_sample_at DESC NULLS LAST
 LIMIT 50;`,
     notes: [
       "This is sampled reconstructed-copy evidence, not exact delivered-email proof.",
       "Replace '{{campaign_id}}' with one campaign ID; personalization variables are campaign-specific.",
+      "`token_classification = 'payload_personalization_unresolved'` means campaign/lead payload variables still appear unresolved.",
+      "`token_classification = 'signature_unresolved_reconstruction_caveat'` means only known account signature tokens remained in the local reconstruction; do not treat that as proof lead personalization failed.",
       "This safe summary intentionally omits recipient email, full rendered body text, and full template body text.",
       "Use affected counts and previews for triage; use `personalization-leak-raw-detail` only for local row-level QA.",
     ],

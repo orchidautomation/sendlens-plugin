@@ -893,8 +893,44 @@ const leakRows = await runQuery(
 assert.equal(leakRows.length, 2);
 assert.equal(Number(leakRows[0].affected_campaigns), 1);
 assert.equal(Number(leakRows[0].affected_step_variants), 2);
-assert.equal(Number(leakRows[0].affected_leads), 2);
 assert.equal(Number(leakRows[0].affected_rendered_rows), 2);
+assert.equal(Number(leakRows[0].rendered_rows_with_payload_tokens), 1);
+assert.equal(Number(leakRows[0].rendered_rows_with_account_signature_tokens), 1);
+const safeLeakRowsByClassification = new Map(
+  leakRows.map((row) => [row.token_classification, row]),
+);
+assert.equal(
+  safeLeakRowsByClassification.has("payload_personalization_unresolved"),
+  true,
+);
+assert.equal(
+  safeLeakRowsByClassification.has("signature_unresolved_reconstruction_caveat"),
+  true,
+);
+assert.equal(
+  Number(
+    safeLeakRowsByClassification.get("payload_personalization_unresolved")
+      .payload_token_rows,
+  ),
+  1,
+);
+assert.equal(
+  Number(
+    safeLeakRowsByClassification.get("signature_unresolved_reconstruction_caveat")
+      .account_signature_token_rows,
+  ),
+  1,
+);
+assert.equal(
+  safeLeakRowsByClassification.get("payload_personalization_unresolved")
+    .payload_unresolved_token_names,
+  "missing_first_name, unknown_company_signal",
+);
+assert.equal(
+  safeLeakRowsByClassification.get("signature_unresolved_reconstruction_caveat")
+    .account_signature_token_names,
+  "accountSignature",
+);
 assert.equal(
   leakRows.some((row) =>
     String(row.example_rendered_subject_preview).includes("{{missing_first_name}}")
