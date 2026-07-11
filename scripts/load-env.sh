@@ -92,6 +92,20 @@ CLIENTS_DIR="${SENDLENS_CLIENTS_DIR:-.env.clients}"
 
 load_env_file "${ENV_ROOT}/.env"
 load_env_file "${ENV_ROOT}/.env.local"
+if [[ -z "${SENDLENS_CLIENT:-}" && -d "${ENV_ROOT}/${CLIENTS_DIR}" ]]; then
+  shopt -s nullglob
+  sendlens_client_files=("${ENV_ROOT}/${CLIENTS_DIR}"/*.env)
+  shopt -u nullglob
+  sendlens_client_names=()
+  for sendlens_client_file in "${sendlens_client_files[@]}"; do
+    [[ "${sendlens_client_file}" == *.local.env ]] && continue
+    sendlens_client_names+=("$(basename "${sendlens_client_file}" .env)")
+  done
+  if (( ${#sendlens_client_names[@]} == 1 )); then
+    export SENDLENS_CLIENT="${sendlens_client_names[0]}"
+  fi
+  unset sendlens_client_files sendlens_client_names sendlens_client_file
+fi
 if [[ -n "${SENDLENS_CLIENT:-}" ]]; then
   load_env_file "${ENV_ROOT}/${CLIENTS_DIR}/${SENDLENS_CLIENT}.env"
   load_env_file "${ENV_ROOT}/${CLIENTS_DIR}/${SENDLENS_CLIENT}.local.env"
