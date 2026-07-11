@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ROOT="${PLUGIN_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
-SENDLENS_CONTEXT_ROOT="${SENDLENS_CONTEXT_ROOT:-${PWD}}"
+SENDLENS_CONTEXT_ROOT="${SENDLENS_CONTEXT_ROOT:-${PLUXX_HOOK_WORKSPACE_ROOT:-${PLUXX_MCP_WORKSPACE_ROOT:-${PWD}}}}"
 DB_PATH="${SENDLENS_DB_PATH:-${HOME}/.sendlens/workspace-cache.duckdb}"
 STATE_DIR="${SENDLENS_STATE_DIR:-$(dirname "${DB_PATH}")}"
 LOCK_DIR="${STATE_DIR}/session-start-refresh.lock"
