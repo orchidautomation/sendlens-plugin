@@ -224,8 +224,8 @@ for (const term of [
 for (const term of [
   "provider-aware campaign IDs",
   "provider-qualified Instantly/Smartlead campaigns",
-  "duplicate campaign names across providers",
-  "unsupported Smartlead inbox-placement capability row",
+  "duplicate campaign names for ambiguity handling",
+  "synthetic Smart Delivery placement/diagnostic evidence",
 ]) {
   assertIncludes(source.docs, term, "provider-aware demo seed docs");
 }

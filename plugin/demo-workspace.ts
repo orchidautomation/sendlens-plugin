@@ -314,7 +314,7 @@ async function seedLeadsAndReplies(db: Awaited<ReturnType<typeof getDb>>) {
     `INSERT OR REPLACE INTO sendlens.sampling_runs
      (workspace_id, campaign_id, source_provider, provider_campaign_id, campaign_source_id, ingest_mode, total_leads, total_sent, reply_rows, reply_lead_rows, nonreply_sample_target, nonreply_rows_sampled, outbound_sample_target, outbound_rows_sampled, reply_outbound_rows, filtered_lead_rows, coverage_note, created_at)
      VALUES
-     ('${DEMO_WORKSPACE_ID}', '${DEMO_CAMPAIGN_SMARTLEAD_ID}', 'smartlead', 'demo-alpha', '${DEMO_CAMPAIGN_SMARTLEAD_ID}', 'demo', 360, 430, 15, 1, 100, 1, 100, 1, 1, 0, 'synthetic Smartlead demo fixture: provider-qualified rows, message-history reply sample, and unsupported inbox-placement capability are fabricated for contract tests', CURRENT_TIMESTAMP)`,
+     ('${DEMO_WORKSPACE_ID}', '${DEMO_CAMPAIGN_SMARTLEAD_ID}', 'smartlead', 'demo-alpha', '${DEMO_CAMPAIGN_SMARTLEAD_ID}', 'demo', 360, 430, 15, 1, 100, 1, 100, 1, 1, 0, 'synthetic Smartlead demo fixture: provider-qualified rows, message-history reply sample, and Smart Delivery evidence are fabricated for contract tests', CURRENT_TIMESTAMP)`,
   );
 }
 
@@ -337,6 +337,22 @@ async function seedInboxPlacement(db: Awaited<ReturnType<typeof getDb>>) {
      ('${DEMO_WORKSPACE_ID}', 'demo-ipa-risk-1', 'demo_org', 'demo-ipt-risk', '2026-05-01 10:03:00'::TIMESTAMP, '2026-05-01'::DATE, true, false, 'sender-risk@demo.invalid', 1, 'seed-gmail@example.invalid', 1, 1, 1, true, false, true, '{"listed":true}', '{"dkim":"failed"}', 2, '{"id":"demo-ipa-risk-1"}', CURRENT_TIMESTAMP),
      ('${DEMO_WORKSPACE_ID}', 'demo-ipa-risk-2', 'demo_org', 'demo-ipt-risk', '2026-05-01 10:04:00'::TIMESTAMP, '2026-05-01'::DATE, false, true, 'sender-risk@demo.invalid', 2, 'seed-outlook@example.invalid', 2, 1, 1, true, true, false, NULL, '{"dmarc":"failed"}', 2, '{"id":"demo-ipa-risk-2"}', CURRENT_TIMESTAMP)`,
   );
+  await run(
+    db,
+    `INSERT OR REPLACE INTO sendlens.smartlead_delivery_tests
+     (workspace_id, id, name, test_type, status, campaign_id, schedule_start_time, current_test_run_no, raw_json, synced_at)
+     VALUES
+     ('${DEMO_WORKSPACE_ID}', 'demo-smartlead-delivery', 'Synthetic Smartlead placement test', 'automated', 'active', 'demo-alpha', '2026-05-01 10:00:00'::TIMESTAMP, 2, '{"source":"synthetic_demo"}', CURRENT_TIMESTAMP)`,
+  );
+  await run(
+    db,
+    `INSERT OR REPLACE INTO sendlens.smartlead_delivery_evidence
+     (workspace_id, id, test_id, evidence_type, dimension, sender_email, recipient_email, provider, test_run_no, status, tests_count, total_count, inbox_count, category_count, spam_count, failed_count, mailbox_count, inbox_rate_pct, spam_rate_pct, bounce_rate_pct, reputation_score, spf_pass, dkim_pass, rdns_pass, domain_blacklisted, ip_blacklisted, blacklist_count, observed_at, diagnostic_json, raw_json, synced_at)
+     VALUES
+     ('${DEMO_WORKSPACE_ID}', 'demo-smartlead-run-2', 'demo-smartlead-delivery', 'schedule_history', '2', NULL, NULL, NULL, 2, 'completed', NULL, 100, 88, 7, 5, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-08 10:00:00'::TIMESTAMP, NULL, '{"source":"synthetic_demo"}', CURRENT_TIMESTAMP),
+     ('${DEMO_WORKSPACE_ID}', 'demo-smartlead-sender', 'demo-smartlead-delivery', 'sender_report', 'sender-smartlead@demo.invalid', 'sender-smartlead@demo.invalid', NULL, NULL, NULL, NULL, 2, NULL, NULL, NULL, NULL, NULL, NULL, 88, 5, 0, 8.8, NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-08 10:00:00'::TIMESTAMP, NULL, '{"source":"synthetic_demo"}', CURRENT_TIMESTAMP),
+     ('${DEMO_WORKSPACE_ID}', 'demo-smartlead-spf', 'demo-smartlead-delivery', 'spf', 'seed-smartlead', 'sender-smartlead@demo.invalid', 'seed-smartlead@example.invalid', 'Gmail', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, false, NULL, NULL, NULL, NULL, NULL, '2026-05-08 10:00:00'::TIMESTAMP, '{"reason":"synthetic SPF failure"}', '{"source":"synthetic_demo"}', CURRENT_TIMESTAMP)`,
+  );
 }
 
 async function seedProviderCapabilities(db: Awaited<ReturnType<typeof getDb>>) {
@@ -351,7 +367,7 @@ async function seedProviderCapabilities(db: Awaited<ReturnType<typeof getDb>>) {
      ('${DEMO_WORKSPACE_ID}', 'smartlead', 'campaign_directory', 'supported', 'high', 'Synthetic demo capability row for Smartlead campaign directory reads.', CURRENT_TIMESTAMP),
      ('${DEMO_WORKSPACE_ID}', 'smartlead', 'campaign_analytics', 'supported', 'medium', 'Synthetic demo capability row for Smartlead aggregate campaign analytics; denominator semantics can differ by provider.', CURRENT_TIMESTAMP),
      ('${DEMO_WORKSPACE_ID}', 'smartlead', 'reply_message_history', 'supported', 'medium', 'Synthetic demo capability row for bounded Smartlead message-history reply hydration.', CURRENT_TIMESTAMP),
-     ('${DEMO_WORKSPACE_ID}', 'smartlead', 'inbox_placement', 'unsupported', 'high', 'Smartlead V1 has no checked equivalent inbox placement read API; do not treat empty inbox-placement rows as stale Smartlead data.', CURRENT_TIMESTAMP)`,
+     ('${DEMO_WORKSPACE_ID}', 'smartlead', 'inbox_placement', 'supported', 'high', 'Synthetic Smart Delivery test, run, sender, and authentication evidence is present for contract tests.', CURRENT_TIMESTAMP)`,
   );
 }
 

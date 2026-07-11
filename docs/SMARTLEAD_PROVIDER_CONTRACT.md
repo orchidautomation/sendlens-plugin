@@ -1,9 +1,9 @@
 # Smartlead V1 Provider Contract
 
-Date checked: 2026-06-30
+Date checked: 2026-07-11
 
-Status: implementation-ready contract for SENDOSS-71 and SENDOSS-72, with
-live-shape validation deferred until Brandon has live Smartlead access.
+Status: implemented V1 contract with official-document and synthetic-fixture
+validation. Live customer-shape validation remains deferred.
 
 This document converts `docs/SMARTLEAD_API_PARITY_MAP.md` into the read-only
 Smartlead V1 provider contract for SendLens OSS. It is based on public
@@ -41,6 +41,13 @@ Public Smartlead sources:
 - `https://api.smartlead.ai/api-reference/analytics/campaign-performance`
 - `https://api.smartlead.ai/api-reference/analytics/provider-performance`
 - `https://api.smartlead.ai/guides/rate-limits`
+- `https://api.smartlead.ai/guides/error-handling`
+- `https://api.smartlead.ai/api-reference/campaign-statistics/mailbox-statistics`
+- `https://api.smartlead.ai/api-reference/smart-delivery/list-tests`
+
+The complete official `llms-full.txt` snapshot was fetched on 2026-07-11 and
+hashed as `ab4c1a1bc65f3331b9d813f8509c67ca3b3014d80e4954e5d34fe7a6fe164a2b`.
+The raw snapshot remains excluded from version control.
 
 ## Contract Summary
 
@@ -57,7 +64,8 @@ analysis:
 - workspace sender account inventory and warmup health
 - campaign lead evidence with engagement flags and custom fields
 - reply and outbound message history for reply-signal leads or bounded samples
-- global/account-level analytics that can supplement workspace snapshots
+- provider-wide analytics client methods for future use; V1 refresh does not
+  normalize or claim those client-only surfaces
 
 Smartlead V1 must not implement write or operations endpoints:
 
@@ -68,12 +76,13 @@ Smartlead V1 must not implement write or operations endpoints:
 - inbox reply/forward/send-test
 - webhook create/update/delete
 
-Smartlead V1 must treat inbox placement as unsupported in SendLens. Smartlead
-documents a separate Smart Delivery spam-test API family on
-`https://smartdelivery.smartlead.ai`, but that surface is support-gated and is
-not a proven equivalent for the current Instantly `inbox_placement_tests` and
-`inbox_placement_analytics` tables. A later issue can map that API if product
-scope changes.
+Smartlead V1 reads inbox-placement evidence from the separate support-gated
+Smart Delivery API at `https://smartdelivery.smartlead.ai`. SendLens maps exact
+test definitions, run counts, provider/region and sender aggregates, and
+authentication/blacklist diagnostics into Smartlead-specific tables and views.
+It does not fabricate Instantly-style per-email placement rows from Smartlead
+aggregates. A valid Standard API key without Smart Delivery access remains a
+valid core provider configuration and records `inbox_placement=unsupported`.
 
 ## Provider Identity Rules
 
@@ -116,7 +125,7 @@ selects Smartlead through config or a provider parameter.
 | Validation probe | Use `GET /campaigns/` with `include_tags=true` and a small timeout. Treat 401/403 as invalid, and 429/5xx/network as unreachable. Do not print the access value. |
 | Rate limit | Start at 50 requests/minute and 8 concurrent requests by default. Smartlead docs list Standard at 60/min and recommend using 80 percent of the limit. |
 | Burst limit | Enforce a 10 requests/second default burst gate for Standard accounts. Keep plan limits configurable. |
-| Retry | Retry 429, 500, and 503 with exponential backoff and jitter. Honor `Retry-After` when present. Also parse response-body retry seconds as a fallback. |
+| Timeout and retry | Apply a 30-second request timeout. Retry 429, 500, 502, and 503 with exponential backoff and jitter. Honor `Retry-After` when present and never wait less than the exponential backoff. Also parse response-body retry seconds as a fallback. |
 | Headers | Capture rate-limit limit, remaining, and reset headers when present for trace diagnostics. |
 | Pagination | Use offset/limit for Smartlead list endpoints. Do not reuse Instantly cursor helpers. |
 | Page sizes | Campaign leads max 100 per docs. Email accounts max 100 per docs. Campaign statistics max 1000 per docs. Campaign mailbox stats max 20 per docs. |
@@ -142,10 +151,10 @@ selects Smartlead through config or a provider parameter.
 | Lead lookup by email | `GET /leads/` | email query | Search result by email with associated campaign data. | backfill into `sampled_leads` | Medium |
 | Message history | `GET /campaigns/{campaign_id}/leads/{lead_id}/message-history` | optional `event_time_gt`, plain-text response flag | `{messages:[...]}` with `id`, `subject`, `direction`, `sent_at` or `received_at`, and optional body fields when plain-text output works. | `reply_emails`; exact outbound history requires a new surface or schema/MCP migration | Medium |
 | Bulk message history | `POST /campaigns/{campaign_id}/message-history-for-leads/bbfbdsFGHlBr76ruhjvh6fhHL` | `lead_ids` body, optional event time | `{data:{lead_id:[messages]}}`. Static path segment is docs-confirmed but live-untested. | `reply_emails`; exact outbound history requires a new surface or schema/MCP migration | Medium |
-| Global overall analytics | `GET /analytics/overall-stats-v2` | `start_date`, `end_date`, optional timezone/client/campaign ids | Wrapped `overall_stats` with raw counts, unique counts, rates, positive replies. | workspace snapshot rollups, not per-campaign tables | Medium |
-| Campaign performance analytics | `GET /analytics/campaign/overall-stats` | date range, timezone, optional client/campaign ids, limit/offset/full-data flag | Wrapped `campaign_wise_performance[]`. Useful when campaign-scoped endpoint is incomplete. | `campaign_analytics` with recomputed rates | Medium |
-| Provider performance | `GET /analytics/mailbox/provider-wise-overall-performance` | date range, timezone/client/campaign filters | Provider-level mailbox performance. | provider capability/diagnostic views | Later |
-| Smart Delivery placement tests | `POST https://smartdelivery.smartlead.ai/api/v1/spam-test/report` and related | separate host, support-gated | Not part of SendLens Smartlead V1. | none | Gap |
+| Global overall analytics | `GET /analytics/overall-stats-v2` | `start_date`, `end_date`, optional timezone/client/campaign ids | Wrapped `overall_stats` with raw counts, unique counts, rates, positive replies. | Client-only in V1; not normalized or claimed by refresh. | Partial |
+| Campaign performance analytics | `GET /analytics/campaign/overall-stats` | date range, timezone, optional client/campaign ids, limit/offset/full-data flag | Wrapped `campaign_wise_performance[]`. | Client-only in V1; not normalized or claimed by refresh. | Partial |
+| Provider performance | `GET /analytics/mailbox/provider-wise-overall-performance` | date range, timezone/client/campaign filters | Provider-level mailbox performance. | Client-only in V1; not normalized or claimed by refresh. | Later |
+| Smart Delivery placement tests | Read and read-equivalent endpoints on `https://smartdelivery.smartlead.ai` | separate host, support-gated | Test/run, provider/region, sender, authentication, blacklist, IP, and spam-filter evidence. Message content and raw reply headers are excluded. | `smartlead_delivery_tests`, `smartlead_delivery_evidence`, Smartlead delivery views | Supported when authorized; explicit unsupported capability otherwise |
 
 ## Normalized Table Contract
 
@@ -331,7 +340,7 @@ without treating them as stale cache:
 | `exact_outbound_history` | partial; requires a new exact outbound surface before MCP exposure |
 | `custom_tags` | partial for campaign/account only |
 | `lead_lists` | later |
-| `inbox_placement` | unsupported in Smartlead V1 |
+| `inbox_placement` | supported when the key is authorized for Smart Delivery; explicit support-gated `unsupported` otherwise |
 | `webhooks` | later, not read-only refresh |
 
 ## Live-Shape Unknowns
@@ -346,7 +355,7 @@ without treating them as stale cache:
 | Bulk message-history static suffix | Docs include `bbfbdsFGHlBr76ruhjvh6fhHL` in the path. | Keep endpoint behind one client method and mark live-untested. Unit-test URL construction exactly from docs. |
 | Reply category mapping | Smartlead categories are mutable and workspace-defined. | Use `category_id/category_name` as evidence. Do not infer positive/negative from reply text in V1. |
 | Account daily campaign metrics | Warmup stats are not campaign sends. Mailbox stats/global mailbox analytics need live shape validation. | Keep account daily campaign metrics null or partial until fixture-backed. |
-| Smart Delivery placement | Separate host and access model, not equivalent yet. | Mark `inbox_placement` unsupported for Smartlead provider capabilities. |
+| Smart Delivery placement | Separate host and access model; provider/region reports are aggregates rather than Instantly-style per-email rows. | Use Smartlead-specific exact tables/views when authorized. Mark `inbox_placement` support-gated `unsupported` only when the initial delivery probe returns 401/403/404. |
 
 ## No-Live-Access Validation Strategy
 
@@ -367,9 +376,10 @@ Required local validation:
    empty-page, exact-page, and short-page termination.
 5. Test normalizers into SendLens tables using synthetic fixtures. Do not call
    Smartlead from tests.
-6. Test unsupported capability reporting: Smartlead must surface
-   `inbox_placement=unsupported` rather than producing stale or empty
-   Instantly-style placement tables.
+6. Test conditional capability reporting: authorized Smart Delivery reads must
+   surface exact Smartlead-specific evidence; support-gated 401/403/404 must
+   surface `inbox_placement=unsupported` without producing stale or fake
+   Instantly-style per-email rows.
 7. Run existing MCP response contract tests to prove old tool shapes remain
    valid for Instantly and demo mode.
 

@@ -1,6 +1,7 @@
 import { appendTraceLog } from "./debug-log";
 
 export const SMARTLEAD_API_BASE = "https://server.smartlead.ai/api/v1";
+export const SMARTLEAD_DELIVERY_API_BASE = "https://smartdelivery.smartlead.ai/api/v1";
 export const SMARTLEAD_ACCESS_PARAM = ["api", "key"].join("_");
 
 const DEFAULT_RETRY_ATTEMPTS = 3;
@@ -11,6 +12,7 @@ const DEFAULT_RATE_LIMIT_PER_MINUTE = 50;
 const DEFAULT_BURST_LIMIT = 10;
 const DEFAULT_BURST_WINDOW_MS = 2000;
 const DEFAULT_MAX_CONCURRENT = 8;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_PAGE_LIMIT = 100;
 const DEFAULT_MAX_PAGES = 200;
 const BULK_MESSAGE_HISTORY_SUFFIX = "bbfbdsFGHlBr76ruhjvh6fhHL";
@@ -50,12 +52,14 @@ export interface SmartleadClientOptions {
   now?: NowFn;
   rateLimit?: SmartleadRateLimitConfig;
   retry?: SmartleadRetryConfig;
+  timeoutMs?: number;
 }
 
 export interface SmartleadRequestOptions extends Omit<RequestInit, "body"> {
   query?: QueryParams;
   json?: unknown;
   body?: RequestInit["body"];
+  baseUrl?: string;
 }
 
 export interface SmartleadOffsetPage<T extends Record<string, unknown> = Record<string, unknown>> {
@@ -202,7 +206,30 @@ export function redactSmartleadText(input: string, values: string[] = []) {
   out = out.replace(/([?&]api_key=)[^&\s"'<>]+/gi, "$1[REDACTED]");
   out = out.replace(/(["']api_key["']\s*:\s*["'])[^"']+(["'])/gi, "$1[REDACTED]$2");
   out = out.replace(/(\bapi_key\s*[:=]\s*)[^,\s"'<>}]+/gi, "$1[REDACTED]");
+  out = out.replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[REDACTED_EMAIL]");
   return out;
+}
+
+function safeRequestUrl(input: URL) {
+  const safe = new URL(input);
+  for (const key of safe.searchParams.keys()) {
+    safe.searchParams.set(key, "[REDACTED]");
+  }
+  return safe.toString();
+}
+
+function safeErrorBody(body: string) {
+  try {
+    const root = asRecord(JSON.parse(body));
+    const nested = asRecord(root?.error);
+    const candidate = nested?.code ?? root?.code ?? root?.status;
+    if (typeof candidate === "string" && /^[A-Za-z0-9_.-]{1,100}$/.test(candidate)) {
+      return JSON.stringify({ code: candidate });
+    }
+  } catch {
+    // Raw provider error bodies may contain customer data, so omit them.
+  }
+  return "Provider error response body omitted.";
 }
 
 export function parseRetryAfter(value: string | null, now = Date.now()): number | null {
@@ -359,9 +386,9 @@ export function parseSmartleadOffsetPage<T extends Record<string, unknown> = Rec
   const explicitHasMore = root?.has_more ?? root?.hasMore ?? dataRecord?.has_more ?? dataRecord?.hasMore;
   const nextOffset = offset + limit;
   const hasMore = typeof explicitHasMore === "boolean"
-    ? explicitHasMore && items.length > 0
+    ? explicitHasMore
     : total != null
-      ? nextOffset < total && items.length > 0
+      ? nextOffset < total
       : items.length >= limit && items.length > 0;
 
   return { items, total, offset, limit, nextOffset, hasMore };
@@ -526,7 +553,7 @@ function normalizeRetry(config: SmartleadRetryConfig = {}): RequiredRetryConfig 
     baseDelayMs: config.baseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS,
     maxDelayMs: config.maxDelayMs ?? DEFAULT_RETRY_MAX_DELAY_MS,
     jitterRatio: config.jitterRatio ?? DEFAULT_RETRY_JITTER_RATIO,
-    statuses: new Set(config.statuses ?? [429, 500, 503]),
+    statuses: new Set(config.statuses ?? [429, 500, 502, 503]),
   };
 }
 
@@ -553,6 +580,7 @@ export class SmartleadClient {
   private readonly sleep: SleepFn;
   private readonly now: NowFn;
   private readonly retry: RequiredRetryConfig;
+  private readonly timeoutMs: number;
   private readonly limiter: SlidingWindowLimiter;
   private readonly semaphore: Semaphore;
 
@@ -567,13 +595,16 @@ export class SmartleadClient {
     this.sleep = options.sleep ?? defaultSleep;
     this.now = options.now ?? Date.now;
     this.retry = normalizeRetry(options.retry);
+    this.timeoutMs = Number.isFinite(options.timeoutMs)
+      ? Math.max(0, options.timeoutMs as number)
+      : DEFAULT_REQUEST_TIMEOUT_MS;
     const rateLimit = normalizeRateLimit(options.rateLimit);
     this.limiter = new SlidingWindowLimiter(rateLimit, this.sleep, this.now);
     this.semaphore = new Semaphore(rateLimit.maxConcurrent);
   }
 
-  buildUrl(path: string, query: QueryParams = {}) {
-    return buildSmartleadUrl(path, this.accessValue, query, this.baseUrl);
+  buildUrl(path: string, query: QueryParams = {}, baseUrl = this.baseUrl) {
+    return buildSmartleadUrl(path, this.accessValue, query, baseUrl);
   }
 
   redactUrl(input: string | URL) {
@@ -589,9 +620,38 @@ export class SmartleadClient {
     return this.limiter.stats(active, queued);
   }
 
+  private async fetchWithTimeout(url: URL, init: RequestInit) {
+    if (this.timeoutMs === 0) return this.fetchImpl(url, init);
+
+    const controller = new AbortController();
+    const onCallerAbort = () => controller.abort(init.signal?.reason ?? abortError(init.signal));
+    init.signal?.addEventListener("abort", onCallerAbort, { once: true });
+    const timer = setTimeout(() => {
+      const error = new Error(`Smartlead request timed out after ${this.timeoutMs}ms.`);
+      error.name = "TimeoutError";
+      controller.abort(error);
+    }, this.timeoutMs);
+
+    try {
+      const response = await abortable(
+        this.fetchImpl(url, { ...init, signal: controller.signal }),
+        controller.signal,
+      );
+      const body = await abortable(response.arrayBuffer(), controller.signal);
+      return new Response(body.byteLength > 0 ? body : null, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    } finally {
+      clearTimeout(timer);
+      init.signal?.removeEventListener("abort", onCallerAbort);
+    }
+  }
+
   async request(path: string, options: SmartleadRequestOptions = {}): Promise<Response> {
-    const url = this.buildUrl(path, options.query);
-    const redactedUrl = this.redactUrl(url);
+    const url = this.buildUrl(path, options.query, options.baseUrl);
+    const redactedUrl = safeRequestUrl(url);
     const init = this.toRequestInit(options);
 
     for (let attempt = 1; ; attempt++) {
@@ -600,7 +660,9 @@ export class SmartleadClient {
         attempt,
         method: init.method ?? "GET",
         path: url.pathname,
-        query: this.redactUrl(url).split("?")[1] ?? "",
+        queryKeys: [...url.searchParams.keys()]
+          .filter((key) => key !== SMARTLEAD_ACCESS_PARAM)
+          .sort(),
       });
 
       await this.limiter.acquire(init.signal);
@@ -608,7 +670,7 @@ export class SmartleadClient {
       let response: Response;
       try {
         throwIfAborted(init.signal);
-        response = await this.fetchImpl(url, init);
+        response = await this.fetchWithTimeout(url, init);
       } catch (error) {
         this.semaphore.release();
         if (isAbortError(error)) {
@@ -635,7 +697,10 @@ export class SmartleadClient {
         const body = await response.text().catch(() => "");
         const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"), this.now());
         const bodyRetryMs = retryAfterMs == null ? parseRetryDelayFromBody(body) : null;
-        const delayMs = retryAfterMs ?? bodyRetryMs ?? this.backoffDelay(attempt);
+        const delayMs = Math.max(
+          this.backoffDelay(attempt),
+          retryAfterMs ?? bodyRetryMs ?? 0,
+        );
         await appendTraceLog("smartlead.http.retry", {
           attempt,
           status: response.status,
@@ -651,7 +716,7 @@ export class SmartleadClient {
       }
 
       if (!response.ok) {
-        const body = this.redactText(await response.text().catch(() => ""));
+        const body = safeErrorBody(await response.text().catch(() => ""));
         await appendTraceLog("smartlead.http.error", {
           attempt,
           status: response.status,
@@ -747,10 +812,10 @@ export class SmartleadClient {
 
   async getCampaignAnalyticsByDate(
     campaignId: string | number,
-    opts: { startDate: string; endDate: string },
+    opts: { startDate: string; endDate: string; timezone?: string },
   ) {
     return this.requestJson(`/campaigns/${encodeURIComponent(String(campaignId))}/analytics-by-date`, {
-      query: { start_date: opts.startDate, end_date: opts.endDate },
+      query: { start_date: opts.startDate, end_date: opts.endDate, timezone: opts.timezone },
     });
   }
 
@@ -1000,6 +1065,101 @@ export class SmartleadClient {
     });
   }
 
+  async listSmartDeliveryTests() {
+    const payload = await this.requestJson("/spam-test/report", {
+      method: "POST",
+      json: {},
+      baseUrl: SMARTLEAD_DELIVERY_API_BASE,
+    });
+    return parseSmartleadItems(payload, ["tests", "spam_tests", "data"]);
+  }
+
+  async getSmartDeliveryTest(testId: string | number) {
+    return this.requestJson(`/spam-test/${encodeURIComponent(String(testId))}`, {
+      baseUrl: SMARTLEAD_DELIVERY_API_BASE,
+    });
+  }
+
+  async getSmartDeliveryScheduleHistory(testId: string | number) {
+    const payload = await this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/schedule-history`,
+      { baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+    return parseSmartleadItems(payload, ["history", "runs", "data"]);
+  }
+
+  async getSmartDeliveryProviderReport(testId: string | number) {
+    return this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/providerwise`,
+      { method: "POST", json: {}, baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+  }
+
+  async getSmartDeliveryGeoReport(testId: string | number) {
+    return this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/groupwise`,
+      { method: "POST", json: {}, baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+  }
+
+  async getSmartDeliverySenderReport(testId: string | number) {
+    const payload = await this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/sender-account-wise`,
+      { baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+    return parseSmartleadItems(payload, ["senders", "accounts", "data"]);
+  }
+
+  async getSmartDeliverySenderAccounts(testId: string | number) {
+    const payload = await this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/sender-accounts`,
+      { baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+    return parseSmartleadItems(payload, ["senders", "accounts", "data"]);
+  }
+
+  async getSmartDeliverySeedReport(
+    testId: string | number,
+    report: "spf-details" | "dkim-details" | "rdns-details" | "domain-blacklist",
+  ) {
+    const payload = await this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/${report}`,
+      { baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+    return parseSmartleadItems(payload, ["results", "data"]);
+  }
+
+  async getSmartDeliveryBlacklistReport(testId: string | number) {
+    const payload = await this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/blacklist`,
+      { baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+    return parseSmartleadItems(payload, ["results", "data"]);
+  }
+
+  async getSmartDeliveryIpAnalytics(testId: string | number) {
+    const payload = await this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/ip-analytics`,
+      { baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+    return parseSmartleadItems(payload, ["results", "data"]);
+  }
+
+  async getSmartDeliverySpamFilterReport(testId: string | number) {
+    const payload = await this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/spam-filter-details`,
+      { baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+    return parseSmartleadItems(payload, ["results", "data"]);
+  }
+
+  async getSmartDeliveryMailboxSummary() {
+    const payload = await this.requestJson("/spam-test/report/mailboxes-summary", {
+      baseUrl: SMARTLEAD_DELIVERY_API_BASE,
+    });
+    return parseSmartleadItems(payload, ["mailboxes", "data"]);
+  }
+
   private async listOffsetPaginated(
     path: string,
     opts: { query?: QueryParams; itemKeys?: string[]; limit: number; maxPages?: number },
@@ -1007,10 +1167,15 @@ export class SmartleadClient {
     const all: Array<Record<string, unknown>> = [];
     let offset = 0;
     const maxPages = opts.maxPages ?? DEFAULT_MAX_PAGES;
+    if (!Number.isInteger(maxPages) || maxPages < 1) {
+      throw new Error("Smartlead pagination maxPages must be a positive integer.");
+    }
     const seenOffsets = new Set<number>();
 
     for (let page = 0; page < maxPages; page++) {
-      if (seenOffsets.has(offset)) break;
+      if (seenOffsets.has(offset)) {
+        throw new Error(`Smartlead pagination repeated offset ${offset} for ${path}.`);
+      }
       seenOffsets.add(offset);
       const payload = await this.requestJson(path, {
         query: {
@@ -1026,6 +1191,17 @@ export class SmartleadClient {
       });
       all.push(...parsed.items);
       if (!parsed.hasMore) break;
+      if (parsed.items.length === 0) {
+        throw new Error(`Smartlead pagination returned an empty nonterminal page for ${path}.`);
+      }
+      if (parsed.nextOffset <= offset) {
+        throw new Error(`Smartlead pagination did not advance beyond offset ${offset} for ${path}.`);
+      }
+      if (page === maxPages - 1) {
+        throw new Error(
+          `Smartlead pagination exceeded the configured ${maxPages}-page safety cap for ${path}.`,
+        );
+      }
       offset = parsed.nextOffset;
     }
 
@@ -1033,15 +1209,16 @@ export class SmartleadClient {
   }
 
   private toRequestInit(options: SmartleadRequestOptions): RequestInit {
-    const headers = new Headers(options.headers);
+    const { query: _query, json, baseUrl: _baseUrl, ...requestOptions } = options;
+    const headers = new Headers(requestOptions.headers);
     if (!headers.has("accept")) headers.set("accept", "application/json");
     let body = options.body;
-    if (options.json !== undefined) {
-      body = JSON.stringify(options.json);
+    if (json !== undefined) {
+      body = JSON.stringify(json);
       if (!headers.has("content-type")) headers.set("content-type", "application/json");
     }
     return {
-      ...options,
+      ...requestOptions,
       headers,
       body,
     };

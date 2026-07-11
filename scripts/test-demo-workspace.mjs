@@ -45,12 +45,7 @@ try {
       (row) =>
         row.source_provider === "smartlead"
         && row.capability === "inbox_placement"
-        && row.support_status === "unsupported",
-    ),
-  );
-  assert.ok(
-    summary.warnings.some((warning) =>
-      warning.includes("Smartlead inbox placement is explicitly unsupported"),
+        && row.support_status === "supported",
     ),
   );
 

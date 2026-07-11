@@ -54,7 +54,7 @@ Where relevant, SendLens responses should include:
 - `schema_version: "sendlens_demo_seed.v1"`
 - activates synthetic `demo_workspace` in the local cache
 - includes provider-aware campaign IDs, seed timestamp, evidence note, and next steps
-- demo rows are synthetic only and include provider-qualified Instantly/Smartlead campaigns, duplicate campaign names across providers for ambiguity handling, and an unsupported Smartlead inbox-placement capability row
+- demo rows are synthetic only and include provider-qualified Instantly/Smartlead campaigns, duplicate campaign names for ambiguity handling, and synthetic Smart Delivery placement/diagnostic evidence
 - does not delete real workspace rows; real `refresh_data` can switch active analysis back to configured provider data
 
 `load_campaign_data`
@@ -119,7 +119,7 @@ Where relevant, SendLens responses should include:
 Run `npm run test:mcp-response-contract` when changing MCP tools, response field names, warnings, caps, or this document. The test pins the response-contract terms that agents rely on for:
 
 - `workspace_snapshot` exact metrics, campaign rows, coverage, warnings, output limits, and readiness
-- `workspace_snapshot` provider-scoped/all-provider outputs, provider capability rows, cross-provider rate caveats, and unsupported Smartlead inbox placement limitations
+- `workspace_snapshot` provider-scoped/all-provider outputs, provider capability rows, cross-provider rate caveats, and support-gated Smart Delivery coverage
 - `load_campaign_data` provider-qualified/native campaign handling, the `SENDLENS_PROVIDER=all` provider-qualified ID requirement, structured selector errors, campaign overview, reply samples, rendered outbound reconstruction caveats, and output limits
 - campaign selector ambiguity responses with provider-qualified matches
 - provider overlap-risk public views for sampled cross-provider duplicate email/domain/company exposure
@@ -135,6 +135,7 @@ Run `npm run test:mcp-response-contract` when changing MCP tools, response field
 - `inbox_placement_tests` and `inbox_placement_analytics` are exact local copies of Instantly-derived inbox-placement surfaces.
 - `campaign_overview` is the preferred exact campaign rollup plus tracking settings, deliverability guardrail settings, and sample coverage metadata.
 - `inbox_placement_test_overview` and `sender_deliverability_health` are exact semantic rollups over Instantly inbox placement analytics when those API surfaces are available.
+- `smartlead_delivery_test_overview`, `smartlead_sender_delivery_health`, and `smartlead_delivery_authentication_health` preserve Smart Delivery run aggregates and diagnostics without claiming Instantly-style per-email parity.
 - `reply_emails` contains exact inbound email rows fetched from provider reply surfaces. Instantly rows are fetched on demand through List email; Smartlead rows can come from bounded message-history hydration during campaign refresh. Exact body text is present only when the provider returned body fields.
 - `reply_email_hydration_state` is exact local pagination state for continuing older reply fetches by campaign/status/thread mode. Use `sync_newest` or `restart` to check newly arrived replies above the saved cursor.
 - `lead_evidence` contains reply-signal leads found during bounded lead scans, explicit reply-email backfills, and bounded non-reply samples.
