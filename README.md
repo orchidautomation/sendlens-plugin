@@ -1,10 +1,32 @@
 # SendLens
 
-**The outbound analyst that lives inside the AI tool you already use.**
+**A local, read-only outbound analyst inside the AI tool you already use.**
 
 SendLens turns your outbound provider data into something you can talk to. Ask a question in plain English inside Claude Code, Cursor, Codex, or OpenCode, and you get a clear, evidence-backed answer about your actual campaigns, your actual senders, and what your actual prospects are saying back.
 
-No spreadsheets. No dashboards. No SQL. Just answers.
+No hosted dashboard to maintain. No SQL required. Just questions, evidence, and a clear next move.
+
+## What SendLens provides
+
+SendLens supports Claude Code, Cursor, Codex, and OpenCode. Every host gets the same local DuckDB analysis layer, read-only MCP tools, specialist workflows, demo workspace, and privacy boundary.
+
+**Matrix legend:** **Included** means the provider exposes the source and SendLens models it directly. **Bounded** means SendLens intentionally fetches or analyzes a limited slice and labels the coverage. **Support-gated** means Smartlead must separately authorize its Smart Delivery service. **Not offered** is an intentional product boundary.
+
+| SendLens capability | Instantly | Smartlead V1 | Evidence exposed to the AI |
+| --- | --- | --- | --- |
+| Campaign inventory, status, schedule, and settings | Included | Included | Exact provider records |
+| Campaign totals and date/range performance | Included | Included | Exact source-native counts; cross-provider denominator caveats stay visible |
+| Steps, sequences, variants, and copy | Included | Included | Exact templates and available source-native performance |
+| Sender assignments, account metrics, and warmup health | Included | Included | Exact account records and provider-reported health windows |
+| Tags and scoped workspace analysis | Included | Included for exposed campaign/account tags | Exact mappings where the provider exposes them |
+| Lead fields and ICP-signal analysis | Bounded | Bounded | Sampled rows with coverage labels; never presented as full-population proof |
+| Reply text and objection/theme analysis | Exact, fetched on demand | Bounded exact message history | Exact stored reply text with explicit hydration/coverage state |
+| Inbox placement and deliverability | Included | **Support-gated Smart Delivery** | Instantly per-email placement; Smartlead test/run, provider, region, sender, authentication, blacklist, IP, and spam-filter aggregates/diagnostics |
+| Cross-provider workspace analysis | Included with `SENDLENS_PROVIDER=all` | Included with `SENDLENS_PROVIDER=all` | Provider-qualified IDs, normalized comparisons, and overlap-risk views |
+| Campaign QA, performance diagnosis, experiments, ICP/reply analysis, and account briefs | Included | Included where required source evidence exists | Specialist plays that preserve exact, sampled, inferred, and unsupported distinctions |
+| Sending email or changing campaigns, leads, accounts, webhooks, or provider settings | **Not offered** | **Not offered** | SendLens V1 is read-only by design |
+
+Smartlead deliverability is not part of the Standard API surface. A valid Smartlead key can power core campaign analysis while Smart Delivery remains unavailable; SendLens records that state as `unsupported` instead of treating missing rows as healthy placement.
 
 ## Why this matters
 
@@ -118,10 +140,10 @@ After installing, type this in your AI tool:
 
 It will walk you through connecting your account (or starting in demo mode) and confirm everything is ready.
 The release curl installers prepare local runtime dependencies. Pluxx-owned runtime launchers resolve provider env when the MCP server starts: first from launch-folder env files for Codex, Claude Code, Cursor, or OpenCode, then from the inherited/global host environment.
-If `SENDLENS_INSTANTLY_API_KEY` is exported during install, the installer can run the first workspace refresh immediately. Otherwise install still completes, and SendLens uses the key from the launch folder or host environment when you restart or reload the host.
+If the credential required by the selected provider mode is exported during install, the installer can run the first workspace refresh immediately. In `all` mode, either credential can refresh its provider; when both credentials are configured, `SENDLENS_CLIENT` is required to join them in one local workspace. Otherwise installation still completes, and SendLens uses provider config from the launch folder or host environment when you restart or reload the host.
 When you rerun the same curl command to update SendLens, the installer refreshes the global plugin bundle without baking one workspace's provider config into the installed plugin.
 
-For noninteractive installs that should also run the first refresh, export the key first:
+For example, an Instantly noninteractive install can run its first refresh when the key is exported first:
 
 ```bash
 export SENDLENS_INSTANTLY_API_KEY="your_instantly_api_key"
@@ -139,7 +161,7 @@ SendLens supports provider-scoped read-only setup modes:
 
 Provider config is runtime env, not installed plugin state. For repeat use, put the variables in the folder where you launch your AI tool, or export them in the shell/global environment that starts the host. Smartlead uses query-string access, so SendLens suppresses that value in setup output, logs, traces, and errors.
 
-Smartlead V1 is read-only. SendLens can refresh Smartlead campaign, account, lead, analytics, and bounded message-history evidence where the provider exposes those surfaces. It does not add Smartlead write actions, webhook management, campaign mutation, lead mutation, account mutation, or email send paths. Smartlead inbox placement is explicitly unsupported in V1 because no checked equivalent read endpoint exists; empty inbox-placement rows are not evidence that Smartlead sender placement is healthy.
+Smartlead V1 is read-only. SendLens can refresh Smartlead campaign, account, lead, analytics, bounded message-history, and Smart Delivery evidence where the provider authorizes those surfaces. It does not add Smartlead write actions, webhook management, test mutation, campaign mutation, lead mutation, account mutation, or email send paths. Smart Delivery uses a separate support-gated service; SendLens records an explicit unsupported capability when access is absent, and empty rows never prove healthy placement.
 
 For a one-session launch:
 
@@ -202,9 +224,9 @@ claude
 
 Do not paste API keys into chat. If you change keys, restart or reload the host before asking SendLens to refresh.
 
-Want to try SendLens without connecting Instantly? Demo mode is available from a local/source install or an installed plugin with no API key configured.
+Want to try SendLens without connecting a provider? Demo mode is available from a local/source install or an installed plugin with no API key configured.
 
-Demo results are synthetic. They are useful for seeing the experience, not for judging a real campaign or customer. Seeding demo data does not delete real workspace rows from the local cache; it activates a synthetic workspace named `demo_workspace`, and a real `refresh_data` later switches active analysis back to live Instantly data.
+Demo results are synthetic. They are useful for seeing the experience, not for judging a real campaign or customer. Seeding demo data does not delete real workspace rows from the local cache; it activates a synthetic workspace named `demo_workspace`, and a real `refresh_data` later switches active analysis back to the configured live provider workspace.
 
 ## Privacy in plain English
 
@@ -215,14 +237,12 @@ Demo results are synthetic. They are useful for seeing the experience, not for j
 
 Full data-handling details: [Trust and privacy](./docs/TRUST_AND_PRIVACY.md).
 
-## What it works with today
+## Provider boundaries
 
-This release works with **Instantly** for campaigns, daily metrics, senders, custom tags, deliverability tests, lead details, and reply text. It also includes **Smartlead V1 read-only support** for core campaign/account/lead/analytics and bounded message-history evidence, with provider-qualified rows for mixed workspaces.
-
-Known Smartlead V1 limitations:
+The matrix above is the release contract. The important Smartlead-specific boundaries are:
 
 - No Smartlead write or mutation tools are exposed.
-- Smartlead inbox placement is unsupported unless a later checked read endpoint is added.
+- Smartlead Smart Delivery is support-gated. Authorized keys receive exact Smartlead-specific aggregate/diagnostic evidence; unauthorized keys retain core Smartlead ingest with an explicit unsupported capability.
 - Cross-provider rate comparisons use normalized counts and provider caveats because source-native denominators can differ.
 - Live Smartlead response-shape risk remains until a real Smartlead key/account is available for bounded validation; the current OSS test posture uses synthetic fixtures and mocked responses only.
 

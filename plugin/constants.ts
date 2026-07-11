@@ -52,6 +52,11 @@ export const PUBLIC_TABLES = [
   "inbox_placement_analytics_labeled",
   "inbox_placement_test_overview",
   "sender_deliverability_health",
+  "smartlead_delivery_tests",
+  "smartlead_delivery_evidence",
+  "smartlead_delivery_test_overview",
+  "smartlead_sender_delivery_health",
+  "smartlead_delivery_authentication_health",
   "reply_emails",
   "reply_email_hydration_state",
   "reply_email_context",
@@ -123,6 +128,16 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Semantic inbox placement test rollup with primary inbox, category, spam, and authentication failure rates by test.",
   sender_deliverability_health:
     "Semantic sender-level deliverability health view built from inbox placement analytics across tests.",
+  smartlead_delivery_tests:
+    "Exact Smartlead Smart Delivery test definitions from the support-gated read API, without message content or reply headers.",
+  smartlead_delivery_evidence:
+    "Exact Smartlead Smart Delivery run, provider, region, sender, authentication, blacklist, IP, and spam-filter evidence with provider-reported aggregates preserved.",
+  smartlead_delivery_test_overview:
+    "Latest exact Smartlead Smart Delivery run counts and derived placement rates by test.",
+  smartlead_sender_delivery_health:
+    "Exact Smartlead Smart Delivery sender-level provider-reported inbox, spam, bounce, and reputation metrics by test.",
+  smartlead_delivery_authentication_health:
+    "Exact Smartlead Smart Delivery SPF, DKIM, rDNS, domain/IP blacklist, IP, and spam-filter diagnostic evidence.",
   reply_emails:
     "Exact inbound reply email rows fetched from provider reply surfaces, including Instantly email search and bounded Smartlead message history.",
   reply_email_hydration_state:

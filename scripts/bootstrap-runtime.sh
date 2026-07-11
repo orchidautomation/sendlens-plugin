@@ -27,6 +27,10 @@ is_demo_mode() {
   is_truthy "${SENDLENS_DEMO_MODE:-}"
 }
 
+has_non_whitespace() {
+  [[ -n "${1//[[:space:]]/}" ]]
+}
+
 runtime_ready() {
   (
     cd "${PLUGIN_ROOT}"
@@ -94,8 +98,27 @@ run_installer_first_refresh() {
     return 0
   fi
 
-  if [[ -z "${SENDLENS_INSTANTLY_API_KEY:-}" ]]; then
-    echo "[sendlens] No Instantly API key is available during install; skipping first refresh." >&2
+  local provider_mode
+  provider_mode="$(printf '%s' "${SENDLENS_PROVIDER:-instantly}" | tr '[:upper:]' '[:lower:]')"
+  provider_mode="$(printf '%s' "${provider_mode}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  provider_mode="${provider_mode:-instantly}"
+  local provider_ready="false"
+  case "${provider_mode}" in
+    instantly) has_non_whitespace "${SENDLENS_INSTANTLY_API_KEY:-}" && provider_ready="true" ;;
+    smartlead) has_non_whitespace "${SENDLENS_SMARTLEAD_API_KEY:-}" && provider_ready="true" ;;
+    all)
+      if has_non_whitespace "${SENDLENS_INSTANTLY_API_KEY:-}" \
+        && has_non_whitespace "${SENDLENS_SMARTLEAD_API_KEY:-}"; then
+        has_non_whitespace "${SENDLENS_CLIENT:-}" && provider_ready="true"
+      elif has_non_whitespace "${SENDLENS_INSTANTLY_API_KEY:-}" \
+        || has_non_whitespace "${SENDLENS_SMARTLEAD_API_KEY:-}"; then
+        provider_ready="true"
+      fi
+      ;;
+  esac
+
+  if [[ "${provider_ready}" != "true" ]]; then
+    echo "[sendlens] No configured key is available for SENDLENS_PROVIDER=${provider_mode} during install; skipping first refresh." >&2
     echo "[sendlens] The plugin is still installed. Restart your host and run /sendlens-setup." >&2
     return 0
   fi
