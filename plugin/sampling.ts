@@ -1,5 +1,4 @@
 import {
-  FULL_EMAILS_THRESHOLD,
   FULL_LEADS_THRESHOLD,
   MAX_SIGNAL_REPLY_LEADS,
   MAX_REPLY_LEAD_PAGES,
@@ -13,9 +12,12 @@ export type SamplingMode = "full" | "hybrid";
 
 export function shouldUseFullRawIngest(
   totalLeads: number,
-  totalSent: number,
+  _totalSent: number,
 ): boolean {
-  return totalLeads <= FULL_LEADS_THRESHOLD || totalSent <= FULL_EMAILS_THRESHOLD;
+  // Lead pagination completeness is bounded by the lead population, not
+  // send volume. A large draft/low-volume campaign must still use hybrid
+  // coverage instead of claiming a capped lead pull is full.
+  return totalLeads <= FULL_LEADS_THRESHOLD;
 }
 
 export function calculateNonReplyLeadSampleSize(

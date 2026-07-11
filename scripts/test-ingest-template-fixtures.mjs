@@ -4,9 +4,32 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   extractCampaignVariants,
+  normalizeStepAnalyticsRows,
   renderTemplateValue,
   resolveLeadTemplate,
 } = require("../build/plugin/instantly-ingest.js");
+
+const normalizedStep = normalizeStepAnalyticsRows([{
+  step: "1",
+  variant: "0",
+  sent: 20,
+  opened: 10,
+  unique_opened: 8,
+  replies: 5,
+  replies_automatic: 2,
+  unique_replies_automatic: 1,
+  unique_replies: 4,
+  clicks: 3,
+  unique_clicks: 2,
+  opportunities: 2,
+  unique_opportunities: 1,
+  meetings_booked: 1,
+}]).validRows[0];
+assert.equal(normalizedStep.uniqueOpened, 8);
+assert.equal(normalizedStep.uniqueRepliesAutomatic, 1);
+assert.equal(normalizedStep.uniqueClicks, 2);
+assert.equal(normalizedStep.uniqueOpportunities, 1);
+assert.equal(normalizedStep.meetingsBooked, 1);
 
 const normalCampaign = {
   sequences: [

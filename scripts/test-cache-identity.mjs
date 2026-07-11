@@ -49,6 +49,7 @@ for (const key of [
   "getStepAnalytics",
   "getDailyAnalytics",
   "listAllLeads",
+  "listAllLeadsWithCoverage",
   "listLeadsPage",
 ]) {
   originals[key] = instantly[key];
@@ -60,13 +61,24 @@ function installFailingRefresh(message = "Instantly API 500: test failure") {
   };
 }
 
-function installSuccessfulRefresh(workspaceId, campaignId, campaignName) {
+function installSuccessfulRefresh(
+  workspaceId,
+  campaignId,
+  campaignName,
+  status = 1,
+  reportedLeadCount = 1,
+  leadCoverage = {
+    exhausted: true,
+    terminationReason: "cursor_exhausted",
+    pagesFetched: 1,
+  },
+) {
   instantly.listCampaigns = async () => [
     {
       id: campaignId,
       organization_id: workspaceId,
       name: campaignName,
-      status: 1,
+      status,
       daily_limit: 25,
       timestamp_created: "2026-05-01T00:00:00Z",
       timestamp_updated: "2026-05-02T00:00:00Z",
@@ -78,7 +90,7 @@ function installSuccessfulRefresh(workspaceId, campaignId, campaignName) {
       {
         campaign_id: campaignId,
         campaign_name: campaignName,
-        leads_count: 1,
+        leads_count: reportedLeadCount,
         contacted_count: 1,
         emails_sent_count: 10,
         reply_count_unique: 1,
@@ -94,6 +106,8 @@ function installSuccessfulRefresh(workspaceId, campaignId, campaignName) {
       email: `${campaignId}@example.com`,
       organization_id: workspaceId,
       status: 1,
+      provider_code: 2,
+      stat_warmup_score: 88,
       daily_limit: 25,
     },
   ];
@@ -103,7 +117,14 @@ function installSuccessfulRefresh(workspaceId, campaignId, campaignName) {
   };
   instantly.getWarmupAnalytics = async () => ({ aggregate_data: {} });
   instantly.listAllCustomTags = async () => [];
-  instantly.listAllCustomTagMappings = async () => [];
+  instantly.listAllCustomTagMappings = async (_apiKey, _maxPages, options) => {
+    assert.equal(
+      options,
+      undefined,
+      "workspace refresh must ingest the unfiltered custom-tag mapping collection",
+    );
+    return [];
+  };
   instantly.listAllInboxPlacementTests = async () => [];
   instantly.listAllInboxPlacementAnalyticsForTest = async () => [];
   instantly.getCampaignDetails = async () => ({
@@ -174,6 +195,10 @@ function installSuccessfulRefresh(workspaceId, campaignId, campaignName) {
     },
   ];
   instantly.listAllLeads = async () => leadRows;
+  instantly.listAllLeadsWithCoverage = async () => ({
+    items: leadRows,
+    ...leadCoverage,
+  });
   instantly.listLeadsPage = async () => ({
     items: leadRows,
     nextCursor: null,
@@ -389,6 +414,16 @@ try {
     `${dbPath}.wal`,
     "stale WAL from a previous cache identity must not survive promotion",
   );
+  db = await openDb();
+  try {
+    await run(
+      db,
+      `INSERT OR REPLACE INTO sendlens.campaigns (id, workspace_id, name, status)
+       VALUES ('deleted-upstream-campaign', 'ws_new', 'Deleted upstream', 'paused')`,
+    );
+  } finally {
+    closeDb(db);
+  }
   installSuccessfulRefresh("ws_new", "new-campaign", "New Campaign");
   const refreshed = await refreshWorkspaceAtomically({ source: "manual" });
   assert.equal(refreshed.workspaceId, "ws_new");
@@ -411,9 +446,65 @@ try {
     assert.equal(JSON.stringify(status).includes("old-key-secret"), false);
     const summaryRows = await query(
       db,
-      `SELECT campaign_name FROM sendlens.campaign_overview WHERE workspace_id = 'ws_new'`,
+      `SELECT campaign_id, campaign_name
+       FROM sendlens.campaign_overview
+       WHERE workspace_id = 'ws_new'
+       ORDER BY campaign_id`,
     );
+    assert.equal(summaryRows.length, 1, "unscoped refresh must remove stale/deleted campaigns");
+    assert.equal(summaryRows[0].campaign_id, "new-campaign");
     assert.equal(summaryRows[0].campaign_name, "New Campaign");
+    const accountRows = await query(
+      db,
+      `SELECT provider, warmup_score
+       FROM sendlens.accounts
+       WHERE workspace_id = 'ws_new'`,
+    );
+    assert.equal(accountRows[0].provider, "2");
+    assert.equal(Number(accountRows[0].warmup_score), 88);
+  } finally {
+    closeDb(db);
+  }
+
+  installSuccessfulRefresh("ws_new", "new-campaign", "New Campaign", 3);
+  const inactiveOnlyRefresh = await refreshWorkspaceAtomically({ source: "manual" });
+  assert.equal(inactiveOnlyRefresh.workspaceId, "ws_new");
+  db = await openDb();
+  try {
+    const inactiveCampaigns = await query(
+      db,
+      `SELECT id, status FROM sendlens.campaigns WHERE workspace_id = 'ws_new'`,
+    );
+    assert.deepEqual(inactiveCampaigns, [{ id: "new-campaign", status: "completed" }]);
+    const [{ sampled_rows: sampledRows }] = await query(
+      db,
+      `SELECT COUNT(*) AS sampled_rows FROM sendlens.sampled_leads WHERE workspace_id = 'ws_new'`,
+    );
+    assert.equal(Number(sampledRows), 0, "inactive campaign detail must not survive a full refresh");
+  } finally {
+    closeDb(db);
+  }
+
+  installSuccessfulRefresh(
+    "ws_new",
+    "new-campaign",
+    "New Campaign",
+    1,
+    0,
+    { exhausted: false, terminationReason: "max_pages", pagesFetched: 50 },
+  );
+  await refreshWorkspaceAtomically({ source: "manual" });
+  db = await openDb();
+  try {
+    const [coverage] = await query(
+      db,
+      `SELECT ingest_mode, lead_cursor_exhausted, lead_termination_reason
+       FROM sendlens.sampling_runs
+       WHERE workspace_id = 'ws_new' AND campaign_id = 'new-campaign'`,
+    );
+    assert.equal(coverage.ingest_mode, "hybrid");
+    assert.equal(coverage.lead_cursor_exhausted, false);
+    assert.equal(coverage.lead_termination_reason, "max_pages");
   } finally {
     closeDb(db);
   }

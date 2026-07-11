@@ -31,20 +31,40 @@ is_demo_mode() {
 }
 
 refresh_lock_is_active() {
-  if [[ ! -f "${LOCK_DIR}/pid" ]]; then
+  local pid_file="${LOCK_DIR}/pid"
+  if [[ ! -f "${pid_file}" ]]; then
+    pid_file="${LOCK_DIR}/launcher.pid"
+  fi
+  if [[ ! -f "${pid_file}" ]]; then
     return 1
   fi
   local existing_pid
-  existing_pid="$(cat "${LOCK_DIR}/pid" 2>/dev/null || true)"
+  existing_pid="$(cat "${pid_file}" 2>/dev/null || true)"
   [[ -n "${existing_pid}" ]] && kill -0 "${existing_pid}" 2>/dev/null
 }
 
 cleanup_stale_refresh_state() {
-  if refresh_lock_is_active; then
+  if [[ -d "${LOCK_DIR}" ]] && refresh_lock_is_active; then
     return 0
+  fi
+  if [[ -d "${LOCK_DIR}" ]]; then
+    local modified now
+    modified="$(stat -f %m "${LOCK_DIR}" 2>/dev/null || stat -c %Y "${LOCK_DIR}" 2>/dev/null || printf '0')"
+    now="$(date +%s)"
+    if (( now - modified < 600 )); then
+      return 0
+    fi
   fi
   rm -rf "${LOCK_DIR}" 2>/dev/null || true
   rm -f "${SHADOW_DB_PATH}" "${SHADOW_DB_PATH}.wal" 2>/dev/null || true
+}
+
+acquire_refresh_lock() {
+  if mkdir "${LOCK_DIR}" 2>/dev/null; then
+    printf '%s\n' "$$" > "${LOCK_DIR}/launcher.pid"
+    return 0
+  fi
+  return 1
 }
 
 write_session_start_idle_status() {
@@ -97,10 +117,11 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! bash "${PLUGIN_ROOT}/scripts/bootstrap-runtime.sh"; then
+if [[ "${SENDLENS_RUNTIME_BOOTSTRAPPED:-}" != "1" ]] && ! bash "${PLUGIN_ROOT}/scripts/bootstrap-runtime.sh"; then
   echo "[sendlens] Missing or incompatible runtime dependencies. SendLens could not bootstrap its local runtime." >&2
   exit 1
 fi
+export SENDLENS_RUNTIME_BOOTSTRAPPED=1
 
 if [[ ! -f "${PLUGIN_ROOT}/build/plugin/refresh-cli.js" ]]; then
   echo "[sendlens] Compiled refresh runtime not found at ${PLUGIN_ROOT}/build/plugin/refresh-cli.js." >&2
@@ -125,24 +146,13 @@ if ! mkdir -p "${STATE_DIR}" 2>/dev/null; then
   LOG_PATH="${STATE_DIR}/session-start-refresh.log"
   mkdir -p "${STATE_DIR}"
 fi
-if [[ -f "${LOCK_DIR}/pid" ]]; then
-  EXISTING_PID="$(cat "${LOCK_DIR}/pid" 2>/dev/null || true)"
-  if [[ -n "${EXISTING_PID}" ]] && kill -0 "${EXISTING_PID}" 2>/dev/null; then
-    if [[ -n "${SENDLENS_CLIENT:-}" ]]; then
-      echo "[sendlens] Background refresh is already running for client '${SENDLENS_CLIENT}'. Local DuckDB path: ${DB_PATH}" >&2
-    else
-      echo "[sendlens] Background refresh is already running. Local DuckDB path: ${DB_PATH}" >&2
-    fi
-    exit 0
+if ! acquire_refresh_lock; then
+  if [[ -n "${SENDLENS_CLIENT:-}" ]]; then
+    echo "[sendlens] Background refresh is already running or launching for client '${SENDLENS_CLIENT}'. Local DuckDB path: ${DB_PATH}" >&2
+  else
+    echo "[sendlens] Background refresh is already running or launching. Local DuckDB path: ${DB_PATH}" >&2
   fi
-  rm -rf "${LOCK_DIR}"
-fi
-
-if ! mkdir -p "${LOCK_DIR}" 2>/dev/null; then
-  STATE_DIR="${PLUGIN_ROOT}/.sendlens-state"
-  LOCK_DIR="${STATE_DIR}/session-start-refresh.lock"
-  LOG_PATH="${STATE_DIR}/session-start-refresh.log"
-  mkdir -p "${LOCK_DIR}"
+  exit 0
 fi
 nohup bash -lc '
   LOCK_DIR="$1"
@@ -156,7 +166,7 @@ nohup bash -lc '
   trap '"'"'rm -rf "${LOCK_DIR}"'"'"' EXIT
   # shellcheck disable=SC1091
   source "${PLUGIN_ROOT}/scripts/load-env.sh"
-  if ! bash "${PLUGIN_ROOT}/scripts/bootstrap-runtime.sh"; then
+  if [[ "${SENDLENS_RUNTIME_BOOTSTRAPPED:-}" != "1" ]] && ! bash "${PLUGIN_ROOT}/scripts/bootstrap-runtime.sh"; then
     echo "[sendlens] Background session-start refresh failed during runtime bootstrap." >>"${LOG_PATH}" 2>&1
     exit 1
   fi
@@ -164,6 +174,16 @@ nohup bash -lc '
     echo "[sendlens] Background session-start refresh failed. The plugin remains available; run refresh_data() if you need an immediate retry." >>"${LOG_PATH}" 2>&1
   fi
 ' bash "${LOCK_DIR}" "${LOG_PATH}" "${PLUGIN_ROOT}" "${SENDLENS_CONTEXT_ROOT}" "${SENDLENS_DB_PATH}" "${SENDLENS_STATE_DIR}" >/dev/null 2>&1 &
+REFRESH_PID=$!
+for _ in {1..20}; do
+  [[ -f "${LOCK_DIR}/pid" ]] && break
+  kill -0 "${REFRESH_PID}" 2>/dev/null || break
+  sleep 0.01
+done
+if [[ -d "${LOCK_DIR}" && ! -f "${LOCK_DIR}/pid" ]]; then
+  printf '%s\n' "${REFRESH_PID}" > "${LOCK_DIR}/pid" 2>/dev/null || true
+fi
+rm -f "${LOCK_DIR}/launcher.pid" 2>/dev/null || true
 
 if [[ -n "${SENDLENS_CLIENT:-}" ]]; then
   echo "[sendlens] Background refresh started for client '${SENDLENS_CLIENT}'. Local DuckDB path: ${DB_PATH}" >&2
