@@ -308,7 +308,8 @@ const fakeDeliveryClient = {
       : report === "dkim-details" ? "dkim_verified"
         : report === "rdns-details" ? "rdns_verified"
           : "domain_blacklisted";
-    return [{ from_email: "sender-301@example.com", seed_accounts: [{ id: `seed-${report}`, email: "seed@example.test", esp: "Gmail", [field]: report !== "domain-blacklist" }] }];
+    const seed = { id: `seed-${report}`, email: "seed@example.test", esp: "Gmail", [field]: report !== "domain-blacklist" };
+    return [{ from_email: "sender-301@example.com", seed_accounts: report === "spf-details" ? [seed, { ...seed }] : [seed] }];
   },
   async getSmartDeliveryBlacklistReport() {
     return [{ reply_id: "reply-1", reply: { from_email: "sender-301@example.com" }, to_email: "seed@example.test", ip: "192.0.2.1", total_blacklist: 0, rdns: "mail.example.test", details: "Synthetic blacklist detail" }];
@@ -628,6 +629,14 @@ assert.ok(deliveryAuth.some((row) => row.evidence_type === "spf" && Boolean(row.
 assert.ok(deliveryAuth.some((row) => row.evidence_type === "dkim" && Boolean(row.dkim_pass)));
 assert.ok(deliveryAuth.some((row) => row.evidence_type === "rdns" && Boolean(row.rdns_pass)));
 assert.ok(deliveryAuth.some((row) => row.evidence_type === "domain_blacklist" && !Boolean(row.domain_blacklisted)));
+
+const duplicateSeedEvidence = await query(
+  db,
+  `SELECT COUNT(*) AS row_count
+   FROM sendlens.smartlead_delivery_evidence
+   WHERE workspace_id = '501' AND evidence_type = 'spf'`,
+);
+assert.equal(Number(duplicateSeedEvidence[0].row_count), 2, "duplicate seed IDs for one sender must remain distinct evidence rows");
 
 const deliveryRaw = await query(
   db,

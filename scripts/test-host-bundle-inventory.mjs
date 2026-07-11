@@ -683,6 +683,13 @@ async function assertSessionStartProviderContract() {
           if (capture.includes(providerMode)) break;
           await new Promise((resolve) => setTimeout(resolve, 20));
         }
+        if (!capture.includes(providerMode)) {
+          try {
+            capture = await readFile(capturePath, "utf8");
+          } catch {
+            capture = "";
+          }
+        }
         assert(
           result.status === 0 && capture.includes(providerMode),
           `dist/${host}/scripts/session-start.sh: ${providerMode} did not launch the provider-aware refresh command\n${output}`,

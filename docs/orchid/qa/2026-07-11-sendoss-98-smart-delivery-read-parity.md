@@ -49,6 +49,8 @@ The follow-up found four additional issues: invalid two-key `all` startup withou
 
 The existing PR review also contained eight findings from the first SENDOSS-97 commit. This update resolves the account optional-field completeness bug, non-finite timeout fallback, startup status normalization, installer/session whitespace handling, behavioral bundled startup coverage, and source-receipt mismatch. The generated-host test now executes bundle-root scripts for Smartlead-only and one-key `all`, requires bundled `refresh-cli.js`, and proves invalid two-key `all` stays idle without `SENDLENS_CLIENT`.
 
+A final post-push review found two boundary defects: duplicate seed identifiers for the same sender could collide in the evidence snapshot, and the host-bundle polling assertion did not re-read after its final yield. Evidence keys now include the documented per-group index, with a duplicate-seed regression, and the polling check performs a final bounded read before failing.
+
 ## Validation
 
 | Command | Result |

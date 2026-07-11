@@ -636,7 +636,7 @@ function seedEvidenceRows(testId: string, evidenceType: string, groups: Smartlea
       rows.push({
         ...seed,
         __sendlens_sender_email: senderEmail,
-        __sendlens_id: `${evidenceType}:${testId}:${senderEmail ?? "unknown"}:${dimension}`,
+        __sendlens_id: `${evidenceType}:${testId}:${senderEmail ?? "unknown"}:${dimension}:${index}`,
         __sendlens_test_id: testId,
         __sendlens_evidence_type: evidenceType,
         __sendlens_dimension: dimension,
