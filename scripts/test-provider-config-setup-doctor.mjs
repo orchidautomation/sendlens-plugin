@@ -368,6 +368,26 @@ try {
   assertNoSensitiveValue(report, "sendoso-instantly-client-value");
   assertNoSensitiveValue(report, "sendoso-smartlead-client-value");
 
+  tempDir = resetEnv("automatic-single-client-selection");
+  await fs.mkdir(path.join(tempDir, ".env.clients"), { recursive: true });
+  await fs.writeFile(
+    path.join(tempDir, ".env.clients", "sendoso.env"),
+    [
+      "SENDLENS_PROVIDER=instantly",
+      "SENDLENS_INSTANTLY_API_KEY=automatic-client-value",
+      `SENDLENS_DB_PATH=${path.join(tempDir, "sendoso.duckdb")}`,
+      `SENDLENS_STATE_DIR=${path.join(tempDir, "sendoso-state")}`,
+    ].join("\n"),
+  );
+  const automaticClientResult = await runScript(path.join(root, "scripts/check-env.sh"), {
+    PLUGIN_ROOT: root,
+    SENDLENS_CONTEXT_ROOT: tempDir,
+  });
+  assert.equal(automaticClientResult.code, 0);
+  assert.match(automaticClientResult.stderr, /client 'sendoso'/);
+  assert.doesNotMatch(automaticClientResult.stderr, /SENDLENS_INSTANTLY_API_KEY is not set/);
+  assertNoSensitiveValue(automaticClientResult, "automatic-client-value");
+
   tempDir = resetEnv("invalid-provider-check-env");
   await fs.mkdir(tempDir, { recursive: true });
   assertInvalidProviderResult(
