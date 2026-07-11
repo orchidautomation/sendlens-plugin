@@ -1,6 +1,7 @@
 import { appendTraceLog } from "./debug-log";
 
 export const SMARTLEAD_API_BASE = "https://server.smartlead.ai/api/v1";
+export const SMARTLEAD_DELIVERY_API_BASE = "https://smartdelivery.smartlead.ai/api/v1";
 export const SMARTLEAD_ACCESS_PARAM = ["api", "key"].join("_");
 
 const DEFAULT_RETRY_ATTEMPTS = 3;
@@ -58,6 +59,7 @@ export interface SmartleadRequestOptions extends Omit<RequestInit, "body"> {
   query?: QueryParams;
   json?: unknown;
   body?: RequestInit["body"];
+  baseUrl?: string;
 }
 
 export interface SmartleadOffsetPage<T extends Record<string, unknown> = Record<string, unknown>> {
@@ -593,14 +595,16 @@ export class SmartleadClient {
     this.sleep = options.sleep ?? defaultSleep;
     this.now = options.now ?? Date.now;
     this.retry = normalizeRetry(options.retry);
-    this.timeoutMs = Math.max(0, options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS);
+    this.timeoutMs = Number.isFinite(options.timeoutMs)
+      ? Math.max(0, options.timeoutMs as number)
+      : DEFAULT_REQUEST_TIMEOUT_MS;
     const rateLimit = normalizeRateLimit(options.rateLimit);
     this.limiter = new SlidingWindowLimiter(rateLimit, this.sleep, this.now);
     this.semaphore = new Semaphore(rateLimit.maxConcurrent);
   }
 
-  buildUrl(path: string, query: QueryParams = {}) {
-    return buildSmartleadUrl(path, this.accessValue, query, this.baseUrl);
+  buildUrl(path: string, query: QueryParams = {}, baseUrl = this.baseUrl) {
+    return buildSmartleadUrl(path, this.accessValue, query, baseUrl);
   }
 
   redactUrl(input: string | URL) {
@@ -646,7 +650,7 @@ export class SmartleadClient {
   }
 
   async request(path: string, options: SmartleadRequestOptions = {}): Promise<Response> {
-    const url = this.buildUrl(path, options.query);
+    const url = this.buildUrl(path, options.query, options.baseUrl);
     const redactedUrl = safeRequestUrl(url);
     const init = this.toRequestInit(options);
 
@@ -1061,6 +1065,101 @@ export class SmartleadClient {
     });
   }
 
+  async listSmartDeliveryTests() {
+    const payload = await this.requestJson("/spam-test/report", {
+      method: "POST",
+      json: {},
+      baseUrl: SMARTLEAD_DELIVERY_API_BASE,
+    });
+    return parseSmartleadItems(payload, ["tests", "spam_tests", "data"]);
+  }
+
+  async getSmartDeliveryTest(testId: string | number) {
+    return this.requestJson(`/spam-test/${encodeURIComponent(String(testId))}`, {
+      baseUrl: SMARTLEAD_DELIVERY_API_BASE,
+    });
+  }
+
+  async getSmartDeliveryScheduleHistory(testId: string | number) {
+    const payload = await this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/schedule-history`,
+      { baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+    return parseSmartleadItems(payload, ["history", "runs", "data"]);
+  }
+
+  async getSmartDeliveryProviderReport(testId: string | number) {
+    return this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/providerwise`,
+      { method: "POST", json: {}, baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+  }
+
+  async getSmartDeliveryGeoReport(testId: string | number) {
+    return this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/groupwise`,
+      { method: "POST", json: {}, baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+  }
+
+  async getSmartDeliverySenderReport(testId: string | number) {
+    const payload = await this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/sender-account-wise`,
+      { baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+    return parseSmartleadItems(payload, ["senders", "accounts", "data"]);
+  }
+
+  async getSmartDeliverySenderAccounts(testId: string | number) {
+    const payload = await this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/sender-accounts`,
+      { baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+    return parseSmartleadItems(payload, ["senders", "accounts", "data"]);
+  }
+
+  async getSmartDeliverySeedReport(
+    testId: string | number,
+    report: "spf-details" | "dkim-details" | "rdns-details" | "domain-blacklist",
+  ) {
+    const payload = await this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/${report}`,
+      { baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+    return parseSmartleadItems(payload, ["results", "data"]);
+  }
+
+  async getSmartDeliveryBlacklistReport(testId: string | number) {
+    const payload = await this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/blacklist`,
+      { baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+    return parseSmartleadItems(payload, ["results", "data"]);
+  }
+
+  async getSmartDeliveryIpAnalytics(testId: string | number) {
+    const payload = await this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/ip-analytics`,
+      { baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+    return parseSmartleadItems(payload, ["results", "data"]);
+  }
+
+  async getSmartDeliverySpamFilterReport(testId: string | number) {
+    const payload = await this.requestJson(
+      `/spam-test/report/${encodeURIComponent(String(testId))}/spam-filter-details`,
+      { baseUrl: SMARTLEAD_DELIVERY_API_BASE },
+    );
+    return parseSmartleadItems(payload, ["results", "data"]);
+  }
+
+  async getSmartDeliveryMailboxSummary() {
+    const payload = await this.requestJson("/spam-test/report/mailboxes-summary", {
+      baseUrl: SMARTLEAD_DELIVERY_API_BASE,
+    });
+    return parseSmartleadItems(payload, ["mailboxes", "data"]);
+  }
+
   private async listOffsetPaginated(
     path: string,
     opts: { query?: QueryParams; itemKeys?: string[]; limit: number; maxPages?: number },
@@ -1110,15 +1209,16 @@ export class SmartleadClient {
   }
 
   private toRequestInit(options: SmartleadRequestOptions): RequestInit {
-    const headers = new Headers(options.headers);
+    const { query: _query, json, baseUrl: _baseUrl, ...requestOptions } = options;
+    const headers = new Headers(requestOptions.headers);
     if (!headers.has("accept")) headers.set("accept", "application/json");
     let body = options.body;
-    if (options.json !== undefined) {
-      body = JSON.stringify(options.json);
+    if (json !== undefined) {
+      body = JSON.stringify(json);
       if (!headers.has("content-type")) headers.set("content-type", "application/json");
     }
     return {
-      ...options,
+      ...requestOptions,
       headers,
       body,
     };

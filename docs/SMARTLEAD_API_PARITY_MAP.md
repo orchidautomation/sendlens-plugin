@@ -138,7 +138,7 @@ needed for current SendLens and would change the product safety boundary.
 | Outbound delivered/reconstructed copy | `GET /emails` outbound sample plus templates | Message history plus sequences/templates | Medium | If message history includes sent body text, expose it only through a new exact outbound surface or schema/MCP migration. If not, reconstruct from sequence templates plus lead custom fields. |
 | Custom tags | `GET /custom-tags`, `GET /custom-tag-mappings` | Campaign list with `include_tags=true` | Partial | Campaign tags are available inline. Need separate evidence for account tags, lead tags, or tag definitions/mappings outside campaigns. |
 | Lead lists | `GET /lead-lists` | Documented Smartlead lead-list reads | Later | Available but outside the V1 normalized refresh because campaign leads cover the current analysis contract. |
-| Inbox placement tests | `GET /inbox-placement-tests`, `GET /inbox-placement-analytics` | Smart Delivery reads on separate `smartdelivery.smartlead.ai` service | Unsupported | The official surface is support-gated and outside the V1 provider access model. |
+| Inbox placement tests | `GET /inbox-placement-tests`, `GET /inbox-placement-analytics` | Smart Delivery reads on separate `smartdelivery.smartlead.ai` service | Provider-specific parity | SendLens ingests test/run aggregates, sender/provider/region metrics, and authentication/blacklist diagnostics when authorized. It does not claim per-email parity. |
 | Webhooks | Not used by SendLens V1 | `POST/GET/PUT/DELETE /webhooks` | Later | Useful for future incremental sync, but not needed for read-only local refresh parity. |
 
 ## Parity Clarification
@@ -148,8 +148,9 @@ strictly 1:1 with Instantly. The headline is:
 
 - Core campaign, lead, sender, sequence/template, reply-history, and basic
   analytics surfaces are strong or medium parity.
-- Smart Delivery placement analytics exist on a separate support-gated service
-  and remain intentionally unsupported by the V1 provider.
+- Smart Delivery placement analytics use a separate support-gated service.
+  SendLens reads it when authorized and records an explicit unsupported
+  capability without breaking core refresh when access is absent.
 - A few other areas need normalization or live-shape validation: step/variant
   analytics, account daily metrics, campaign/account tags, reply outcome labels,
   and the exact global analytics endpoint name.
@@ -288,7 +289,8 @@ guessing.
 - Smartlead campaign list has inline tags, but no checked equivalent for
   Instantly's global custom tag mappings across account/campaign resources.
 - Smart Delivery documents placement-test reads on a separate support-gated
-  host; V1 must report the capability as unsupported rather than infer health.
+  host; V1 reads provider-specific exact evidence when authorized and reports
+  the capability as unsupported rather than inferring health when access is absent.
 - Smartlead message-history endpoints may be better than Instantly reply fetches
   for thread context, but they require lead IDs. The refresh flow should first
   fetch campaign leads, then hydrate reply/message history only for reply-signal
@@ -309,7 +311,8 @@ guessing.
    `sampling_runs`.
 5. Add reply/message-history hydration for one campaign, then map into
    `reply_emails` and `reply_email_context`.
-6. Mark `inbox_placement_*` views as unavailable/unsupported for Smartlead
-   unless a tested endpoint is found.
+6. Keep Instantly `inbox_placement_*` per-email views provider-specific. Add
+   Smartlead delivery tables/views for exact aggregate and diagnostic evidence,
+   with a support-gated capability fallback when access is absent.
 7. Run provider-specific fixtures through the existing MCP response contract and
    prompt-contract tests.

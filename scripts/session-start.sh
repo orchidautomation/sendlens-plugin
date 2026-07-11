@@ -30,6 +30,10 @@ is_demo_mode() {
   [[ "${raw}" == "1" || "${raw}" == "true" || "${raw}" == "yes" ]]
 }
 
+has_non_whitespace() {
+  [[ -n "${1//[[:space:]]/}" ]]
+}
+
 refresh_lock_is_active() {
   if [[ ! -f "${LOCK_DIR}/pid" ]]; then
     return 1
@@ -83,14 +87,18 @@ MISSING_PROVIDER_MESSAGE=""
 if ! is_demo_mode; then
   case "${SOURCE_PROVIDER}" in
     instantly)
-      [[ -n "${SENDLENS_INSTANTLY_API_KEY:-}" ]] || MISSING_PROVIDER_MESSAGE="SENDLENS_INSTANTLY_API_KEY is not set"
+      has_non_whitespace "${SENDLENS_INSTANTLY_API_KEY:-}" || MISSING_PROVIDER_MESSAGE="SENDLENS_INSTANTLY_API_KEY is not set"
       ;;
     smartlead)
-      [[ -n "${SENDLENS_SMARTLEAD_API_KEY:-}" ]] || MISSING_PROVIDER_MESSAGE="SENDLENS_SMARTLEAD_API_KEY is not set"
+      has_non_whitespace "${SENDLENS_SMARTLEAD_API_KEY:-}" || MISSING_PROVIDER_MESSAGE="SENDLENS_SMARTLEAD_API_KEY is not set"
       ;;
     all)
-      if [[ -z "${SENDLENS_INSTANTLY_API_KEY:-}" && -z "${SENDLENS_SMARTLEAD_API_KEY:-}" ]]; then
+      if ! has_non_whitespace "${SENDLENS_INSTANTLY_API_KEY:-}" && ! has_non_whitespace "${SENDLENS_SMARTLEAD_API_KEY:-}"; then
         MISSING_PROVIDER_MESSAGE="neither SENDLENS_INSTANTLY_API_KEY nor SENDLENS_SMARTLEAD_API_KEY is set"
+      elif has_non_whitespace "${SENDLENS_INSTANTLY_API_KEY:-}" \
+        && has_non_whitespace "${SENDLENS_SMARTLEAD_API_KEY:-}" \
+        && ! has_non_whitespace "${SENDLENS_CLIENT:-}"; then
+        MISSING_PROVIDER_MESSAGE="SENDLENS_CLIENT is not set while both provider keys are configured"
       fi
       ;;
   esac

@@ -38,8 +38,8 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 - Source provider mode: `instantly`, `smartlead`, or `all`.
 - Whether demo seeding is available because credentials are missing, rejected, unreachable, or `SENDLENS_DEMO_MODE=1` is enabled.
 - Smartlead query-string access is redacted from URLs, logs, traces, setup output, errors, fixtures, and tests.
-- Smartlead Smart Delivery reads are unsupported in V1 because they use a separate support-gated service.
+- Smartlead Smart Delivery reads use a separate support-gated service; full refresh ingests them when authorized and otherwise records an explicit unsupported capability without breaking core Smartlead ingest.
 
 ## Privacy Boundaries
 
-The doctor tool should never print secrets. Do not ask users to paste API keys into chat. Smartlead uses query-string API keys, so redact them from URLs, logs, traces, setup output, errors, and fixtures/tests. Smartlead V1 is read-only and does not support inbox placement. When demo mode is enabled, keep every answer clearly labeled as synthetic demo evidence. If production credentials are already configured, keep the default path on real workspace analysis and mention demo only when explicitly requested.
+The doctor tool should never print secrets. Do not ask users to paste API keys into chat. Smartlead uses query-string API keys, so redact them from URLs, logs, traces, setup output, errors, and fixtures/tests. Smartlead V1 and Smart Delivery integration are read-only. When demo mode is enabled, keep every answer clearly labeled as synthetic demo evidence. If production credentials are already configured, keep the default path on real workspace analysis and mention demo only when explicitly requested.

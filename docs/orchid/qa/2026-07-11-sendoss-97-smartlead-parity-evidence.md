@@ -1,5 +1,7 @@
 # SENDOSS-97 Smartlead V1 parity evidence
 
+> Scope update (2026-07-11): SENDOSS-98 extends this evidence with read-only Smart Delivery support. Statements below that call Smart Delivery out of scope describe the pre-extension audit and are superseded by the SENDOSS-98 QA artifact.
+
 Date: 2026-07-11
 
 Issue: SENDOSS-97

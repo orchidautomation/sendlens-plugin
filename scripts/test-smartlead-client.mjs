@@ -585,4 +585,70 @@ function assertAccessQuery(url) {
   assert.deepEqual(JSON.parse(String(captured.body)), { lead_ids: [1001] });
 }
 
+{
+  const calls = [];
+  const client = new SmartleadClient({
+    accessValue,
+    rateLimit: { disabled: true },
+    retry: { attempts: 0 },
+    fetchImpl: async (url, options = {}) => {
+      const parsed = new URL(String(url));
+      assert.equal(parsed.origin, "https://smartdelivery.smartlead.ai");
+      assert.equal(parsed.searchParams.get(SMARTLEAD_ACCESS_PARAM), accessValue);
+      calls.push({ path: parsed.pathname, method: options.method ?? "GET", body: options.body });
+      if (parsed.pathname.endsWith("/spam-test/report")) return responseJson([{ spam_test_id: "test-1" }]);
+      return responseJson({ result: [{ provider: "Gmail", inbox_rate: 95 }] });
+    },
+  });
+  const tests = await client.listSmartDeliveryTests();
+  const report = await client.getSmartDeliveryProviderReport("test-1");
+  assert.equal(tests[0].spam_test_id, "test-1");
+  assert.equal(report.result[0].provider, "Gmail");
+  assert.deepEqual(calls.map((call) => ({ path: call.path, method: call.method })), [
+    { path: "/api/v1/spam-test/report", method: "POST" },
+    { path: "/api/v1/spam-test/report/test-1/providerwise", method: "POST" },
+  ]);
+  assert.deepEqual(calls.map((call) => JSON.parse(String(call.body))), [{}, {}]);
+}
+
+{
+  let virtualNow = 0;
+  const sleeps = [];
+  const origins = [];
+  const client = new SmartleadClient({
+    accessValue,
+    rateLimit: { perMinute: 100, burstLimit: 1, burstWindowMs: 1000, maxConcurrent: 1 },
+    retry: { attempts: 0, jitterRatio: 0 },
+    now: () => virtualNow,
+    sleep: async (ms) => {
+      sleeps.push(ms);
+      virtualNow += ms;
+    },
+    fetchImpl: async (url) => {
+      const parsed = new URL(String(url));
+      origins.push(parsed.origin);
+      return responseJson([]);
+    },
+  });
+  await client.listCampaigns();
+  await client.listSmartDeliveryTests();
+  assert.deepEqual(origins, [
+    "https://server.smartlead.ai",
+    "https://smartdelivery.smartlead.ai",
+  ]);
+  assert.deepEqual(sleeps, [1000]);
+  assert.equal(client.getRateLimitStats().throttled_count, 1);
+}
+
+{
+  const client = new SmartleadClient({
+    accessValue,
+    timeoutMs: Number.NaN,
+    rateLimit: { disabled: true },
+    retry: { attempts: 0 },
+    fetchImpl: async () => responseJson([]),
+  });
+  assert.deepEqual(await client.listCampaigns(), []);
+}
+
 console.log("Smartlead client fixture tests passed");

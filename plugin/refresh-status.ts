@@ -62,7 +62,7 @@ function normalizeStatus(status: RefreshStatus): RefreshStatus {
   if (
     (normalized.status === "failed" || normalized.status === "idle") &&
     normalized.source === "session_start" &&
-    /SENDLENS_INSTANTLY_API_KEY is not set/i.test(normalized.message ?? "")
+    /SENDLENS_(?:INSTANTLY|SMARTLEAD)_API_KEY is not set|neither SENDLENS_INSTANTLY_API_KEY nor SENDLENS_SMARTLEAD_API_KEY is set/i.test(normalized.message ?? "")
   ) {
     const providerMode = resolveSourceProviderMode();
     if (providerMode.valid && providerMode.mode === "smartlead") {
@@ -71,7 +71,7 @@ function normalizeStatus(status: RefreshStatus): RefreshStatus {
         status: "idle",
         dbPath: activeDbPath,
         message:
-          "Session-start refresh is idle for SENDLENS_PROVIDER=smartlead. Existing local DuckDB cache remains usable; configure the Smartlead provider and run refresh_data if fresh data is required.",
+          "Session-start refresh skipped for SENDLENS_PROVIDER=smartlead because SENDLENS_SMARTLEAD_API_KEY is not set. Existing local DuckDB cache remains usable; configure the Smartlead provider and run refresh_data if fresh data is required.",
       };
     }
 

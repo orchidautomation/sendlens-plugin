@@ -13,6 +13,7 @@ const {
   run,
 } = require("../build/plugin/local-db.js");
 const { refreshSmartleadWorkspace } = require("../build/plugin/smartlead-ingest.js");
+const { SmartleadApiError } = require("../build/plugin/smartlead-client.js");
 
 const fixtureRoot = new URL("./fixtures/smartlead-client/", import.meta.url);
 
@@ -250,8 +251,82 @@ const fakeClient = {
   },
 };
 
+const fakeDeliveryClient = {
+  async listSmartDeliveryTests() {
+    return [{
+      spam_test_id: "delivery-1",
+      test_name: "Synthetic inbox placement",
+      test_type: "automated",
+      status: "active",
+      schedule_start_time: "2026-06-01T00:00:00.000Z",
+      current_test_run_no: 2,
+    }];
+  },
+  async getSmartDeliveryTest() {
+    return {
+      id: "delivery-1",
+      campaign_id: "101",
+      description: "Synthetic test",
+      link_checker: true,
+      test_with_sl_account: false,
+      sequence_mapping_id: "sequence-map-1",
+      client_id: "client-1",
+      user_id: "user-1",
+      spam_filters: ["synthetic-filter"],
+      all_email_sent_without_time_gap: false,
+      min_time_btwn_emails: 5,
+      min_time_unit: "minutes",
+      is_warmup: false,
+      has_seed_mapping: true,
+      email_track_id: "track-1",
+      scheduler_cron_value: { tz: "America/New_York" },
+      email_body: "forbidden test message body",
+      reply_headers: { Received: "forbidden raw header" },
+    };
+  },
+  async getSmartDeliveryScheduleHistory() {
+    return [{ test_run_no: 2, status: "completed", inbox_count: 91, tab_count: 6, spam_count: 3, adjusted_total_email_count: 100 }];
+  },
+  async getSmartDeliveryProviderReport() {
+    return {
+      overallTotalCount: 100,
+      status: "completed",
+      result: [{ provider: "Gmail", inbox_rate: 91, spam_rate: 3, bounce_rate: 0, mailbox_count: 100, email_body: "forbidden report body" }],
+    };
+  },
+  async getSmartDeliveryGeoReport() {
+    return { overallTotalCount: 100, status: "completed", result: [{ region: "North America", inbox_rate: 91, spam_rate: 3, bounce_rate: 0, mailbox_count: 100 }] };
+  },
+  async getSmartDeliverySenderReport() {
+    return [{ email: "sender-301@example.com", details: { tests_count: 2, avg_inbox_rate: 91, avg_spam_rate: 3, avg_bounce_rate: 0, reputation_score: 9.1, last_test_date: "2026-06-02T00:00:00.000Z" } }];
+  },
+  async getSmartDeliverySenderAccounts() {
+    return [{ id: "sender-delivery-1", from_email: "sender-301@example.com" }];
+  },
+  async getSmartDeliverySeedReport(_testId, report) {
+    const field = report === "spf-details" ? "spf_verified"
+      : report === "dkim-details" ? "dkim_verified"
+        : report === "rdns-details" ? "rdns_verified"
+          : "domain_blacklisted";
+    return [{ from_email: "sender-301@example.com", seed_accounts: [{ id: `seed-${report}`, email: "seed@example.test", esp: "Gmail", [field]: report !== "domain-blacklist" }] }];
+  },
+  async getSmartDeliveryBlacklistReport() {
+    return [{ reply_id: "reply-1", reply: { from_email: "sender-301@example.com" }, to_email: "seed@example.test", ip: "192.0.2.1", total_blacklist: 0, rdns: "mail.example.test", details: "Synthetic blacklist detail" }];
+  },
+  async getSmartDeliveryIpAnalytics() {
+    return [{ ip: "192.0.2.1", blacklisted: false, summary: "Synthetic clean IP", whois_data: { isp: "Example ISP", location: "United States", reverse_dns: "mail.example.test", organization: "Example Org" } }];
+  },
+  async getSmartDeliverySpamFilterReport() {
+    return [{ from_email: "sender-301@example.com", spam_filter_details: [{ filter: "Synthetic filter", triggered_count: 3, trigger_percentage: 3 }] }];
+  },
+  async getSmartDeliveryMailboxSummary() {
+    return [{ id: "mailbox-1", from_email: "sender-301@example.com", esp: "Gmail", total_email_count: 100, inbox_count: 91, tab_count: 6, spam_count: 3, placement_score: 91 }];
+  },
+};
+
 const summary = await refreshSmartleadWorkspace({
   client: fakeClient,
+  deliveryClient: fakeDeliveryClient,
   source: "manual",
 });
 
@@ -513,8 +588,79 @@ const capabilities = await query(
    WHERE workspace_id = '501' AND source_provider = 'smartlead' AND capability = 'inbox_placement'`,
 );
 assert.equal(capabilities.length, 1);
-assert.equal(capabilities[0].support_status, "unsupported");
+assert.equal(capabilities[0].support_status, "supported");
 assert.equal(capabilities[0].confidence, "high");
+
+const deliveryTests = await query(
+  db,
+  `SELECT test_id, test_name, total_count, inbox_count, category_count, spam_count,
+          primary_inbox_rate_pct, category_rate_pct, spam_rate_pct
+   FROM sendlens.smartlead_delivery_test_overview
+   WHERE workspace_id = '501'`,
+);
+assert.equal(deliveryTests.length, 1);
+assert.equal(deliveryTests[0].test_id, "delivery-1");
+assert.equal(Number(deliveryTests[0].primary_inbox_rate_pct), 91);
+assert.equal(Number(deliveryTests[0].category_rate_pct), 6);
+assert.equal(Number(deliveryTests[0].spam_rate_pct), 3);
+
+const deliverySender = await query(
+  db,
+  `SELECT sender_email, inbox_rate_pct, spam_rate_pct, reputation_score
+   FROM sendlens.smartlead_sender_delivery_health
+   WHERE workspace_id = '501'`,
+);
+assert.deepEqual(deliverySender.map((row) => ({
+  sender: row.sender_email,
+  inbox: Number(row.inbox_rate_pct),
+  spam: Number(row.spam_rate_pct),
+  reputation: Number(row.reputation_score),
+})), [{ sender: "sender-301@example.com", inbox: 91, spam: 3, reputation: 9.1 }]);
+
+const deliveryAuth = await query(
+  db,
+  `SELECT evidence_type, spf_pass, dkim_pass, rdns_pass, domain_blacklisted
+   FROM sendlens.smartlead_delivery_authentication_health
+   WHERE workspace_id = '501'
+   ORDER BY evidence_type`,
+);
+assert.ok(deliveryAuth.some((row) => row.evidence_type === "spf" && Boolean(row.spf_pass)));
+assert.ok(deliveryAuth.some((row) => row.evidence_type === "dkim" && Boolean(row.dkim_pass)));
+assert.ok(deliveryAuth.some((row) => row.evidence_type === "rdns" && Boolean(row.rdns_pass)));
+assert.ok(deliveryAuth.some((row) => row.evidence_type === "domain_blacklist" && !Boolean(row.domain_blacklisted)));
+
+const deliveryRaw = await query(
+  db,
+  `SELECT raw_json FROM sendlens.smartlead_delivery_tests WHERE workspace_id = '501'
+   UNION ALL
+   SELECT raw_json FROM sendlens.smartlead_delivery_evidence WHERE workspace_id = '501'`,
+);
+for (const row of deliveryRaw) {
+  assert.doesNotMatch(String(row.raw_json), /forbidden test message body|forbidden report body|forbidden raw header/i);
+}
+const safeDeliveryTestRawRows = await query(
+  db,
+  `SELECT raw_json FROM sendlens.smartlead_delivery_tests WHERE workspace_id = '501' AND id = 'delivery-1'`,
+);
+const safeDeliveryTestRaw = JSON.parse(String(safeDeliveryTestRawRows[0].raw_json));
+assert.equal(safeDeliveryTestRaw.link_checker, true);
+assert.equal(safeDeliveryTestRaw.sequence_mapping_id, "sequence-map-1");
+assert.deepEqual(safeDeliveryTestRaw.spam_filters, ["synthetic-filter"]);
+assert.equal(safeDeliveryTestRaw.min_time_btwn_emails, 5);
+assert.equal(safeDeliveryTestRaw.has_seed_mapping, true);
+assert.deepEqual(safeDeliveryTestRaw.scheduler_cron_value, { tz: "America/New_York" });
+const diagnosticRaw = await query(
+  db,
+  `SELECT evidence_type, raw_json
+   FROM sendlens.smartlead_delivery_evidence
+   WHERE workspace_id = '501' AND evidence_type IN ('ip_blacklist', 'ip_analytics')
+   ORDER BY evidence_type`,
+);
+const ipAnalyticsRaw = JSON.parse(String(diagnosticRaw.find((row) => row.evidence_type === "ip_analytics").raw_json));
+const ipBlacklistRaw = JSON.parse(String(diagnosticRaw.find((row) => row.evidence_type === "ip_blacklist").raw_json));
+assert.equal(ipAnalyticsRaw.whois_data.isp, "Example ISP");
+assert.equal(ipBlacklistRaw.rdns, "mail.example.test");
+assert.equal(ipBlacklistRaw.details, "Synthetic blacklist detail");
 
 const coverage = await query(
   db,
@@ -545,6 +691,34 @@ assert.match(String(coverage[0].coverage_note), /outbound_exact_body_rows_skippe
 
 await assert.rejects(
   refreshSmartleadWorkspace({
+    client: fakeClient,
+    deliveryClient: {
+      ...fakeDeliveryClient,
+      async getSmartDeliveryProviderReport() {
+        return { status: "processing", overallTotalCount: 100, result: [{ provider: "Gmail", inbox_rate: 91 }] };
+      },
+    },
+    source: "manual",
+  }),
+  /provider report.*processing|processing.*prior complete snapshot/i,
+);
+
+await assert.rejects(
+  refreshSmartleadWorkspace({
+    client: fakeClient,
+    deliveryClient: {
+      ...fakeDeliveryClient,
+      async getSmartDeliverySpamFilterReport() {
+        throw new SmartleadApiError(404, "https://smartdelivery.smartlead.ai/api/v1/spam-test/report/[REDACTED]", "not_found");
+      },
+    },
+    source: "manual",
+  }),
+  (error) => error instanceof SmartleadApiError && error.status === 404,
+);
+
+await assert.rejects(
+  refreshSmartleadWorkspace({
     client: {
       ...fakeClient,
       async getCampaign(campaignId) {
@@ -552,6 +726,7 @@ await assert.rejects(
         return { ...detail, created_at: "not-a-timestamp" };
       },
     },
+    deliveryClient: fakeDeliveryClient,
     source: "manual",
   }),
   /timestamp|conversion/i,
@@ -569,6 +744,13 @@ try {
   assert.equal(preservedSnapshot[0].campaign_name, "Fixture Campaign A");
   assert.equal(Number(preservedSnapshot[0].emails_sent_count), 90);
   assert.equal(Number(preservedSnapshot[0].reply_count_unique), 2);
+  const preservedDelivery = await query(
+    atomicDb,
+    `SELECT COUNT(*) AS count
+     FROM sendlens.smartlead_delivery_tests
+     WHERE workspace_id = '501' AND id = 'delivery-1'`,
+  );
+  assert.equal(Number(preservedDelivery[0].count), 1);
 } finally {
   closeDb(atomicDb);
 }
@@ -587,6 +769,7 @@ await refreshSmartleadWorkspace({
         : lead);
     },
   },
+  deliveryClient: fakeDeliveryClient,
   source: "manual",
 });
 
@@ -640,7 +823,6 @@ const regressionMailboxStats = {
       sent: 40,
       opened: 16,
       replies: 4,
-      unique_replies: 4,
       bounced: 2,
       clicked: 3,
     },
@@ -802,6 +984,7 @@ function regressionClient({ includeTags }) {
 
 await refreshSmartleadWorkspace({
   client: regressionClient({ includeTags: true }),
+  deliveryClient: fakeDeliveryClient,
   source: "manual",
 });
 
@@ -831,7 +1014,7 @@ try {
   );
   assert.equal(accountDailyBeforeScoped.length, 1);
   assert.equal(Number(accountDailyBeforeScoped[0].sent), 60);
-  assert.equal(Number(accountDailyBeforeScoped[0].unique_replies), 6);
+  assert.equal(accountDailyBeforeScoped[0].unique_replies, null);
 
   const tagsBeforeScoped = await query(
     regressionDb,
@@ -890,6 +1073,22 @@ await refreshSmartleadWorkspace({
 
 const scopedDb = await getDb();
 try {
+  const deliveryAfterScoped = await query(
+    scopedDb,
+    `SELECT COUNT(*) AS count
+     FROM sendlens.smartlead_delivery_tests
+     WHERE workspace_id = '501' AND id = 'delivery-1'`,
+  );
+  assert.equal(Number(deliveryAfterScoped[0].count), 1);
+  const deliveryCapabilityAfterScoped = await query(
+    scopedDb,
+    `SELECT support_status
+     FROM sendlens.provider_capabilities
+     WHERE workspace_id = '501'
+       AND source_provider = 'smartlead'
+       AND capability = 'inbox_placement'`,
+  );
+  assert.equal(deliveryCapabilityAfterScoped[0].support_status, "supported");
   const accountTotalsAfterScoped = await query(
     scopedDb,
     `SELECT total_sent_30d, total_replies_30d, total_bounces_30d
@@ -914,7 +1113,7 @@ try {
   );
   assert.equal(accountDailyAfterScoped.length, 1);
   assert.equal(Number(accountDailyAfterScoped[0].sent), 60);
-  assert.equal(Number(accountDailyAfterScoped[0].unique_replies), 6);
+  assert.equal(accountDailyAfterScoped[0].unique_replies, null);
 
   const campaignTagsAfterScoped = await query(
     scopedDb,
@@ -1091,5 +1290,40 @@ try {
   assert.match(String(overLimitCoverage[0].coverage_note), /skipped_leads=1/);
 } finally {
   closeDb(overLimitDb);
+}
+
+await refreshSmartleadWorkspace({
+  client: fakeClient,
+  deliveryClient: {
+    ...fakeDeliveryClient,
+    async listSmartDeliveryTests() {
+      throw new SmartleadApiError(
+        403,
+        "https://smartdelivery.smartlead.ai/api/v1/spam-test/report?api_key=[REDACTED]",
+        "forbidden",
+      );
+    },
+  },
+  source: "manual",
+});
+const unsupportedDeliveryDb = await getDb();
+try {
+  const unsupportedRows = await query(
+    unsupportedDeliveryDb,
+    `SELECT support_status, coverage_note
+     FROM sendlens.provider_capabilities
+     WHERE workspace_id = '501'
+       AND source_provider = 'smartlead'
+       AND capability = 'inbox_placement'`,
+  );
+  assert.equal(unsupportedRows[0].support_status, "unsupported");
+  assert.match(String(unsupportedRows[0].coverage_note), /support-gated.*HTTP 403/i);
+  const clearedDelivery = await query(
+    unsupportedDeliveryDb,
+    `SELECT COUNT(*) AS count FROM sendlens.smartlead_delivery_tests WHERE workspace_id = '501'`,
+  );
+  assert.equal(Number(clearedDelivery[0].count), 0);
+} finally {
+  closeDb(unsupportedDeliveryDb);
 }
 await resetDbConnectionForTests();

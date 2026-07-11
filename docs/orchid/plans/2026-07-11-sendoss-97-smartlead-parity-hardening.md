@@ -9,6 +9,8 @@ execution: code
 origin: docs/SMARTLEAD_PROVIDER_CONTRACT.md
 ---
 
+> Scope update (2026-07-11): Brandon explicitly added read-only Smart Delivery support after this plan was completed. SENDOSS-98 and `2026-07-11-sendoss-98-smart-delivery-read-parity.md` supersede this plan's Smart Delivery exclusion; all mutation exclusions remain in force.
+
 # Smartlead Read-Only Parity Hardening - Plan
 
 ## Goal Capsule
@@ -116,7 +118,7 @@ The official snapshot was fetched on 2026-07-11 from `https://api.smartlead.ai/l
 | Sequences | `https://api.smartlead.ai/api-reference/campaigns/get-sequences` | Accept wrapped array; map variants and nested delay. |
 | Campaign analytics | `https://api.smartlead.ai/api-reference/campaigns/get-analytics` | Store raw totals and derive distinct replies from leads. |
 | Campaign range analytics | `https://api.smartlead.ai/api-reference/campaigns/get-analytics-by-date` | Do not invent daily rows. |
-| Step statistics | `https://api.smartlead.ai/api-reference/campaign-statistics/get-by-id` | Max 1000; accept aggregate or detail arrays. |
+| Step statistics | `https://api.smartlead.ai/api-reference/campaigns/statistics` | Max 1000; accept aggregate or detail arrays. |
 | Mailbox statistics | `https://api.smartlead.ai/api-reference/campaign-statistics/mailbox-statistics` | Max 20; require date-bearing rows. |
 | Campaign accounts | `https://api.smartlead.ai/api-reference/campaigns/get-email-accounts` | Accept direct or wrapped array; store safe assignments. |
 | Workspace accounts | `https://api.smartlead.ai/api-reference/email-accounts/get-all` | Max 100; exhaust pages; persist allowlisted metadata. |

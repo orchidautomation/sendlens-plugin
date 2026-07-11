@@ -207,18 +207,30 @@ export async function buildWorkspaceSummary(
      WHERE workspace_id = '${workspace}'
        AND ${tagProviderFilter}`,
   );
-  const inboxPlacementTestRows = providerScope === "smartlead"
-    ? [{ count: 0 }]
-    : await query(
-      conn,
-      `SELECT COUNT(*) AS count FROM sendlens.inbox_placement_tests WHERE workspace_id = '${workspace}'`,
-    );
-  const inboxPlacementAnalyticsRows = providerScope === "smartlead"
-    ? [{ count: 0 }]
-    : await query(
-      conn,
-      `SELECT COUNT(*) AS count FROM sendlens.inbox_placement_analytics WHERE workspace_id = '${workspace}'`,
-    );
+  const inboxPlacementTestRows = await query(
+    conn,
+    providerScope === "smartlead"
+      ? "SELECT 0 AS count"
+      : `SELECT COUNT(*) AS count FROM sendlens.inbox_placement_tests WHERE workspace_id = '${workspace}'`,
+  );
+  const inboxPlacementAnalyticsRows = await query(
+    conn,
+    providerScope === "smartlead"
+      ? "SELECT 0 AS count"
+      : `SELECT COUNT(*) AS count FROM sendlens.inbox_placement_analytics WHERE workspace_id = '${workspace}'`,
+  );
+  const smartDeliveryTestRows = await query(
+    conn,
+    providerScope === "instantly"
+      ? "SELECT 0 AS count"
+      : `SELECT COUNT(*) AS count FROM sendlens.smartlead_delivery_tests WHERE workspace_id = '${workspace}'`,
+  );
+  const smartDeliveryEvidenceRows = await query(
+    conn,
+    providerScope === "instantly"
+      ? "SELECT 0 AS count"
+      : `SELECT COUNT(*) AS count FROM sendlens.smartlead_delivery_evidence WHERE workspace_id = '${workspace}'`,
+  );
   const providerCapabilities = await query(
     conn,
     `SELECT
@@ -282,7 +294,7 @@ export async function buildWorkspaceSummary(
     )
   ) {
     warnings.push(
-      "Smartlead inbox placement is explicitly unsupported in the current provider capability surface; do not treat empty inbox-placement rows as stale Smartlead data.",
+      "Smartlead Smart Delivery is support-gated and unavailable to the configured key; empty Smartlead placement rows do not prove deliverability is healthy.",
     );
   }
 
@@ -291,6 +303,8 @@ export async function buildWorkspaceSummary(
   const tagCount = num(tagRows[0]?.count);
   const inboxPlacementTestCount = num(inboxPlacementTestRows[0]?.count);
   const inboxPlacementAnalyticsCount = num(inboxPlacementAnalyticsRows[0]?.count);
+  const smartDeliveryTestCount = num(smartDeliveryTestRows[0]?.count);
+  const smartDeliveryEvidenceCount = num(smartDeliveryEvidenceRows[0]?.count);
   const lastRefreshedAt = await getPluginState(conn, "last_refresh_at");
   const bestCampaignLine = bestCampaign
     ? `${String(bestCampaign.name)} leads with ${pct(num(bestCampaign.reply_count_unique), num(bestCampaign.emails_sent_count)).toFixed(2)}% unique reply rate.`
@@ -308,7 +322,7 @@ export async function buildWorkspaceSummary(
         ? `Coverage on the current leader: ${num(bestCampaign.reply_lead_rows)} reply-signal leads found during bounded lead scan, ${num(bestCampaign.nonreply_rows_sampled)} sampled non-reply leads, ${num(bestCampaign.reply_outbound_rows)} locally reconstructed reply-copy rows.`
         : "Coverage on the current leader is not available yet.",
       `Coverage across active campaigns: ${repliedLeadCount} replied leads, ${sampledLeadCount} sampled leads, and ${tagCount} custom tags stored locally.`,
-      `Deliverability evidence: ${inboxPlacementTestCount} inbox placement tests and ${inboxPlacementAnalyticsCount} inbox placement analytics rows stored locally.`,
+      `Deliverability evidence: ${inboxPlacementTestCount} Instantly inbox-placement tests, ${inboxPlacementAnalyticsCount} Instantly per-email analytics rows, ${smartDeliveryTestCount} Smart Delivery tests, and ${smartDeliveryEvidenceCount} Smart Delivery aggregate/diagnostic rows stored locally.`,
       "Inactive or purely historical campaigns are excluded from this default workspace read unless you explicitly ask for them.",
       "Reply analysis uses lead reply outcomes plus locally reconstructed template copy. Sampled raw tables are evidence support only and should not be treated as population totals.",
     ].join("\n"),
@@ -324,6 +338,8 @@ export async function buildWorkspaceSummary(
       bounce_rate_pct: Number(bounceRate.toFixed(2)),
       inbox_placement_test_count: inboxPlacementTestCount,
       inbox_placement_analytics_rows: inboxPlacementAnalyticsCount,
+      smart_delivery_test_count: smartDeliveryTestCount,
+      smart_delivery_evidence_rows: smartDeliveryEvidenceCount,
     },
     source_provider_scope: providerScope,
     provider_breakdown: providerBreakdown.map((row) => ({

@@ -95,7 +95,7 @@ SENDLENS_SMARTLEAD_API_KEY=your_smartlead_key
 
 Smartlead uses a query-string access value, and setup output suppresses it in URLs, logs, traces, errors, and tests. Smartlead V1 support is read-only: SendLens can refresh supported Smartlead campaign, account, lead, analytics, and bounded message-history evidence, but it does not expose campaign, lead, account, email, webhook, or provider-setting mutation paths.
 
-Smartlead Smart Delivery read APIs use a separate support-gated service and are outside V1. Use `provider_capabilities` and `workspace_snapshot` warnings to explain that limitation; do not treat missing Smartlead inbox-placement rows as stale data or healthy placement.
+Smartlead Smart Delivery reads use a separate support-gated service. SendLens probes that service during a full Smartlead refresh, ingests exact placement and diagnostic evidence when authorized, and records an explicit unsupported capability without failing Standard API ingest when access is absent. Missing rows never prove healthy placement.
 
 When you rerun the same curl command to update SendLens, the installer reuses the saved plugin config and does not ask for the Instantly key again. To force a new prompt:
 
@@ -167,7 +167,7 @@ Then ask your host:
 Use SendLens to summarize what is working and not working in the demo workspace.
 ```
 
-All demo rows are synthetic. The demo includes provider-qualified Instantly and Smartlead fixture rows, duplicate campaign names across providers, and an explicit unsupported Smartlead inbox-placement capability row. Treat the output as product proof and output-shape guidance, not customer evidence. See [synthetic example outputs](./examples/SYNTHETIC_OUTPUTS.md).
+All demo rows are synthetic. The demo includes provider-qualified Instantly and Smartlead fixture rows, duplicate campaign names across providers, and synthetic Smart Delivery placement/diagnostic evidence. Treat the output as product proof and output-shape guidance, not customer evidence. See [synthetic example outputs](./examples/SYNTHETIC_OUTPUTS.md).
 
 ## After Install
 

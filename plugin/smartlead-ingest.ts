@@ -12,7 +12,8 @@ import {
 import { writeRefreshStatus } from "./refresh-status";
 import {
   createSmartleadClient,
-  type SmartleadClient,
+  SmartleadApiError,
+  SmartleadClient,
 } from "./smartlead-client";
 import {
   renderTemplateValue,
@@ -24,6 +25,7 @@ const SOURCE_PROVIDER = "smartlead";
 const DEFAULT_LOOKBACK_DAYS = 30;
 const MESSAGE_HISTORY_LEAD_LIMIT = 50;
 const BULK_MESSAGE_HISTORY_BATCH_SIZE = 50;
+const MAX_SMART_DELIVERY_REPORT_TESTS = 20;
 const SENSITIVE_RAW_KEYS = new Set([
   "api_key",
   "apikey",
@@ -54,10 +56,41 @@ type SmartleadIngestClient = Pick<
   | "listAllCampaignLeads"
 > & Partial<Pick<SmartleadClient, "getMessageHistory" | "getBulkMessageHistory">>;
 
+type SmartleadDeliveryIngestClient = Pick<
+  SmartleadClient,
+  | "listSmartDeliveryTests"
+  | "getSmartDeliveryTest"
+  | "getSmartDeliveryScheduleHistory"
+  | "getSmartDeliveryProviderReport"
+  | "getSmartDeliveryGeoReport"
+  | "getSmartDeliverySenderReport"
+  | "getSmartDeliverySenderAccounts"
+  | "getSmartDeliverySeedReport"
+  | "getSmartDeliveryBlacklistReport"
+  | "getSmartDeliveryIpAnalytics"
+  | "getSmartDeliverySpamFilterReport"
+  | "getSmartDeliveryMailboxSummary"
+>;
+
 export type SmartleadRefreshOptions = {
   campaignIds?: string[];
   source?: RefreshSource;
   client?: SmartleadIngestClient;
+  deliveryClient?: SmartleadDeliveryIngestClient;
+};
+
+type SmartleadDeliveryEvidence = SmartleadRow & {
+  __sendlens_id: string;
+  __sendlens_test_id?: string;
+  __sendlens_evidence_type: string;
+  __sendlens_dimension?: string;
+};
+
+type SmartleadDeliverySnapshot = {
+  status: "supported" | "unsupported";
+  coverageNote: string;
+  tests: SmartleadRow[];
+  evidence: SmartleadDeliveryEvidence[];
 };
 
 type CampaignBundle = {
@@ -469,6 +502,339 @@ async function insertRows(
   );
 }
 
+function smartDeliveryTestId(row: SmartleadRow) {
+  return pickString(row, ["spam_test_id", "id", "test_id"]);
+}
+
+function completedSmartDeliveryReportItems(payload: unknown, label: string) {
+  const wrapper = asRecord(payload);
+  const status = pickString(wrapper, ["status"]);
+  if (status && status.toLowerCase() !== "completed") {
+    throw new Error(`Smart Delivery ${label} is ${status}; preserving the prior complete snapshot.`);
+  }
+  const totalCount = pickNumber(wrapper, ["overallTotalCount", "overall_total_count", "total"]);
+  return arraysFromPayload(payload, ["result", "data"]).map((row) => ({
+    ...row,
+    __sendlens_report_status: status,
+    __sendlens_overall_total_count: totalCount,
+  }));
+}
+
+function safeSmartDeliveryTestRaw(test: SmartleadRow) {
+  return {
+    id: smartDeliveryTestId(test),
+    name: test.test_name ?? test.name ?? null,
+    test_type: test.test_type ?? test.type ?? null,
+    status: test.status ?? null,
+    description: test.description ?? null,
+    campaign_id: test.campaign_id ?? null,
+    provider_id: test.provider_id ?? null,
+    folder_id: test.folder_id ?? null,
+    link_checker: test.link_checker ?? null,
+    test_with_sl_account: test.test_with_sl_account ?? null,
+    sequence_mapping_id: test.sequence_mapping_id ?? null,
+    client_id: test.client_id ?? null,
+    user_id: test.user_id ?? null,
+    spam_filters: test.spam_filters ?? null,
+    all_email_sent_without_time_gap: test.all_email_sent_without_time_gap ?? null,
+    min_time_btwn_emails: test.min_time_btwn_emails ?? null,
+    min_time_unit: test.min_time_unit ?? null,
+    is_warmup: test.is_warmup ?? null,
+    has_seed_mapping: test.has_seed_mapping ?? null,
+    email_track_id: test.email_track_id ?? null,
+    scheduler_cron_value: test.scheduler_cron_value ?? null,
+    schedule_start_time: test.schedule_start_time ?? null,
+    test_end_date: test.test_end_date ?? test.end_date ?? null,
+    every_days: test.every_days ?? null,
+    current_test_run_no: test.current_test_run_no ?? null,
+    created_at: test.created_at ?? null,
+    updated_at: test.updated_at ?? null,
+  };
+}
+
+function safeSmartDeliveryEvidenceRaw(row: SmartleadDeliveryEvidence) {
+  const details = asRecord(row.details);
+  const whois = asRecord(row.whois_data);
+  const isIpEvidence = row.__sendlens_evidence_type === "ip_analytics";
+  const isBlacklistEvidence = row.__sendlens_evidence_type === "ip_blacklist";
+  return {
+    test_id: row.__sendlens_test_id ?? null,
+    evidence_type: row.__sendlens_evidence_type,
+    dimension: row.__sendlens_dimension ?? null,
+    sender_email: row.__sendlens_sender_email ?? row.from_email ?? row.email ?? null,
+    recipient_email: row.to_email ?? row.recipient_email ?? null,
+    provider: row.provider ?? row.esp ?? null,
+    region: row.region ?? null,
+    ip: row.ip ?? null,
+    test_run_no: row.test_run_no ?? null,
+    status: row.status ?? row.__sendlens_report_status ?? null,
+    tests_count: details.tests_count ?? row.tests_count ?? null,
+    total_count: row.adjusted_total_email_count ?? row.total_email_count
+      ?? row.__sendlens_overall_total_count ?? null,
+    inbox_count: row.inbox_count ?? null,
+    category_count: row.tab_count ?? row.category_count ?? null,
+    spam_count: row.spam_count ?? null,
+    failed_count: row.failed_count ?? null,
+    mailbox_count: row.mailbox_count ?? null,
+    inbox_rate: details.avg_inbox_rate ?? row.inbox_rate ?? null,
+    spam_rate: details.avg_spam_rate ?? row.spam_rate ?? null,
+    bounce_rate: details.avg_bounce_rate ?? row.bounce_rate ?? null,
+    placement_score: row.placement_score ?? null,
+    reputation_score: details.reputation_score ?? row.reputation_score ?? null,
+    avg_delivery_time_seconds: row.avg_delivery_time_seconds ?? null,
+    spf_verified: row.spf_verified ?? null,
+    dkim_verified: row.dkim_verified ?? null,
+    rdns_verified: row.rdns_verified ?? null,
+    domain_blacklisted: row.domain_blacklisted ?? null,
+    blacklisted: row.blacklisted ?? null,
+    total_blacklist: row.total_blacklist ?? null,
+    blacklist_type: row.blacklist_type_value ?? null,
+    rdns: isBlacklistEvidence ? row.rdns ?? null : null,
+    details: isBlacklistEvidence && typeof row.details === "string" ? row.details : null,
+    whois_data: isIpEvidence
+      ? {
+        isp: whois.isp ?? null,
+        location: whois.location ?? null,
+        reverse_dns: whois.reverse_dns ?? null,
+        organization: whois.organization ?? null,
+      }
+      : null,
+    filter: row.filter ?? null,
+    triggered_count: row.triggered_count ?? null,
+    trigger_percentage: row.trigger_percentage ?? null,
+    reasons: row.reasons ?? null,
+    summary: row.summary ?? null,
+    observed_at: details.last_test_date ?? row.created_at ?? row.updated_at ?? null,
+  };
+}
+
+function deliveryEvidenceRows(
+  testId: string | undefined,
+  evidenceType: string,
+  rows: SmartleadRow[],
+  dimensionKeys: string[] = ["id", "reply_id", "email", "from_email", "provider", "region", "ip"],
+) {
+  return rows.map((row, index): SmartleadDeliveryEvidence => {
+    const dimension = pickString(row, dimensionKeys) ?? String(index);
+    return {
+      ...row,
+      __sendlens_id: `${evidenceType}:${testId ?? "workspace"}:${dimension}:${index}`,
+      __sendlens_test_id: testId,
+      __sendlens_evidence_type: evidenceType,
+      __sendlens_dimension: dimension,
+    };
+  });
+}
+
+function seedEvidenceRows(testId: string, evidenceType: string, groups: SmartleadRow[]) {
+  const rows: SmartleadDeliveryEvidence[] = [];
+  for (const group of groups) {
+    const senderEmail = pickEmail(group, ["from_email", "email"]);
+    for (const [index, seed] of arrayFrom(group.seed_accounts ?? group.seeds).entries()) {
+      const recipientEmail = pickEmail(seed, ["email", "to_email"]);
+      const dimension = pickString(seed, ["id"]) ?? recipientEmail ?? String(index);
+      rows.push({
+        ...seed,
+        __sendlens_sender_email: senderEmail,
+        __sendlens_id: `${evidenceType}:${testId}:${senderEmail ?? "unknown"}:${dimension}`,
+        __sendlens_test_id: testId,
+        __sendlens_evidence_type: evidenceType,
+        __sendlens_dimension: dimension,
+      });
+    }
+  }
+  return rows;
+}
+
+function spamFilterEvidenceRows(testId: string, groups: SmartleadRow[]) {
+  const rows: SmartleadDeliveryEvidence[] = [];
+  for (const group of groups) {
+    const senderEmail = pickEmail(group, ["from_email", "email"]);
+    for (const [index, filter] of arrayFrom(group.spam_filter_details ?? group.filters).entries()) {
+      const dimension = pickString(filter, ["filter", "name"]) ?? String(index);
+      rows.push({
+        ...filter,
+        __sendlens_sender_email: senderEmail,
+        __sendlens_id: `spam_filter:${testId}:${senderEmail ?? "unknown"}:${dimension}:${index}`,
+        __sendlens_test_id: testId,
+        __sendlens_evidence_type: "spam_filter",
+        __sendlens_dimension: dimension,
+      });
+    }
+  }
+  return rows;
+}
+
+async function fetchSmartDeliverySnapshot(
+  client: SmartleadDeliveryIngestClient,
+): Promise<SmartleadDeliverySnapshot> {
+  let listedTests: SmartleadRow[];
+  try {
+    listedTests = await client.listSmartDeliveryTests();
+  } catch (error) {
+    if (
+      error instanceof SmartleadApiError
+      && [401, 403, 404].includes(error.status)
+    ) {
+      return {
+        status: "unsupported",
+        coverageNote: `Smart Delivery is support-gated and this valid Smartlead workspace did not have read access (HTTP ${error.status}).`,
+        tests: [],
+        evidence: [],
+      };
+    }
+    throw error;
+  }
+
+  const sortedTests = [...listedTests].sort((left, right) => {
+    const leftTime = Date.parse(String(left.schedule_start_time ?? left.created_at ?? 0)) || 0;
+    const rightTime = Date.parse(String(right.schedule_start_time ?? right.created_at ?? 0)) || 0;
+    return rightTime - leftTime;
+  });
+  const selectedTests = sortedTests.slice(0, MAX_SMART_DELIVERY_REPORT_TESTS);
+  const mailboxSummary = listedTests.length > 0
+    ? await client.getSmartDeliveryMailboxSummary()
+    : [];
+  const evidence: SmartleadDeliveryEvidence[] = deliveryEvidenceRows(
+    undefined,
+    "mailbox_summary",
+    mailboxSummary,
+  );
+  const hydratedTests = await Promise.all(selectedTests.map(async (listedTest) => {
+    const testId = smartDeliveryTestId(listedTest);
+    if (!testId) return listedTest;
+    const [
+      detail,
+      scheduleHistory,
+      providerPayload,
+      geoPayload,
+      senderReport,
+      senderAccounts,
+      spf,
+      dkim,
+      rdns,
+      domainBlacklist,
+      ipBlacklist,
+      ipAnalytics,
+      spamFilters,
+    ] = await Promise.all([
+      client.getSmartDeliveryTest(testId),
+      client.getSmartDeliveryScheduleHistory(testId),
+      client.getSmartDeliveryProviderReport(testId),
+      client.getSmartDeliveryGeoReport(testId),
+      client.getSmartDeliverySenderReport(testId),
+      client.getSmartDeliverySenderAccounts(testId),
+      client.getSmartDeliverySeedReport(testId, "spf-details"),
+      client.getSmartDeliverySeedReport(testId, "dkim-details"),
+      client.getSmartDeliverySeedReport(testId, "rdns-details"),
+      client.getSmartDeliverySeedReport(testId, "domain-blacklist"),
+      client.getSmartDeliveryBlacklistReport(testId),
+      client.getSmartDeliveryIpAnalytics(testId),
+      client.getSmartDeliverySpamFilterReport(testId),
+    ]);
+    evidence.push(
+      ...deliveryEvidenceRows(testId, "schedule_history", scheduleHistory, ["test_run_no"]),
+      ...deliveryEvidenceRows(
+        testId,
+        "provider_report",
+        completedSmartDeliveryReportItems(providerPayload, `provider report for ${testId}`),
+      ),
+      ...deliveryEvidenceRows(
+        testId,
+        "geo_report",
+        completedSmartDeliveryReportItems(geoPayload, `geo report for ${testId}`),
+      ),
+      ...deliveryEvidenceRows(testId, "sender_report", senderReport),
+      ...deliveryEvidenceRows(testId, "sender_account", senderAccounts),
+      ...seedEvidenceRows(testId, "spf", spf),
+      ...seedEvidenceRows(testId, "dkim", dkim),
+      ...seedEvidenceRows(testId, "rdns", rdns),
+      ...seedEvidenceRows(testId, "domain_blacklist", domainBlacklist),
+      ...deliveryEvidenceRows(testId, "ip_blacklist", ipBlacklist),
+      ...deliveryEvidenceRows(testId, "ip_analytics", ipAnalytics),
+      ...spamFilterEvidenceRows(testId, spamFilters),
+    );
+    return { ...listedTest, ...asRecord(detail), spam_test_id: testId };
+  }));
+
+  return {
+    status: "supported",
+    coverageNote: `Smart Delivery read access succeeded; ${listedTests.length} test definitions were listed and the newest ${selectedTests.length} were hydrated with bounded reports. Message content and reply headers were intentionally excluded.`,
+    tests: [...hydratedTests, ...sortedTests.slice(MAX_SMART_DELIVERY_REPORT_TESTS)],
+    evidence,
+  };
+}
+
+async function storeSmartDeliverySnapshot(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  snapshot: SmartleadDeliverySnapshot,
+) {
+  await insertRows(
+    conn,
+    "smartlead_delivery_tests",
+    [
+      "workspace_id", "id", "name", "test_type", "status", "description",
+      "campaign_id", "provider_id", "folder_id", "schedule_start_time", "test_end_date",
+      "every_days", "current_test_run_no", "created_at", "updated_at", "raw_json", "synced_at",
+    ],
+    snapshot.tests.flatMap((test) => {
+      const id = smartDeliveryTestId(test);
+      if (!id) return [];
+      return [`(
+        '${esc(workspaceId)}', '${esc(id)}',
+        ${sqlString(test.test_name ?? test.name)}, ${sqlString(test.test_type ?? test.type)},
+        ${sqlString(test.status)}, ${sqlString(test.description)},
+        ${sqlString(test.campaign_id)}, ${sqlString(test.provider_id)}, ${sqlString(test.folder_id)},
+        ${sqlTimestamp(test.schedule_start_time)}, ${sqlTimestamp(test.test_end_date ?? test.end_date)},
+        ${sqlInt(test.every_days)}, ${sqlInt(test.current_test_run_no)},
+        ${sqlTimestamp(test.created_at)}, ${sqlTimestamp(test.updated_at)},
+        ${sqlJson(safeSmartDeliveryTestRaw(test))}, CURRENT_TIMESTAMP
+      )`];
+    }),
+  );
+
+  await insertRows(
+    conn,
+    "smartlead_delivery_evidence",
+    [
+      "workspace_id", "id", "test_id", "evidence_type", "dimension", "sender_email",
+      "recipient_email", "provider", "region", "ip", "test_run_no", "status", "tests_count",
+      "total_count", "inbox_count", "category_count", "spam_count", "failed_count", "mailbox_count",
+      "inbox_rate_pct", "spam_rate_pct", "bounce_rate_pct", "placement_score", "reputation_score",
+      "avg_delivery_time_seconds", "spf_pass", "dkim_pass", "rdns_pass", "domain_blacklisted",
+      "ip_blacklisted", "blacklist_count", "observed_at", "diagnostic_json", "raw_json", "synced_at",
+    ],
+    snapshot.evidence.map((row) => {
+      const reply = asRecord(row.reply);
+      const details = asRecord(row.details);
+      const sender = pickEmail(row, ["__sendlens_sender_email", "from_email", "email"])
+        ?? pickEmail(reply, ["from_email"]);
+      const recipient = pickEmail(row, ["to_email", "recipient_email"])
+        ?? (["spf", "dkim", "rdns", "domain_blacklist"].includes(row.__sendlens_evidence_type)
+          ? pickEmail(row, ["email"])
+          : null);
+      return `(
+        '${esc(workspaceId)}', '${esc(row.__sendlens_id)}', ${sqlString(row.__sendlens_test_id)},
+        '${esc(row.__sendlens_evidence_type)}', ${sqlString(row.__sendlens_dimension)},
+        ${sqlString(sender)}, ${sqlString(recipient)},
+        ${sqlString(row.provider ?? row.esp)}, ${sqlString(row.region)}, ${sqlString(row.ip)},
+        ${sqlInt(row.test_run_no)}, ${sqlString(row.status ?? row.__sendlens_report_status)}, ${sqlInt(details.tests_count ?? row.tests_count)},
+        ${sqlInt(row.adjusted_total_email_count ?? row.total_email_count ?? row.__sendlens_overall_total_count)},
+        ${sqlInt(row.inbox_count)}, ${sqlInt(row.tab_count ?? row.category_count)}, ${sqlInt(row.spam_count)},
+        ${sqlInt(row.failed_count)}, ${sqlInt(row.mailbox_count)},
+        ${sqlFloat(details.avg_inbox_rate ?? row.inbox_rate)}, ${sqlFloat(details.avg_spam_rate ?? row.spam_rate)},
+        ${sqlFloat(details.avg_bounce_rate ?? row.bounce_rate)}, ${sqlFloat(row.placement_score)},
+        ${sqlFloat(details.reputation_score ?? row.reputation_score)}, ${sqlFloat(row.avg_delivery_time_seconds)},
+        ${sqlBool(row.spf_verified)}, ${sqlBool(row.dkim_verified)}, ${sqlBool(row.rdns_verified)},
+        ${sqlBool(row.domain_blacklisted)}, ${sqlBool(row.blacklisted)}, ${sqlInt(row.total_blacklist)},
+        ${sqlTimestamp(details.last_test_date ?? row.created_at ?? row.updated_at)},
+        ${sqlJson(row.reasons ?? row.summary ?? null)}, ${sqlJson(safeSmartDeliveryEvidenceRaw(row))}, CURRENT_TIMESTAMP
+      )`;
+    }),
+  );
+}
+
 async function clearSmartleadData(
   conn: DuckDBConnection,
   workspaceId: string,
@@ -510,6 +876,13 @@ async function clearSmartleadData(
        WHERE workspace_id = '${workspace}'
          AND source_provider = '${SOURCE_PROVIDER}'`,
     );
+    for (const table of ["smartlead_delivery_tests", "smartlead_delivery_evidence"]) {
+      await run(
+        conn,
+        `DELETE FROM sendlens.${table}
+         WHERE workspace_id = '${workspace}'`,
+      );
+    }
     return;
   }
 
@@ -1224,7 +1597,11 @@ function messageHistoryCoverageNote(coverage: SmartleadMessageHistoryHydration["
   return `message_history eligible_leads=${coverage.eligibleLeads}; lead_limit=${coverage.leadLimit}; fetched_leads=${coverage.fetchedLeads}; skipped_leads=${coverage.skippedLeads}; unsupported_leads=${coverage.unsupportedLeads}; fetched_messages=${coverage.messagesFetched}; inbound_messages=${coverage.inboundMessages}; inbound_stored=${coverage.inboundRowsStored}; inbound_exact_body_rows=${coverage.inboundBodyExactRows}; inbound_missing_body_rows=${coverage.inboundBodyMissingRows}; outbound_messages=${coverage.outboundMessages}; outbound_reconstructed_rows=${coverage.outboundRowsReconstructed}; outbound_exact_body_rows_skipped=${coverage.outboundExactBodyRowsSkipped}; outbound_context=smartlead_sequence_template_reconstructed`;
 }
 
-async function storeProviderCapabilities(conn: DuckDBConnection, workspaceId: string) {
+async function storeProviderCapabilities(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  deliverySnapshot: SmartleadDeliverySnapshot,
+) {
   const capabilities = [
     ["campaign_directory", "supported", "high", "Smartlead campaigns endpoint normalizes into campaigns."],
     ["campaign_detail", "supported", "high", "Smartlead campaign detail normalizes into source_raw_json and campaign settings where available."],
@@ -1239,7 +1616,12 @@ async function storeProviderCapabilities(conn: DuckDBConnection, workspaceId: st
     ["reply_message_history", "supported", "medium", "Smartlead message history hydrates bounded reply-signal leads; body fields are optional and live shape remains unverified."],
     ["exact_outbound_history", "partial", "medium", "Smartlead outbound history is counted for coverage, but rendered outbound context remains reconstructed from templates."],
     ["custom_tags", "partial", "medium", "Smartlead tags are preserved when present on campaign/account payloads."],
-    ["inbox_placement", "unsupported", "high", "Smartlead Smart Delivery read APIs use a separate support-gated service and are outside the V1 read-only provider contract."],
+    [
+      "inbox_placement",
+      deliverySnapshot.status,
+      "high",
+      deliverySnapshot.coverageNote,
+    ],
   ];
   await insertRows(
     conn,
@@ -2007,10 +2389,17 @@ function aggregateMailboxStats(stats: SmartleadRow[]) {
     automaticReplies: number | null;
     uniqueAutomaticReplies: number | null;
     uniqueClicks: number | null;
+    optionalComplete: Record<string, boolean>;
   }>();
 
-  const addOptional = (current: number | null, value: number | null) =>
-    value == null ? current : (current ?? 0) + value;
+  const addOptional = (
+    current: number | null,
+    value: number | null,
+    complete: boolean,
+  ) => ({
+    value: value == null ? current : (current ?? 0) + value,
+    complete: complete && value != null,
+  });
 
   for (const row of stats) {
     const email = pickEmail(row, ["email", "from_email", "email_account", "email_account_email"]);
@@ -2035,41 +2424,49 @@ function aggregateMailboxStats(stats: SmartleadRow[]) {
       automaticReplies: null,
       uniqueAutomaticReplies: null,
       uniqueClicks: null,
+      optionalComplete: {
+        contacted: true,
+        newLeadsContacted: true,
+        uniqueOpened: true,
+        uniqueReplies: true,
+        automaticReplies: true,
+        uniqueAutomaticReplies: true,
+        uniqueClicks: true,
+      },
     };
     current.sent += pickNumber(row, ["sent", "sent_count", "total_sent"]) ?? 0;
     current.bounced += pickNumber(row, ["bounced", "bounces", "bounce_count"]) ?? 0;
     current.replies += pickNumber(row, ["replies", "reply_count", "replied"]) ?? 0;
     current.opened += pickNumber(row, ["opened", "open_count", "opens"]) ?? 0;
     current.clicks += pickNumber(row, ["clicks", "click_count", "clicked"]) ?? 0;
-    current.contacted = addOptional(current.contacted, pickNumber(row, ["contacted", "contacted_count"]));
-    current.newLeadsContacted = addOptional(
-      current.newLeadsContacted,
-      pickNumber(row, ["new_leads_contacted", "new_leads_contacted_count"]),
-    );
-    current.uniqueOpened = addOptional(
-      current.uniqueOpened,
-      pickNumber(row, ["unique_opened", "unique_open_count", "unique_opens"]),
-    );
-    current.uniqueReplies = addOptional(
-      current.uniqueReplies,
-      pickNumber(row, ["unique_replies", "unique_reply_count"]),
-    );
-    current.automaticReplies = addOptional(
-      current.automaticReplies,
-      pickNumber(row, ["replies_automatic", "auto_reply_count", "automatic_replies"]),
-    );
-    current.uniqueAutomaticReplies = addOptional(
-      current.uniqueAutomaticReplies,
-      pickNumber(row, ["unique_replies_automatic", "unique_auto_reply_count"]),
-    );
-    current.uniqueClicks = addOptional(
-      current.uniqueClicks,
-      pickNumber(row, ["unique_clicks", "unique_click_count"]),
-    );
+    for (const [field, keys] of [
+      ["contacted", ["contacted", "contacted_count"]],
+      ["newLeadsContacted", ["new_leads_contacted", "new_leads_contacted_count"]],
+      ["uniqueOpened", ["unique_opened", "unique_open_count", "unique_opens"]],
+      ["uniqueReplies", ["unique_replies", "unique_reply_count"]],
+      ["automaticReplies", ["replies_automatic", "auto_reply_count", "automatic_replies"]],
+      ["uniqueAutomaticReplies", ["unique_replies_automatic", "unique_auto_reply_count"]],
+      ["uniqueClicks", ["unique_clicks", "unique_click_count"]],
+    ] as const) {
+      const next = addOptional(
+        current[field],
+        pickNumber(row, [...keys]),
+        current.optionalComplete[field],
+      );
+      current[field] = next.value;
+      current.optionalComplete[field] = next.complete;
+    }
     byEmailDate.set(key, current);
   }
 
-  return [...byEmailDate.values()];
+  return [...byEmailDate.values()].map((row) => {
+    for (const field of Object.keys(row.optionalComplete) as Array<keyof typeof row.optionalComplete>) {
+      if (!row.optionalComplete[field]) {
+        (row as unknown as Record<string, unknown>)[field] = null;
+      }
+    }
+    return row;
+  });
 }
 
 async function storeAccountDailyMetrics(
@@ -2206,6 +2603,10 @@ function buildSyncLogId(source: RefreshSource, mode: RefreshMode) {
 async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefreshOptions = {}) {
   const accessValue = process.env.SENDLENS_SMARTLEAD_API_KEY?.trim();
   const client = options.client ?? (accessValue ? createSmartleadClient(accessValue) : null);
+  const deliveryClient = options.deliveryClient
+    ?? (client instanceof SmartleadClient
+      ? client
+      : null);
   if (!client) {
     throw new Error("Missing SENDLENS_SMARTLEAD_API_KEY.");
   }
@@ -2313,10 +2714,28 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
         (account) => accountEmail(account) ?? providerAccountId(account),
       )
       : tagAccounts;
+    const deliverySnapshot: SmartleadDeliverySnapshot = scopedRefresh
+      ? {
+        status: "unsupported",
+        coverageNote: "Campaign-scoped refresh preserves the existing workspace-global Smart Delivery snapshot and capability row.",
+        tests: [],
+        evidence: [],
+      }
+      : deliveryClient
+        ? await fetchSmartDeliverySnapshot(deliveryClient)
+        : {
+          status: "unsupported",
+          coverageNote: "Smart Delivery was not probed because no delivery client was available; the service remains support-gated.",
+          tests: [],
+          evidence: [],
+        };
     await run(db, "BEGIN TRANSACTION");
     transactionOpen = true;
     await clearSmartleadData(db, workspaceId, scopedRefresh ? selectedCampaignSourceIds : undefined);
-    await storeProviderCapabilities(db, workspaceId);
+    if (!scopedRefresh) {
+      await storeProviderCapabilities(db, workspaceId, deliverySnapshot);
+      await storeSmartDeliverySnapshot(db, workspaceId, deliverySnapshot);
+    }
     await storeTags(db, workspaceId, tagCampaigns, tagAccounts, tagCleanupAccounts);
     if (!scopedRefresh) {
       await storeEmailAccounts(db, workspaceId, accounts, warmups, rollupsFromMailboxStats(allMailboxStats));

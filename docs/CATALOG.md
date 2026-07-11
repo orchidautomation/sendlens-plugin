@@ -93,9 +93,11 @@ The local schema exposes exact aggregate tables and semantic analysis views. Com
 | `custom_tags`, `custom_tag_mappings`, `campaign_tags`, `account_tags` | Exact tag surfaces | Campaign and sender scoping |
 | `inbox_placement_tests`, `inbox_placement_analytics` | Exact when available from Instantly | Inbox placement and authentication evidence |
 | `inbox_placement_test_overview`, `sender_deliverability_health` | Semantic rollups over inbox placement data | Deliverability diagnosis with availability caveats |
+| `smartlead_delivery_tests`, `smartlead_delivery_evidence` | Exact support-gated Smart Delivery definitions, aggregates, and diagnostics | Smartlead placement, sender, authentication, and blacklist evidence without fake per-email rows |
+| `smartlead_delivery_test_overview`, `smartlead_sender_delivery_health`, `smartlead_delivery_authentication_health` | Semantic Smart Delivery views | Provider-specific Smartlead deliverability diagnosis |
 | `campaign_overview` | Semantic campaign rollup | Default campaign ranking, tracking/deliverability settings, and health view |
 | `lead_evidence`, `lead_payload_kv` | Sampled lead and campaign-payload evidence | ICP and lead-variable hypotheses |
-| `provider_capabilities` | Provider capability status | Explain supported, partial, or unsupported provider surfaces such as Smartlead inbox placement |
+| `provider_capabilities` | Provider capability status | Explain supported, partial, or support-gated provider surfaces such as Smartlead Smart Delivery |
 | `provider_overlap_risk`, `provider_overlap_risk_details` | Sampled cross-provider overlap primitives | Find duplicate normalized email, domain, or company exposure across providers within the unsafe window |
 | `reply_context`, `reply_email_context`, `reply_emails` | Reply outcome context, email-anchored fetched reply context, and fetched exact reply rows | Reply cohort analysis and exact reply-body analysis when hydrated |
 | `rendered_outbound_context` | Locally reconstructed outbound context | Personalization QA and copy analysis, not byte-for-byte delivered email |
