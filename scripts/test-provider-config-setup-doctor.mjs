@@ -415,16 +415,16 @@ try {
     SENDLENS_DB_PATH: path.join(tempDir, "workspace-cache.duckdb"),
     SENDLENS_STATE_DIR: tempDir,
     SENDLENS_PROVIDER: " smartlead ",
-    SENDLENS_SMARTLEAD_API_KEY: smartleadValue,
   });
   assert.equal(sessionStartResult.code, 0);
   assert.ok(!sessionStartResult.stderr.includes("SENDLENS_INSTANTLY_API_KEY"));
-  assert.match(sessionStartResult.stderr, /does not use the Instantly session-start refresh/);
+  assert.match(sessionStartResult.stderr, /SENDLENS_SMARTLEAD_API_KEY is not set/);
   const sessionStartStatus = JSON.parse(
     await fs.readFile(path.join(tempDir, "refresh-status.json"), "utf8"),
   );
   assert.ok(!sessionStartStatus.message.includes("SENDLENS_INSTANTLY_API_KEY"));
   assert.match(sessionStartStatus.message, /SENDLENS_PROVIDER=smartlead/);
+  assert.match(sessionStartStatus.message, /SENDLENS_SMARTLEAD_API_KEY is not set/);
 } finally {
   globalThis.fetch = originalFetch;
   restoreEnv();

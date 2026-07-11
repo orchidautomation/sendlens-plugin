@@ -1806,7 +1806,7 @@ async function buildScopedWorkspaceSnapshot(
     )
   ) {
     warnings.push(
-      "Smartlead inbox placement is explicitly unsupported in the current provider capability surface; do not treat empty inbox-placement rows as stale Smartlead data.",
+      "Smartlead Smart Delivery is support-gated and unavailable to the configured key; empty Smartlead placement rows do not prove deliverability is healthy.",
     );
   }
 

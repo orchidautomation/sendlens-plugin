@@ -1840,6 +1840,100 @@ LIMIT 100;`,
     ],
   },
   {
+    id: "smartlead-delivery-test-overview",
+    topic: "workspace-health",
+    title: "Smartlead Smart Delivery test overview",
+    question: "Which Smartlead Smart Delivery tests show primary-inbox, category, or spam risk?",
+    exactness: "exact",
+    rationale: "Use exact Smart Delivery run counts when the support-gated read surface is available.",
+    sql: `SELECT
+  source_provider,
+  test_id,
+  test_name,
+  test_type,
+  test_status,
+  latest_run_status,
+  latest_run_no,
+  total_count,
+  inbox_count,
+  category_count,
+  spam_count,
+  failed_count,
+  primary_inbox_rate_pct,
+  category_rate_pct,
+  spam_rate_pct,
+  latest_observed_at
+FROM sendlens.smartlead_delivery_test_overview
+ORDER BY spam_rate_pct DESC NULLS LAST, primary_inbox_rate_pct ASC NULLS LAST, total_count DESC NULLS LAST;`,
+    notes: [
+      "Counts come from Smart Delivery schedule history and rates are derived only from those exact counts.",
+      "Smart Delivery is support-gated; a missing row is not proof that placement is healthy.",
+      "Only the newest bounded test set is report-hydrated during refresh; provider capability coverage records the bound.",
+    ],
+  },
+  {
+    id: "smartlead-sender-delivery-health",
+    topic: "workspace-health",
+    title: "Smartlead sender delivery health",
+    question: "Which Smartlead senders have weak inbox placement or reputation in Smart Delivery?",
+    exactness: "exact",
+    rationale: "Inspect provider-reported sender-level placement and reputation without manufacturing seed-level outcomes.",
+    sql: `SELECT
+  source_provider,
+  test_id,
+  sender_email,
+  tests_count,
+  inbox_rate_pct,
+  spam_rate_pct,
+  bounce_rate_pct,
+  reputation_score,
+  observed_at
+FROM sendlens.smartlead_sender_delivery_health
+ORDER BY spam_rate_pct DESC NULLS LAST, inbox_rate_pct ASC NULLS LAST, reputation_score ASC NULLS LAST;`,
+    notes: [
+      "These values are exact provider-reported sender aggregates for each Smart Delivery test.",
+      "Do not combine their denominators with Standard API campaign rates without an explicit normalization decision.",
+    ],
+  },
+  {
+    id: "smartlead-delivery-authentication-health",
+    topic: "workspace-health",
+    title: "Smartlead delivery authentication and blacklist health",
+    question: "Which Smartlead Smart Delivery checks show SPF, DKIM, rDNS, blacklist, IP, or spam-filter risk?",
+    exactness: "exact",
+    rationale: "Surface concrete Smart Delivery diagnostic evidence before attributing placement problems to copy or targeting.",
+    sql: `SELECT
+  source_provider,
+  test_id,
+  evidence_type,
+  sender_email,
+  recipient_email,
+  provider,
+  ip,
+  spf_pass,
+  dkim_pass,
+  rdns_pass,
+  domain_blacklisted,
+  ip_blacklisted,
+  blacklist_count,
+  observed_at,
+  diagnostic_json
+FROM sendlens.smartlead_delivery_authentication_health
+WHERE COALESCE(spf_pass, TRUE) = FALSE
+   OR COALESCE(dkim_pass, TRUE) = FALSE
+   OR COALESCE(rdns_pass, TRUE) = FALSE
+   OR COALESCE(domain_blacklisted, FALSE) = TRUE
+   OR COALESCE(ip_blacklisted, FALSE) = TRUE
+   OR COALESCE(blacklist_count, 0) > 0
+   OR evidence_type = 'spam_filter'
+ORDER BY observed_at DESC NULLS LAST
+LIMIT 100;`,
+    notes: [
+      "The query returns only exact check results and diagnostic summaries; raw email content and reply headers are intentionally absent.",
+      "DMARC is not claimed because the checked Smart Delivery read reference does not expose a standalone DMARC endpoint.",
+    ],
+  },
+  {
     id: "campaign-winners",
     topic: "campaign-performance",
     title: "Winning campaigns",

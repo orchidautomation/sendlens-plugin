@@ -133,7 +133,7 @@ SendLens supports provider-scoped read-only setup modes:
 
 The release installer stores provider config for you. Use env vars directly only for local development, custom launch scripts, or one-off overrides. Smartlead uses query-string access, so SendLens suppresses that value in setup output, logs, traces, and errors.
 
-Smartlead V1 is read-only. SendLens can refresh Smartlead campaign, account, lead, analytics, and bounded message-history evidence where the provider exposes those surfaces. It does not add Smartlead write actions, webhook management, campaign mutation, lead mutation, account mutation, or email send paths. Smartlead inbox placement is explicitly unsupported in V1 because no checked equivalent read endpoint exists; empty inbox-placement rows are not evidence that Smartlead sender placement is healthy.
+Smartlead V1 is read-only. SendLens can refresh Smartlead campaign, account, lead, analytics, bounded message-history, and Smart Delivery evidence where the provider authorizes those surfaces. It does not add Smartlead write actions, webhook management, test mutation, campaign mutation, lead mutation, account mutation, or email send paths. Smart Delivery uses a separate support-gated service; SendLens records an explicit unsupported capability when access is absent, and empty rows never prove healthy placement.
 
 For a one-session launch:
 
@@ -216,7 +216,7 @@ This release works with **Instantly** for campaigns, daily metrics, senders, cus
 Known Smartlead V1 limitations:
 
 - No Smartlead write or mutation tools are exposed.
-- Smartlead inbox placement is unsupported unless a later checked read endpoint is added.
+- Smartlead Smart Delivery is support-gated. Authorized keys receive exact Smartlead-specific aggregate/diagnostic evidence; unauthorized keys retain core Smartlead ingest with an explicit unsupported capability.
 - Cross-provider rate comparisons use normalized counts and provider caveats because source-native denominators can differ.
 - Live Smartlead response-shape risk remains until a real Smartlead key/account is available for bounded validation; the current OSS test posture uses synthetic fixtures and mocked responses only.
 

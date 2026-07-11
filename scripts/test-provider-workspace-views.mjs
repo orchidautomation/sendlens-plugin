@@ -62,7 +62,7 @@ try {
      (workspace_id, source_provider, capability, support_status, confidence, coverage_note, synced_at)
      VALUES
      ('${workspaceId}', 'instantly', 'inbox_placement', 'supported', 'high', 'Instantly fixture supports inbox placement evidence.', CURRENT_TIMESTAMP),
-     ('${workspaceId}', 'smartlead', 'inbox_placement', 'unsupported', 'high', 'Smartlead has no checked equivalent inbox placement API for V1.', CURRENT_TIMESTAMP)`,
+     ('${workspaceId}', 'smartlead', 'inbox_placement', 'unsupported', 'high', 'Smart Delivery is support-gated and unavailable to this fixture key.', CURRENT_TIMESTAMP)`,
   );
   await run(
     db,
@@ -126,7 +126,7 @@ try {
   assert.ok(allSummary.rate_caveats[0].includes("Cross-provider rates"));
   assert.ok(
     allSummary.warnings.some((warning) =>
-      warning.includes("Smartlead inbox placement is explicitly unsupported")
+      warning.includes("Smartlead Smart Delivery is support-gated")
     ),
   );
 

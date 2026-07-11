@@ -177,7 +177,9 @@ assert.equal(summary.exact_metrics.active_campaign_count, 2);
 assert.equal(summary.exact_metrics.total_sent, 800);
 assert.equal(summary.exact_metrics.total_unique_replies, 24);
 assert.ok(summary.summary.includes("2 custom tags stored locally"));
-assert.ok(summary.summary.includes("1 inbox placement tests and 4 inbox placement analytics rows"));
+assert.ok(summary.summary.includes("1 Instantly inbox-placement tests"));
+assert.ok(summary.summary.includes("4 Instantly per-email analytics rows"));
+assert.ok(summary.summary.includes("0 Smart Delivery tests"));
 assert.ok(summary.summary.includes("Sampled raw tables are evidence support only"));
 assert.ok(summary.summary.includes("reply-signal leads found during bounded lead scan"));
 assert.equal(summary.exact_metrics.inbox_placement_test_count, 1);
@@ -933,6 +935,24 @@ await fs.writeFile(
 const missingKeyStatus = await readRefreshStatus();
 assert.equal(missingKeyStatus.status, "idle");
 assert.match(String(missingKeyStatus.message), /skipped/);
+
+process.env.SENDLENS_PROVIDER = "smartlead";
+await fs.writeFile(
+  path.join(statusRoot, "refresh-status.json"),
+  JSON.stringify({
+    status: "idle",
+    source: "session_start",
+    pid: 123,
+    message:
+      "Session-start refresh skipped because SENDLENS_SMARTLEAD_API_KEY is not set for SENDLENS_PROVIDER=smartlead.",
+    dbPath: process.env.SENDLENS_DB_PATH,
+  }),
+);
+const missingSmartleadKeyStatus = await readRefreshStatus();
+assert.equal(missingSmartleadKeyStatus.status, "idle");
+assert.match(String(missingSmartleadKeyStatus.message), /skipped.*SENDLENS_PROVIDER=smartlead/i);
+assert.match(String(missingSmartleadKeyStatus.message), /configure the Smartlead provider/i);
+delete process.env.SENDLENS_PROVIDER;
 
 delete process.env.SENDLENS_INSTANTLY_API_KEY;
 delete process.env.SENDLENS_DEMO_MODE;

@@ -737,6 +737,64 @@ async function ensureSchema(conn: DuckDBConnection) {
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (workspace_id, id)
     )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.smartlead_delivery_tests (
+      workspace_id VARCHAR NOT NULL,
+      id VARCHAR NOT NULL,
+      name VARCHAR,
+      test_type VARCHAR,
+      status VARCHAR,
+      description VARCHAR,
+      campaign_id VARCHAR,
+      provider_id VARCHAR,
+      folder_id VARCHAR,
+      schedule_start_time TIMESTAMP,
+      test_end_date TIMESTAMP,
+      every_days INTEGER,
+      current_test_run_no INTEGER,
+      created_at TIMESTAMP,
+      updated_at TIMESTAMP,
+      raw_json VARCHAR,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.smartlead_delivery_evidence (
+      workspace_id VARCHAR NOT NULL,
+      id VARCHAR NOT NULL,
+      test_id VARCHAR,
+      evidence_type VARCHAR NOT NULL,
+      dimension VARCHAR,
+      sender_email VARCHAR,
+      recipient_email VARCHAR,
+      provider VARCHAR,
+      region VARCHAR,
+      ip VARCHAR,
+      test_run_no INTEGER,
+      status VARCHAR,
+      tests_count INTEGER,
+      total_count INTEGER,
+      inbox_count INTEGER,
+      category_count INTEGER,
+      spam_count INTEGER,
+      failed_count INTEGER,
+      mailbox_count INTEGER,
+      inbox_rate_pct DOUBLE,
+      spam_rate_pct DOUBLE,
+      bounce_rate_pct DOUBLE,
+      placement_score DOUBLE,
+      reputation_score DOUBLE,
+      avg_delivery_time_seconds DOUBLE,
+      spf_pass BOOLEAN,
+      dkim_pass BOOLEAN,
+      rdns_pass BOOLEAN,
+      domain_blacklisted BOOLEAN,
+      ip_blacklisted BOOLEAN,
+      blacklist_count INTEGER,
+      observed_at TIMESTAMP,
+      diagnostic_json VARCHAR,
+      raw_json VARCHAR,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, id)
+    )`,
     `CREATE TABLE IF NOT EXISTS sendlens.reply_emails (
       workspace_id VARCHAR NOT NULL,
       id VARCHAR NOT NULL,
@@ -1177,6 +1235,89 @@ async function ensureSchema(conn: DuckDBConnection) {
       WHERE a.record_type = 2
         AND a.sender_email IS NOT NULL
       GROUP BY a.workspace_id, a.sender_email`,
+    `CREATE OR REPLACE VIEW sendlens.smartlead_delivery_test_overview AS
+      WITH ranked_runs AS (
+        SELECT
+          e.*,
+          ROW_NUMBER() OVER (
+            PARTITION BY e.workspace_id, e.test_id
+            ORDER BY e.test_run_no DESC NULLS LAST, e.observed_at DESC NULLS LAST
+          ) AS row_number
+        FROM sendlens.smartlead_delivery_evidence e
+        WHERE e.evidence_type = 'schedule_history'
+      )
+      SELECT
+        t.workspace_id,
+        'smartlead' AS source_provider,
+        t.id AS test_id,
+        t.name AS test_name,
+        t.test_type,
+        t.status AS test_status,
+        t.campaign_id,
+        t.schedule_start_time,
+        t.test_end_date,
+        t.current_test_run_no,
+        r.status AS latest_run_status,
+        r.test_run_no AS latest_run_no,
+        r.total_count,
+        r.inbox_count,
+        r.category_count,
+        r.spam_count,
+        r.failed_count,
+        ROUND(100.0 * r.inbox_count / NULLIF(r.total_count, 0), 2) AS primary_inbox_rate_pct,
+        ROUND(100.0 * r.category_count / NULLIF(r.total_count, 0), 2) AS category_rate_pct,
+        ROUND(100.0 * r.spam_count / NULLIF(r.total_count, 0), 2) AS spam_rate_pct,
+        r.observed_at AS latest_observed_at
+      FROM sendlens.smartlead_delivery_tests t
+      LEFT JOIN ranked_runs r
+        ON t.workspace_id = r.workspace_id
+       AND t.id = r.test_id
+       AND r.row_number = 1`,
+    `CREATE OR REPLACE VIEW sendlens.smartlead_sender_delivery_health AS
+      SELECT
+        workspace_id,
+        'smartlead' AS source_provider,
+        test_id,
+        sender_email,
+        tests_count,
+        inbox_rate_pct,
+        spam_rate_pct,
+        bounce_rate_pct,
+        reputation_score,
+        observed_at,
+        raw_json
+      FROM sendlens.smartlead_delivery_evidence
+      WHERE evidence_type = 'sender_report'
+        AND sender_email IS NOT NULL`,
+    `CREATE OR REPLACE VIEW sendlens.smartlead_delivery_authentication_health AS
+      SELECT
+        workspace_id,
+        'smartlead' AS source_provider,
+        test_id,
+        evidence_type,
+        sender_email,
+        recipient_email,
+        provider,
+        ip,
+        spf_pass,
+        dkim_pass,
+        rdns_pass,
+        domain_blacklisted,
+        ip_blacklisted,
+        blacklist_count,
+        observed_at,
+        diagnostic_json,
+        raw_json
+      FROM sendlens.smartlead_delivery_evidence
+      WHERE evidence_type IN (
+        'spf',
+        'dkim',
+        'rdns',
+        'domain_blacklist',
+        'ip_blacklist',
+        'ip_analytics',
+        'spam_filter'
+      )`,
     `CREATE OR REPLACE VIEW sendlens.campaign_overview AS
       SELECT
         c.workspace_id,
@@ -2413,6 +2554,8 @@ export async function clearWorkspaceData(
     "custom_tag_mappings",
     "inbox_placement_tests",
     "inbox_placement_analytics",
+    "smartlead_delivery_tests",
+    "smartlead_delivery_evidence",
     "reply_emails",
     "reply_email_hydration_state",
     "sampled_leads",
@@ -2472,6 +2615,8 @@ export async function clearWorkspaceMetadata(
     "custom_tag_mappings",
     "inbox_placement_tests",
     "inbox_placement_analytics",
+    "smartlead_delivery_tests",
+    "smartlead_delivery_evidence",
     "provider_capabilities",
   ]) {
     await run(

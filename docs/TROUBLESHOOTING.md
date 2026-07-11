@@ -141,7 +141,7 @@ From a local source checkout, you can also seed directly:
 SENDLENS_DEMO_MODE=1 npm run demo:seed
 ```
 
-Demo mode is only for public-safe fixture data and should always be described as synthetic. The demo contains provider-qualified Instantly and Smartlead fixture rows, an intentionally duplicated campaign name across providers, and an explicit unsupported Smartlead inbox-placement capability row.
+Demo mode is only for public-safe fixture data and should always be described as synthetic. The demo contains provider-qualified Instantly and Smartlead fixture rows, an intentionally duplicated campaign name across providers, and synthetic Smart Delivery placement/diagnostic evidence.
 
 ## Refresh Is Still Running
 
@@ -179,18 +179,18 @@ load_campaign_data(campaign_id="...")
 
 ## Missing Inbox Placement Data
 
-SendLens ingests Instantly inbox placement tests and per-email inbox placement analytics when those API surfaces are available to the API key.
+SendLens ingests Instantly per-email inbox-placement evidence and Smartlead Smart Delivery test/run, aggregate sender/provider, authentication, and blacklist evidence when those API surfaces are available to the configured key.
 
 If inbox placement tables are empty:
 
-- confirm the Instantly workspace has inbox placement tests
-- confirm the API key has access to inbox placement endpoints
+- confirm the provider workspace has inbox-placement tests
+- confirm the API key has access to the provider's inbox-placement endpoints; Smart Delivery access is support-gated
 - run `refresh_data` once manually after creating or running a test
 - check `refresh_status` and the session-start log for `refresh.inbox_placement` entries
 
 Empty inbox placement tables mean no local inbox placement evidence was available. They do not prove senders are landing in primary inbox.
 
-For `SENDLENS_PROVIDER=smartlead`, Smartlead inbox placement is unsupported in V1 because no checked equivalent read endpoint exists. The expected behavior is a `provider_capabilities` row and `workspace_snapshot` warning that say Smartlead inbox placement is unsupported. Do not fix this by adding fake Smartlead inbox-placement rows or treating the absence as stale data.
+For `SENDLENS_PROVIDER=smartlead`, inspect the `inbox_placement` capability. `supported` means the last full refresh read Smart Delivery successfully; `unsupported` means the valid Standard API key lacked support-gated Smart Delivery access. Campaign-scoped refreshes preserve the workspace-global delivery snapshot. Do not turn Smartlead aggregates into fake per-email rows or treat absence as healthy placement.
 
 ## Rendered Copy Limits
 

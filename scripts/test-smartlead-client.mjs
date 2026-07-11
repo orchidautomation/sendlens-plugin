@@ -63,6 +63,7 @@ function makeClient(fetchImpl, options = {}) {
     },
     sleep: options.sleep,
     now: options.now,
+    timeoutMs: options.timeoutMs,
   });
 }
 
@@ -294,6 +295,94 @@ function assertAccessQuery(url) {
 }
 
 {
+  const sleeps = [];
+  let calls = 0;
+  const client = makeClient(
+    async () => {
+      calls++;
+      if (calls === 1) return responseJson({ code: "TEMPORARY" }, 502);
+      return responseJson(await fixture("campaigns.direct-array.json"));
+    },
+    { sleep: async (ms) => { sleeps.push(ms); } },
+  );
+  const campaigns = await client.listCampaigns();
+  assert.equal(campaigns.length, 2);
+  assert.equal(calls, 2);
+  assert.deepEqual(sleeps, [10]);
+}
+
+{
+  const sleeps = [];
+  let calls = 0;
+  const client = makeClient(
+    async () => {
+      calls++;
+      return new Promise(() => {});
+    },
+    {
+      timeoutMs: 1,
+      sleep: async (ms) => { sleeps.push(ms); },
+    },
+  );
+  await assert.rejects(client.listCampaigns(), /timed out after 1ms/);
+  assert.equal(calls, 3);
+  assert.deepEqual(sleeps, [10, 20]);
+}
+
+{
+  let calls = 0;
+  const client = makeClient(
+    async () => {
+      calls++;
+      return new Response(new ReadableStream({ start() {} }));
+    },
+    { timeoutMs: 1, retry: { attempts: 0 } },
+  );
+  await assert.rejects(client.listCampaigns(), /timed out after 1ms/);
+  assert.equal(calls, 1);
+}
+
+{
+  let calls = 0;
+  const client = makeClient(async () => {
+    calls++;
+    return responseJson(Array.from({ length: 100 }, (_, index) => ({ id: index + 1 })));
+  });
+  await assert.rejects(
+    client.listAllEmailAccounts({ limit: 100, maxPages: 1 }),
+    /exceeded the configured 1-page safety cap/,
+  );
+  assert.equal(calls, 1);
+}
+
+{
+  let calls = 0;
+  const page = Array.from({ length: 100 }, (_, index) => ({ id: index + 1 }));
+  const client = makeClient(async () => {
+    calls++;
+    return responseJson({ total: 300, offset: 0, limit: 100, email_accounts: page });
+  });
+  await assert.rejects(
+    client.listAllEmailAccounts({ limit: 100 }),
+    /did not advance beyond offset 100/,
+  );
+  assert.equal(calls, 2);
+}
+
+{
+  const client = makeClient(async () => responseJson({
+    has_more: true,
+    offset: 0,
+    limit: 100,
+    email_accounts: [],
+  }));
+  await assert.rejects(
+    client.listAllEmailAccounts({ limit: 100 }),
+    /empty nonterminal page/,
+  );
+}
+
+{
   let virtualNow = 0;
   const sleeps = [];
   let calls = 0;
@@ -363,6 +452,7 @@ function assertAccessQuery(url) {
       JSON.stringify({
         message: `bad ${SMARTLEAD_ACCESS_PARAM}=${accessValue}`,
         [SMARTLEAD_ACCESS_PARAM]: accessValue,
+        lead_email: "customer-lead@example.com",
       }),
       400,
     );
@@ -375,13 +465,15 @@ function assertAccessQuery(url) {
         assert.ok(error instanceof SmartleadApiError);
         const text = String(error);
         assert.doesNotMatch(text, new RegExp(accessValue));
-        assert.match(text, /\[REDACTED\]/);
+        assert.doesNotMatch(text, /customer-lead@example\.com/);
+        assert.match(text, /Provider error response body omitted/);
         return true;
       },
     );
     const trace = await fs.readFile(path.join(traceDir, "refresh-trace.log"), "utf8");
     assert.doesNotMatch(trace, new RegExp(accessValue));
-    assert.match(trace, /\[REDACTED\]/);
+    assert.doesNotMatch(trace, /customer-lead@example\.com/);
+    assert.match(trace, /Provider error response body omitted/);
   } finally {
     if (previousTrace == null) delete process.env.SENDLENS_TRACE_REFRESH;
     else process.env.SENDLENS_TRACE_REFRESH = previousTrace;
@@ -449,6 +541,7 @@ function assertAccessQuery(url) {
 
 {
   const controller = new AbortController();
+  const activeController = new AbortController();
   let calls = 0;
   const client = makeClient(
     async () => {
@@ -461,7 +554,7 @@ function assertAccessQuery(url) {
     },
   );
 
-  void client.requestJson("/campaigns/");
+  const active = client.requestJson("/campaigns/", { signal: activeController.signal });
   await waitForFixtureSignal("active semaphore request", () => calls > 0);
   const queued = client.requestJson("/campaigns/", { signal: controller.signal });
   await waitForFixtureSignal("queued semaphore request", () => client.getRateLimitStats().queued_requests > 0);
@@ -471,6 +564,8 @@ function assertAccessQuery(url) {
   await assert.rejects(queued, { name: "AbortError" });
   assert.equal(calls, 1);
   assert.equal(client.getRateLimitStats().queued_requests, 0);
+  activeController.abort();
+  await assert.rejects(active, { name: "AbortError" });
 }
 
 {
@@ -488,6 +583,72 @@ function assertAccessQuery(url) {
   );
   assert.equal(captured.method, "POST");
   assert.deepEqual(JSON.parse(String(captured.body)), { lead_ids: [1001] });
+}
+
+{
+  const calls = [];
+  const client = new SmartleadClient({
+    accessValue,
+    rateLimit: { disabled: true },
+    retry: { attempts: 0 },
+    fetchImpl: async (url, options = {}) => {
+      const parsed = new URL(String(url));
+      assert.equal(parsed.origin, "https://smartdelivery.smartlead.ai");
+      assert.equal(parsed.searchParams.get(SMARTLEAD_ACCESS_PARAM), accessValue);
+      calls.push({ path: parsed.pathname, method: options.method ?? "GET", body: options.body });
+      if (parsed.pathname.endsWith("/spam-test/report")) return responseJson([{ spam_test_id: "test-1" }]);
+      return responseJson({ result: [{ provider: "Gmail", inbox_rate: 95 }] });
+    },
+  });
+  const tests = await client.listSmartDeliveryTests();
+  const report = await client.getSmartDeliveryProviderReport("test-1");
+  assert.equal(tests[0].spam_test_id, "test-1");
+  assert.equal(report.result[0].provider, "Gmail");
+  assert.deepEqual(calls.map((call) => ({ path: call.path, method: call.method })), [
+    { path: "/api/v1/spam-test/report", method: "POST" },
+    { path: "/api/v1/spam-test/report/test-1/providerwise", method: "POST" },
+  ]);
+  assert.deepEqual(calls.map((call) => JSON.parse(String(call.body))), [{}, {}]);
+}
+
+{
+  let virtualNow = 0;
+  const sleeps = [];
+  const origins = [];
+  const client = new SmartleadClient({
+    accessValue,
+    rateLimit: { perMinute: 100, burstLimit: 1, burstWindowMs: 1000, maxConcurrent: 1 },
+    retry: { attempts: 0, jitterRatio: 0 },
+    now: () => virtualNow,
+    sleep: async (ms) => {
+      sleeps.push(ms);
+      virtualNow += ms;
+    },
+    fetchImpl: async (url) => {
+      const parsed = new URL(String(url));
+      origins.push(parsed.origin);
+      return responseJson([]);
+    },
+  });
+  await client.listCampaigns();
+  await client.listSmartDeliveryTests();
+  assert.deepEqual(origins, [
+    "https://server.smartlead.ai",
+    "https://smartdelivery.smartlead.ai",
+  ]);
+  assert.deepEqual(sleeps, [1000]);
+  assert.equal(client.getRateLimitStats().throttled_count, 1);
+}
+
+{
+  const client = new SmartleadClient({
+    accessValue,
+    timeoutMs: Number.NaN,
+    rateLimit: { disabled: true },
+    retry: { attempts: 0 },
+    fetchImpl: async () => responseJson([]),
+  });
+  assert.deepEqual(await client.listCampaigns(), []);
 }
 
 console.log("Smartlead client fixture tests passed");

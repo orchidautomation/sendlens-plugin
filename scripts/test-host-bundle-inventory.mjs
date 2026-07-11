@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -152,7 +153,9 @@ async function assertHostFiles({ skills, commands, agents }) {
       "CLAUDE.md",
       "hooks/hooks.json",
       "scripts/start-mcp.sh",
+      "scripts/session-start.sh",
       "build/plugin/server.js",
+      "build/plugin/refresh-cli.js",
       ...commonSkillFiles,
       ...commonAgentFiles,
       ...commonCommandFiles,
@@ -164,6 +167,7 @@ async function assertHostFiles({ skills, commands, agents }) {
       "hooks/hooks.json",
       "scripts/start-mcp.sh",
       "build/plugin/server.js",
+      "build/plugin/refresh-cli.js",
       ...commonSkillFiles,
       ...commonAgentFiles,
       ...commonCommandFiles,
@@ -177,7 +181,9 @@ async function assertHostFiles({ skills, commands, agents }) {
       "hooks/hooks.json",
       "hooks/pluxx-hook-command-1.sh",
       "scripts/start-mcp.sh",
+      "scripts/session-start.sh",
       "build/plugin/server.js",
+      "build/plugin/refresh-cli.js",
       ...commonSkillFiles,
       ...commonAgentFiles,
       ...agents.map((name) => `.codex/agents/${name}.toml`),
@@ -187,6 +193,7 @@ async function assertHostFiles({ skills, commands, agents }) {
       "index.ts",
       "scripts/start-mcp.sh",
       "build/plugin/server.js",
+      "build/plugin/refresh-cli.js",
       ...commonSkillFiles,
       ...commonAgentFiles,
       ...commonCommandFiles,
@@ -590,6 +597,19 @@ async function assertInstallerFirstRefreshContract() {
     "scripts/bootstrap-runtime.sh: expected installer first refresh to use the bundled refresh CLI",
   );
   assert(
+    /SENDLENS_SMARTLEAD_API_KEY/.test(bootstrap) && /provider_mode/.test(bootstrap),
+    "scripts/bootstrap-runtime.sh: expected provider-aware Smartlead first refresh eligibility",
+  );
+  assert(
+    /has_non_whitespace "\$\{SENDLENS_CLIENT:-\}"/.test(bootstrap),
+    "scripts/bootstrap-runtime.sh: two-key all mode must require a shared SENDLENS_CLIENT workspace",
+  );
+  assert(
+    /sed 's\/\^\[\[:space:\]\]\*\/\/;s\/\[\[:space:\]\]\*\$\/\/'/.test(bootstrap)
+      && /provider_mode="\$\{provider_mode:-instantly\}"/.test(bootstrap),
+    "scripts/bootstrap-runtime.sh: expected edge trimming and an Instantly fallback for blank provider mode",
+  );
+  assert(
     /First refresh completed/i.test(bootstrap),
     "scripts/bootstrap-runtime.sh: expected clear successful first-refresh message",
   );
@@ -597,6 +617,123 @@ async function assertInstallerFirstRefreshContract() {
     /run \/sendlens-setup/i.test(bootstrap),
     "scripts/bootstrap-runtime.sh: expected failed first refresh to guide users to /sendlens-setup",
   );
+}
+
+async function assertSessionStartProviderContract() {
+  const source = await readText("scripts/session-start.sh");
+  assert(
+    /SENDLENS_SMARTLEAD_API_KEY/.test(source) && /build\/plugin\/refresh-cli\.js/.test(source),
+    "scripts/session-start.sh: expected Smartlead to use the provider-aware refresh CLI",
+  );
+  assert(
+    !/does not use the Instantly session-start refresh/.test(source),
+    "scripts/session-start.sh: Smartlead must not be excluded from startup refresh",
+  );
+  assert(
+    /has_non_whitespace/.test(source),
+    "scripts/session-start.sh: provider readiness must reject whitespace-only access values",
+  );
+
+  for (const host of ["claude-code", "codex"]) {
+    const bundled = await readText(`dist/${host}/scripts/session-start.sh`);
+    assert(
+      /SENDLENS_SMARTLEAD_API_KEY/.test(bundled) && /build\/plugin\/refresh-cli\.js/.test(bundled),
+      `dist/${host}/scripts/session-start.sh: expected provider-aware Smartlead startup refresh`,
+    );
+  }
+
+  const harnessRoot = await mkdtemp(path.join(os.tmpdir(), "sendlens-startup-contract-"));
+  try {
+    const preloadPath = path.join(harnessRoot, "capture-refresh.cjs");
+    await writeFile(
+      preloadPath,
+      "if (process.argv.some((value) => value.endsWith('/build/plugin/refresh-cli.js'))) { require('node:fs').appendFileSync(process.env.SENDLENS_TEST_REFRESH_LOG, `${process.env.SENDLENS_PROVIDER}\\n`); process.exit(0); }\n",
+    );
+    const smartleadAccessName = ["SENDLENS", "SMARTLEAD", "API", "KEY"].join("_");
+    const instantlyAccessName = ["SENDLENS", "INSTANTLY", "API", "KEY"].join("_");
+    for (const host of ["claude-code", "codex"]) {
+      for (const providerMode of ["smartlead", "all"]) {
+        const bundleRoot = path.join(root, "dist", host);
+        const stateDir = path.join(harnessRoot, `state-${host}-${providerMode}`);
+        const capturePath = path.join(harnessRoot, `capture-${host}-${providerMode}.log`);
+        const result = spawnSync("bash", [path.join(root, `dist/${host}/scripts/session-start.sh`)], {
+          cwd: bundleRoot,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PLUGIN_ROOT: bundleRoot,
+            SENDLENS_PROVIDER: providerMode,
+            [smartleadAccessName]: "fixture-access-value",
+            [instantlyAccessName]: "",
+            SENDLENS_DB_PATH: path.join(stateDir, "workspace-cache.duckdb"),
+            SENDLENS_STATE_DIR: stateDir,
+            SENDLENS_DEMO_MODE: "0",
+            SENDLENS_TEST_REFRESH_LOG: capturePath,
+            NODE_OPTIONS: `--require=${preloadPath}`,
+          },
+        });
+        const output = `${result.stdout}${result.stderr}`;
+        let capture = "";
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+          try {
+            capture = await readFile(capturePath, "utf8");
+          } catch {
+            capture = "";
+          }
+          if (capture.includes(providerMode)) break;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        if (!capture.includes(providerMode)) {
+          try {
+            capture = await readFile(capturePath, "utf8");
+          } catch {
+            capture = "";
+          }
+        }
+        assert(
+          result.status === 0 && capture.includes(providerMode),
+          `dist/${host}/scripts/session-start.sh: ${providerMode} did not launch the provider-aware refresh command\n${output}`,
+        );
+      }
+      const bundleRoot = path.join(root, "dist", host);
+      const invalidStateDir = path.join(harnessRoot, `state-${host}-all-without-client`);
+      const invalidCapturePath = path.join(harnessRoot, `capture-${host}-all-without-client.log`);
+      const invalidAll = spawnSync("bash", [path.join(bundleRoot, "scripts", "session-start.sh")], {
+        cwd: bundleRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PLUGIN_ROOT: bundleRoot,
+          SENDLENS_PROVIDER: "all",
+          SENDLENS_CLIENT: "",
+          [smartleadAccessName]: "fixture-access-value",
+          [instantlyAccessName]: "fixture-access-value",
+          SENDLENS_DB_PATH: path.join(invalidStateDir, "workspace-cache.duckdb"),
+          SENDLENS_STATE_DIR: invalidStateDir,
+          SENDLENS_TEST_REFRESH_LOG: invalidCapturePath,
+          SENDLENS_DEMO_MODE: "0",
+          NODE_OPTIONS: `--require=${preloadPath}`,
+        },
+      });
+      const invalidOutput = `${invalidAll.stdout}${invalidAll.stderr}`;
+      assert(
+        invalidAll.status === 0 && /SENDLENS_CLIENT is not set/i.test(invalidOutput),
+        `dist/${host}/scripts/session-start.sh: two-key all mode without SENDLENS_CLIENT must remain idle\n${invalidOutput}`,
+      );
+      let invalidCapture = "";
+      try {
+        invalidCapture = await readFile(invalidCapturePath, "utf8");
+      } catch {
+        invalidCapture = "";
+      }
+      assert(
+        invalidCapture === "",
+        `dist/${host}/scripts/session-start.sh: invalid two-key all mode launched refresh-cli.js`,
+      );
+    }
+  } finally {
+    await rm(harnessRoot, { recursive: true, force: true });
+  }
 }
 
 const inventory = await sourceInventory();
@@ -636,6 +773,7 @@ await assertExplicitHostDegradation();
 await assertNoCredentialsRequired();
 await assertDemoModeContracts();
 await assertInstallerFirstRefreshContract();
+await assertSessionStartProviderContract();
 
 if (failures.length > 0) {
   console.error("Host bundle inventory failures:");

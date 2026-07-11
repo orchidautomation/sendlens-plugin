@@ -18,7 +18,7 @@ SendLens uses `SENDLENS_INSTANTLY_API_KEY` for Instantly API access. The key sho
 
 Smartlead access uses `SENDLENS_PROVIDER=smartlead` or `SENDLENS_PROVIDER=all` plus `SENDLENS_SMARTLEAD_API_KEY`. Smartlead uses query-string API keys, so SendLens suppresses the value in URLs, traces, logs, setup output, errors, fixtures, and tests.
 
-Smartlead V1 support is read-only. SendLens can refresh supported campaign, account, lead, analytics, and bounded message-history evidence, but it does not expose Smartlead campaign, lead, account, email, webhook, or provider-setting mutation paths. Smartlead inbox placement is unsupported in V1 unless a later checked read endpoint is added.
+Smartlead V1 support is read-only. SendLens can refresh supported campaign, account, lead, analytics, bounded message-history, and support-gated Smart Delivery evidence, but it does not expose Smartlead campaign, lead, account, email, webhook, test, folder, or provider-setting mutation paths. Smart Delivery email-content and raw reply-header endpoints are intentionally not ingested.
 
 The shipped tools are analysis and refresh tools:
 
@@ -109,7 +109,7 @@ Keep env files out of public commits. Do not put API keys, customer names, domai
 
 ## Synthetic Demo Mode
 
-When demo mode is enabled by setup tooling, production provider credentials are optional for the demo path and outputs must stay clearly labeled as synthetic. Demo data is useful for install proof and examples, not for customer or workspace conclusions. The demo includes provider-qualified Instantly and Smartlead fixture rows and unsupported Smartlead inbox-placement capability evidence; all values are public-safe synthetic placeholders.
+When demo mode is enabled by setup tooling, production provider credentials are optional for the demo path and outputs must stay clearly labeled as synthetic. Demo data is useful for install proof and examples, not for customer or workspace conclusions. The demo includes provider-qualified Instantly and Smartlead fixture rows plus synthetic Smart Delivery evidence; all values are public-safe placeholders.
 
 ## Cleanup
 
@@ -137,4 +137,4 @@ Public docs and example outputs should use the same evidence language as the pro
 
 When evidence is missing, say what is missing. For example, empty inbox-placement tables mean no local inbox-placement evidence was available; they do not prove sender health is clean.
 
-For Smartlead, empty inbox-placement rows mean the surface is unsupported in V1, not that placement is healthy or that a refresh failed.
+For Smartlead, empty Smart Delivery rows can mean no tests or support-gated access. Read `provider_capabilities`; absence never proves placement is healthy.
