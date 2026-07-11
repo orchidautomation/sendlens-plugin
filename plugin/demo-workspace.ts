@@ -349,7 +349,7 @@ async function seedProviderCapabilities(db: Awaited<ReturnType<typeof getDb>>) {
      ('${DEMO_WORKSPACE_ID}', 'smartlead', 'campaign_directory', 'supported', 'high', 'Synthetic demo capability row for Smartlead campaign directory reads.', CURRENT_TIMESTAMP),
      ('${DEMO_WORKSPACE_ID}', 'smartlead', 'campaign_analytics', 'supported', 'medium', 'Synthetic demo capability row for Smartlead aggregate campaign analytics; denominator semantics can differ by provider.', CURRENT_TIMESTAMP),
      ('${DEMO_WORKSPACE_ID}', 'smartlead', 'reply_message_history', 'supported', 'medium', 'Synthetic demo capability row for bounded Smartlead message-history reply hydration.', CURRENT_TIMESTAMP),
-     ('${DEMO_WORKSPACE_ID}', 'smartlead', 'inbox_placement', 'unsupported', 'high', 'Smartlead V1 has no checked equivalent inbox placement read API; do not treat empty inbox-placement rows as stale Smartlead data.', CURRENT_TIMESTAMP)`,
+     ('${DEMO_WORKSPACE_ID}', 'smartlead', 'inbox_placement', 'unsupported', 'high', 'Smartlead Smart Delivery read APIs use a separate support-gated service outside the V1 provider contract; do not treat empty inbox-placement rows as stale Smartlead data.', CURRENT_TIMESTAMP)`,
   );
 }
 

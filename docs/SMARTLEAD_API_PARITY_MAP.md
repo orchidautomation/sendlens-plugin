@@ -1,6 +1,6 @@
 # Smartlead API Parity Map
 
-Date checked: 2026-06-29
+Date checked: 2026-07-11
 
 This is the first implementation map for adding Smartlead as a second data
 source while preserving the current SendLens behavior. SendLens today is a
@@ -24,6 +24,11 @@ Sources:
   https://api.smartlead.ai/api-reference/analytics/overview,
   https://api.smartlead.ai/api-reference/campaigns/get-lead-history,
   https://api.smartlead.ai/api-reference/campaigns/get-leads-history-bulk
+
+The 2026-07-11 audit also checked the complete official `llms-full.txt`
+snapshot (`sha256: ab4c1a1bc65f3331b9d813f8509c67ca3b3014d80e4954e5d34fe7a6fe164a2b`),
+the current rate-limit and error-handling guides, mailbox statistics, lead
+lists, and Smart Delivery references. The raw snapshot is not committed.
 
 ## Current SendLens Shape
 
@@ -132,8 +137,8 @@ needed for current SendLens and would change the product safety boundary.
 | Reply categories/outcomes | Instantly `i_status` and lead state | Lead `category_id/category_name`, email stats, global analytics positive replies | Medium | Need mapping from Smartlead categories to SendLens `positive`, `negative`, `neutral`, `wrong_person`, `ooo`. Do not infer sentiment from text in V1. |
 | Outbound delivered/reconstructed copy | `GET /emails` outbound sample plus templates | Message history plus sequences/templates | Medium | If message history includes sent body text, expose it only through a new exact outbound surface or schema/MCP migration. If not, reconstruct from sequence templates plus lead custom fields. |
 | Custom tags | `GET /custom-tags`, `GET /custom-tag-mappings` | Campaign list with `include_tags=true` | Partial | Campaign tags are available inline. Need separate evidence for account tags, lead tags, or tag definitions/mappings outside campaigns. |
-| Lead lists | `GET /lead-lists` | No direct equivalent in checked docs | Gap | Smartlead campaign leads may be enough for current analysis; lead-list inventory is not core today. |
-| Inbox placement tests | `GET /inbox-placement-tests`, `GET /inbox-placement-analytics` | No documented equivalent found in checked docs | Gap | Smartlead has warmup stats, email health, and send-test-email, but not an equivalent per-test seed placement analytics API in the checked docs. |
+| Lead lists | `GET /lead-lists` | Documented Smartlead lead-list reads | Later | Available but outside the V1 normalized refresh because campaign leads cover the current analysis contract. |
+| Inbox placement tests | `GET /inbox-placement-tests`, `GET /inbox-placement-analytics` | Smart Delivery reads on separate `smartdelivery.smartlead.ai` service | Unsupported | The official surface is support-gated and outside the V1 provider access model. |
 | Webhooks | Not used by SendLens V1 | `POST/GET/PUT/DELETE /webhooks` | Later | Useful for future incremental sync, but not needed for read-only local refresh parity. |
 
 ## Parity Clarification
@@ -143,8 +148,8 @@ strictly 1:1 with Instantly. The headline is:
 
 - Core campaign, lead, sender, sequence/template, reply-history, and basic
   analytics surfaces are strong or medium parity.
-- Inbox placement test analytics are the clear missing Instantly-only surface in
-  the checked Smartlead docs.
+- Smart Delivery placement analytics exist on a separate support-gated service
+  and remain intentionally unsupported by the V1 provider.
 - A few other areas need normalization or live-shape validation: step/variant
   analytics, account daily metrics, campaign/account tags, reply outcome labels,
   and the exact global analytics endpoint name.
@@ -282,8 +287,8 @@ guessing.
   verify against a live key before locking schema.
 - Smartlead campaign list has inline tags, but no checked equivalent for
   Instantly's global custom tag mappings across account/campaign resources.
-- No checked Smartlead endpoint provides Instantly-style inbox placement test
-  definitions and per-recipient inbox/spam/category/authentication analytics.
+- Smart Delivery documents placement-test reads on a separate support-gated
+  host; V1 must report the capability as unsupported rather than infer health.
 - Smartlead message-history endpoints may be better than Instantly reply fetches
   for thread context, but they require lead IDs. The refresh flow should first
   fetch campaign leads, then hydrate reply/message history only for reply-signal

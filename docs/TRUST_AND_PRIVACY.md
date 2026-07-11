@@ -18,7 +18,7 @@ SendLens uses `SENDLENS_INSTANTLY_API_KEY` for Instantly API access. The key sho
 
 Smartlead access uses `SENDLENS_PROVIDER=smartlead` or `SENDLENS_PROVIDER=all` plus `SENDLENS_SMARTLEAD_API_KEY`. Smartlead uses query-string API keys, so SendLens suppresses the value in URLs, traces, logs, setup output, errors, fixtures, and tests.
 
-Smartlead V1 support is read-only. SendLens can refresh supported campaign, account, lead, analytics, and bounded message-history evidence, but it does not expose Smartlead campaign, lead, account, email, webhook, or provider-setting mutation paths. Smartlead inbox placement is unsupported in V1 unless a later checked read endpoint is added.
+Smartlead V1 support is read-only. SendLens can refresh supported campaign, account, lead, analytics, and bounded message-history evidence, but it does not expose Smartlead campaign, lead, account, email, webhook, or provider-setting mutation paths. Smartlead Smart Delivery reads are outside V1 because they use a separate support-gated service.
 
 The shipped tools are analysis and refresh tools:
 

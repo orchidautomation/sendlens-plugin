@@ -71,7 +71,7 @@ function normalizeStatus(status: RefreshStatus): RefreshStatus {
         status: "idle",
         dbPath: activeDbPath,
         message:
-          "Session-start refresh skipped because SENDLENS_PROVIDER=smartlead does not use the Instantly refresh path. Existing local DuckDB cache remains usable; Smartlead refresh lands in follow-up ingest work.",
+          "Session-start refresh is idle for SENDLENS_PROVIDER=smartlead. Existing local DuckDB cache remains usable; configure the Smartlead provider and run refresh_data if fresh data is required.",
       };
     }
 

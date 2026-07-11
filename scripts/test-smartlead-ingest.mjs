@@ -59,6 +59,16 @@ const emailAccounts = [
     ? {
       ...account,
       smtp_password: "super-secret-password",
+      smtp_host: "smtp.private.example",
+      smtp_port: 587,
+      smtp_username: "private-smtp-user",
+      imap_password: "super-secret-imap-password",
+      imap_host: "imap.private.example",
+      imap_port: 993,
+      imap_username: "private-imap-user",
+      bcc: "archive-private@example.com",
+      reply_to: "replies-private@example.com",
+      signature: "private mailbox signature",
       tags: [{ tag_id: 20, tag_name: "Primary Sender", tag_color: "#16a34a" }],
     }
     : account
@@ -72,7 +82,12 @@ const fakeClient = {
     assert.equal(String(campaignId), "101");
     return {
       ...campaigns[0],
-      message_per_day: 40,
+      max_leads_per_day: 40,
+      sending_limit: 55,
+      send_as_plain_text: true,
+      enable_ai_esp_matching: true,
+      stop_lead_settings: "REPLY_TO_AN_EMAIL",
+      scheduler_cron_value: { tz: "America/New_York" },
       track_settings: ["DONT_LINK_CLICK"],
       created_at: "2026-06-01T00:00:00.000Z",
       updated_at: "2026-06-02T00:00:00.000Z",
@@ -115,8 +130,9 @@ const fakeClient = {
       positive_replies: 2,
     };
   },
-  async getCampaignAnalyticsByDate(campaignId) {
+  async getCampaignAnalyticsByDate(campaignId, options) {
     assert.equal(String(campaignId), "101");
+    assert.equal(options.timezone, "America/New_York");
     return {
       daily: [
         {
@@ -144,8 +160,10 @@ const fakeClient = {
     assert.equal(String(campaignId), "101");
     return statistics.statistics;
   },
-  async listAllCampaignMailboxStatistics(campaignId) {
+  async listAllCampaignMailboxStatistics(campaignId, options) {
     assert.equal(String(campaignId), "101");
+    assert.equal(options.limit, 20);
+    assert.equal(options.timezone, "America/New_York");
     return [
       {
         email: "sender-301@example.com",
@@ -240,7 +258,7 @@ const summary = await refreshSmartleadWorkspace({
 assert.equal(summary.workspaceId, "501");
 assert.equal(summary.exact_metrics.active_campaign_count, 1);
 assert.equal(summary.exact_metrics.total_sent, 90);
-assert.equal(summary.exact_metrics.total_unique_replies, 7);
+assert.equal(summary.exact_metrics.total_unique_replies, 2);
 assert.equal(summary.campaigns[0].source_provider, "smartlead");
 assert.equal(summary.campaigns[0].provider_campaign_id, "101");
 assert.equal(summary.campaigns[0].campaign_source_id, "smartlead:101");
@@ -273,12 +291,25 @@ assert.equal(overview[0].campaign_source_id, "smartlead:101");
 assert.equal(overview[0].campaign_name, "Fixture Campaign A");
 assert.equal(overview[0].status, "active");
 assert.equal(Number(overview[0].emails_sent_count), 90);
-assert.equal(Number(overview[0].reply_count_unique), 7);
+assert.equal(Number(overview[0].reply_count_unique), 2);
 assert.equal(Number(overview[0].bounced_count), 3);
-assert.equal(Number(overview[0].unique_reply_rate_pct), 7.78);
+assert.equal(Number(overview[0].unique_reply_rate_pct), 2.22);
 assert.equal(Number(overview[0].bounce_rate_pct), 3.33);
 assert.equal(Boolean(overview[0].open_tracking), true);
 assert.equal(Boolean(overview[0].link_tracking), false);
+
+const campaignConfig = await query(
+  db,
+  `SELECT daily_limit, text_only, first_email_text_only, stop_on_reply, match_lead_esp, schedule_timezone
+   FROM sendlens.campaigns
+   WHERE workspace_id = '501' AND id = 'smartlead:101'`,
+);
+assert.equal(Number(campaignConfig[0].daily_limit), 40);
+assert.equal(Boolean(campaignConfig[0].text_only), true);
+assert.equal(Boolean(campaignConfig[0].first_email_text_only), true);
+assert.equal(Boolean(campaignConfig[0].stop_on_reply), true);
+assert.equal(Boolean(campaignConfig[0].match_lead_esp), true);
+assert.equal(campaignConfig[0].schedule_timezone, "America/New_York");
 
 const campaignRaw = await query(
   db,
@@ -302,7 +333,7 @@ assert.equal(variants[2].step, 1);
 
 const stepRows = await query(
   db,
-  `SELECT step, sent, opens, replies, clicks, bounces
+  `SELECT step, sent, opens, replies, unique_replies, clicks, bounces
    FROM sendlens.step_analytics
    WHERE workspace_id = '501' AND campaign_id = 'smartlead:101'
    ORDER BY step`,
@@ -313,12 +344,13 @@ assert.deepEqual(
     sent: Number(row.sent),
     opens: Number(row.opens),
     replies: Number(row.replies),
+    uniqueReplies: row.unique_replies,
     clicks: Number(row.clicks),
     bounces: Number(row.bounces),
   })),
   [
-    { step: 0, sent: 50, opens: 20, replies: 5, clicks: 3, bounces: 2 },
-    { step: 1, sent: 40, opens: 12, replies: 2, clicks: 1, bounces: 1 },
+    { step: 0, sent: 50, opens: 20, replies: 5, uniqueReplies: null, clicks: 3, bounces: 2 },
+    { step: 1, sent: 40, opens: 12, replies: 2, uniqueReplies: null, clicks: 1, bounces: 1 },
   ],
 );
 
@@ -331,9 +363,9 @@ const dailyRows = await query(
 );
 assert.equal(dailyRows.length, 2);
 assert.equal(Number(dailyRows[0].sent), 50);
-assert.equal(Number(dailyRows[0].unique_replies), 5);
-assert.equal(Number(dailyRows[0].unique_clicks), 3);
-assert.equal(Number(dailyRows[0].unique_opportunities), 1);
+assert.equal(dailyRows[0].unique_replies, null);
+assert.equal(dailyRows[0].unique_clicks, null);
+assert.equal(dailyRows[0].unique_opportunities, null);
 
 const accounts = await query(
   db,
@@ -353,7 +385,7 @@ assert.equal(Number(accounts[0].total_sent_30d), 30);
 assert.equal(Number(accounts[0].total_replies_30d), 3);
 assert.equal(Number(accounts[0].total_bounces_30d), 1);
 assert.doesNotMatch(String(accounts[0].source_raw_json), /super-secret-password/);
-assert.match(String(accounts[0].source_raw_json), /\[REDACTED\]/);
+assert.doesNotMatch(String(accounts[0].source_raw_json), /smtp\.private|imap\.private|private-smtp|private-imap|archive-private|replies-private|mailbox signature/);
 
 const campaignAccounts = await query(
   db,
@@ -378,8 +410,8 @@ assert.equal(accountDaily.length, 1);
 assert.equal(accountDaily[0].source_provider, "smartlead");
 assert.equal(accountDaily[0].provider_account_id, "301");
 assert.equal(Number(accountDaily[0].sent), 30);
-assert.equal(Number(accountDaily[0].unique_replies), 3);
-assert.equal(Number(accountDaily[0].unique_clicks), 2);
+assert.equal(accountDaily[0].unique_replies, null);
+assert.equal(accountDaily[0].unique_clicks, null);
 
 const leadEvidence = await query(
   db,
@@ -497,7 +529,7 @@ assert.equal(coverage[0].provider_campaign_id, "101");
 assert.equal(coverage[0].campaign_source_id, "smartlead:101");
 assert.equal(Number(coverage[0].total_leads), 5);
 assert.equal(Number(coverage[0].total_sent), 90);
-assert.equal(Number(coverage[0].reply_rows), 7);
+assert.equal(Number(coverage[0].reply_rows), 2);
 assert.equal(Number(coverage[0].reply_lead_rows), 2);
 assert.equal(Number(coverage[0].outbound_rows_sampled), 2);
 assert.equal(Number(coverage[0].reply_outbound_rows), 2);
@@ -511,6 +543,70 @@ assert.match(String(coverage[0].coverage_note), /outbound_exact_body_rows_skippe
   closeDb(db);
 }
 
+await assert.rejects(
+  refreshSmartleadWorkspace({
+    client: {
+      ...fakeClient,
+      async getCampaign(campaignId) {
+        const detail = await fakeClient.getCampaign(campaignId);
+        return { ...detail, created_at: "not-a-timestamp" };
+      },
+    },
+    source: "manual",
+  }),
+  /timestamp|conversion/i,
+);
+
+const atomicDb = await getDb();
+try {
+  const preservedSnapshot = await query(
+    atomicDb,
+    `SELECT campaign_name, emails_sent_count, reply_count_unique
+     FROM sendlens.campaign_overview
+     WHERE workspace_id = '501' AND campaign_id = 'smartlead:101'`,
+  );
+  assert.equal(preservedSnapshot.length, 1);
+  assert.equal(preservedSnapshot[0].campaign_name, "Fixture Campaign A");
+  assert.equal(Number(preservedSnapshot[0].emails_sent_count), 90);
+  assert.equal(Number(preservedSnapshot[0].reply_count_unique), 2);
+} finally {
+  closeDb(atomicDb);
+}
+
+await refreshSmartleadWorkspace({
+  client: {
+    ...fakeClient,
+    async getCampaign(campaignId) {
+      const detail = await fakeClient.getCampaign(campaignId);
+      return { ...detail, stop_lead_settings: "FUTURE_PROVIDER_POLICY" };
+    },
+    async listAllCampaignLeads(campaignId) {
+      const leads = await fakeClient.listAllCampaignLeads(campaignId);
+      return leads.map((lead) => lead.id === 1005
+        ? { ...lead, email_stats: { is_replied: null, replied_at: "2026-06-04T10:00:00.000Z" } }
+        : lead);
+    },
+  },
+  source: "manual",
+});
+
+const partialCoverageDb = await getDb();
+try {
+  const partialCoverage = await query(
+    partialCoverageDb,
+    `SELECT a.reply_count_unique, c.stop_on_reply
+     FROM sendlens.campaign_analytics a
+     JOIN sendlens.campaigns c
+       ON c.workspace_id = a.workspace_id AND c.id = a.campaign_id
+     WHERE a.workspace_id = '501' AND a.campaign_id = 'smartlead:101'`,
+  );
+  assert.equal(partialCoverage.length, 1);
+  assert.equal(partialCoverage[0].reply_count_unique, null);
+  assert.equal(partialCoverage[0].stop_on_reply, null);
+} finally {
+  closeDb(partialCoverageDb);
+}
+
 const regressionMailboxStats = {
   101: [
     {
@@ -520,6 +616,7 @@ const regressionMailboxStats = {
       sent: 30,
       opened: 12,
       replies: 3,
+      unique_replies: 3,
       bounced: 1,
       clicked: 2,
     },
@@ -530,6 +627,7 @@ const regressionMailboxStats = {
       sent: 20,
       opened: 8,
       replies: 2,
+      unique_replies: 2,
       bounced: 1,
       clicked: 1,
     },
@@ -542,6 +640,7 @@ const regressionMailboxStats = {
       sent: 40,
       opened: 16,
       replies: 4,
+      unique_replies: 4,
       bounced: 2,
       clicked: 3,
     },
@@ -552,6 +651,7 @@ const regressionMailboxStats = {
       sent: 25,
       opened: 9,
       replies: 1,
+      unique_replies: 1,
       bounced: 0,
       clicked: 1,
     },

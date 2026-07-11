@@ -190,7 +190,7 @@ If inbox placement tables are empty:
 
 Empty inbox placement tables mean no local inbox placement evidence was available. They do not prove senders are landing in primary inbox.
 
-For `SENDLENS_PROVIDER=smartlead`, Smartlead inbox placement is unsupported in V1 because no checked equivalent read endpoint exists. The expected behavior is a `provider_capabilities` row and `workspace_snapshot` warning that say Smartlead inbox placement is unsupported. Do not fix this by adding fake Smartlead inbox-placement rows or treating the absence as stale data.
+For `SENDLENS_PROVIDER=smartlead`, Smartlead Smart Delivery reads are unsupported in V1 because they use a separate support-gated service. The expected behavior is a `provider_capabilities` row and `workspace_snapshot` warning that say Smartlead inbox placement is unsupported. Do not fix this by adding fake Smartlead inbox-placement rows or treating the absence as stale data.
 
 ## Rendered Copy Limits
 

@@ -95,7 +95,7 @@ SENDLENS_SMARTLEAD_API_KEY=your_smartlead_key
 
 Smartlead uses a query-string access value, and setup output suppresses it in URLs, logs, traces, errors, and tests. Smartlead V1 support is read-only: SendLens can refresh supported Smartlead campaign, account, lead, analytics, and bounded message-history evidence, but it does not expose campaign, lead, account, email, webhook, or provider-setting mutation paths.
 
-Smartlead inbox placement is unsupported in V1 because no checked equivalent read endpoint exists. Use `provider_capabilities` and `workspace_snapshot` warnings to explain that limitation; do not treat missing Smartlead inbox-placement rows as stale data or healthy placement.
+Smartlead Smart Delivery read APIs use a separate support-gated service and are outside V1. Use `provider_capabilities` and `workspace_snapshot` warnings to explain that limitation; do not treat missing Smartlead inbox-placement rows as stale data or healthy placement.
 
 When you rerun the same curl command to update SendLens, the installer reuses the saved plugin config and does not ask for the Instantly key again. To force a new prompt:
 

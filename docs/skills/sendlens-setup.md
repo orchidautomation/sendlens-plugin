@@ -38,7 +38,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 - Source provider mode: `instantly`, `smartlead`, or `all`.
 - Whether demo seeding is available because credentials are missing, rejected, unreachable, or `SENDLENS_DEMO_MODE=1` is enabled.
 - Smartlead query-string access is redacted from URLs, logs, traces, setup output, errors, fixtures, and tests.
-- Smartlead inbox placement is unsupported in V1 unless a later checked read endpoint exists.
+- Smartlead Smart Delivery reads are unsupported in V1 because they use a separate support-gated service.
 
 ## Privacy Boundaries
 

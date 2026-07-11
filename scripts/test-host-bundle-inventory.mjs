@@ -152,6 +152,7 @@ async function assertHostFiles({ skills, commands, agents }) {
       "CLAUDE.md",
       "hooks/hooks.json",
       "scripts/start-mcp.sh",
+      "scripts/session-start.sh",
       "build/plugin/server.js",
       ...commonSkillFiles,
       ...commonAgentFiles,
@@ -177,6 +178,7 @@ async function assertHostFiles({ skills, commands, agents }) {
       "hooks/hooks.json",
       "hooks/pluxx-hook-command-1.sh",
       "scripts/start-mcp.sh",
+      "scripts/session-start.sh",
       "build/plugin/server.js",
       ...commonSkillFiles,
       ...commonAgentFiles,
@@ -590,6 +592,10 @@ async function assertInstallerFirstRefreshContract() {
     "scripts/bootstrap-runtime.sh: expected installer first refresh to use the bundled refresh CLI",
   );
   assert(
+    /SENDLENS_SMARTLEAD_API_KEY/.test(bootstrap) && /provider_mode/.test(bootstrap),
+    "scripts/bootstrap-runtime.sh: expected provider-aware Smartlead first refresh eligibility",
+  );
+  assert(
     /First refresh completed/i.test(bootstrap),
     "scripts/bootstrap-runtime.sh: expected clear successful first-refresh message",
   );
@@ -597,6 +603,26 @@ async function assertInstallerFirstRefreshContract() {
     /run \/sendlens-setup/i.test(bootstrap),
     "scripts/bootstrap-runtime.sh: expected failed first refresh to guide users to /sendlens-setup",
   );
+}
+
+async function assertSessionStartProviderContract() {
+  const source = await readText("scripts/session-start.sh");
+  assert(
+    /SENDLENS_SMARTLEAD_API_KEY/.test(source) && /build\/plugin\/refresh-cli\.js/.test(source),
+    "scripts/session-start.sh: expected Smartlead to use the provider-aware refresh CLI",
+  );
+  assert(
+    !/does not use the Instantly session-start refresh/.test(source),
+    "scripts/session-start.sh: Smartlead must not be excluded from startup refresh",
+  );
+
+  for (const host of ["claude-code", "codex"]) {
+    const bundled = await readText(`dist/${host}/scripts/session-start.sh`);
+    assert(
+      /SENDLENS_SMARTLEAD_API_KEY/.test(bundled) && /build\/plugin\/refresh-cli\.js/.test(bundled),
+      `dist/${host}/scripts/session-start.sh: expected provider-aware Smartlead startup refresh`,
+    );
+  }
 }
 
 const inventory = await sourceInventory();
@@ -636,6 +662,7 @@ await assertExplicitHostDegradation();
 await assertNoCredentialsRequired();
 await assertDemoModeContracts();
 await assertInstallerFirstRefreshContract();
+await assertSessionStartProviderContract();
 
 if (failures.length > 0) {
   console.error("Host bundle inventory failures:");

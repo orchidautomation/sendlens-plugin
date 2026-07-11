@@ -94,8 +94,18 @@ run_installer_first_refresh() {
     return 0
   fi
 
-  if [[ -z "${SENDLENS_INSTANTLY_API_KEY:-}" ]]; then
-    echo "[sendlens] No Instantly API key is available during install; skipping first refresh." >&2
+  local provider_mode
+  provider_mode="$(printf '%s' "${SENDLENS_PROVIDER:-instantly}" | tr '[:upper:]' '[:lower:]')"
+  provider_mode="${provider_mode//[[:space:]]/}"
+  local provider_ready="false"
+  case "${provider_mode}" in
+    instantly) [[ -n "${SENDLENS_INSTANTLY_API_KEY:-}" ]] && provider_ready="true" ;;
+    smartlead) [[ -n "${SENDLENS_SMARTLEAD_API_KEY:-}" ]] && provider_ready="true" ;;
+    all) [[ -n "${SENDLENS_INSTANTLY_API_KEY:-}" || -n "${SENDLENS_SMARTLEAD_API_KEY:-}" ]] && provider_ready="true" ;;
+  esac
+
+  if [[ "${provider_ready}" != "true" ]]; then
+    echo "[sendlens] No configured key is available for SENDLENS_PROVIDER=${provider_mode} during install; skipping first refresh." >&2
     echo "[sendlens] The plugin is still installed. Restart your host and run /sendlens-setup." >&2
     return 0
   fi

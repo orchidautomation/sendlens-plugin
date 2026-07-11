@@ -181,6 +181,30 @@ function sqlRawJson(value: unknown) {
   return sqlJson(sanitizeRaw(value));
 }
 
+function safeAccountRaw(account: SmartleadRow) {
+  const warmup = asRecord(account.warmup_details ?? account.warmup);
+  return {
+    id: account.id ?? account.email_account_id ?? account.account_id ?? null,
+    client_id: account.client_id ?? null,
+    user_id: account.user_id ?? null,
+    type: account.type ?? account.provider ?? null,
+    campaign_count: account.campaign_count ?? null,
+    campaign_ids: account.campaign_ids ?? null,
+    message_per_day: account.message_per_day ?? account.daily_limit ?? null,
+    daily_sent_count: account.daily_sent_count ?? null,
+    min_time_to_wait_in_mins: account.min_time_to_wait_in_mins ?? account.minTimeToWaitInMins ?? null,
+    smtp_healthy: account.is_smtp_success ?? account.smtp_healthy ?? null,
+    imap_healthy: account.is_imap_success ?? account.imap_healthy ?? null,
+    warmup: {
+      status: warmup.status ?? warmup.warmup_status ?? account.warmup_status ?? null,
+      score: warmup.score ?? warmup.warmup_score ?? warmup.health_score ?? account.warmup_score ?? null,
+    },
+    tags: account.tags ?? null,
+    created_at: account.created_at ?? null,
+    updated_at: account.updated_at ?? null,
+  };
+}
+
 function asRecord(value: unknown): SmartleadRow {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as SmartleadRow
@@ -385,6 +409,23 @@ function trackingBool(record: SmartleadRow, token: string, fallbackKeys: string[
   return null;
 }
 
+function campaignTimezone(campaign: SmartleadRow) {
+  const scheduler = asRecord(campaign.scheduler_cron_value);
+  const legacySchedule = asRecord(campaign.campaign_schedule);
+  return pickString(campaign, ["timezone", "schedule_timezone"])
+    ?? pickString(scheduler, ["tz", "timezone"])
+    ?? pickString(legacySchedule, ["tz", "timezone"]);
+}
+
+function campaignStopOnReply(campaign: SmartleadRow) {
+  if (campaign.stop_on_reply != null) return campaign.stop_on_reply;
+  const setting = String(campaign.stop_lead_settings ?? "").trim().toUpperCase();
+  if (!setting) return null;
+  if (setting === "REPLY_TO_AN_EMAIL") return true;
+  if (["OPENED_EMAIL", "CLICKED_LINK", "CLICK_ON_A_LINK", "NEVER"].includes(setting)) return false;
+  return null;
+}
+
 function splitName(fullName: unknown) {
   const text = String(fullName ?? "").trim();
   if (!text) return { firstName: null, lastName: null };
@@ -506,8 +547,18 @@ function extractSequences(sequences: SmartleadRow[]) {
     const sequenceNumber = parseInteger(sequence.seq_number ?? sequence.sequence_number ?? sequence.step_number);
     const step = sequenceNumber == null ? sequenceIndex : Math.max(0, sequenceNumber - 1);
     const stepType = pickString(sequence, ["type", "sequence_type", "email_type"]);
-    const delayValue = parseInteger(sequence.delay_days ?? sequence.delay ?? sequence.wait_days);
-    const delayUnit = pickString(sequence, ["delay_unit", "wait_unit"]) ?? (delayValue == null ? null : "days");
+    const delayDetails = asRecord(sequence.seq_delay_details ?? sequence.delay_details);
+    const delayValue = parseInteger(
+      sequence.delay_days
+      ?? sequence.delay_in_days
+      ?? delayDetails.delayInDays
+      ?? delayDetails.delay_in_days
+      ?? sequence.delay
+      ?? sequence.wait_days,
+    );
+    const delayUnit = pickString(sequence, ["delay_unit", "wait_unit"])
+      ?? pickString(delayDetails, ["unit", "delay_unit"])
+      ?? (delayValue == null ? null : "days");
     const baseSubject = pickString(sequence, ["subject", "email_subject"]);
     const baseBody = toSmartleadPlainText(sequence.email_body ?? sequence.body ?? sequence.email_text ?? sequence.content);
 
@@ -550,6 +601,7 @@ function aggregateStatistics(statisticsRows: SmartleadRow[]) {
     clicks: number;
     bounces: number;
     opportunities: number;
+    uniqueReplies: number | null;
   }>();
 
   for (const row of statisticsRows) {
@@ -564,6 +616,7 @@ function aggregateStatistics(statisticsRows: SmartleadRow[]) {
       clicks: 0,
       bounces: 0,
       opportunities: 0,
+      uniqueReplies: null,
     };
 
     const hasBooleanDetail =
@@ -581,6 +634,10 @@ function aggregateStatistics(statisticsRows: SmartleadRow[]) {
       current.replies += pickNumber(row, ["replied", "replies", "reply_count", "total_replied"]) ?? 0;
       current.bounces += pickNumber(row, ["bounced", "bounces", "bounce_count", "total_bounced"]) ?? 0;
       current.opportunities += pickNumber(row, ["opportunities", "positive_replies", "total_positive_replies"]) ?? 0;
+    }
+    const explicitUniqueReplies = pickNumber(row, ["unique_replies", "unique_reply_count"]);
+    if (explicitUniqueReplies != null) {
+      current.uniqueReplies = (current.uniqueReplies ?? 0) + explicitUniqueReplies;
     }
     byStep.set(step, current);
   }
@@ -624,11 +681,18 @@ function countFromBooleanOrNumber(value: unknown) {
 }
 
 function countIndicatesPositive(value: unknown) {
-  if (typeof value === "string" && ["true", "yes", "replied"].includes(value.trim().toLowerCase())) {
-    return true;
+  return signalValue(value) === true;
+}
+
+function signalValue(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "yes", "replied", "opened", "clicked"].includes(normalized)) return true;
+    if (["false", "no", "not_replied", "not replied"].includes(normalized)) return false;
   }
-  const parsed = countFromBooleanOrNumber(value);
-  return parsed != null && parsed > 0;
+  const parsed = parseInteger(value);
+  return parsed == null ? null : parsed > 0;
 }
 
 function smartleadLeadHasReplySignal(lead: SmartleadRow) {
@@ -642,6 +706,28 @@ function smartleadLeadHasReplySignal(lead: SmartleadRow) {
     smartleadLeadInterestStatus(lead) != null ||
     Boolean(emailStats.replied_at ?? lead.last_replied_at ?? lead.timestamp_last_reply)
   );
+}
+
+function countDistinctLeadSignal(leads: SmartleadRow[], keys: string[]) {
+  let hasCoverage = false;
+  let count = 0;
+  for (const lead of leads) {
+    const emailStats = leadEmailStats(lead);
+    let observed = false;
+    let positive = false;
+    for (const key of keys) {
+      const source = Object.prototype.hasOwnProperty.call(emailStats, key) ? emailStats : lead;
+      if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+      const semantic = signalValue(source[key]);
+      if (semantic == null) continue;
+      observed = true;
+      hasCoverage = true;
+      if (semantic) positive = true;
+    }
+    if (!observed) return null;
+    if (positive) count += 1;
+  }
+  return hasCoverage ? count : null;
 }
 
 function smartleadLeadInterestStatus(lead: SmartleadRow) {
@@ -912,15 +998,21 @@ function campaignAnalytics(analytics: SmartleadRow, campaign: SmartleadRow, lead
   const replied = pickNumber(analytics, ["reply_count", "replied", "total_replied", "replies"]);
   const clicked = pickNumber(analytics, ["click_count", "clicked", "total_clicked", "clicks"]);
   const bounced = pickNumber(analytics, ["bounce_count", "bounced_count", "bounced", "total_bounced"]);
+  const distinctOpened = countDistinctLeadSignal(leads, ["is_opened", "opened", "open_count"]);
+  const distinctReplied = countDistinctLeadSignal(leads, ["is_replied", "replied", "reply_count", "email_reply_count"]);
   return {
-    leadsCount: pickNumber(analytics, ["leads_count", "lead_count", "total_leads"]) ?? leads.length,
+    leadsCount: pickNumber(analytics, ["leads_count", "lead_count", "total_leads"])
+      ?? pickNumber(campaign, ["leads_count", "lead_count", "total_leads"])
+      ?? leads.length,
     contactedCount: pickNumber(analytics, ["contacted_count", "contacted"]),
     sentCount: pickNumber(analytics, ["sent_count", "emails_sent_count", "total_sent", "sent"]),
     newLeadsContacted: pickNumber(analytics, ["new_leads_contacted_count", "new_leads_contacted"]),
     openCount: opened,
-    uniqueOpenCount: pickNumber(analytics, ["unique_open_count", "unique_opened", "unique_opens"]) ?? opened,
+    uniqueOpenCount: pickNumber(analytics, ["unique_open_count", "unique_opened", "unique_opens"])
+      ?? distinctOpened,
     replyCount: replied,
-    uniqueReplyCount: pickNumber(analytics, ["unique_reply_count", "unique_replies"]) ?? replied,
+    uniqueReplyCount: pickNumber(analytics, ["unique_reply_count", "unique_replies"])
+      ?? distinctReplied,
     automaticReplies: pickNumber(analytics, ["auto_reply_count", "reply_count_automatic", "automatic_replies"]),
     clickCount: clicked,
     bouncedCount: bounced,
@@ -1147,7 +1239,7 @@ async function storeProviderCapabilities(conn: DuckDBConnection, workspaceId: st
     ["reply_message_history", "supported", "medium", "Smartlead message history hydrates bounded reply-signal leads; body fields are optional and live shape remains unverified."],
     ["exact_outbound_history", "partial", "medium", "Smartlead outbound history is counted for coverage, but rendered outbound context remains reconstructed from templates."],
     ["custom_tags", "partial", "medium", "Smartlead tags are preserved when present on campaign/account payloads."],
-    ["inbox_placement", "unsupported", "high", "Smartlead inbox placement parity is not exposed in the read-only client foundation."],
+    ["inbox_placement", "unsupported", "high", "Smartlead Smart Delivery read APIs use a separate support-gated service and are outside the V1 read-only provider contract."],
   ];
   await insertRows(
     conn,
@@ -1400,7 +1492,7 @@ async function storeEmailAccounts(
           ${sqlInt(rollup.sent)},
           ${sqlInt(rollup.replies)},
           ${sqlInt(rollup.bounces)},
-          ${sqlRawJson(account)},
+          ${sqlJson(safeAccountRaw(account))},
           CURRENT_TIMESTAMP
         )`;
       })
@@ -1431,18 +1523,18 @@ async function storeCampaignDirectory(
       ${sqlString(merged.client_id ?? merged.user_id ?? merged.organization_id)},
       ${sqlString(merged.name ?? merged.campaign_name)},
       ${sqlString(mapCampaignStatus(merged.status))},
-      ${sqlInt(merged.message_per_day ?? merged.daily_limit)},
-      ${sqlBool(merged.text_only)},
-      ${sqlBool(merged.first_email_text_only)},
+      ${sqlInt(merged.max_leads_per_day ?? merged.message_per_day ?? merged.sending_limit ?? merged.daily_limit)},
+      ${sqlBool(merged.send_as_plain_text ?? merged.text_only)},
+      ${sqlBool(merged.send_as_plain_text ?? merged.first_email_text_only)},
       ${sqlBool(trackingBool(merged, "DONT_EMAIL_OPEN", ["open_tracking", "track_open", "track_opens"]))},
       ${sqlBool(trackingBool(merged, "DONT_LINK_CLICK", ["link_tracking", "track_click", "track_clicks"]))},
-      ${sqlBool(merged.stop_on_reply)},
+      ${sqlBool(campaignStopOnReply(merged))},
       ${sqlBool(merged.stop_on_auto_reply)},
-      ${sqlBool(merged.match_lead_esp)},
+      ${sqlBool(merged.enable_ai_esp_matching ?? merged.match_lead_esp)},
       ${sqlBool(merged.allow_risky_contacts)},
       ${sqlBool(merged.disable_bounce_protect)},
       ${sqlBool(merged.insert_unsubscribe_header)},
-      ${sqlString(merged.timezone ?? asRecord(merged.campaign_schedule).timezone)},
+      ${sqlString(campaignTimezone(merged))},
       ${sqlInt(bundle.sequences.length)},
       ${sqlInt(templates.length)},
       ${sqlTimestamp(merged.created_at ?? merged.timestamp_created)},
@@ -1632,7 +1724,7 @@ async function storeCampaignFacts(
       ${sqlInt(row.opens)},
       ${sqlInt(row.replies)},
       NULL,
-      ${sqlInt(row.replies)},
+      ${sqlInt(row.uniqueReplies)},
       ${sqlInt(row.clicks)},
       ${sqlInt(row.bounces)},
       ${sqlInt(row.opportunities)},
@@ -1676,15 +1768,15 @@ async function storeCampaignFacts(
       ${sqlInt(row.contacted ?? row.contacted_count)},
       ${sqlInt(row.new_leads_contacted ?? row.new_leads_contacted_count)},
       ${sqlInt(row.opened ?? row.open_count ?? row.opens)},
-      ${sqlInt(row.unique_opened ?? row.unique_open_count ?? row.unique_opens ?? row.opened)},
+      ${sqlInt(row.unique_opened ?? row.unique_open_count ?? row.unique_opens)},
       ${sqlInt(row.replies ?? row.reply_count ?? row.replied)},
-      ${sqlInt(row.unique_replies ?? row.unique_reply_count ?? row.replies ?? row.replied)},
+      ${sqlInt(row.unique_replies ?? row.unique_reply_count)},
       ${sqlInt(row.replies_automatic ?? row.auto_reply_count)},
       ${sqlInt(row.unique_replies_automatic)},
       ${sqlInt(row.clicks ?? row.click_count ?? row.clicked)},
-      ${sqlInt(row.unique_clicks ?? row.unique_click_count ?? row.clicks ?? row.clicked)},
+      ${sqlInt(row.unique_clicks ?? row.unique_click_count)},
       ${sqlInt(row.opportunities ?? row.positive_replies)},
-      ${sqlInt(row.unique_opportunities ?? row.opportunities ?? row.positive_replies)},
+      ${sqlInt(row.unique_opportunities)},
       CURRENT_TIMESTAMP
     )`),
   );
@@ -1908,7 +2000,17 @@ function aggregateMailboxStats(stats: SmartleadRow[]) {
     replies: number;
     opened: number;
     clicks: number;
+    contacted: number | null;
+    newLeadsContacted: number | null;
+    uniqueOpened: number | null;
+    uniqueReplies: number | null;
+    automaticReplies: number | null;
+    uniqueAutomaticReplies: number | null;
+    uniqueClicks: number | null;
   }>();
+
+  const addOptional = (current: number | null, value: number | null) =>
+    value == null ? current : (current ?? 0) + value;
 
   for (const row of stats) {
     const email = pickEmail(row, ["email", "from_email", "email_account", "email_account_email"]);
@@ -1926,12 +2028,44 @@ function aggregateMailboxStats(stats: SmartleadRow[]) {
       replies: 0,
       opened: 0,
       clicks: 0,
+      contacted: null,
+      newLeadsContacted: null,
+      uniqueOpened: null,
+      uniqueReplies: null,
+      automaticReplies: null,
+      uniqueAutomaticReplies: null,
+      uniqueClicks: null,
     };
     current.sent += pickNumber(row, ["sent", "sent_count", "total_sent"]) ?? 0;
     current.bounced += pickNumber(row, ["bounced", "bounces", "bounce_count"]) ?? 0;
     current.replies += pickNumber(row, ["replies", "reply_count", "replied"]) ?? 0;
     current.opened += pickNumber(row, ["opened", "open_count", "opens"]) ?? 0;
     current.clicks += pickNumber(row, ["clicks", "click_count", "clicked"]) ?? 0;
+    current.contacted = addOptional(current.contacted, pickNumber(row, ["contacted", "contacted_count"]));
+    current.newLeadsContacted = addOptional(
+      current.newLeadsContacted,
+      pickNumber(row, ["new_leads_contacted", "new_leads_contacted_count"]),
+    );
+    current.uniqueOpened = addOptional(
+      current.uniqueOpened,
+      pickNumber(row, ["unique_opened", "unique_open_count", "unique_opens"]),
+    );
+    current.uniqueReplies = addOptional(
+      current.uniqueReplies,
+      pickNumber(row, ["unique_replies", "unique_reply_count"]),
+    );
+    current.automaticReplies = addOptional(
+      current.automaticReplies,
+      pickNumber(row, ["replies_automatic", "auto_reply_count", "automatic_replies"]),
+    );
+    current.uniqueAutomaticReplies = addOptional(
+      current.uniqueAutomaticReplies,
+      pickNumber(row, ["unique_replies_automatic", "unique_auto_reply_count"]),
+    );
+    current.uniqueClicks = addOptional(
+      current.uniqueClicks,
+      pickNumber(row, ["unique_clicks", "unique_click_count"]),
+    );
     byEmailDate.set(key, current);
   }
 
@@ -1977,16 +2111,16 @@ async function storeAccountDailyMetrics(
       ${sqlDate(row.date)},
       ${sqlInt(row.sent)},
       ${sqlInt(row.bounced)},
-      ${sqlInt(row.sent)},
-      ${sqlInt(row.sent)},
+      ${sqlInt(row.contacted)},
+      ${sqlInt(row.newLeadsContacted)},
       ${sqlInt(row.opened)},
-      ${sqlInt(row.opened)},
+      ${sqlInt(row.uniqueOpened)},
       ${sqlInt(row.replies)},
-      ${sqlInt(row.replies)},
-      NULL,
-      NULL,
+      ${sqlInt(row.uniqueReplies)},
+      ${sqlInt(row.automaticReplies)},
+      ${sqlInt(row.uniqueAutomaticReplies)},
       ${sqlInt(row.clicks)},
-      ${sqlInt(row.clicks)},
+      ${sqlInt(row.uniqueClicks)},
       CURRENT_TIMESTAMP
     )`),
   );
@@ -2010,20 +2144,25 @@ async function fetchCampaignBundle(
 ) {
   const nativeId = providerCampaignId(campaign);
   if (!nativeId) throw new Error("Smartlead campaign row is missing id.");
-  const [detail, sequences, analytics, dailyPayload, statisticsRows, campaignAccounts, leadPayload, mailboxStats] =
+  const detail = { ...campaign, ...asRecord(await client.getCampaign(nativeId)) };
+  const timezone = campaignTimezone(detail);
+  const [sequences, analytics, dailyPayload, statisticsRows, campaignAccounts, leadPayload, mailboxStats] =
     await Promise.all([
-      client.getCampaign(nativeId),
       client.getCampaignSequences(nativeId),
       client.getCampaignAnalytics(nativeId),
-      client.getCampaignAnalyticsByDate(nativeId, { startDate: startDate(), endDate: endDate() }),
-      client.listAllCampaignStatistics(nativeId, { limit: 1000, maxPages: 20 }),
-      client.listCampaignEmailAccounts(nativeId),
-      client.listAllCampaignLeads(nativeId, { limit: 100, maxPages: 50 }),
-      client.listAllCampaignMailboxStatistics(nativeId, {
-        limit: 100,
-        maxPages: 20,
+      client.getCampaignAnalyticsByDate(nativeId, {
         startDate: startDate(),
         endDate: endDate(),
+        timezone: timezone ?? undefined,
+      }),
+      client.listAllCampaignStatistics(nativeId, { limit: 1000 }),
+      client.listCampaignEmailAccounts(nativeId),
+      client.listAllCampaignLeads(nativeId, { limit: 100 }),
+      client.listAllCampaignMailboxStatistics(nativeId, {
+        limit: 20,
+        startDate: startDate(),
+        endDate: endDate(),
+        timezone: timezone ?? undefined,
       }),
     ]);
   const leads = arrayFrom(leadPayload);
@@ -2031,7 +2170,7 @@ async function fetchCampaignBundle(
 
   return {
     directory: campaign,
-    detail: { ...campaign, ...asRecord(detail) },
+    detail,
     sequences: arrayFrom(sequences),
     analytics: asRecord(analytics),
     dailyRows: normalizeDailyRows(dailyPayload),
@@ -2077,6 +2216,7 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
   const startedAt = new Date().toISOString();
   const refreshStartedAt = Date.now();
   const syncLogId = buildSyncLogId(source, mode);
+  let transactionOpen = false;
 
   try {
     await appendTraceLog("smartlead.refresh.start", {
@@ -2112,7 +2252,7 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
       throw new Error("No Smartlead campaigns matched the requested refresh scope.");
     }
 
-    const accounts = await client.listAllEmailAccounts({ limit: 100, maxPages: 50, fetchCampaigns: true });
+    const accounts = await client.listAllEmailAccounts({ limit: 100, fetchCampaigns: true });
     const workspaceId = deriveWorkspaceId([
       selectedCampaigns[0],
       accounts[0],
@@ -2129,8 +2269,6 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
       .map(providerCampaignId)
       .filter((id): id is string => Boolean(id))
       .map(campaignSourceId);
-    await clearSmartleadData(db, workspaceId, scopedRefresh ? selectedCampaignSourceIds : undefined);
-
     const bundles: CampaignBundle[] = [];
     for (const campaign of selectedCampaigns) {
       const nativeId = providerCampaignId(campaign) ?? "unknown";
@@ -2145,7 +2283,7 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
     }
 
     const allMailboxStats = bundles.flatMap((bundle) => bundle.mailboxStats);
-    await storeProviderCapabilities(db, workspaceId);
+    const warmups = scopedRefresh ? new Map<string, SmartleadRow>() : await fetchWarmups(client, accounts);
     const tagCampaigns = scopedRefresh
       ? bundles.map((bundle) => bundle.detail)
       : [...campaigns, ...bundles.map((bundle) => bundle.detail)];
@@ -2175,9 +2313,12 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
         (account) => accountEmail(account) ?? providerAccountId(account),
       )
       : tagAccounts;
+    await run(db, "BEGIN TRANSACTION");
+    transactionOpen = true;
+    await clearSmartleadData(db, workspaceId, scopedRefresh ? selectedCampaignSourceIds : undefined);
+    await storeProviderCapabilities(db, workspaceId);
     await storeTags(db, workspaceId, tagCampaigns, tagAccounts, tagCleanupAccounts);
     if (!scopedRefresh) {
-      const warmups = await fetchWarmups(client, accounts);
       await storeEmailAccounts(db, workspaceId, accounts, warmups, rollupsFromMailboxStats(allMailboxStats));
       await storeAccountDailyMetrics(db, workspaceId, allMailboxStats);
     }
@@ -2189,6 +2330,7 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
     await setActiveWorkspaceId(db, workspaceId, mode);
     await stampCacheOwner(db, workspaceId);
     const endedAt = new Date().toISOString();
+    const summary = await buildWorkspaceSummary(db, workspaceId);
     await appendSyncLog(db, {
       id: syncLogId,
       workspaceId,
@@ -2203,6 +2345,8 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
       durationMs: Date.now() - refreshStartedAt,
       message: "Smartlead read-only ingest completed.",
     });
+    await run(db, "COMMIT");
+    transactionOpen = false;
     await writeRefreshStatus({
       status: "succeeded",
       source,
@@ -2214,9 +2358,23 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
       currentCampaignId: null,
       currentCampaignName: null,
       message: "Smartlead refresh completed.",
+    }).catch(async (statusError) => {
+      await appendTraceLog("smartlead.refresh.status_write_failed", {
+        message: statusError instanceof Error ? statusError.message : String(statusError),
+      }).catch(() => undefined);
     });
-    return await buildWorkspaceSummary(db, workspaceId);
+    return summary;
   } catch (error) {
+    if (transactionOpen) {
+      try {
+        await run(db, "ROLLBACK");
+      } catch (rollbackError) {
+        await appendTraceLog("smartlead.refresh.rollback_failed", {
+          message: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+        });
+      }
+      transactionOpen = false;
+    }
     await appendSyncLog(db, {
       id: syncLogId,
       source,
