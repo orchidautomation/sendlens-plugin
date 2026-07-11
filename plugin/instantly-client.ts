@@ -17,6 +17,18 @@ const EMAILS_MIN_INTERVAL_MS = 3000; // 20 req/min
 const LIST_PAGE_LIMIT = 100;
 const LIST_MAX_PAGES = 200;
 const WARMUP_ANALYTICS_EMAIL_LIMIT = 100;
+const CAMPAIGN_ANALYTICS_BATCH_SIZE = 25;
+const ACCOUNT_ANALYTICS_EMAIL_BATCH_SIZE = 25;
+
+class InstantlyApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly body: string,
+  ) {
+    super(`Instantly API ${status}: ${body}`);
+    this.name = "InstantlyApiError";
+  }
+}
 
 // Cursor shapes returned by Instantly V2 endpoints. Most list endpoints
 // return a UUID `next_starting_after`, but `/accounts` returns a
@@ -333,7 +345,7 @@ async function fetchWithRetry(
       elapsedMs: Date.now() - startedAt,
       body,
     });
-    throw new Error(`Instantly API ${res.status}: ${body}`);
+    throw new InstantlyApiError(res.status, body);
   }
   await appendTraceLog("http.response", {
     lane,
@@ -525,12 +537,80 @@ export async function listAllSubsequences(
   return allSubsequences;
 }
 
-export async function getCampaignAnalytics(apiKey: string) {
-  const res = await fetchWithRetry(
-    `${API_BASE}/campaigns/analytics`,
-    { headers: headers(apiKey) },
-  );
-  return (await res.json()) as Array<Record<string, unknown>>;
+export interface CampaignAnalyticsOptions {
+  campaignIds?: string[];
+  startDate?: string;
+  endDate?: string;
+}
+
+function isPayloadTooLargeError(error: unknown) {
+  return error instanceof InstantlyApiError && error.status === 413;
+}
+
+async function getCampaignAnalyticsBatch(
+  apiKey: string,
+  campaignIds: string[],
+  options: Omit<CampaignAnalyticsOptions, "campaignIds">,
+): Promise<Array<Record<string, unknown>>> {
+  const params = new URLSearchParams();
+  for (const campaignId of campaignIds) {
+    params.append("ids", campaignId);
+  }
+  if (options.startDate) params.set("start_date", options.startDate);
+  if (options.endDate) params.set("end_date", options.endDate);
+
+  const query = params.toString();
+  const url = `${API_BASE}/campaigns/analytics${query ? `?${query}` : ""}`;
+  try {
+    const res = await fetchWithRetry(url, { headers: headers(apiKey) });
+    return (await res.json()) as Array<Record<string, unknown>>;
+  } catch (error) {
+    if (!isPayloadTooLargeError(error) || campaignIds.length <= 1) {
+      throw error;
+    }
+
+    const midpoint = Math.floor(campaignIds.length / 2);
+    const left = await getCampaignAnalyticsBatch(
+      apiKey,
+      campaignIds.slice(0, midpoint),
+      options,
+    );
+    const right = await getCampaignAnalyticsBatch(
+      apiKey,
+      campaignIds.slice(midpoint),
+      options,
+    );
+    return [...left, ...right];
+  }
+}
+
+export async function getCampaignAnalytics(
+  apiKey: string,
+  options: CampaignAnalyticsOptions = {},
+) {
+  const campaignIds = [...new Set(
+    (options.campaignIds ?? []).map((campaignId) => campaignId.trim()).filter(Boolean),
+  )];
+  const requestOptions = {
+    startDate: options.startDate,
+    endDate: options.endDate,
+  };
+
+  if (campaignIds.length === 0) {
+    return getCampaignAnalyticsBatch(apiKey, [], requestOptions);
+  }
+
+  const analytics: Array<Record<string, unknown>> = [];
+  for (const campaignIdChunk of chunks(campaignIds, CAMPAIGN_ANALYTICS_BATCH_SIZE)) {
+    analytics.push(
+      ...await getCampaignAnalyticsBatch(
+        apiKey,
+        campaignIdChunk,
+        requestOptions,
+      ),
+    );
+  }
+  return analytics;
 }
 
 export async function getCampaignDetails(apiKey: string, campaignId: string) {
@@ -948,26 +1028,74 @@ export async function getWarmupAnalytics(
 // ── Per-account per-day analytics ──
 // GET /accounts/analytics/daily — defaults to last 30 days if no range given.
 // Returns array of { date, email_account, sent, bounced, ... }.
-export async function getDailyAccountAnalytics(
+export interface DailyAccountAnalyticsOptions {
+  startDate?: string;
+  endDate?: string;
+  emails?: string[];
+}
+
+async function getDailyAccountAnalyticsBatch(
   apiKey: string,
-  opts: { startDate?: string; endDate?: string; emails?: string[] } = {},
+  emails: string[],
+  options: Omit<DailyAccountAnalyticsOptions, "emails">,
 ): Promise<Array<Record<string, unknown>>> {
   const params = new URLSearchParams();
-  if (opts.startDate) params.set("start_date", opts.startDate);
-  if (opts.endDate) params.set("end_date", opts.endDate);
-  if (opts.emails && opts.emails.length > 0) {
-    for (const e of opts.emails) params.append("emails", e);
+  if (options.startDate) params.set("start_date", options.startDate);
+  if (options.endDate) params.set("end_date", options.endDate);
+  for (const email of emails) {
+    params.append("emails", email);
   }
   const qs = params.toString();
-  const res = await fetchWithRetry(
-    `${API_BASE}/accounts/analytics/daily${qs ? `?${qs}` : ""}`,
-    { headers: headers(apiKey) },
-  );
-  const data = await res.json() as Record<string, unknown> | Array<Record<string, unknown>>;
-  return (
-    ("items" in data ? data.items : undefined) ||
-    (Array.isArray(data) ? data : [])
-  ) as Array<Record<string, unknown>>;
+  try {
+    const res = await fetchWithRetry(
+      `${API_BASE}/accounts/analytics/daily${qs ? `?${qs}` : ""}`,
+      { headers: headers(apiKey) },
+    );
+    const data = await res.json() as Record<string, unknown> | Array<Record<string, unknown>>;
+    return (
+      ("items" in data ? data.items : undefined) ||
+      (Array.isArray(data) ? data : [])
+    ) as Array<Record<string, unknown>>;
+  } catch (error) {
+    if (!isPayloadTooLargeError(error) || emails.length <= 1) {
+      throw error;
+    }
+
+    const midpoint = Math.floor(emails.length / 2);
+    const left = await getDailyAccountAnalyticsBatch(
+      apiKey,
+      emails.slice(0, midpoint),
+      options,
+    );
+    const right = await getDailyAccountAnalyticsBatch(
+      apiKey,
+      emails.slice(midpoint),
+      options,
+    );
+    return [...left, ...right];
+  }
+}
+
+export async function getDailyAccountAnalytics(
+  apiKey: string,
+  options: DailyAccountAnalyticsOptions = {},
+): Promise<Array<Record<string, unknown>>> {
+  const emails = [...new Set(
+    (options.emails ?? []).map((email) => email.trim().toLowerCase()).filter(Boolean),
+  )];
+  const requestOptions = {
+    startDate: options.startDate,
+    endDate: options.endDate,
+  };
+  if (emails.length === 0) {
+    return getDailyAccountAnalyticsBatch(apiKey, [], requestOptions);
+  }
+
+  const rows: Array<Record<string, unknown>> = [];
+  for (const emailChunk of chunks(emails, ACCOUNT_ANALYTICS_EMAIL_BATCH_SIZE)) {
+    rows.push(...await getDailyAccountAnalyticsBatch(apiKey, emailChunk, requestOptions));
+  }
+  return rows;
 }
 
 export async function listInboxPlacementTestsPage(

@@ -4,6 +4,8 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   detectCursorShape,
+  getCampaignAnalytics,
+  getDailyAccountAnalytics,
   getRateLimitStats,
   getWarmupAnalytics,
   listAccounts,
@@ -158,6 +160,161 @@ async function testRetryAfterHonored() {
   }
 }
 
+async function testCampaignAnalyticsScopesAndSplitsOversizedRequests() {
+  const originalFetch2 = globalThis.fetch;
+  const analyticsCalls = [];
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    assert.equal(parsed.pathname, "/api/v2/campaigns/analytics");
+    assert.equal(parsed.searchParams.get("start_date"), "2026-07-01");
+    assert.equal(parsed.searchParams.get("end_date"), "2026-07-10");
+    const campaignIds = parsed.searchParams.getAll("ids");
+    analyticsCalls.push(campaignIds);
+    if (campaignIds.length > 1) {
+      return responseStatus(413);
+    }
+    return responseJson(
+      campaignIds.map((campaignId) => ({
+        campaign_id: campaignId,
+        emails_sent_count: 1,
+      })),
+    );
+  };
+
+  try {
+    const analytics = await getCampaignAnalytics("test-key", {
+      campaignIds: ["campaign-1", "campaign-2", "campaign-3"],
+      startDate: "2026-07-01",
+      endDate: "2026-07-10",
+    });
+    assert.deepEqual(
+      analytics.map((row) => row.campaign_id),
+      ["campaign-1", "campaign-2", "campaign-3"],
+    );
+    assert.deepEqual(analyticsCalls[0], ["campaign-1", "campaign-2", "campaign-3"]);
+    assert.deepEqual(
+      analyticsCalls.filter((ids) => ids.length === 1).flat(),
+      ["campaign-1", "campaign-2", "campaign-3"],
+    );
+    assert.equal(
+      analyticsCalls.every((ids) => ids.every((id) => /^campaign-[123]$/.test(id))),
+      true,
+    );
+  } finally {
+    globalThis.fetch = originalFetch2;
+  }
+}
+
+async function testCampaignAnalyticsUsesBoundedBatches() {
+  const originalFetch2 = globalThis.fetch;
+  const analyticsCalls = [];
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    assert.equal(parsed.pathname, "/api/v2/campaigns/analytics");
+    const campaignIds = parsed.searchParams.getAll("ids");
+    analyticsCalls.push(campaignIds);
+    return responseJson(
+      campaignIds.map((campaignId) => ({ campaign_id: campaignId })),
+    );
+  };
+
+  try {
+    const campaignIds = Array.from(
+      { length: 26 },
+      (_, index) => `campaign-${index + 1}`,
+    );
+    const analytics = await getCampaignAnalytics("test-key", { campaignIds });
+    assert.deepEqual(
+      analytics.map((row) => row.campaign_id),
+      campaignIds,
+    );
+    assert.deepEqual(analyticsCalls.map((ids) => ids.length), [25, 1]);
+  } finally {
+    globalThis.fetch = originalFetch2;
+  }
+}
+
+async function testDailyAccountAnalyticsScopesAndSplitsOversizedRequests() {
+  const originalFetch2 = globalThis.fetch;
+  const analyticsCalls = [];
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    assert.equal(parsed.pathname, "/api/v2/accounts/analytics/daily");
+    assert.equal(parsed.searchParams.get("start_date"), "2026-07-01");
+    assert.equal(parsed.searchParams.get("end_date"), "2026-07-10");
+    const emails = parsed.searchParams.getAll("emails");
+    analyticsCalls.push(emails);
+    if (emails.length > 1) {
+      return responseStatus(413);
+    }
+    return responseJson(
+      emails.map((email) => ({ email_account: email, sent: 1 })),
+    );
+  };
+
+  try {
+    const rows = await getDailyAccountAnalytics("test-key", {
+      emails: ["ONE@example.com", "two@example.com", "three@example.com"],
+      startDate: "2026-07-01",
+      endDate: "2026-07-10",
+    });
+    assert.deepEqual(
+      rows.map((row) => row.email_account),
+      ["one@example.com", "two@example.com", "three@example.com"],
+    );
+    assert.deepEqual(analyticsCalls[0], [
+      "one@example.com",
+      "two@example.com",
+      "three@example.com",
+    ]);
+    assert.deepEqual(
+      analyticsCalls.filter((emails) => emails.length === 1).flat(),
+      ["one@example.com", "two@example.com", "three@example.com"],
+    );
+    assert.equal(
+      analyticsCalls.every((emails) =>
+        emails.every((email) => [
+          "one@example.com",
+          "two@example.com",
+          "three@example.com",
+        ].includes(email))
+      ),
+      true,
+    );
+  } finally {
+    globalThis.fetch = originalFetch2;
+  }
+}
+
+async function testDailyAccountAnalyticsUsesBoundedBatches() {
+  const originalFetch2 = globalThis.fetch;
+  const analyticsCalls = [];
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    assert.equal(parsed.pathname, "/api/v2/accounts/analytics/daily");
+    const emails = parsed.searchParams.getAll("emails");
+    analyticsCalls.push(emails);
+    return responseJson(
+      emails.map((email) => ({ email_account: email })),
+    );
+  };
+
+  try {
+    const emails = Array.from(
+      { length: 26 },
+      (_, index) => `sender-${index + 1}@example.com`,
+    );
+    const rows = await getDailyAccountAnalytics("test-key", { emails });
+    assert.deepEqual(
+      rows.map((row) => row.email_account),
+      emails,
+    );
+    assert.deepEqual(analyticsCalls.map((batch) => batch.length), [25, 1]);
+  } finally {
+    globalThis.fetch = originalFetch2;
+  }
+}
+
 try {
   const campaigns = await listCampaigns("test-key");
   assert.equal(campaigns.length, 205);
@@ -244,6 +401,10 @@ try {
   );
 
   await testRetryAfterHonored();
+  await testCampaignAnalyticsScopesAndSplitsOversizedRequests();
+  await testCampaignAnalyticsUsesBoundedBatches();
+  await testDailyAccountAnalyticsScopesAndSplitsOversizedRequests();
+  await testDailyAccountAnalyticsUsesBoundedBatches();
 } finally {
   globalThis.fetch = originalFetch;
 }

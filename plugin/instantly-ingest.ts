@@ -2838,7 +2838,11 @@ async function checkpointDbFile(dbPath: string) {
   await fs.rm(duckDbWalPath(dbPath), { force: true });
 }
 
-async function promoteShadowDb(shadowDbPath: string, liveDbPath: string) {
+async function promoteShadowDb(
+  shadowDbPath: string,
+  liveDbPath: string,
+  finalizePromotion: () => Promise<void>,
+) {
   const backupDbPath = path.join(
     path.dirname(liveDbPath),
     `.${path.basename(liveDbPath)}.previous-${process.pid}-${Date.now()}`,
@@ -2846,6 +2850,7 @@ async function promoteShadowDb(shadowDbPath: string, liveDbPath: string) {
   let movedLiveDb = false;
   let movedLiveWal = false;
   let promoted = false;
+  let committed = false;
 
   await removeDuckDbFileSet(backupDbPath);
   try {
@@ -2856,8 +2861,13 @@ async function promoteShadowDb(shadowDbPath: string, liveDbPath: string) {
     movedLiveDb = await renameIfExists(liveDbPath, backupDbPath);
     await fs.rename(shadowDbPath, liveDbPath);
     promoted = true;
+    await finalizePromotion();
+    committed = true;
   } catch (error) {
-    if (!promoted) {
+    if (!committed) {
+      if (promoted) {
+        await removeDuckDbFileSet(liveDbPath);
+      }
       if (movedLiveDb && !(await fileExists(liveDbPath))) {
         await renameIfExists(backupDbPath, liveDbPath);
       }
@@ -2870,8 +2880,15 @@ async function promoteShadowDb(shadowDbPath: string, liveDbPath: string) {
     }
     throw error;
   } finally {
-    if (promoted) {
-      await removeDuckDbFileSet(backupDbPath);
+    if (committed) {
+      try {
+        await removeDuckDbFileSet(backupDbPath);
+      } catch (cleanupError) {
+        await appendTraceLog("refresh.backup_cleanup_failed", {
+          backupDbPath,
+          message: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        });
+      }
     }
   }
 }
@@ -2999,17 +3016,17 @@ async function refreshWorkspaceAtomicallyWithProviderMode(options: RefreshOption
   await fs.mkdir(path.dirname(liveDbPath), { recursive: true });
   await removeDuckDbFileSet(shadowDbPath);
 
-  if (await shouldSeedShadowFromLive(liveDbPath)) {
-    await fs.copyFile(liveDbPath, shadowDbPath);
-  }
-
   const previousRefreshStatus = options.campaignIds?.length
     ? await readRefreshStatus()
     : null;
-  const previousDbPath = process.env.SENDLENS_DB_PATH;
-  process.env.SENDLENS_DB_PATH = shadowDbPath;
-  let summary;
+  let summary: Awaited<ReturnType<typeof refreshWorkspace>> | undefined;
   try {
+    if (await shouldSeedShadowFromLive(liveDbPath)) {
+      await fs.copyFile(liveDbPath, shadowDbPath);
+    }
+
+    const previousDbPath = process.env.SENDLENS_DB_PATH;
+    process.env.SENDLENS_DB_PATH = shadowDbPath;
     try {
       summary = await refreshWorkspace(options);
     } finally {
@@ -3019,34 +3036,58 @@ async function refreshWorkspaceAtomicallyWithProviderMode(options: RefreshOption
         process.env.SENDLENS_DB_PATH = previousDbPath;
       }
     }
+
+    if (await fileExists(shadowDbPath)) {
+      if (!summary) {
+        throw new Error("Refresh completed without a workspace summary.");
+      }
+      const completedSummary = summary;
+      await checkpointDbFile(shadowDbPath);
+      await promoteShadowDb(shadowDbPath, liveDbPath, async () => {
+        if (completedSummary.workspaceId) {
+          const liveDb = await getDb();
+          try {
+            await stampCacheOwner(
+              liveDb,
+              completedSummary.workspaceId,
+              completedSummary.last_refreshed_at ?? new Date().toISOString(),
+            );
+            await run(liveDb, "CHECKPOINT");
+          } finally {
+            closeDb(liveDb);
+          }
+        }
+        await fs.rm(duckDbWalPath(liveDbPath), { force: true });
+        await writeRefreshStatus({ dbPath: liveDbPath });
+      });
+    }
   } catch (error) {
-    if (previousRefreshStatus && isScopedCampaignMiss(error)) {
+    try {
       await removeDuckDbFileSet(shadowDbPath);
+    } catch (cleanupError) {
+      await appendTraceLog("refresh.shadow_cleanup_failed", {
+        shadowDbPath,
+        message: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+      });
+    }
+    if (previousRefreshStatus && isScopedCampaignMiss(error)) {
       await writeRefreshStatus(previousRefreshStatus);
+    } else if (summary) {
+      await writeRefreshStatus({
+        status: "failed",
+        endedAt: new Date().toISOString(),
+        dbPath: liveDbPath,
+        message: `Refresh completed, but the new cache could not be promoted: ${
+          error instanceof Error ? error.message : String(error)
+        }. The previous cache remains active.`,
+      });
     }
     throw error;
   }
 
-  if (await fileExists(shadowDbPath)) {
-    await checkpointDbFile(shadowDbPath);
-    await promoteShadowDb(shadowDbPath, liveDbPath);
-    if (summary.workspaceId) {
-      const liveDb = await getDb();
-      try {
-        await stampCacheOwner(
-          liveDb,
-          summary.workspaceId,
-          summary.last_refreshed_at ?? new Date().toISOString(),
-        );
-        await run(liveDb, "CHECKPOINT");
-      } finally {
-        closeDb(liveDb);
-      }
-    }
-    await fs.rm(duckDbWalPath(liveDbPath), { force: true });
-    await writeRefreshStatus({ dbPath: liveDbPath });
+  if (!summary) {
+    throw new Error("Refresh completed without a workspace summary.");
   }
-
   return summary;
 }
 
@@ -3244,19 +3285,35 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
       throw new Error("No campaigns matched the requested refresh scope.");
     }
 
+    const selectedCampaignIds = selectedCampaigns
+      .map((campaign) => String(campaign.id ?? ""))
+      .filter(Boolean);
+    const analyticsCampaignIds = options.campaignIds?.length
+      ? selectedCampaignIds
+      : campaigns.map((campaign) => String(campaign.id ?? "")).filter(Boolean);
+
     const metadataStartedAt = Date.now();
-    const analytics = await instantly.getCampaignAnalytics(apiKey);
+    const analytics = await instantly.getCampaignAnalytics(apiKey, {
+      campaignIds: analyticsCampaignIds,
+    });
     const analyticsByCampaign = new Map(
       analytics.map((row) => [String(row.campaign_id ?? ""), row]),
     );
-    const accounts = await instantly.listAccounts(apiKey);
+    const refreshWorkspaceMetadata = !options.campaignIds?.length;
+    const accounts = refreshWorkspaceMetadata
+      ? await instantly.listAccounts(apiKey)
+      : [];
     const accountEmails = new Set(
       accounts
         .map((account) => String(account.email ?? "").trim().toLowerCase())
         .filter(Boolean),
     );
-    const dailyAccountMetrics = await instantly.getDailyAccountAnalytics(apiKey);
-    const warmup = await instantly.getWarmupAnalytics(apiKey, [...accountEmails]);
+    const dailyAccountMetrics = refreshWorkspaceMetadata && accountEmails.size > 0
+      ? await instantly.getDailyAccountAnalytics(apiKey, { emails: [...accountEmails] })
+      : [];
+    const warmup = refreshWorkspaceMetadata
+      ? await instantly.getWarmupAnalytics(apiKey, [...accountEmails])
+      : { email_date_data: {}, aggregate_data: {} };
     await appendTraceLog("refresh.workspace_metadata", {
       analyticsRows: analytics.length,
       accountCount: accounts.length,
@@ -3282,10 +3339,6 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
       campaignsProcessed: 0,
       message: "Refreshing workspace metadata and campaign analytics.",
     });
-
-    const selectedCampaignIds = selectedCampaigns
-      .map((campaign) => String(campaign.id ?? ""))
-      .filter(Boolean);
 
     await clearWorkspaceData(db, workspaceId, selectedCampaignIds);
     await storeCampaignDirectory(db, workspaceId, campaigns, analyticsByCampaign);
