@@ -286,7 +286,7 @@ export async function buildSetupDoctorReport() {
           checks.push({
             name: instantCheckName,
             status: "pass",
-            message: "Instantly API key is configured and validated.",
+            message: "Instantly API key is configured and campaign-read access is validated.",
             detail: `${credentialValidation.message} Secret value suppressed.`,
           });
         } else if (credentialValidation?.status === "invalid") {

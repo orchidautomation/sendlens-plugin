@@ -37,6 +37,15 @@ if ! bash "${PLUGIN_ROOT}/scripts/bootstrap-runtime.sh"; then
   echo "[sendlens] Missing or incompatible runtime dependencies. SendLens could not bootstrap its local runtime." >&2
   exit 1
 fi
+export SENDLENS_RUNTIME_BOOTSTRAPPED=1
+
+# Host SessionStart hooks remain the preferred per-session trigger. Some
+# Codex/Claude host versions do not execute plugin hooks consistently, so MCP
+# process startup is an idempotent fallback. session-start.sh owns the shared
+# lock and returns immediately when another hook/process already started it.
+if ! bash "${PLUGIN_ROOT}/scripts/session-start.sh"; then
+  echo "[sendlens] Automatic startup refresh could not be launched; continuing with the last good local cache." >&2
+fi
 
 if [[ ! -f "${PLUGIN_ROOT}/build/plugin/server.js" ]]; then
   echo "[sendlens] Compiled MCP runtime not found at ${PLUGIN_ROOT}/build/plugin/server.js." >&2

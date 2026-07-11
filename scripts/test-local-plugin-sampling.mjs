@@ -11,7 +11,8 @@ const {
 } = require("../build/plugin/sampling.js");
 
 assert.equal(shouldUseFullRawIngest(500, 5000), true);
-assert.equal(shouldUseFullRawIngest(5000, 1000), true);
+assert.equal(shouldUseFullRawIngest(5000, 1000), false);
+assert.equal(shouldUseFullRawIngest(5000, 0), false);
 assert.equal(shouldUseFullRawIngest(5001, 1001), false);
 
 assert.equal(calculateNonReplyLeadSampleSize(200, 20), 100);

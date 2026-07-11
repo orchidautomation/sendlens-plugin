@@ -39,7 +39,7 @@ instantly.listEmails = async (_apiKey, _campaignId, cursor) => {
         thread_id: "thread-1",
         lead: "lead-uuid-not-email",
         from_address_email: "reply@example.com",
-        to_address_email_list: ["sender@example.com"],
+        to_address_email_list: "sender@example.com, secondary@example.com",
         subject: "Re: Hello",
         body: { text: "This is the hydrated reply body." },
         timestamp_email: "2026-05-03T20:00:00Z",

@@ -1,11 +1,11 @@
 /**
  * Instantly API v2 client with rate limiting and retry.
- * Workspace-wide limit: 100 req/10s and 600 req/min.
+ * Workspace-wide pacing is intentionally conservative at 100 req/10s
+ * and 600 req/min, below Instantly's current published ceiling.
  * The /emails listing endpoint is separately capped at 20 req/min.
  *
- * Per-endpoint cursor shapes vary: most list endpoints return a UUID
- * `next_starting_after`, but `/accounts` returns a datetime cursor.
- * See `detectCursorShape` and the `listAccounts` runtime guard.
+ * Pagination cursors are provider-owned opaque values. Iterators stop
+ * only on cursor exhaustion, repetition, or an explicit page cap.
  */
 import { appendTraceLog } from "./debug-log";
 
@@ -19,22 +19,31 @@ const LIST_MAX_PAGES = 200;
 const WARMUP_ANALYTICS_EMAIL_LIMIT = 100;
 const CAMPAIGN_ANALYTICS_BATCH_SIZE = 25;
 const ACCOUNT_ANALYTICS_EMAIL_BATCH_SIZE = 25;
+const REQUEST_TIMEOUT_MS = 30_000;
+
+function redactProviderText(value: string) {
+  return value
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]")
+    .replace(/\b(?:instly|sk)_[A-Za-z0-9_-]{8,}\b/g, "[redacted-secret]")
+    .replace(/(api[_-]?key|authorization|bearer)(\s*[:=]\s*|\s+)[^\s,;]+/gi, "$1$2[redacted-secret]");
+}
 
 class InstantlyApiError extends Error {
   constructor(
     readonly status: number,
-    readonly body: string,
+    body: string,
   ) {
-    super(`Instantly API ${status}: ${body}`);
+    const redactedBody = redactProviderText(body);
+    super(`Instantly API ${status}: ${redactedBody}`);
     this.name = "InstantlyApiError";
+    this.body = redactedBody;
   }
+
+  readonly body: string;
 }
 
-// Cursor shapes returned by Instantly V2 endpoints. Most list endpoints
-// return a UUID `next_starting_after`, but `/accounts` returns a
-// datetime cursor. Both round-trip through the `starting_after` query
-// param, but the *format* matters for client-side safety checks
-// (loop detection, length validation).
+// Kept as a diagnostic/exported compatibility helper. Runtime pagination
+// deliberately does not branch on cursor shape.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/;
 
@@ -47,12 +56,9 @@ export function detectCursorShape(cursor: string | null | undefined): CursorShap
   return "opaque";
 }
 
-// Instantly V2 workspace-wide rate limits. Empirically the published
-// ceiling is 100 req/10s and 600 req/min (also noted by the
-// instantly-cli reference at bcharleson/instantly-cli CLAUDE.md).
-// The previous header claimed 100 req/sec / 6000 req/min, which
-// overstates the limit. The sliding-window limiter below enforces
-// the conservative pair.
+// Instantly currently publishes 100 req/sec and 6000 req/min workspace-
+// wide. Keep a 10x safety margin because multiple host/plugin processes
+// can share the same workspace and this limiter is process-local.
 const RATE_LIMIT_10S = 100;
 const RATE_LIMIT_60S = 600;
 
@@ -275,12 +281,16 @@ async function fetchWithRetry(
 ): Promise<Response> {
   const startedAt = Date.now();
   const parsedUrl = new URL(url);
+  const queryKeys = [...new Set(parsedUrl.searchParams.keys())].sort();
   await appendTraceLog("http.request", {
     lane,
     attempt,
     method: options.method ?? "GET",
     path: parsedUrl.pathname,
-    query: parsedUrl.searchParams.toString(),
+    queryKeys,
+    queryValueCounts: Object.fromEntries(
+      queryKeys.map((key) => [key, parsedUrl.searchParams.getAll(key).length]),
+    ),
   });
   if (lane === "emails") {
     // Emails go through BOTH the workspace limiter (so they
@@ -298,10 +308,14 @@ async function fetchWithRetry(
   await acquireSlot();
   let res: Response;
   try {
-    res = await fetch(url, options);
+    const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+    const signal = options.signal
+      ? AbortSignal.any([options.signal, timeoutSignal])
+      : timeoutSignal;
+    res = await fetch(url, { ...options, signal });
   } catch (err) {
     releaseSlot();
-    if (attempt <= RETRY_ATTEMPTS) {
+    if (!options.signal?.aborted && attempt <= RETRY_ATTEMPTS) {
       const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
       console.log(`[instantly] Network error, retry ${attempt}/${RETRY_ATTEMPTS} in ${delay}ms`);
       await new Promise((r) => setTimeout(r, delay));
@@ -343,7 +357,7 @@ async function fetchWithRetry(
       status: res.status,
       path: parsedUrl.pathname,
       elapsedMs: Date.now() - startedAt,
-      body,
+      bodyLength: body.length,
     });
     throw new InstantlyApiError(res.status, body);
   }
@@ -394,6 +408,15 @@ function parseItemsAndCursor(data: unknown) {
   return { items, nextCursor };
 }
 
+function nextUnseenCursor(
+  nextCursor: string | null,
+  seenCursors: Set<string>,
+): string | null {
+  if (!nextCursor || seenCursors.has(nextCursor)) return null;
+  seenCursors.add(nextCursor);
+  return nextCursor;
+}
+
 function chunks<T>(items: T[], size: number) {
   const groups: T[][] = [];
   for (let start = 0; start < items.length; start += size) {
@@ -434,6 +457,7 @@ export async function listCampaigns(apiKey: string, maxPages = LIST_MAX_PAGES) {
 
 export type InstantlyApiKeyValidation = {
   status: "valid" | "invalid" | "unreachable";
+  validated_scope: "campaigns";
   message: string;
   http_status?: number;
   returned_campaigns?: number;
@@ -460,7 +484,8 @@ export async function validateApiKey(
           : [];
       return {
         status: "valid",
-        message: `Instantly accepted the key and returned ${items.length} campaign row${items.length === 1 ? "" : "s"} in the probe.`,
+        validated_scope: "campaigns",
+        message: `Instantly accepted the key for campaign reads and returned ${items.length} campaign row${items.length === 1 ? "" : "s"}. Complete-ingestion scopes are verified by the automatic snapshot refresh.`,
         http_status: res.status,
         returned_campaigns: items.length,
       };
@@ -469,6 +494,7 @@ export async function validateApiKey(
     if (res.status === 401 || res.status === 403) {
       return {
         status: "invalid",
+        validated_scope: "campaigns",
         message: `Instantly rejected the key with HTTP ${res.status}.`,
         http_status: res.status,
       };
@@ -476,12 +502,14 @@ export async function validateApiKey(
 
     return {
       status: "unreachable",
+      validated_scope: "campaigns",
       message: `Instantly credential probe returned HTTP ${res.status}; retry setup or run refresh_data after connectivity is healthy.`,
       http_status: res.status,
     };
   } catch (error) {
     return {
       status: "unreachable",
+      validated_scope: "campaigns",
       message:
         error instanceof Error
           ? `Instantly credential probe could not complete: ${error.message}.`
@@ -522,6 +550,7 @@ export async function listAllSubsequences(
 ): Promise<Array<Record<string, unknown>>> {
   const allSubsequences: Array<Record<string, unknown>> = [];
   let cursor: string | null = null;
+  const seenCursors = new Set<string>();
 
   for (let page = 0; page < maxPages; page++) {
     const { items, nextCursor } = await listSubsequencesPage(
@@ -530,8 +559,8 @@ export async function listAllSubsequences(
       cursor || undefined,
     );
     allSubsequences.push(...items);
-    cursor = nextCursor;
-    if (!cursor || items.length < 100) break;
+    cursor = nextUnseenCursor(nextCursor, seenCursors);
+    if (!cursor) break;
   }
 
   return allSubsequences;
@@ -650,15 +679,9 @@ export async function getDailyAnalytics(
 }
 
 export async function listAccounts(apiKey: string) {
-  // Instantly's /accounts endpoint returns a *datetime* cursor in
-  // `next_starting_after` (e.g. "2026-01-15T00:00:00.000Z"), unlike
-  // /campaigns and /leads which return UUIDs. Both pass through the
-  // same `starting_after` query param.
-  //
-  // The cursor shape is asserted on every page via detectCursorShape.
-  // If Instantly ever changes /accounts to return a different cursor
-  // type, the assertion logs the unexpected shape and stops
-  // paginating (so we never silently loop or skip rows).
+  // Instantly currently returns a composite timestamp_created&email
+  // cursor, while legacy workspaces may still return an ISO timestamp.
+  // Round-trip either form without interpreting it.
   const accounts: Array<Record<string, unknown>> = [];
   let cursor: string | null = null;
   const seenCursors = new Set<string>();
@@ -675,25 +698,8 @@ export async function listAccounts(apiKey: string) {
     const data = await res.json() as Record<string, unknown>;
     const { items, nextCursor } = parseItemsAndCursor(data);
     accounts.push(...items);
-    cursor = nextCursor;
-    if (cursor) {
-      const shape = detectCursorShape(cursor);
-      if (shape !== "datetime" && shape !== "none") {
-        await appendTraceLog("cursor.shape.unexpected", {
-          endpoint: "/accounts",
-          expected: "datetime",
-          actual: shape,
-          cursor,
-        });
-        // Stop paginating: the API behavior has changed and we
-        // don't want to loop or skip silently. The pages already
-        // collected are still returned; ingest will just be
-        // short and the operator sees the warning in the trace.
-        break;
-      }
-    }
-    if (!cursor || seenCursors.has(cursor)) break;
-    seenCursors.add(cursor);
+    cursor = nextUnseenCursor(nextCursor, seenCursors);
+    if (!cursor) break;
   }
 
   return accounts;
@@ -747,12 +753,13 @@ export async function listAllCustomTags(
 ): Promise<Array<Record<string, unknown>>> {
   const allTags: Array<Record<string, unknown>> = [];
   let cursor: string | null = null;
+  const seenCursors = new Set<string>();
 
   for (let page = 0; page < maxPages; page++) {
     const { items, nextCursor } = await listCustomTags(apiKey, cursor || undefined);
     allTags.push(...items);
-    cursor = nextCursor;
-    if (!cursor || items.length < 100) break;
+    cursor = nextUnseenCursor(nextCursor, seenCursors);
+    if (!cursor) break;
   }
 
   return allTags;
@@ -796,17 +803,25 @@ export async function listLeadsPage(
 }
 
 /**
- * Paginate all leads for a campaign. Batches 5 pages concurrently.
- * Returns all leads (can be 150K+).
+ * Paginate leads for a campaign until cursor exhaustion or maxPages.
  */
-export async function listAllLeads(
+export type LeadPaginationResult = {
+  items: InstantlyLead[];
+  exhausted: boolean;
+  terminationReason: "cursor_exhausted" | "cursor_repeated" | "max_pages";
+  pagesFetched: number;
+};
+
+export async function listAllLeadsWithCoverage(
   apiKey: string,
   campaignId: string,
   maxPages = 50,
   opts: LeadPageOptions = {},
-): Promise<InstantlyLead[]> {
+): Promise<LeadPaginationResult> {
   const allLeads: InstantlyLead[] = [];
   let cursor: string | null = null;
+  const seenCursors = new Set<string>();
+  let pagesFetched = 0;
 
   for (let page = 0; page < maxPages; page++) {
     const { items, nextCursor } = await listLeadsPage(
@@ -815,12 +830,43 @@ export async function listAllLeads(
       cursor || undefined,
       opts,
     );
+    pagesFetched += 1;
     allLeads.push(...items);
+    if (!nextCursor) {
+      return {
+        items: allLeads,
+        exhausted: true,
+        terminationReason: "cursor_exhausted",
+        pagesFetched,
+      };
+    }
+    if (seenCursors.has(nextCursor)) {
+      return {
+        items: allLeads,
+        exhausted: false,
+        terminationReason: "cursor_repeated",
+        pagesFetched,
+      };
+    }
+    seenCursors.add(nextCursor);
     cursor = nextCursor;
-    if (!cursor || items.length < (opts.limit ?? 100)) break;
   }
 
-  return allLeads;
+  return {
+    items: allLeads,
+    exhausted: false,
+    terminationReason: "max_pages",
+    pagesFetched,
+  };
+}
+
+export async function listAllLeads(
+  apiKey: string,
+  campaignId: string,
+  maxPages = 50,
+  opts: LeadPageOptions = {},
+): Promise<InstantlyLead[]> {
+  return (await listAllLeadsWithCoverage(apiKey, campaignId, maxPages, opts)).items;
 }
 
 export async function listSentEmails(
@@ -914,12 +960,13 @@ export async function listAllLeadLabels(
 ): Promise<Array<Record<string, unknown>>> {
   const allLabels: Array<Record<string, unknown>> = [];
   let cursor: string | null = null;
+  const seenCursors = new Set<string>();
 
   for (let page = 0; page < maxPages; page++) {
     const { items, nextCursor } = await listLeadLabels(apiKey, cursor || undefined);
     allLabels.push(...items);
-    cursor = nextCursor;
-    if (!cursor || items.length < 100) break;
+    cursor = nextUnseenCursor(nextCursor, seenCursors);
+    if (!cursor) break;
   }
 
   return allLabels;
@@ -933,6 +980,7 @@ export async function listAllEmails(
 ): Promise<Array<Record<string, unknown>>> {
   const allEmails: Array<Record<string, unknown>> = [];
   let cursor: string | null = null;
+  const seenCursors = new Set<string>();
 
   for (let page = 0; page < maxPages; page++) {
     const { items, nextCursor } = await listEmails(
@@ -942,8 +990,8 @@ export async function listAllEmails(
       opts,
     );
     allEmails.push(...items);
-    cursor = nextCursor;
-    if (!cursor || items.length < (opts.limit ?? 100)) break;
+    cursor = nextUnseenCursor(nextCursor, seenCursors);
+    if (!cursor) break;
   }
 
   return allEmails;
@@ -985,12 +1033,13 @@ export async function listAllCustomTagMappings(
 ): Promise<Array<Record<string, unknown>>> {
   const allMappings: Array<Record<string, unknown>> = [];
   let cursor: string | null = null;
+  const seenCursors = new Set<string>();
 
   for (let page = 0; page < maxPages; page++) {
     const { items, nextCursor } = await listCustomTagMappings(apiKey, cursor || undefined, opts);
     allMappings.push(...items);
-    cursor = nextCursor;
-    if (!cursor || items.length < 100) break;
+    cursor = nextUnseenCursor(nextCursor, seenCursors);
+    if (!cursor) break;
   }
 
   return allMappings;
@@ -1120,12 +1169,13 @@ export async function listAllInboxPlacementTests(
 ): Promise<Array<Record<string, unknown>>> {
   const tests: Array<Record<string, unknown>> = [];
   let cursor: string | null = null;
+  const seenCursors = new Set<string>();
 
   for (let page = 0; page < maxPages; page++) {
     const { items, nextCursor } = await listInboxPlacementTestsPage(apiKey, cursor || undefined);
     tests.push(...items);
-    cursor = nextCursor;
-    if (!cursor || items.length < 100) break;
+    cursor = nextUnseenCursor(nextCursor, seenCursors);
+    if (!cursor) break;
   }
 
   return tests;
@@ -1164,6 +1214,7 @@ export async function listAllInboxPlacementAnalyticsForTest(
 ): Promise<Array<Record<string, unknown>>> {
   const analytics: Array<Record<string, unknown>> = [];
   let cursor: string | null = null;
+  const seenCursors = new Set<string>();
 
   for (let page = 0; page < maxPages; page++) {
     const { items, nextCursor } = await listInboxPlacementAnalyticsPage(apiKey, {
@@ -1171,8 +1222,8 @@ export async function listAllInboxPlacementAnalyticsForTest(
       cursor: cursor || undefined,
     });
     analytics.push(...items);
-    cursor = nextCursor;
-    if (!cursor || items.length < 100) break;
+    cursor = nextUnseenCursor(nextCursor, seenCursors);
+    if (!cursor) break;
   }
 
   return analytics;

@@ -11,6 +11,7 @@ const {
   listAccounts,
   listAllInboxPlacementAnalyticsForTest,
   listAllInboxPlacementTests,
+  listAllLeadsWithCoverage,
   listCampaigns,
   listCampaignsPage,
   parseRetryAfter,
@@ -61,14 +62,14 @@ globalThis.fetch = async (url, options = {}) => {
   if (parsed.pathname.endsWith("/accounts")) {
     const cursor = parsed.searchParams.get("starting_after");
     if (!cursor) {
-      // Instantly's /accounts returns a *datetime* cursor in
-      // `next_starting_after`, unlike /campaigns which returns a UUID.
+      // Current Instantly account pagination returns a composite
+      // `timestamp_created&email` cursor. Treat it as opaque.
       return responseJson({
         items: rows("account", 0, 99),
-        next_starting_after: "2026-01-15T00:00:00.000Z",
+        next_starting_after: "2026-01-15T00:00:00.000Z&account-98@example.com",
       });
     }
-    if (cursor === "2026-01-15T00:00:00.000Z") {
+    if (cursor === "2026-01-15T00:00:00.000Z&account-98@example.com") {
       return responseJson({
         items: rows("account", 99, 2),
         next_starting_after: null,
@@ -155,6 +156,51 @@ async function testRetryAfterHonored() {
       elapsed < 5000,
       `Should not wait the 1s+2s+4s exponential chain, got ${elapsed}ms`,
     );
+  } finally {
+    globalThis.fetch = originalFetch2;
+  }
+}
+
+async function testProviderErrorsRedactSensitiveValues() {
+  const originalFetch2 = globalThis.fetch;
+  globalThis.fetch = async () => responseJson({
+    message: "Mailbox private.sender@example.com rejected api_key=instly_private_secret_value",
+  }, 500);
+  try {
+    await assert.rejects(
+      listCampaigns("test-key"),
+      (error) => {
+        const message = String(error?.message ?? error);
+        return message.includes("[redacted-email]") &&
+          message.includes("[redacted-secret]") &&
+          !message.includes("private.sender@example.com") &&
+          !message.includes("instly_private_secret_value");
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch2;
+  }
+}
+
+async function testLeadPaginationReportsTermination() {
+  const originalFetch2 = globalThis.fetch;
+  globalThis.fetch = async (_url, options = {}) => {
+    const body = JSON.parse(String(options.body ?? "{}"));
+    return responseJson({
+      items: rows("lead", body.starting_after ? 1 : 0, 1),
+      next_starting_after: body.starting_after ? "repeat-cursor" : "repeat-cursor",
+    });
+  };
+  try {
+    const capped = await listAllLeadsWithCoverage("test-key", "campaign-1", 1);
+    assert.equal(capped.exhausted, false);
+    assert.equal(capped.terminationReason, "max_pages");
+    assert.equal(capped.pagesFetched, 1);
+
+    const repeated = await listAllLeadsWithCoverage("test-key", "campaign-1", 3);
+    assert.equal(repeated.exhausted, false);
+    assert.equal(repeated.terminationReason, "cursor_repeated");
+    assert.equal(repeated.pagesFetched, 2);
   } finally {
     globalThis.fetch = originalFetch2;
   }
@@ -335,7 +381,7 @@ try {
       .map((call) => call.search),
     [
       "limit=100",
-      "limit=100&starting_after=2026-01-15T00%3A00%3A00.000Z",
+      "limit=100&starting_after=2026-01-15T00%3A00%3A00.000Z%26account-98%40example.com",
     ],
   );
 
@@ -401,6 +447,8 @@ try {
   );
 
   await testRetryAfterHonored();
+  await testProviderErrorsRedactSensitiveValues();
+  await testLeadPaginationReportsTermination();
   await testCampaignAnalyticsScopesAndSplitsOversizedRequests();
   await testCampaignAnalyticsUsesBoundedBatches();
   await testDailyAccountAnalyticsScopesAndSplitsOversizedRequests();
@@ -409,9 +457,8 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-// Separate suite: listAccounts must STOP paginating when the cursor
-// shape changes away from datetime. Without this, a future Instantly
-// API change would silently skip rows.
+// Separate suite: cursors are provider-owned opaque values. Continue
+// through shape changes and stop only on exhaustion/repetition/caps.
 {
   const originalFetch2 = globalThis.fetch;
   const accountsCalls = [];
@@ -421,26 +468,20 @@ try {
     if (parsed.pathname.endsWith("/accounts")) {
       const cursor = parsed.searchParams.get("starting_after");
       if (!cursor) {
-        // First page is fine, returns a datetime cursor.
         return responseJson({
           items: rows("account", 0, 5),
-          next_starting_after: "2026-01-15T00:00:00.000Z",
+          next_starting_after: "2026-01-15T00:00:00.000Z&account-4@example.com",
         });
       }
-      if (cursor === "2026-01-15T00:00:00.000Z") {
-        // Second page returns a UUID (unexpected!). The client
-        // should detect this and stop.
+      if (cursor === "2026-01-15T00:00:00.000Z&account-4@example.com") {
         return responseJson({
           items: rows("account", 5, 5),
-          next_starting_after: "11111111-2222-3333-4444-555555555555",
+          next_starting_after: "opaque-next-page-token",
         });
       }
-      if (cursor === "11111111-2222-3333-4444-555555555555") {
-        // If the client doesn't stop, this third page would
-        // return more data. The test below asserts we never get
-        // here.
+      if (cursor === "opaque-next-page-token") {
         return responseJson({
-          items: rows("account", 10, 100),
+          items: rows("account", 10, 1),
           next_starting_after: null,
         });
       }
@@ -449,11 +490,11 @@ try {
   };
   try {
     const accounts = await listAccounts("test-key");
-    assert.equal(accounts.length, 10, "listAccounts should stop after detecting wrong cursor shape");
+    assert.equal(accounts.length, 11, "listAccounts should follow every opaque provider cursor");
     assert.equal(
       accountsCalls.length,
-      2,
-      `Expected exactly 2 fetch calls (1st page + 2nd page that returned the bad cursor), got ${accountsCalls.length}`,
+      3,
+      `Expected exactly 3 fetch calls through cursor exhaustion, got ${accountsCalls.length}`,
     );
   } finally {
     globalThis.fetch = originalFetch2;

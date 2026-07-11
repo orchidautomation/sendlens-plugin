@@ -631,6 +631,26 @@ async function assertInstallerFirstRefreshContract() {
   );
 }
 
+async function assertAutomaticRefreshFallback() {
+  const sourceLauncher = await readText("scripts/start-mcp.sh");
+  assert(
+    /scripts\/session-start\.sh/.test(sourceLauncher),
+    "scripts/start-mcp.sh: MCP startup must launch the locked session refresh fallback",
+  );
+  assert(
+    /SENDLENS_RUNTIME_BOOTSTRAPPED/.test(sourceLauncher),
+    "scripts/start-mcp.sh: fallback should reuse the completed runtime bootstrap",
+  );
+
+  for (const host of ["claude-code", "cursor", "codex", "opencode"]) {
+    const launcher = await readText(`dist/${host}/scripts/start-mcp.sh`);
+    assert(
+      /scripts\/session-start\.sh/.test(launcher),
+      `dist/${host}/scripts/start-mcp.sh: expected automatic refresh fallback`,
+    );
+  }
+}
+
 const inventory = await sourceInventory();
 
 let buildOutput = "";
@@ -668,6 +688,7 @@ await assertExplicitHostDegradation();
 await assertNoCredentialsRequired();
 await assertDemoModeContracts();
 await assertInstallerFirstRefreshContract();
+await assertAutomaticRefreshFallback();
 
 if (failures.length > 0) {
   console.error("Host bundle inventory failures:");
