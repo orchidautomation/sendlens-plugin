@@ -72,20 +72,23 @@ function installSuccessfulRefresh(workspaceId, campaignId, campaignName) {
       timestamp_updated: "2026-05-02T00:00:00Z",
     },
   ];
-  instantly.getCampaignAnalytics = async () => [
-    {
-      campaign_id: campaignId,
-      campaign_name: campaignName,
-      leads_count: 1,
-      contacted_count: 1,
-      emails_sent_count: 10,
-      reply_count_unique: 1,
-      reply_count_automatic: 0,
-      bounced_count: 0,
-      total_opportunities: 0,
-      total_opportunity_value: 0,
-    },
-  ];
+  instantly.getCampaignAnalytics = async (_apiKey, options) => {
+    assert.deepEqual(options?.campaignIds, [campaignId]);
+    return [
+      {
+        campaign_id: campaignId,
+        campaign_name: campaignName,
+        leads_count: 1,
+        contacted_count: 1,
+        emails_sent_count: 10,
+        reply_count_unique: 1,
+        reply_count_automatic: 0,
+        bounced_count: 0,
+        total_opportunities: 0,
+        total_opportunity_value: 0,
+      },
+    ];
+  };
   instantly.listAccounts = async () => [
     {
       email: `${campaignId}@example.com`,
@@ -94,7 +97,10 @@ function installSuccessfulRefresh(workspaceId, campaignId, campaignName) {
       daily_limit: 25,
     },
   ];
-  instantly.getDailyAccountAnalytics = async () => [];
+  instantly.getDailyAccountAnalytics = async (_apiKey, options) => {
+    assert.deepEqual(options?.emails, [`${campaignId}@example.com`]);
+    return [];
+  };
   instantly.getWarmupAnalytics = async () => ({ aggregate_data: {} });
   instantly.listAllCustomTags = async () => [];
   instantly.listAllCustomTagMappings = async () => [];
@@ -331,6 +337,16 @@ try {
     refreshWorkspaceAtomically({ source: "manual" }),
     /Instantly API 500: test failure/,
   );
+  assert.equal(
+    await pathExists(path.join(tempDir, ".workspace-cache.duckdb.refreshing")),
+    false,
+    "failed atomic refreshes must remove the shadow DuckDB",
+  );
+  assert.equal(
+    await pathExists(path.join(tempDir, ".workspace-cache.duckdb.refreshing.wal")),
+    false,
+    "failed atomic refreshes must remove the shadow DuckDB WAL",
+  );
   db = await openDb();
   try {
     const readiness = await assertCacheReadableForCurrentEnv(db);
@@ -427,6 +443,9 @@ try {
   }
 
   installSuccessfulRefresh("ws_qualified", "qualified-campaign", "Qualified Campaign");
+  instantly.listAccounts = async () => {
+    throw new Error("Campaign-scoped refresh must not load workspace account metadata.");
+  };
   const qualifiedInstantlyRefresh = await refreshWorkspaceAtomically({
     provider: "instantly",
     source: "manual",
