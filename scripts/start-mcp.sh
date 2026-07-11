@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ROOT="${PLUGIN_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 export PLUGIN_ROOT
-export SENDLENS_CONTEXT_ROOT="${SENDLENS_CONTEXT_ROOT:-${PWD}}"
+export SENDLENS_CONTEXT_ROOT="${SENDLENS_CONTEXT_ROOT:-${PLUXX_MCP_WORKSPACE_ROOT:-${PLUXX_HOOK_WORKSPACE_ROOT:-${PWD}}}}"
 
 # shellcheck disable=SC1091
 source "${PLUGIN_ROOT}/scripts/load-env.sh"
