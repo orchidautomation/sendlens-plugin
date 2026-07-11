@@ -1,0 +1,4 @@
+interface:
+  display_name: "SendLens Analyst"
+  short_description: "Diagnose evidence and orchestrate outbound"
+  default_prompt: "Use $sendlens-analyst to diagnose outbound performance and orchestrate the next campaign, copy, and launch plan."

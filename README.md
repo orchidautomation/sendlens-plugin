@@ -40,6 +40,7 @@ It can:
 - surface tracking, bounce-protection, sender, and inbox-placement risk before launch
 - project how many days of sending you have left before you run out of leads
 - read replies and lead fields for patterns, objections, and ICP signals
+- turn validated patterns into a new campaign recommendation, evidence-backed copy variants, and a measurable experiment
 - write client-safe account-manager briefs
 
 You don't need to know how anything is stored, or what to call any of this. You ask in plain language. SendLens picks the right play and answers.
@@ -58,6 +59,7 @@ These are the kinds of questions SendLens can answer today:
 - "Which senders are landing in spam or categories in inbox-placement tests, and is the issue authentication, warmup, or content?"
 - "For every campaign, show whether open tracking, link tracking, ESP matching, bounce protection, risky contacts, and unsubscribe headers are on."
 - "Build this week's account-manager brief: wins, risks, current actions, client asks, and next review date."
+- "Use the strongest validated segment and reply evidence to recommend the next campaign, write two meaningful copy variants, and define the launch and experiment contract."
 
 ## The Heavy Hitters
 

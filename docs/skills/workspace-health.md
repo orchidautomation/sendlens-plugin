@@ -13,7 +13,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 ## Primary Surfaces
 
-- Skill source: `skills/workspace-health/SKILL.md`
+- Analyst module: `skills/sendlens-analyst/references/workspace-and-performance.md`
 - Command: `/workspace-health`
 - Default agent: `workspace-triager`
 - MCP tools: `refresh_data`, `workspace_snapshot`, `analysis_starters`, `analyze_data`

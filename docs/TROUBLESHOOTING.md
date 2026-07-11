@@ -62,6 +62,8 @@ hooks = true
 
 Codex hook support uses `hooks`; `codex_hooks` is deprecated and should not be treated as the current hook feature key.
 
+If Codex recognizes SendLens skills and tools but reports an unknown SendLens agent type, the plugin bundle is present but its custom-agent registration is missing or stale. Rerun the current installer, run `pluxx verify-install --target codex`, and restart Codex. The installer owns registration under the active Codex home; do not copy agent TOML files manually.
+
 Expected core tools:
 
 - `workspace_snapshot`

@@ -1,0 +1,20 @@
+[
+  { "query": "what's working and not working in my outbound workspace?", "should_trigger": true },
+  { "query": "rank my campaigns and tell me which one deserves a deeper look", "should_trigger": true },
+  { "query": "why did replies drop last week?", "should_trigger": true },
+  { "query": "pull the latest replies and diagnose the objections for this campaign", "should_trigger": true },
+  { "query": "which lead segments and custom fields seem to respond best?", "should_trigger": true },
+  { "query": "analyze the copy in step 0 and explain what is hurting it", "should_trigger": true },
+  { "query": "analyze everything, recommend the next campaign, write it, and plan the launch", "should_trigger": true },
+  { "query": "tell me what is working and turn it into the next test end to end", "should_trigger": true },
+  { "query": "build only the audience, offer, angle, and sequence strategy from these validated findings", "should_trigger": false },
+  { "query": "draft the three-email sequence from this approved campaign brief", "should_trigger": false },
+  { "query": "rewrite these subjects and bodies using the validated strategy", "should_trigger": false },
+  { "query": "is this campaign safe to launch tomorrow?", "should_trigger": false },
+  { "query": "define the stop and scale rules for this ready campaign", "should_trigger": false },
+  { "query": "install SendLens for me", "should_trigger": false },
+  { "query": "diagnose why the SendLens connection is unavailable", "should_trigger": false },
+  { "query": "send these emails through Smartlead", "should_trigger": false },
+  { "query": "edit the campaign settings in Instantly", "should_trigger": false },
+  { "query": "build a React dashboard for marketing analytics", "should_trigger": false }
+]

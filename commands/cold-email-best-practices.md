@@ -8,4 +8,4 @@ context: fork
 
 # Cold Email Best Practices
 
-Use the `cold-email-best-practices` skill when the user wants policy guidance, benchmark framing, or a best-practices lens for recommendations.
+Use the `sendlens-copywriter` skill when the user wants policy guidance, benchmark framing, data-backed copy, or a best-practices lens for an approved campaign strategy.

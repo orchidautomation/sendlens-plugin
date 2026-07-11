@@ -43,7 +43,7 @@ export default definePlugin({
     defaultPrompts: [
       "Run SendLens setup and tell me whether this plugin is ready.",
       "Use SendLens demo mode to show me a synthetic workspace analysis without production credentials.",
-      "Use SendLens to tell me what is working and not working in this outbound workspace.",
+      "Use SendLens to diagnose what is working, recommend the next campaign, draft the sequence, and define launch and learning rules.",
     ],
   },
 

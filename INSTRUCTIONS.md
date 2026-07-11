@@ -11,23 +11,21 @@ SendLens is the reasoning layer over Instantly and Smartlead provider data. It r
 
 ## Workflow Guidance
 
-- `using-sendlens`: Use as the shared product behavior contract for MCP-first routing, evidence calibration, safe fallbacks, and workflow selection.
-- `workspace-health`: Use for broad health checks, reply-rate diagnosis, account quality, and "what changed?" questions.
-- `campaign-performance`: Use for campaign comparisons, step analysis, variant ranking, and prioritization.
-- `account-manager-brief`: Use for client-safe updates, daily AM action queues, risk summaries, and "what should I tell the client?" questions.
-- `campaign-launch-qa`: Use before turning on, scaling, resuming, cloning, or handing off a campaign.
-- `experiment-planner`: Use for "what should we test next?", campaign improvement plans, and experiment evaluation design.
-- `copy-analysis`: Use for subject/body analysis, template review, and recommendations grounded in real replies.
-- `reply-patterns`: Use for positive vs negative reply cohort analysis, intent patterns, and outcome comparisons by step or variant.
-- `icp-signals`: Use for lead-segment hypotheses, campaign-variable patterns, and "who responds?" questions.
-- `cold-email-best-practices`: Use as the policy layer when recommending changes or critiquing copy and setup.
+- `sendlens-analyst`: Use for performance, deliverability, reply, ICP, and copy diagnosis. It is also the automatic orchestrator for broad end-to-end requests.
+- `sendlens-campaign-strategist`: Use for focused audience, exclusions, problem, offer, angle, sequence architecture, personalization, CTA, and experiment recommendations from validated findings.
+- `sendlens-copywriter`: Use for focused subject, body, CTA, follow-up, sequence, rewrite, and meaningful variant drafting from a validated strategy.
+- `sendlens-launch-operator`: Use for launch/resume/clone/scale/stop QA, measurement, guardrails, decision rules, and learning or client handoffs.
+- `sendlens-setup`: Use only for installation, credentials, runtime/cache readiness, host bundles, refresh lifecycle failures, or demo setup.
+- Legacy workflow commands remain explicit shortcuts into the owning public skill and existing specialist agent.
 
 ## Startup Operating Contract
 
-Treat this file as the host startup bias for SendLens. The user should not need to invoke `/using-sendlens` or ask for a SendLens skill before campaign, reply, copy, ICP, deliverability, or Instantly workspace questions route through SendLens.
+Treat this file as the host startup bias for SendLens. The user should not need to invoke `/sendlens-analyst`, `/using-sendlens`, or a legacy workflow command before campaign, reply, copy, ICP, deliverability, campaign-strategy, or provider workspace questions route through SendLens.
 
 - For simple inventory, freshness, and status questions, call `workspace_snapshot` and `refresh_status` directly, then answer without loading extra SendLens skills.
-- For diagnostic or recommendation questions, start from `workspace_snapshot`, then use `analysis_starters` for the matching topic before custom SQL.
+- For diagnosis, use `sendlens-analyst`: start from `workspace_snapshot`, then use `analysis_starters` for the matching topic before custom SQL.
+- For a focused campaign blueprint, copy draft, or launch/scale decision, route directly to the matching focused skill. If its required evidence is not validated, run the minimum analyst prerequisite and return to the requested workflow.
+- For a broad request that spans what is working through what to run, write, or launch next, let `sendlens-analyst` orchestrate strategist → copywriter → launch operator automatically. Do not make the user invoke each skill.
 - For winner, scale, kill, working, or client-safe claims, treat broad aggregates as triage only. Load the campaign with `load_campaign_data` before making the claim.
 - For copy, reply, ICP, launch QA, and experiment planning, narrow to one campaign before deep analysis.
 - Keep evidence labels honest: `exact_aggregate`, `sampled_evidence`, `reconstructed_outbound`, `hydrated_reply_body`, `inference`, or `unsupported`.
@@ -45,9 +43,9 @@ Treat this file as the host startup bias for SendLens. The user should not need 
 
 ## Tool Routing
 
-- Treat `using-sendlens` as the routing contract for SendLens product behavior. Cross-platform and cross-agent startup delivery belongs in Pluxx, not in SendLens.
+- Treat the five public skills as the SendLens behavior contract. `sendlens-analyst` owns shared evidence and broad orchestration; the focused skills own strategy, drafting, launch operations, and setup. Cross-platform delivery belongs in Pluxx.
 - If the user mentions `SendLens`, the plugin name, the Instantly workspace, campaign performance, replies, copy health, or asks to "pull my data", do not freeform first. Start with SendLens tools immediately.
-- In Codex, this `AGENTS.md` file is the always-on SendLens operating contract. For simple inventory and freshness questions such as "what campaigns do you see?" or "when was SendLens last refreshed?", do not load SendLens skills first. Call `workspace_snapshot` and `refresh_status` directly, then answer concisely. Use SendLens skills only for deeper diagnosis, copy/reply/ICP analysis, launch QA, experiment planning, setup checks, or when the user explicitly asks how to use SendLens.
+- In Codex, this `AGENTS.md` file is the always-on SendLens operating contract. For simple inventory and freshness questions, call `workspace_snapshot` and `refresh_status` directly. Use `sendlens-analyst` for diagnosis and broad orchestration, then the focused strategy, copywriter, or launch skill when that is the user's actual job. Use `sendlens-setup` only for setup and runtime health.
 - Session start already triggers a fresh local refresh of actively sending campaigns. That startup path is intentionally lean: exact analytics, templates, and a sampled lead evidence layer with reply-signal leads found during bounded lead scans plus bounded non-reply leads. Call `refresh_data` again only when the user explicitly asks for another fresh pull or switches clients.
 - Use SendLens MCP tools as the whole working surface for SendLens analysis. If those tools are missing or unavailable in the host session, stop and tell the user to reload or reinstall the SendLens plugin so the MCP server mounts correctly. Do not inspect local files, run shell setup checks such as `claude mcp list`, parse cached tool outputs with `jq`, query DuckDB through shell, read `refresh-status.json`, wait with shell commands such as `sleep`, or inspect repo source as a substitute for SendLens tool calls.
 - `workspace_snapshot`: First read after refresh or for broad workspace questions. This is the default first call for "pull my data", "what's happening?", "what's working?", and "give me the snapshot".
@@ -61,12 +59,18 @@ Treat this file as the host startup bias for SendLens. The user should not need 
 
 ## Agent Map
 
-Analysis skills and command wrappers carry `context: fork` plus the mapped `agent` so heavy SendLens analysis runs in a delegated context when the host supports it. When the host supports native delegated agents, use these specialist reviewers:
+The portable public skills keep Agent Skills–compliant frontmatter. Legacy command wrappers retain host-specific agent routing where supported. Use these specialist reviewers for focused internal passes:
 
 - `workspace-triager`
   rank the workspace and choose the next one campaign to analyze
 - `campaign-analyst`
   run one-campaign diagnosis after hydrating that campaign
+- `campaign-strategist`
+  turn validated findings into a campaign blueprint and experiment hypothesis
+- `campaign-copywriter`
+  draft an evidence-backed sequence and meaningful variants from approved strategy
+- `launch-operator`
+  gate launch/scale and define measurement, decision rules, and learning handoff
 - `copy-auditor`
   inspect templates and reconstructed copy for one campaign
 - `icp-auditor`
@@ -76,7 +80,7 @@ Analysis skills and command wrappers carry `context: fork` plus the mapped `agen
 - `synthesis-reviewer`
   compress and pressure-test the final answer before returning it
 
-If the host degrades command or skill routing to guidance, explicitly invoke the mapped specialist before deep MCP analysis when native delegated agents are available. If the host does not expose native delegated agents, preserve the same one-campaign-at-a-time separation in the working plan.
+If the host degrades command routing to guidance, invoke the relevant specialist only when native delegated agents are available and the extra pass materially improves the answer. Otherwise preserve the same one-campaign-at-a-time separation in the working plan.
 
 ## Preferred Query Surfaces
 
@@ -112,11 +116,15 @@ If the host degrades command or skill routing to guidance, explicitly invoke the
 
 The expected flow is:
 
-1. use `workspace-triager` or `campaign_overview` to pick the campaign
-2. load one campaign with `load_campaign_data`
-3. run `prepare_campaign_analysis` before premium working/not-working or reply-quality claims
-4. use `campaign-analyst`, `copy-auditor`, `icp-auditor`, or `reply-auditor` as needed
-4. use `synthesis-reviewer` to compress the result if the analysis is broad
+1. use `sendlens-analyst` to resolve the decision and evidence lane
+2. use `workspace-triager` or `campaign_overview` to pick the campaign when scope is broad
+3. load one campaign with `load_campaign_data`
+4. run `prepare_campaign_analysis` before premium working/not-working or reply-quality claims
+5. use the diagnostic specialist agents only as needed
+6. use `sendlens-campaign-strategist` to turn validated evidence into a campaign blueprint
+7. use `sendlens-copywriter` for requested subjects, bodies, CTAs, sequences, and meaningful variants
+8. use `sendlens-launch-operator` for readiness, measurement, stop/scale rules, and learning handoff
+9. use `synthesis-reviewer` to compress and pressure-test broad recommendations
 
 Do not fan out multiple campaign specialists until the workspace-level triage identifies which campaigns are worth the extra work.
 

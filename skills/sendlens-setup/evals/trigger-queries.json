@@ -1,0 +1,12 @@
+[
+  { "query": "install and configure SendLens", "should_trigger": true },
+  { "query": "run the SendLens setup doctor", "should_trigger": true },
+  { "query": "why are the SendLens tools missing?", "should_trigger": true },
+  { "query": "SendLens is not loading after restarting Codex", "should_trigger": true },
+  { "query": "start a synthetic SendLens demo", "should_trigger": true },
+  { "query": "which campaign is winning?", "should_trigger": false },
+  { "query": "what are prospects objecting to?", "should_trigger": false },
+  { "query": "recommend the next outbound campaign and write the copy", "should_trigger": false },
+  { "query": "is this campaign ready to launch?", "should_trigger": false },
+  { "query": "build this week's client account brief", "should_trigger": false }
+]

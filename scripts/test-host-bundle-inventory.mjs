@@ -11,7 +11,14 @@ const root = path.resolve(__dirname, "..");
 
 const failures = [];
 const packageJson = await readJson("package.json");
-const ANALYSIS_SKILL_AGENTS = new Map([
+const PUBLIC_SKILLS = [
+  "sendlens-analyst",
+  "sendlens-campaign-strategist",
+  "sendlens-copywriter",
+  "sendlens-launch-operator",
+  "sendlens-setup",
+];
+const LEGACY_COMMAND_AGENTS = new Map([
   ["account-manager-brief", "workspace-triager"],
   ["campaign-launch-qa", "campaign-analyst"],
   ["campaign-performance", "campaign-analyst"],
@@ -21,6 +28,18 @@ const ANALYSIS_SKILL_AGENTS = new Map([
   ["icp-signals", "icp-auditor"],
   ["reply-patterns", "reply-auditor"],
   ["workspace-health", "workspace-triager"],
+]);
+const LEGACY_COMMAND_SKILLS = new Map([
+  ["account-manager-brief", "sendlens-launch-operator"],
+  ["campaign-launch-qa", "sendlens-launch-operator"],
+  ["campaign-performance", "sendlens-analyst"],
+  ["cold-email-best-practices", "sendlens-copywriter"],
+  ["copy-analysis", "sendlens-analyst"],
+  ["experiment-planner", "sendlens-campaign-strategist"],
+  ["icp-signals", "sendlens-analyst"],
+  ["reply-patterns", "sendlens-analyst"],
+  ["workspace-health", "sendlens-analyst"],
+  ["using-sendlens", "sendlens-analyst"],
 ]);
 const shouldBuild =
   !process.argv.includes("--assume-dist") &&
@@ -150,7 +169,23 @@ async function sourceInventory() {
     (entry) => entry.isFile() && entry.name.endsWith(".md"),
   )).map((name) => path.basename(name, ".md"));
 
-  sameSet(commands, skills, "source command/skill parity");
+  sameSet(skills, PUBLIC_SKILLS, "source public skills");
+  for (const skill of PUBLIC_SKILLS) {
+    assert(
+      commands.includes(skill),
+      `source commands: missing public skill command "${skill}"`,
+    );
+  }
+  for (const command of LEGACY_COMMAND_AGENTS.keys()) {
+    assert(
+      commands.includes(command),
+      `source commands: missing legacy analyst shortcut "${command}"`,
+    );
+  }
+  assert(
+    commands.includes("using-sendlens"),
+    'source commands: missing legacy analyst shortcut "using-sendlens"',
+  );
 
   return { skills, commands, agents };
 }
@@ -298,10 +333,13 @@ async function assertHostCommandInventory(commands) {
         command.description.trim().length > 0,
       `dist/codex/.codex/commands.generated.json: command "${command.id}" is missing generated description`,
     );
+    const expectedSkill = PUBLIC_SKILLS.includes(command.id)
+      ? command.id
+      : LEGACY_COMMAND_SKILLS.get(command.id);
     assert(
       typeof command.template === "string" &&
-        command.template.includes(`\`${command.id}\` skill`),
-      `dist/codex/.codex/commands.generated.json: command "${command.id}" must route to its skill in template`,
+        command.template.includes(`\`${expectedSkill}\` skill`),
+      `dist/codex/.codex/commands.generated.json: command "${command.id}" must route to the "${expectedSkill}" skill in template`,
     );
   }
 
@@ -316,25 +354,27 @@ async function assertHostCommandInventory(commands) {
 
 async function assertGeneratedSubagentRouting() {
   for (const host of ["claude-code", "cursor", "opencode"]) {
-    for (const [skill, agent] of ANALYSIS_SKILL_AGENTS) {
-      const skillText = await readText(`dist/${host}/skills/${skill}/SKILL.md`);
-      assert(
-        frontmatterValue(skillText, "context") === "fork",
-        `dist/${host}/skills/${skill}/SKILL.md: expected context: fork`,
-      );
-      assert(
-        frontmatterValue(skillText, "agent") === agent,
-        `dist/${host}/skills/${skill}/SKILL.md: expected agent: ${agent}`,
-      );
-
-      const commandText = await readText(`dist/${host}/commands/${skill}.md`);
+    for (const [command, agent] of LEGACY_COMMAND_AGENTS) {
+      const commandText = await readText(`dist/${host}/commands/${command}.md`);
       assert(
         frontmatterValue(commandText, "context") === "fork",
-        `dist/${host}/commands/${skill}.md: expected context: fork`,
+        `dist/${host}/commands/${command}.md: expected context: fork`,
       );
       assert(
         frontmatterValue(commandText, "agent") === agent,
-        `dist/${host}/commands/${skill}.md: expected agent: ${agent}`,
+        `dist/${host}/commands/${command}.md: expected agent: ${agent}`,
+      );
+    }
+
+    for (const skill of PUBLIC_SKILLS) {
+      const skillText = await readText(`dist/${host}/skills/${skill}/SKILL.md`);
+      assert(
+        frontmatterValue(skillText, "context") === undefined,
+        `dist/${host}/skills/${skill}/SKILL.md: portable public skills must not declare context`,
+      );
+      assert(
+        frontmatterValue(skillText, "agent") === undefined,
+        `dist/${host}/skills/${skill}/SKILL.md: portable public skills must not declare agent`,
       );
     }
   }
@@ -350,31 +390,48 @@ async function assertGeneratedSubagentRouting() {
     ? codexCommands.commands
     : [];
 
-  for (const [skill, agent] of ANALYSIS_SKILL_AGENTS) {
-    const generatedSkill = generatedSkills.find((entry) => entry.id === skill);
+  sameSet(
+    generatedSkills.map((skill) => skill.id),
+    PUBLIC_SKILLS,
+    "dist/codex/.codex/skills.generated.json public skills",
+  );
+  for (const generatedSkill of generatedSkills) {
     assert(
-      generatedSkill?.context === "fork",
-      `dist/codex/.codex/skills.generated.json: skill "${skill}" must preserve context: fork`,
+      generatedSkill.context === undefined && generatedSkill.agent === undefined,
+      `dist/codex/.codex/skills.generated.json: portable skill "${generatedSkill.id}" must not declare host routing`,
     );
-    assert(
-      generatedSkill?.agent === agent,
-      `dist/codex/.codex/skills.generated.json: skill "${skill}" must preserve agent "${agent}"`,
-    );
+  }
 
+  for (const [command, agent] of LEGACY_COMMAND_AGENTS) {
     const generatedCommand = generatedCommands.find(
-      (entry) => entry.id === skill,
+      (entry) => entry.id === command,
     );
     assert(
       generatedCommand?.context === "fork",
-      `dist/codex/.codex/commands.generated.json: command "${skill}" must preserve context: fork`,
+      `dist/codex/.codex/commands.generated.json: command "${command}" must preserve context: fork`,
     );
     assert(
       generatedCommand?.agent === agent,
-      `dist/codex/.codex/commands.generated.json: command "${skill}" must preserve agent "${agent}"`,
+      `dist/codex/.codex/commands.generated.json: command "${command}" must preserve agent "${agent}"`,
     );
     assert(
       generatedCommand?.subtask === true,
-      `dist/codex/.codex/commands.generated.json: command "${skill}" must preserve subtask: true`,
+      `dist/codex/.codex/commands.generated.json: command "${command}" must preserve subtask: true`,
+    );
+  }
+
+  for (const [command, agent] of [
+    ["sendlens-analyst", "campaign-analyst"],
+    ["sendlens-campaign-strategist", "campaign-strategist"],
+    ["sendlens-copywriter", "campaign-copywriter"],
+    ["sendlens-launch-operator", "launch-operator"],
+    ["using-sendlens", "campaign-analyst"],
+    ["sendlens-setup", "sendlens-setup"],
+  ]) {
+    const generatedCommand = generatedCommands.find((entry) => entry.id === command);
+    assert(
+      generatedCommand?.agent === agent && generatedCommand?.subtask === false,
+      `dist/codex/.codex/commands.generated.json: command "${command}" must preserve direct agent routing`,
     );
   }
 }
@@ -402,7 +459,7 @@ async function assertExplicitHostDegradation() {
     "dist/codex/AGENTS.md: expected SendLens startup operating contract",
   );
   assert(
-    /do not load SendLens skills first/i.test(codexAgentGuidance),
+    /simple inventory and freshness questions/i.test(codexAgentGuidance),
     "dist/codex/AGENTS.md: expected simple inventory questions to stay on the MCP fast path",
   );
 
@@ -450,25 +507,36 @@ async function assertExplicitHostDegradation() {
   const generatedSkills = Array.isArray(codexSkills.skills)
     ? codexSkills.skills
     : [];
-  const usingSendLensSkill = generatedSkills.find(
-    (skill) => skill.id === "using-sendlens",
+  const analystSkill = generatedSkills.find(
+    (skill) => skill.id === "sendlens-analyst",
   );
   assert(
-    usingSendLensSkill?.disableModelInvocation === true,
-    "dist/codex/.codex/skills.generated.json: using-sendlens must not auto-invoke for routine SendLens questions",
+    analystSkill?.disableModelInvocation !== true,
+    "dist/codex/.codex/skills.generated.json: sendlens-analyst must remain available for automatic invocation",
   );
   assert(
-    /operating contract/i.test(usingSendLensSkill?.description ?? ""),
-    "dist/codex/.codex/skills.generated.json: using-sendlens description must remain available as an explicit operating-contract reference",
-  );
-  const workspaceHealthSkill = generatedSkills.find(
-    (skill) => skill.id === "workspace-health",
-  );
-  assert(
-    /simple inventory or freshness/i.test(
-      workspaceHealthSkill?.description ?? "",
+    /broad end-to-end question|what is working and what to run or write next/i.test(
+      analystSkill?.description ?? "",
     ),
-    "dist/codex/.codex/skills.generated.json: workspace-health description must avoid simple inventory auto-routing",
+    "dist/codex/.codex/skills.generated.json: sendlens-analyst description must cover broad full-chain orchestration",
+  );
+  for (const [skillId, pattern] of [
+    ["sendlens-campaign-strategist", /campaign strategy.*audience.*offer.*angle/i],
+    ["sendlens-copywriter", /draft or rewrite.*subjects.*bodies.*CTAs/i],
+    ["sendlens-launch-operator", /launch.*scale.*stop.*measurement/i],
+  ]) {
+    const focusedSkill = generatedSkills.find((skill) => skill.id === skillId);
+    assert(
+      pattern.test(focusedSkill?.description ?? ""),
+      `dist/codex/.codex/skills.generated.json: ${skillId} description must preserve its focused trigger boundary`,
+    );
+  }
+  const setupSkill = generatedSkills.find(
+    (skill) => skill.id === "sendlens-setup",
+  );
+  assert(
+    /installation|runtime|cache troubleshooting/i.test(setupSkill?.description ?? ""),
+    "dist/codex/.codex/skills.generated.json: sendlens-setup description must remain setup-specific",
   );
 
   const installDocs = await readText("docs/INSTALL.md");

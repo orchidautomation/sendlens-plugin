@@ -1,0 +1,4 @@
+interface:
+  display_name: "SendLens Setup"
+  short_description: "Install and diagnose SendLens safely"
+  default_prompt: "Use $sendlens-setup to check whether SendLens is configured and ready."

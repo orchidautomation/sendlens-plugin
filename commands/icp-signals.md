@@ -1,5 +1,5 @@
 ---
-description: "SendLens: inspect one campaign's ICP and payload signals"
+description: "SendLens: inspect one campaign's sampled ICP, targeting, and payload signals"
 argument-hint: "[campaign-name] [instantly-tag]"
 agent: icp-auditor
 subtask: true
@@ -8,7 +8,7 @@ context: fork
 
 # ICP Signals
 
-Use the `icp-signals` skill when the user wants to infer who responds best by campaign-specific variables, account type, or other segment clues.
+Use the `sendlens-analyst` skill and its reply/ICP/copy module when the user wants to infer who responds best by campaign-specific variables, account type, or other segment clues.
 
 Arguments: $ARGUMENTS
 

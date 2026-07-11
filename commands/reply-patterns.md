@@ -8,7 +8,7 @@ context: fork
 
 # Reply Patterns
 
-Use the `reply-patterns` skill when the user asks what prospects are saying, what objections show up, or which replies signal interest versus noise.
+Use the `sendlens-analyst` skill and its reply/ICP/copy module when the user asks what prospects are saying, what objections show up, or which replies signal interest versus noise.
 
 Arguments: $ARGUMENTS
 

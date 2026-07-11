@@ -1,0 +1,37 @@
+{
+  "skill_name": "sendlens-launch-operator",
+  "evals": [
+    {
+      "id": "launch-gate",
+      "prompt": "Can we turn on the Healthcare Operators campaign tomorrow? Give me a go or no-go and exactly what blocks it.",
+      "expected_output": "A campaign-specific readiness verdict with blockers first, then warnings, passed checks, evidence basis, required fixes, and measurement setup.",
+      "assertions": [
+        "The verdict is ready, ready_with_warnings, or blocked",
+        "Sender inventory, templates, tracking, guardrails, schedule, and lead supply are checked",
+        "Unknown lead supply is not presented as exact runway",
+        "Blockers and fixes are prioritized"
+      ]
+    },
+    {
+      "id": "scale-stop-rules",
+      "prompt": "This campaign is live. Define the exact monitoring, stop, iterate, and scale rules for the experiment.",
+      "expected_output": "An operational measurement contract with a primary metric, guardrails, bounded read window, fixed variables, and explicit stop, iterate, and scale thresholds.",
+      "assertions": [
+        "The primary metric and guardrails are distinct",
+        "The minimum read window and review point are explicit",
+        "Operational invalidation conditions are included",
+        "Scale is not based on aggregate rank alone"
+      ]
+    },
+    {
+      "id": "learning-handoff",
+      "prompt": "Close out this campaign test and give me the learning handoff plus a client-safe update.",
+      "expected_output": "A learning record that preserves hypothesis, changed and fixed variables, results, decision, and next owner, plus a separate client-safe summary.",
+      "assertions": [
+        "The original hypothesis and experiment integrity are preserved",
+        "Internal operational detail is separated from client-safe language",
+        "New evidence is routed back to the appropriate SendLens skill"
+      ]
+    }
+  ]
+}

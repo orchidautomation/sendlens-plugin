@@ -12,7 +12,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 ## Primary Surfaces
 
-- Skill source: `skills/campaign-performance/SKILL.md`
+- Analyst module: `skills/sendlens-analyst/references/workspace-and-performance.md`
 - Command: `/campaign-performance`
 - Default agent: `campaign-analyst`
 - MCP tools: `workspace_snapshot`, `analysis_starters`, `list_tables`, `list_columns`, `analyze_data`, `load_campaign_data`, `prepare_campaign_analysis`

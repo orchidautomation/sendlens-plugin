@@ -8,7 +8,7 @@ context: fork
 
 # Workspace Health
 
-Use the `workspace-health` skill when the user wants a high-level diagnosis of campaign quality, deliverability risk, account health, or the top actions to take next.
+Use the `sendlens-analyst` skill and its workspace/performance module when the user wants a high-level diagnosis of campaign quality, deliverability risk, account health, or the top actions to take next.
 
 Arguments: $ARGUMENTS
 

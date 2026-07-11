@@ -6,38 +6,37 @@ See also: [trust and privacy](./TRUST_AND_PRIVACY.md), [skill docs](./skills/REA
 
 ## Workflow Map
 
-| Workflow | Skills | Commands | Agents | MCP tools | Scripts and generated surfaces |
+| Workflow | Public skill | Commands | Agents | MCP tools | Scripts and generated surfaces |
 | --- | --- | --- | --- | --- | --- |
-| Setup and refresh | [sendlens-setup](./skills/sendlens-setup.md), [workspace-health](./skills/workspace-health.md) | `/sendlens-setup`, `/workspace-health` | `workspace-triager` | `setup_doctor`, `refresh_status`, `refresh_data`, `workspace_snapshot` | `sendlens-doctor.sh`, `start-mcp.sh`, `session-start.sh`, `load-env.sh`, `check-env.sh`; generated Claude Code, Cursor, Codex, and OpenCode bundles |
-| Workspace triage | [workspace-health](./skills/workspace-health.md), [campaign-performance](./skills/campaign-performance.md), [account-manager-brief](./skills/account-manager-brief.md) | `/workspace-health`, `/campaign-performance`, `/account-manager-brief` | `workspace-triager`, `campaign-analyst`, `synthesis-reviewer` | `workspace_snapshot`, `analysis_starters`, `analyze_data`, `search_catalog` | `benchmark-fast-refresh.sh`; host session-start refresh hook |
-| One-campaign diagnosis | [campaign-performance](./skills/campaign-performance.md), [campaign-launch-qa](./skills/campaign-launch-qa.md), [experiment-planner](./skills/experiment-planner.md) | `/campaign-performance`, `/campaign-launch-qa`, `/experiment-planner` | `campaign-analyst`, `synthesis-reviewer` | `load_campaign_data`, `prepare_campaign_analysis`, `analysis_starters`, `analyze_data`, `list_columns` | runtime build from `npm run build:plugin`; host bundles from `npm run build:hosts` |
-| Copy and personalization | [copy-analysis](./skills/copy-analysis.md), [cold-email-best-practices](./skills/cold-email-best-practices.md) | `/copy-analysis`, `/cold-email-best-practices` | `copy-auditor`, `synthesis-reviewer` | `load_campaign_data`, `analysis_starters`, `analyze_data`, `list_columns` | sampled/reconstructed outbound surfaces in the local cache |
-| ICP and segmentation | [icp-signals](./skills/icp-signals.md) | `/icp-signals` | `icp-auditor`, `synthesis-reviewer` | `load_campaign_data`, `analysis_starters`, `analyze_data`, `search_catalog` | `lead_payload_kv` view for campaign-scoped payload analysis |
-| Reply outcomes | [reply-patterns](./skills/reply-patterns.md) | `/reply-patterns` | `reply-auditor`, `synthesis-reviewer` | `prepare_campaign_analysis`, `fetch_reply_text`, `load_campaign_data`, `analysis_starters`, `analyze_data` | on-demand reply hydration into local DuckDB |
+| Setup and refresh | [sendlens-setup](./skills/sendlens-setup.md) | `/sendlens-setup` | host default | `setup_doctor`, `refresh_status`, `refresh_data`, `workspace_snapshot` | `sendlens-doctor.sh`, `start-mcp.sh`, `session-start.sh`, `load-env.sh`, `check-env.sh`; generated Claude Code, Cursor, Codex, and OpenCode bundles |
+| Workspace triage and campaign diagnosis | [sendlens-analyst](./skills/sendlens-analyst.md) | `/sendlens-analyst`, `/workspace-health`, `/campaign-performance` | `workspace-triager`, `campaign-analyst`, `synthesis-reviewer` | `workspace_snapshot`, `load_campaign_data`, `prepare_campaign_analysis`, `analysis_starters`, `analyze_data` | benchmark and host session-start refresh |
+| Reply, ICP, and copy intelligence | [sendlens-analyst](./skills/sendlens-analyst.md) | `/reply-patterns`, `/icp-signals`, `/copy-analysis` | `reply-auditor`, `icp-auditor`, `copy-auditor` | `prepare_campaign_analysis`, `fetch_reply_text`, `load_campaign_data`, `analysis_starters`, `analyze_data` | hydrated replies, payload views, and reconstructed outbound surfaces |
+| Campaign strategy | [sendlens-campaign-strategist](./skills/sendlens-campaign-strategist.md) | `/sendlens-campaign-strategist`, `/experiment-planner` | `campaign-strategist`, `synthesis-reviewer` | validated analyst evidence | audience, exclusions, offer, angle, sequence architecture, and experiment hypothesis |
+| Evidence-backed copy | [sendlens-copywriter](./skills/sendlens-copywriter.md) | `/sendlens-copywriter`, `/cold-email-best-practices` | `campaign-copywriter`, `copy-auditor`, `synthesis-reviewer` | validated strategy, templates, replies, payload, and reconstructed-copy evidence | subjects, bodies, CTAs, sequence, variants, claim ledger, and rendering requirements |
+| Launch, scale, and learning handoff | [sendlens-launch-operator](./skills/sendlens-launch-operator.md) | `/sendlens-launch-operator`, `/campaign-launch-qa`, `/account-manager-brief` | `launch-operator`, `campaign-analyst`, `workspace-triager` | launch, campaign, sender, and evidence recipes | blocker matrix, operating thresholds, learning record, and client-safe briefing output |
 
 ## Skills
 
-Runtime skill files live in `skills/<skill>/SKILL.md`. Public skill docs live under [docs/skills](./skills/README.md).
+Runtime skill files live in `skills/<skill>/SKILL.md`. SendLens exposes five focused public skills; the analyst orchestrates the full chain for broad requests. Public docs live under [docs/skills](./skills/README.md).
 
 | Skill | Use it for | Evidence posture |
 | --- | --- | --- |
+| [sendlens-analyst](./skills/sendlens-analyst.md) | Performance, deliverability, reply, ICP, and copy diagnosis plus broad full-chain orchestration | Owns the shared exact, sampled, reconstructed, fetched, inferred, and unsupported evidence contract |
+| [sendlens-campaign-strategist](./skills/sendlens-campaign-strategist.md) | Campaign audience, exclusions, offer, angle, sequence architecture, personalization, and experiment strategy | Consumes validated findings and preserves evidence conflicts and proof boundaries |
+| [sendlens-copywriter](./skills/sendlens-copywriter.md) | Evidence-backed subjects, bodies, CTAs, follow-ups, sequences, and meaningful variants | Keeps every claim inside the validated strategy and records rendering requirements |
+| [sendlens-launch-operator](./skills/sendlens-launch-operator.md) | Launch/scale QA, measurement, stop/scale rules, and learning/client handoff | Requires exact readiness evidence plus explicitly sampled personalization QA |
 | [sendlens-setup](./skills/sendlens-setup.md) | First-run setup, doctor checks, host bundle verification, and zero-key demo seeding | Suppresses secrets and seeds only public-safe demo evidence when no key/cache exists |
-| [workspace-health](./skills/workspace-health.md) | Broad health checks, reply-rate diagnosis, account quality, and next actions | Exact aggregate metrics first; sampled lead evidence only when called out |
-| [campaign-performance](./skills/campaign-performance.md) | Campaign comparisons, step/variant ranking, runway, and prioritization | Exact campaign/account/step metrics when available; explicit metric basis for sequence ranking |
-| [copy-analysis](./skills/copy-analysis.md) | Subject/body critique, template structure, personalization QA, and rewrite guidance | Intended templates plus locally reconstructed outbound samples; not exact delivered email text |
-| [icp-signals](./skills/icp-signals.md) | Campaign-scoped segment hypotheses and payload-variable patterns | Exact campaign baselines plus sampled lead/payload evidence |
-| [reply-patterns](./skills/reply-patterns.md) | Positive, negative, neutral, and fetched reply-body pattern analysis | Instantly reply outcomes by default; exact reply body text only after `prepare_campaign_analysis` or `fetch_reply_text` |
-| [cold-email-best-practices](./skills/cold-email-best-practices.md) | Policy and benchmark lens for campaign recommendations | Operator rules; not a substitute for workspace evidence |
-| [campaign-launch-qa](./skills/campaign-launch-qa.md) | Launch, scale, resume, clone, and handoff readiness | Checklist over sender inventory, lead supply, templates, tracking, schedule, and health |
-| [experiment-planner](./skills/experiment-planner.md) | Next test selection, hypothesis, metrics, guardrails, and stop conditions | Requires evidence basis: exact, sampled, fetched, reconstructed, or operator judgment |
-| [account-manager-brief](./skills/account-manager-brief.md) | Client-safe updates, daily action queues, and risk summaries | Separates internal action priority from client-facing wording |
 
 ## Commands
 
-Commands are host entry points in `commands/*.md`. Most route to a specialist agent and activate the matching skill.
+Commands are host entry points in `commands/*.md`. Each public skill has an explicit command; legacy workflow commands remain backward-compatible shortcuts into the owning skill and specialist agent.
 
 | Command | Argument hint | Default agent | Notes |
 | --- | --- | --- | --- |
+| `/sendlens-analyst` | `[question, campaign, provider, or tag]` | `campaign-analyst` | Diagnosis plus automatic downstream orchestration for broad requests |
+| `/sendlens-campaign-strategist` | `[validated-findings-or-campaign]` | `campaign-strategist` | Audience, exclusions, offer, angle, sequence, and experiment strategy |
+| `/sendlens-copywriter` | `[approved-strategy-or-campaign]` | `campaign-copywriter` | Evidence-backed sequence and meaningful copy variants |
+| `/sendlens-launch-operator` | `[campaign-or-approved-package]` | `launch-operator` | Readiness, configuration, measurement, stop/scale, and learning handoff |
 | `/sendlens-setup` | none | `sendlens-setup` | Runs first-run setup, doctor checks, and zero-key demo seeding before analysis |
 | `/workspace-health` | `[campaign-name-or-instantly-tag]` | `workspace-triager` | First stop for broad workspace diagnosis |
 | `/campaign-performance` | `[campaign-name] [instantly-tag]` | `campaign-analyst` | Ranks campaigns, steps, variants, runway, and sequence fatigue |
@@ -57,6 +56,9 @@ Agents are read-only specialist prompts in `agents/*.md`. They deny file edits a
 | --- | --- | --- |
 | `workspace-triager` | Rank workspace health and choose the next campaign to inspect | `workspace_snapshot`, `analysis_starters`, `analyze_data`, `refresh_status` |
 | `campaign-analyst` | Analyze one hydrated campaign and identify winners, failures, and tests | `load_campaign_data`, `analysis_starters`, `analyze_data`, `list_columns`, `search_catalog` |
+| `campaign-strategist` | Convert validated findings into campaign strategy and experiment hypothesis | `load_campaign_data`, `prepare_campaign_analysis`, `analysis_starters`, `analyze_data` |
+| `campaign-copywriter` | Draft evidence-backed sequences and meaningful variants | `load_campaign_data`, `analysis_starters`, `analyze_data`, `list_columns` |
+| `launch-operator` | Gate readiness and define measurement, decision rules, and learning handoff | `load_campaign_data`, `prepare_campaign_analysis`, `analysis_starters`, `analyze_data`, `refresh_status` |
 | `copy-auditor` | Inspect templates, reconstructed copy, and personalization quality | `load_campaign_data`, `analysis_starters`, `analyze_data`, `list_columns` |
 | `icp-auditor` | Inspect campaign lead evidence and payload fields for segment signals | `load_campaign_data`, `analysis_starters`, `analyze_data`, `list_columns`, `search_catalog` |
 | `reply-auditor` | Separate positive, negative, and neutral reply cohorts | `load_campaign_data`, `analysis_starters`, `analyze_data`, `list_columns` |

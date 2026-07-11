@@ -205,6 +205,8 @@ hooks = true
 
 Codex hook support uses `hooks`; the older `codex_hooks` flag is deprecated and should not be treated as the current hook feature key.
 
+The Codex installer also registers SendLens specialist agents under the active Codex home. You should not copy `.codex/agents/*.toml` manually. If Codex reports an unknown SendLens agent type, rerun the installer, run `pluxx verify-install --target codex`, and restart Codex.
+
 If tools do not appear, the API key is missing, refresh is still running, or the cache is empty, see the [troubleshooting guide](./TROUBLESHOOTING.md).
 
 ## First Useful Questions

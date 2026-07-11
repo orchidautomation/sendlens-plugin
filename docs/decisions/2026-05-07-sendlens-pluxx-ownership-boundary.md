@@ -31,12 +31,12 @@ Pluxx owns portability and host mechanics:
 
 ## Consequences
 
-SendLens can define a compact `using-sendlens` contract without implementing host-specific injection mechanics. Pluxx should provide the abstraction that delivers product startup contracts across hosts.
+SendLens can define five focused public skill contracts without implementing host-specific injection mechanics. Pluxx provides the abstraction that delivers product startup contracts and legacy command routing across hosts.
 
 When an issue is about install, generated bundle shape, shell wrappers, host discovery, or cross-agent behavior, route it to Pluxx. When an issue is about evidence, MCP semantics, SendLens skills, or outbound-analysis behavior, keep it in SendLens.
 
 ## Validation
 
-- `skills/using-sendlens/SKILL.md` states the product behavior contract and ownership boundary.
-- `scripts/test-prompt-contracts.mjs` checks that the contract preserves MCP-first routing, no-fallback rules, evidence classes, and Pluxx ownership language.
+- `skills/sendlens-analyst/SKILL.md` states the product behavior contract and ownership boundary.
+- `scripts/test-prompt-contracts.mjs` checks that the contract preserves MCP-first routing, no-fallback rules, evidence classes, campaign-strategy gating, and Pluxx ownership language.
 - GitHub issue and PR templates include SendLens-vs-Pluxx ownership checks.

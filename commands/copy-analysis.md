@@ -8,7 +8,7 @@ context: fork
 
 # Copy Analysis
 
-Use the `copy-analysis` skill when the user wants a critique of subjects, body copy, template structure, personalization quality, or concrete rewrite guidance.
+Use the `sendlens-analyst` skill and its reply/ICP/copy module when the user wants a critique of subjects, body copy, template structure, personalization quality, or concrete rewrite guidance.
 
 Arguments: $ARGUMENTS
 

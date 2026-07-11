@@ -8,7 +8,7 @@ context: fork
 
 # Campaign Performance
 
-Use the `campaign-performance` skill when the user wants campaign comparisons, step or variant ranking, or a campaign-by-campaign prioritization pass.
+Use the `sendlens-analyst` skill and its workspace/performance module when the user wants campaign comparisons, step or variant ranking, or a campaign-by-campaign prioritization pass.
 
 Arguments: $ARGUMENTS
 

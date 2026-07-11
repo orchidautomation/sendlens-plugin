@@ -1,0 +1,35 @@
+{
+  "skill_name": "sendlens-setup",
+  "evals": [
+    {
+      "id": "first-run-doctor",
+      "prompt": "I just installed SendLens. Check whether it is ready and tell me the next step.",
+      "expected_output": "A setup-doctor result with readiness, failures, warnings, freshness, demo availability, and a safe next action.",
+      "assertions": [
+        "The setup doctor is the source of truth",
+        "The output includes ready, ready_with_warnings, or blocked",
+        "The next action is explicit"
+      ]
+    },
+    {
+      "id": "synthetic-demo",
+      "prompt": "Let me try SendLens with fake data before I connect a real workspace.",
+      "expected_output": "A synthetic demo workspace is seeded and clearly labeled as synthetic evidence.",
+      "assertions": [
+        "The demo seed path is used",
+        "The output clearly labels all downstream evidence as synthetic",
+        "No real provider mutation is attempted"
+      ]
+    },
+    {
+      "id": "missing-tools",
+      "prompt": "I installed SendLens but its tools are not showing up in this host.",
+      "expected_output": "A doctor-backed explanation of the host or runtime problem and the exact safe next step.",
+      "assertions": [
+        "The response stays in the setup workflow",
+        "The response gives the exact safe next step",
+        "The response does not attempt campaign analysis"
+      ]
+    }
+  ]
+}

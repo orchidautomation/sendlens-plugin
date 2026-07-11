@@ -5,7 +5,9 @@ SendLens OSS is intentionally local and editable. Users can customize prompts, s
 ## What You Can Customize Locally
 
 - `INSTRUCTIONS.md`: global tool routing and operating rules
-- `skills/*/SKILL.md`: workflow-specific guidance such as copy analysis or ICP signals
+- `skills/sendlens-analyst/SKILL.md`: the portable automatic routing and evidence contract
+- `skills/sendlens-analyst/references/*`: shared evidence, schema/join, workspace, reply, ICP, and copy-diagnostic guidance
+- `skills/sendlens-campaign-strategist`, `skills/sendlens-copywriter`, and `skills/sendlens-launch-operator`: focused strategy, drafting, and operating workflows
 - `commands/*.md`: host command entrypoints
 - `agents/*.md`: specialist reviewer prompts
 - `.env` and `.env.clients/*`: local API-key and client-profile selection
@@ -38,7 +40,7 @@ For OSS, customization should stay local, explicit, and under the user's control
 
 ## Safe Customization Pattern
 
-1. Start from the existing skill closest to your workflow.
+1. Start from the public skill that owns the workflow; use `sendlens-analyst` for shared diagnostic evidence.
 2. Keep the one-campaign-at-a-time analysis shape unless you are only ranking campaigns.
 3. Preserve exactness language for exact, sampled, hybrid, and reconstructed evidence.
 4. Keep private customer strategy out of public skills, docs, and issue threads.
@@ -65,4 +67,3 @@ If those fail because the cache is empty or locked, ask:
 ```text
 Use SendLens refresh_status and tell me what is blocking analysis.
 ```
-
