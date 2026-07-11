@@ -382,6 +382,8 @@ try {
   const automaticClientResult = await runScript(path.join(root, "scripts/check-env.sh"), {
     PLUGIN_ROOT: root,
     SENDLENS_CONTEXT_ROOT: tempDir,
+    SENDLENS_CLIENT: "${SENDLENS_CLIENT}",
+    SENDLENS_CLIENTS_DIR: path.join(tempDir, ".env.clients"),
   });
   assert.equal(automaticClientResult.code, 0);
   assert.match(automaticClientResult.stderr, /client 'sendoso'/);

@@ -90,11 +90,24 @@ PLUGIN_ROOT="${PLUGIN_ROOT:-$(pwd)}"
 ENV_ROOT="${SENDLENS_CONTEXT_ROOT:-${PWD}}"
 CLIENTS_DIR="${SENDLENS_CLIENTS_DIR:-.env.clients}"
 
+if is_unresolved_sendlens_value "${SENDLENS_CLIENT:-}"; then
+  unset SENDLENS_CLIENT
+fi
+if is_unresolved_sendlens_path "${CLIENTS_DIR}"; then
+  unset SENDLENS_CLIENTS_DIR
+  CLIENTS_DIR=".env.clients"
+fi
+if [[ "${CLIENTS_DIR}" == /* ]]; then
+  CLIENTS_ROOT="${CLIENTS_DIR}"
+else
+  CLIENTS_ROOT="${ENV_ROOT}/${CLIENTS_DIR}"
+fi
+
 load_env_file "${ENV_ROOT}/.env"
 load_env_file "${ENV_ROOT}/.env.local"
-if [[ -z "${SENDLENS_CLIENT:-}" && -d "${ENV_ROOT}/${CLIENTS_DIR}" ]]; then
+if [[ -z "${SENDLENS_CLIENT:-}" && -d "${CLIENTS_ROOT}" ]]; then
   shopt -s nullglob
-  sendlens_client_files=("${ENV_ROOT}/${CLIENTS_DIR}"/*.env)
+  sendlens_client_files=("${CLIENTS_ROOT}"/*.env)
   shopt -u nullglob
   sendlens_client_names=()
   for sendlens_client_file in "${sendlens_client_files[@]}"; do
@@ -107,8 +120,8 @@ if [[ -z "${SENDLENS_CLIENT:-}" && -d "${ENV_ROOT}/${CLIENTS_DIR}" ]]; then
   unset sendlens_client_files sendlens_client_names sendlens_client_file
 fi
 if [[ -n "${SENDLENS_CLIENT:-}" ]]; then
-  load_env_file "${ENV_ROOT}/${CLIENTS_DIR}/${SENDLENS_CLIENT}.env"
-  load_env_file "${ENV_ROOT}/${CLIENTS_DIR}/${SENDLENS_CLIENT}.local.env"
+  load_env_file "${CLIENTS_ROOT}/${SENDLENS_CLIENT}.env"
+  load_env_file "${CLIENTS_ROOT}/${SENDLENS_CLIENT}.local.env"
 fi
 
 if is_unresolved_sendlens_path "${SENDLENS_DB_PATH:-}"; then

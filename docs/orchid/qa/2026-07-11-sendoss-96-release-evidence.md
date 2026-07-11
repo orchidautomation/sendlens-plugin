@@ -2,7 +2,7 @@
 
 ## Outcome
 
-SendLens 0.1.45 refreshes an atomic, current workspace snapshot at session start across generated Codex and Claude host bundles. Refresh launch is deduplicated across native hooks and the MCP-start fallback, pagination follows opaque provider cursors, and a lead sample is labeled `full_raw` only when cursor exhaustion and provider count reconciliation both prove completeness.
+SendLens 0.1.46 refreshes an atomic, current workspace snapshot at session start across generated Codex and Claude host bundles. Refresh launch is deduplicated across native hooks and the MCP-start fallback, pagination follows opaque provider cursors, and a lead sample is labeled `full_raw` only when cursor exhaustion and provider count reconciliation both prove completeness.
 
 ## Correctness coverage
 
