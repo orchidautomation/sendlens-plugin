@@ -426,7 +426,6 @@ async function assertGeneratedSubagentRouting() {
     ["sendlens-copywriter", "campaign-copywriter"],
     ["sendlens-launch-operator", "launch-operator"],
     ["using-sendlens", "campaign-analyst"],
-    ["sendlens-setup", "sendlens-setup"],
   ]) {
     const generatedCommand = generatedCommands.find((entry) => entry.id === command);
     assert(
@@ -434,6 +433,15 @@ async function assertGeneratedSubagentRouting() {
       `dist/codex/.codex/commands.generated.json: command "${command}" must preserve direct agent routing`,
     );
   }
+
+  const generatedSetupCommand = generatedCommands.find(
+    (entry) => entry.id === "sendlens-setup",
+  );
+  assert(
+    generatedSetupCommand?.agent === undefined &&
+      generatedSetupCommand?.subtask === false,
+    'dist/codex/.codex/commands.generated.json: command "sendlens-setup" must remain skill-only with no direct agent route',
+  );
 }
 
 async function assertExplicitHostDegradation() {

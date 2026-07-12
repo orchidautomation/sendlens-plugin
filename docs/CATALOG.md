@@ -37,7 +37,7 @@ Commands are host entry points in `commands/*.md`. Each public skill has an expl
 | `/sendlens-campaign-strategist` | `[validated-findings-or-campaign]` | `campaign-strategist` | Audience, exclusions, offer, angle, sequence, and experiment strategy |
 | `/sendlens-copywriter` | `[approved-strategy-or-campaign]` | `campaign-copywriter` | Evidence-backed sequence and meaningful copy variants |
 | `/sendlens-launch-operator` | `[campaign-or-approved-package]` | `launch-operator` | Readiness, configuration, measurement, stop/scale, and learning handoff |
-| `/sendlens-setup` | none | `sendlens-setup` | Runs first-run setup, doctor checks, and zero-key demo seeding before analysis |
+| `/sendlens-setup` | none | host default | Runs first-run setup, doctor checks, and zero-key demo seeding before analysis |
 | `/workspace-health` | `[campaign-name-or-instantly-tag]` | `workspace-triager` | First stop for broad workspace diagnosis |
 | `/campaign-performance` | `[campaign-name] [instantly-tag]` | `campaign-analyst` | Ranks campaigns, steps, variants, runway, and sequence fatigue |
 | `/copy-analysis` | `[campaign-name] [instantly-tag]` | `copy-auditor` | Scopes to one campaign before copy and personalization analysis |

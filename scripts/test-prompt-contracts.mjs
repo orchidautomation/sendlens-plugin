@@ -22,7 +22,6 @@ const ALLOWED_SKILL_FRONTMATTER = new Set([
 const REQUIRED_COMMAND_FRONTMATTER = [
   "description",
   "argument-hint",
-  "agent",
   "subtask",
 ];
 
@@ -72,8 +71,8 @@ const COMMAND_ROUTING_EXCEPTIONS = new Map([
   [
     "sendlens-setup",
     {
-      agent: "sendlens-setup",
-      rationale: "Setup is explicit-invocation and runs the MCP setup doctor workflow.",
+      agent: "",
+      rationale: "Setup is explicit-invocation and runs the MCP setup doctor workflow without a specialist agent.",
     },
   ],
   [
@@ -584,7 +583,9 @@ async function collectCommandContracts(skillNames, agentNames) {
     if (exception) {
       assert(
         agent === exception.agent,
-        `${relativePath}: explicit route must use agent "${exception.agent}" (${exception.rationale})`,
+        exception.agent
+          ? `${relativePath}: explicit route must use agent "${exception.agent}" (${exception.rationale})`
+          : `${relativePath}: setup command must not route to an agent (${exception.rationale})`,
       );
       assert(
         commandData.subtask === false,
