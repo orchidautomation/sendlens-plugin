@@ -164,6 +164,11 @@ const PROMOTION_GUARD_CONTRACTS = [
     patterns: [
       /low-volume leaders as candidates for validation/i,
       /campaign_variants/i,
+      /aggregate unique human reply count/i,
+      /selected statuses/i,
+      /latest_of_thread/i,
+      /aggregate-to-hydrated numeric gap/i,
+      /maximum depth does not guarantee recovery/i,
     ],
   },
   {
@@ -172,6 +177,22 @@ const PROMOTION_GUARD_CONTRACTS = [
       /reply_email_context/i,
       /different product, industry, compliance domain, or topic/i,
       /Do not generate generic rewrites/i,
+      /aggregate unique human reply count/i,
+      /OOO status `0` was excluded/i,
+      /latest_of_thread/i,
+      /aggregate-to-hydrated numeric gap/i,
+      /maximum depth does not guarantee recovery/i,
+      /Do not assert which cause applies without evidence/i,
+    ],
+  },
+  {
+    path: "skills/sendlens-analyst/SKILL.md",
+    patterns: [
+      /reply_coverage_summary/i,
+      /aggregate unique human reply count/i,
+      /OOO exclusion/i,
+      /latest_of_thread/i,
+      /per-status fetched\/hydrated counts/i,
     ],
   },
   {
@@ -214,6 +235,9 @@ const PROMOTION_GUARD_CONTRACTS = [
       /irrelevant copy, wrong industry, wrong compliance domain/i,
       /setup\/template-resolution risk/i,
       /wrong-template or wrong-topic complaint replies/i,
+      /aggregate unique human reply count/i,
+      /aggregate-to-hydrated gap/i,
+      /maximum depth/i,
     ],
   },
   {

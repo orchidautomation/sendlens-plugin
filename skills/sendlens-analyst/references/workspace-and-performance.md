@@ -28,6 +28,8 @@ Do not blame copy before checking available sender and deliverability evidence.
 - Use `campaign_variants` to connect a metric back to the intended subject and body.
 - State whether the ranking basis is unique reply rate, opportunity rate, exact reply outcomes, or sampled evidence.
 - Treat low-volume leaders as candidates for validation, not winners.
+- Before working/not-working, winner, scale, or kill claims, keep the aggregate unique human reply count from `campaign_overview.reply_count_unique` separate from selected List Email hydration. Report selected statuses, OOO exclusion, `latest_of_thread`, fetched/hydrated counts by status, exhaustion, and the aggregate-to-hydrated numeric gap from `reply_coverage_summary`.
+- Exhausted selected status buckets do not prove complete aggregate reply hydration. Maximum depth does not guarantee recovery of a remaining gap; preserve the tool's neutral possible-cause explanation instead of choosing a cause without evidence.
 
 ## Runway And Capacity
 

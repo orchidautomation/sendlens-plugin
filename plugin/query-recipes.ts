@@ -2574,7 +2574,8 @@ WHERE COALESCE(fc.campaign_id, hs.campaign_id) = '{{campaign_id}}'
 ORDER BY i_status DESC;`,
     notes: [
       "Run prepare_campaign_analysis first for premium analysis; this recipe audits what is now hydrated locally.",
-      "Exact coverage is limited to fetched/stored email rows, not all campaign replies unless the status pagination was exhausted.",
+      "Exact coverage is limited to the selected List Email status/latest-thread surface. Exhausted selected buckets do not prove complete coverage of the separate campaign aggregate.",
+      "Report the aggregate unique human reply count, selected statuses, OOO exclusion, latest_of_thread, per-status fetched/hydrated counts, exhaustion, and the aggregate-to-hydrated gap. Maximum depth does not guarantee recovery once selected buckets are exhausted.",
       "Status 0 out-of-office is intentionally excluded unless explicitly requested.",
     ],
   },
