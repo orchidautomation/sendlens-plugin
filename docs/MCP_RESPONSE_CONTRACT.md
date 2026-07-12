@@ -109,7 +109,10 @@ Where relevant, SendLens responses should include:
 - default `analysis_depth` is balanced: statuses `1`, `-1`, and `-2`, up to 3 email pages/status, and target 30 stored non-auto reply bodies/status
 - calls the same rate-conscious email lane as `fetch_reply_text`; it is not part of session-start refresh
 - backfills lead context through `/leads/list` contacts/ids after reply bodies are stored
-- returns `fetch_result`, `lead_context_backfill`, `hydration_coverage`, `context_gap_counts`, exact `campaign_overview`, bounded `reply_email_context_sample`, recommended next recipes, warnings, and output limits
+- returns `fetch_result`, `lead_context_backfill`, `hydration_coverage`, `reply_coverage_summary`, `context_gap_counts`, exact `campaign_overview`, bounded `reply_email_context_sample`, recommended next recipes, warnings, and output limits
+- `reply_coverage_summary` reports `aggregate_reply_count`, `hydrated_reply_count`, `fetched_reply_count`, `coverage_gap_count`, `coverage_scope`, per-status counts, and selected-bucket exhaustion; the scope records selected statuses, OOO exclusion, `fetch_latest_of_thread=true`, and that stored `reply_email_context` counts do not track `latest_of_thread`
+- `coverage_gap_count` is a cross-surface numeric comparison, not proof of missing bodies. Exhausted selected List Email buckets do not prove every reply represented by the campaign aggregate was hydrated, and maximum depth does not guarantee recovery of a remaining gap
+- the neutral explanation lists possible semantic causes without selecting one: unselected or unclassified statuses, latest-of-thread behavior, historical/provider-retention differences, or campaign-aggregate versus List Email semantics
 - `reply_email_context_sample` is redacted by default: full `reply_body_text`, raw email address fields, and long quoted bodies are omitted while short redacted `reply_body_preview` values preserve diagnostic signal
 - `reply_evidence_detail` defaults to `redacted_preview`; full reply bodies and raw email addresses require explicit opt-in with `full_reply_bodies`
 - default recommended next recipes do not include raw reply-body feed recipes; `reply-email-context-feed` is recommended only when `reply_evidence_detail="full_reply_bodies"`
@@ -127,7 +130,7 @@ Run `npm run test:mcp-response-contract` when changing MCP tools, response field
 - `search_catalog` partial matches, narrower search terms, and workflow concept starter suggestions
 - `analyze_data` rationale, row caps, truncation state, warnings, and rows
 - `fetch_reply_text` hydration result metadata, sample caps, and bounded reply samples
-- `prepare_campaign_analysis` premium-depth coverage, context gaps, backfill metadata, warnings, output limits, and bounded redacted reply-email samples unless full evidence is explicitly requested
+- `prepare_campaign_analysis` premium-depth coverage, aggregate-to-hydrated gap semantics, selected statuses/OOO/latest-thread scope, per-status exhaustion, context gaps, backfill metadata, warnings, output limits, and bounded redacted reply-email samples unless full evidence is explicitly requested
 
 ## Exactness Rules
 

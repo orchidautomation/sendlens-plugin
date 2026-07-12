@@ -26,6 +26,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 5. Run `fetch_reply_text` for exactly one campaign only when a low-level manual fetch is enough.
 6. Separate positive, negative, and neutral outcomes from Instantly lead status before grouping by step or variant.
 7. Use raw-detail recipes only for local diagnosis; do not paste raw reply bodies, reply-from fields, lead emails, or contact fields into external artifacts.
+8. After `prepare_campaign_analysis` hydration, report aggregate unique human replies separately from selected List Email body coverage: statuses, OOO exclusion, `fetch_latest_of_thread`, the stored context latest-thread basis, per-status fetched/hydrated counts, exhaustion, and the explicit numeric gap. When using `fetch_reply_text` instead, report that tool's returned fetch counts and do not claim full `reply_coverage_summary` gap semantics.
 
 ## Output Shape
 
@@ -35,7 +36,10 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 - Step, variant, or segment concentrations.
 - Fetched reply-body themes when available.
 - Caveat on whether exact reply body text was fetched.
+- Neutral aggregate-to-hydrated gap explanation; exhausted selected buckets do not prove every aggregate reply was hydrated, and maximum depth does not guarantee recovery.
 
 ## Evidence Boundaries
 
 By default, reply labels come from Instantly lead state. Only quote or characterize actual reply-body language from `reply_body_text` after `prepare_campaign_analysis` or `fetch_reply_text` has written exact reply rows into local DuckDB. Prefer `reply_email_context` after premium hydration because it preserves fetched bodies even when lead context is missing. Out-of-office status `0` is excluded by default unless the user asks for OOO replies.
+
+Do not collapse `campaign_overview.reply_count_unique` and hydrated reply-email rows into an unqualified “X of Y.” They are different evidence surfaces. A gap can reflect unselected or unclassified statuses, latest-of-thread behavior, historical/provider-retention differences, or aggregate-versus-List Email semantics; do not assert a cause without evidence.

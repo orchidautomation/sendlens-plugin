@@ -30,6 +30,7 @@ import {
   type CampaignAnalysisDepth,
 } from "./campaign-analysis-depth";
 import {
+  buildCampaignReplyCoverageSummary,
   CAMPAIGN_ANALYSIS_REPLY_PREVIEW_MAX_CHARS,
   redactCampaignAnalysisReplySample,
 } from "./campaign-analysis-response";
@@ -845,6 +846,7 @@ server.registerTool(
         "Use this for questions like why a campaign is performing, what is working, what is not working, or how reply quality breaks down for one selected campaign.",
         "Default balanced depth fetches interested, not interested, and wrong-person replies with up to 3 List email pages per status, through the 3-second email lane, stopping when each status has enough stored non-auto reply bodies or pagination is exhausted.",
         "After reply fetch, it backfills lead context through Instantly /leads/list contacts/ids so reply bodies stay visible even when the bounded lead scan missed those leads.",
+        "The reply_coverage_summary keeps campaign aggregate unique replies separate from hydrated List Email rows and reports selected statuses, OOO exclusion, the fetch request's latest_of_thread=true mode, the fact that stored reply_email_context counts do not track latest_of_thread, per-status fetched/hydrated counts, exhaustion, the numeric gap, and a neutral explanation. Exhausted selected buckets do not prove complete aggregate reply hydration, and maximum depth does not guarantee recovery of a gap.",
       ].join(" "),
     inputSchema: {
       campaign_id: z
@@ -911,6 +913,7 @@ server.registerTool(
       const depth = resolveCampaignAnalysisDepth(
         analysis_depth as CampaignAnalysisDepth | undefined,
       );
+      const latestOfThread = true;
       const resolvedStatuses = normalizeCampaignAnalysisStatuses(
         statuses,
         include_ooo,
@@ -957,7 +960,7 @@ server.registerTool(
           campaignId: resolved.campaign_id,
           statuses: resolvedStatuses,
           maxPagesPerStatus: depth.maxPagesPerStatus,
-          latestOfThread: true,
+          latestOfThread,
           mode: "restart",
           targetStoredRowsPerStatus: depth.targetStoredRowsPerStatus,
           db,
@@ -1092,12 +1095,30 @@ server.registerTool(
         fetchResult,
         depth.targetStoredRowsPerStatus,
       );
+      const replyCoverageSummary = buildCampaignReplyCoverageSummary({
+        aggregateReplyCount: overviewRows.length > 0
+          ? numberFromRow(overviewRows[0], "reply_count_unique")
+          : null,
+        selectedStatuses: resolvedStatuses,
+        latestOfThread,
+        fetchByStatus: fetchCoverage,
+        storedContextByStatus: contextCoverageRows,
+        hydrationState: hydrationStateRows,
+      });
       const partialCoverage = fetchCoverage.filter((row) =>
         row.coverage_status === "partial_cap_reached"
       );
       if (partialCoverage.length > 0) {
         warnings.push(
-          "At least one reply status hit the page cap before meeting the target. Treat status themes as partial coverage and continue at maximum depth before making strong claims.",
+          "At least one selected reply status hit the page cap before meeting the target. Maximum depth may expose more rows within non-exhausted selected buckets, but it does not guarantee closing an aggregate-to-hydrated gap.",
+        );
+      }
+      if (
+        replyCoverageSummary.all_selected_status_buckets_exhausted
+        && Number(replyCoverageSummary.coverage_gap_count ?? 0) > 0
+      ) {
+        warnings.push(
+          "Selected reply status buckets are exhausted with a remaining aggregate-to-hydrated numeric gap. Do not describe this as complete aggregate reply hydration; maximum depth does not guarantee recovery. See reply_coverage_summary for scope and neutral causes.",
         );
       }
       const replyEmailContextSample =
@@ -1146,6 +1167,7 @@ server.registerTool(
           stored_context_by_status: contextCoverageRows,
           hydration_state: hydrationStateRows,
         },
+        reply_coverage_summary: replyCoverageSummary,
         context_gap_counts: contextGapCounts,
         campaign_overview: overviewRows[0] ?? null,
         reply_email_context_sample: replyEmailContextSample,
