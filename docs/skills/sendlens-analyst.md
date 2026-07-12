@@ -10,7 +10,7 @@
 
 ## Workflow
 
-1. Start from broad exact evidence when the question is broad.
+1. Start broad with workspace-level evidence when the question is broad.
 2. Diagnose constraints in order: readiness, volume, senders/deliverability, reply quality, ICP/list quality, and copy mechanics.
 3. Narrow to one campaign before deep reply, ICP, copy, or strategy work.
 4. Validate reply quality and intended copy before promoting a winner.

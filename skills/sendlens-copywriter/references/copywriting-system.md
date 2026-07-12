@@ -44,4 +44,4 @@ Synonyms, punctuation, greeting changes, and superficial subject changes are not
 
 ## Output
 
-For each step include delay, subject variants, body variants, CTA, personalization variables, strategic job, and experiment difference. Finish with a claim ledger and rendering requirements.
+For each step include delay, subject variants, body variants, CTA, personalization variables, and strategic job. Then record the experiment contract separately: the changed strategic variable, hypothesis, and variables that remain fixed. Finish with a claim ledger and rendering requirements.

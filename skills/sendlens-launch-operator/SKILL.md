@@ -1,6 +1,6 @@
 ---
 name: sendlens-launch-operator
-description: "Use when the user wants SendLens launch, resume, clone, scale, pause, or stop guidance; campaign blockers; sender, tracking, deliverability, volume, or personalization QA; measurement, guardrails, or a learning/client handoff."
+description: "Use when the user wants SendLens guidance for launching, resuming, cloning, scaling, pausing, or stopping a campaign, including blocker review, operational QA, measurement, guardrails, and learning or client handoff."
 ---
 
 # SendLens Launch Operator
@@ -24,7 +24,7 @@ Read the shared [evidence and metric contract](../sendlens-analyst/references/ev
 4. Return `blocked`, `ready_with_warnings`, or `ready`.
 5. Define initial volume, monitoring cadence, primary metric, guardrails, read window, and stop/iterate/scale thresholds.
 6. Record what must remain fixed for the experiment to teach anything.
-7. Produce a learning handoff or client-safe update when requested.
+7. Always produce the learning handoff; add a client-safe update when requested.
 
 Do not rewrite the strategy or copy unless a readiness check exposes a specific contradiction. Route substantive redesign back to the owning skill. Do not claim a campaign is ready to scale from aggregate rank alone.
 
@@ -41,7 +41,7 @@ launch_configuration:
 - senders, schedule, volume, tracking, guardrails, personalization requirements
 
 measurement:
-- primary metric, guardrails, read window, review point
+- primary metric, guardrails, monitoring cadence, read window, review point
 
 decision_rules:
 - stop, iterate, and scale conditions

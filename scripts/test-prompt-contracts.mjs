@@ -752,9 +752,16 @@ async function assertSkillEvalContracts(skillNames) {
       assert(typeof testCase.prompt === "string" && testCase.prompt.length >= 20, `${evalPath}: every eval needs a realistic prompt`);
       assert(typeof testCase.expected_output === "string" && testCase.expected_output.length >= 40, `${evalPath}: every eval needs a substantive expected_output`);
       assert(Array.isArray(testCase.assertions) && testCase.assertions.length >= 3, `${evalPath}: every eval needs at least three objective assertions`);
+      for (const assertion of testCase.assertions ?? []) {
+        assert(typeof assertion === "string" && assertion.trim().length > 0, `${evalPath}: every assertion must be non-empty text`);
+      }
     }
 
     assert(Array.isArray(triggerQueries) && triggerQueries.length >= 10, `${triggerPath}: expected at least ten trigger queries`);
+    for (const entry of triggerQueries ?? []) {
+      assert(typeof entry?.query === "string" && entry.query.trim().length > 0, `${triggerPath}: every query must be non-empty text`);
+      assert(typeof entry?.should_trigger === "boolean", `${triggerPath}: every should_trigger value must be boolean`);
+    }
     const positive = triggerQueries.filter((entry) => entry.should_trigger === true);
     const negative = triggerQueries.filter((entry) => entry.should_trigger === false);
     assert(positive.length >= 5, `${triggerPath}: expected at least five should-trigger queries`);

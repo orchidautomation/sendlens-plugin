@@ -50,7 +50,13 @@ sequence_architecture:
 - steps, delays, subject/body variant hypotheses, personalization
 
 experiment:
-- hypothesis, cohort, strategic variable, intended learning, primary outcome signal
+- hypothesis, cohort, strategic variable, variables held fixed, intended learning, primary outcome signal
+
+evidence_ledger:
+- exact findings
+- hydrated reply findings
+- sampled or reconstructed findings
+- inferences, conflicts, and missing evidence
 
 unknowns:
 - assumptions that could change the design
