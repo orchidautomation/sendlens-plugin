@@ -13,7 +13,8 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 ## Primary Surfaces
 
-- Skill source: `skills/account-manager-brief/SKILL.md`
+- Public skill: `skills/sendlens-launch-operator/SKILL.md`
+- Reference: `skills/sendlens-launch-operator/references/launch-operations.md`
 - Command: `/account-manager-brief`
 - Default agent: `workspace-triager`
 - MCP tools: `workspace_snapshot`, `analysis_starters`, `analyze_data`, `refresh_status`

@@ -12,7 +12,8 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 ## Primary Surfaces
 
-- Skill source: `skills/campaign-launch-qa/SKILL.md`
+- Public skill: `skills/sendlens-launch-operator/SKILL.md`
+- Reference: `skills/sendlens-launch-operator/references/launch-operations.md`
 - Command: `/campaign-launch-qa`
 - Default agent: `campaign-analyst`
 - MCP tools: `workspace_snapshot`, `analysis_starters`, `analyze_data`, `load_campaign_data`

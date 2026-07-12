@@ -1,5 +1,5 @@
 ---
-description: "SendLens: prepare a client-safe AM brief and action queue"
+description: "SendLens: prepare a client-safe account brief, risk summary, and action queue"
 argument-hint: "[campaign-name-or-instantly-tag]"
 agent: workspace-triager
 subtask: true
@@ -8,7 +8,7 @@ context: fork
 
 # Account Manager Brief
 
-Use the `account-manager-brief` skill when the user wants a client update, daily AM action queue, risk summary, or "what should I tell the client?" answer.
+Use the `sendlens-launch-operator` skill and its learning/client-handoff module when the user wants a client update, daily AM action queue, risk summary, or "what should I tell the client?" answer.
 
 Arguments: $ARGUMENTS
 

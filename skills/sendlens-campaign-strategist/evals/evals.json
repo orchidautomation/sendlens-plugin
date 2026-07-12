@@ -1,0 +1,36 @@
+{
+  "skill_name": "sendlens-campaign-strategist",
+  "evals": [
+    {
+      "id": "next-campaign-blueprint",
+      "prompt": "Use these validated reply and segment findings to recommend the next campaign. I need the audience, exclusions, offer, angle, sequence, CTA, and experiment hypothesis, but not the email copy yet.",
+      "expected_output": "A campaign blueprint derived from the validated findings, with an explicit audience, exclusions, proof boundary, sequence architecture, and experiment contract but no full email bodies.",
+      "assertions": [
+        "The opportunity cites validated evidence",
+        "Audience inclusion and exclusion criteria are explicit",
+        "Problem, offer, angle, proof boundary, and CTA are coherent",
+        "Full email bodies are deferred to sendlens-copywriter"
+      ]
+    },
+    {
+      "id": "constraint-gate",
+      "prompt": "Our best campaign has weak replies and several unhealthy senders. Design a new message campaign to fix it.",
+      "expected_output": "A strategy-gate decision that prioritizes the stronger operational constraint when sender or deliverability evidence makes a message test invalid.",
+      "assertions": [
+        "Sender or deliverability risk is not disguised as a message problem",
+        "The campaign test is deferred or conditioned on remediation",
+        "Unknowns that could change the strategy are explicit"
+      ]
+    },
+    {
+      "id": "meaningful-experiment",
+      "prompt": "Turn the validated wrong-person reply pattern into a campaign experiment for a better role segment.",
+      "expected_output": "A strategy that converts reply evidence into a testable audience shift with exclusions, fixed variables, intended learning, and a primary outcome signal for launch-operator handoff.",
+      "assertions": [
+        "The audience shift is tied to reply evidence",
+        "The experiment changes one strategic variable",
+        "The cohort, changed and fixed variables, intended learning, and outcome signal are explicit"
+      ]
+    }
+  ]
+}

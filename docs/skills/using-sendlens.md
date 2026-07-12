@@ -1,8 +1,8 @@
 # Using SendLens
 
-`using-sendlens` is the shared operating contract for SendLens analysis.
+`sendlens-analyst` is the shared evidence contract and broad orchestrator. `/using-sendlens` remains a backward-compatible command that classifies a request into analyst, strategist, copywriter, launch operator, or setup.
 
-Use it to keep answers MCP-first, evidence-calibrated, and correctly routed across the specialist skills.
+Use it to keep answers MCP-first, evidence-calibrated, and conditionally routed across specialist analyst modules.
 
 It defines:
 
@@ -16,4 +16,4 @@ It defines:
 - how to label exact, sampled, reconstructed, hydrated, inferred, and unsupported evidence
 - why shell, raw DuckDB, cached JSON, repo inspection, and setup scripts are not SendLens-analysis fallbacks
 
-Cross-platform and cross-agent startup delivery belongs in Pluxx. This skill defines SendLens product behavior only.
+Cross-platform and cross-agent startup delivery belongs in Pluxx. The five portable public skills define SendLens product behavior and focused trigger boundaries.

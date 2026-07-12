@@ -1,0 +1,14 @@
+[
+  { "query": "recommend the next campaign from these validated findings", "should_trigger": true },
+  { "query": "define the audience, exclusions, offer, and angle for our next outbound test", "should_trigger": true },
+  { "query": "turn these reply insights into a campaign sequence strategy", "should_trigger": true },
+  { "query": "what campaign hypothesis should we test against this segment?", "should_trigger": true },
+  { "query": "design the campaign blueprint but do not write the emails yet", "should_trigger": true },
+  { "query": "why did reply rate fall across the workspace?", "should_trigger": false },
+  { "query": "draft all three email bodies from this approved brief", "should_trigger": false },
+  { "query": "give me ten subject line variants", "should_trigger": false },
+  { "query": "is this campaign ready to launch?", "should_trigger": false },
+  { "query": "run the SendLens setup doctor", "should_trigger": false },
+  { "query": "send this campaign now", "should_trigger": false },
+  { "query": "write a generic brand strategy unrelated to outbound", "should_trigger": false }
+]

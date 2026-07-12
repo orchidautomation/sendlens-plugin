@@ -1,6 +1,6 @@
 ---
 description: "SendLens: apply cold-email rules and benchmarks to campaign recommendations"
-argument-hint: "[campaign-or-question]"
+argument-hint: "[approved-strategy-or-campaign]"
 agent: campaign-analyst
 subtask: true
 context: fork
@@ -8,4 +8,4 @@ context: fork
 
 # Cold Email Best Practices
 
-Use the `cold-email-best-practices` skill when the user wants policy guidance, benchmark framing, or a best-practices lens for recommendations.
+Use the `sendlens-copywriter` skill for data-backed copy or best practices applied to an approved campaign strategy. Use the `sendlens-analyst` skill for standalone policy guidance, benchmark framing, or campaign diagnosis.

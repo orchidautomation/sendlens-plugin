@@ -1,0 +1,14 @@
+[
+  { "query": "write the email sequence from this approved SendLens campaign strategy", "should_trigger": true },
+  { "query": "rewrite step zero based on the validated reply objections", "should_trigger": true },
+  { "query": "draft subject lines, bodies, and CTAs for this campaign brief", "should_trigger": true },
+  { "query": "make two meaningful message variants that test different offers", "should_trigger": true },
+  { "query": "turn this evidence-backed angle into a three-step cold-email sequence", "should_trigger": true },
+  { "query": "what is going wrong in my outbound workspace?", "should_trigger": false },
+  { "query": "which audience and offer should the next campaign use?", "should_trigger": false },
+  { "query": "is this sequence safe to launch tomorrow?", "should_trigger": false },
+  { "query": "define the scale and stop thresholds", "should_trigger": false },
+  { "query": "install SendLens in Codex", "should_trigger": false },
+  { "query": "send this email through Instantly", "should_trigger": false },
+  { "query": "write a LinkedIn post about outbound", "should_trigger": false }
+]

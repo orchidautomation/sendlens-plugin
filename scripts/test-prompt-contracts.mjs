@@ -7,14 +7,21 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 
-const DESCRIPTION_MIN_LENGTH = 24;
-const DESCRIPTION_MAX_LENGTH = 180;
+const DESCRIPTION_MIN_LENGTH = 60;
+const DESCRIPTION_MAX_LENGTH = 250;
 
 const REQUIRED_SKILL_FRONTMATTER = ["name", "description"];
+const ALLOWED_SKILL_FRONTMATTER = new Set([
+  "name",
+  "description",
+  "license",
+  "compatibility",
+  "metadata",
+  "allowed-tools",
+]);
 const REQUIRED_COMMAND_FRONTMATTER = [
   "description",
   "argument-hint",
-  "agent",
   "subtask",
 ];
 
@@ -56,46 +63,70 @@ const PROHIBITED_AGENT_SURFACES = [
 const COMMAND_ROUTING_EXCEPTIONS = new Map([
   [
     "using-sendlens",
-    "Using SendLens is an explicit operating-contract entrypoint; it is not a SendLens analysis subtask and does not route to an MCP-only specialist agent.",
+    {
+      agent: "campaign-analyst",
+      rationale: "Using SendLens is a backward-compatible explicit route into sendlens-analyst.",
+    },
   ],
   [
     "sendlens-setup",
-    "Setup is explicit-invocation and runs the MCP setup doctor workflow; it is not a SendLens analysis subtask and should not route to an MCP-only specialist agent.",
+    {
+      agent: "",
+      rationale: "Setup is explicit-invocation and runs the MCP setup doctor workflow without a specialist agent.",
+    },
+  ],
+  [
+    "sendlens-analyst",
+    {
+      agent: "campaign-analyst",
+      rationale: "The main analyst command stays in the parent task so it can coordinate the closed-loop workflow.",
+    },
+  ],
+  [
+    "sendlens-campaign-strategist",
+    {
+      agent: "campaign-strategist",
+      rationale: "Focused strategy stays in the parent task so its handoff can continue into copy or launch when requested.",
+    },
+  ],
+  [
+    "sendlens-copywriter",
+    {
+      agent: "campaign-copywriter",
+      rationale: "Focused copywriting uses the dedicated read-only copywriting specialist.",
+    },
+  ],
+  [
+    "sendlens-launch-operator",
+    {
+      agent: "launch-operator",
+      rationale: "Focused launch operation stays in the parent task so the verdict and learning handoff remain coherent.",
+    },
   ],
 ]);
 
-const REQUIRED_USING_SENDLENS_TERMS = [
+const REQUIRED_ANALYST_TERMS = [
   "workspace_snapshot",
   "analysis_starters",
   "load_campaign_data",
   "prepare_campaign_analysis",
-  "fetch_reply_text",
-  "reply_context",
-  "campaign_variants",
-  "rendered_outbound_context",
-  "Promotion Guard For Working Claims",
-  "metric leader requiring verification",
+  "orchestration contract",
+  "sendlens-campaign-strategist",
+  "sendlens-copywriter",
+  "sendlens-launch-operator",
   "reload or reinstall the plugin/MCP server",
-  "exact_aggregate",
-  "sampled_evidence",
-  "reconstructed_outbound",
-  "hydrated_reply_body",
-  "unsupported",
-  "Pluxx",
+  "provider operations read-only",
 ];
 
-const REQUIRED_USING_SENDLENS_DENIAL_PATTERNS = [
-  /\bDo not inspect local files\b/i,
-  /\brepository source\b/i,
+const REQUIRED_ANALYST_DENIAL_PATTERNS = [
+  /\bDo not inspect repository files\b/i,
   /\braw DuckDB files\b/i,
   /\bcached JSON\b/i,
   /\bshell output\b/i,
   /\bsetup scripts\b/i,
-  /\bBash\b/i,
-  /\bjq\b/i,
 ];
 
-const ANALYSIS_SKILL_AGENTS = new Map([
+const LEGACY_COMMAND_AGENTS = new Map([
   ["account-manager-brief", "workspace-triager"],
   ["campaign-launch-qa", "campaign-analyst"],
   ["campaign-performance", "campaign-analyst"],
@@ -107,96 +138,48 @@ const ANALYSIS_SKILL_AGENTS = new Map([
   ["workspace-health", "workspace-triager"],
 ]);
 
-const ANALYSIS_SKILLS = [...ANALYSIS_SKILL_AGENTS.keys()];
-
-const ROUTING_CONTRACT_CASES = [
-  {
-    prompt: "What is working and not working in this workspace?",
-    skill: "workspace-health",
-    firstTool: "workspace_snapshot",
-    topic: 'analysis_starters(topic="workspace-health")',
-  },
-  {
-    prompt: "Which campaign should I scale?",
-    skill: "campaign-performance",
-    firstTool: "workspace_snapshot",
-    topic: 'analysis_starters(topic="campaign-performance")',
-  },
-  {
-    prompt: "Audit this campaign before launch.",
-    skill: "campaign-launch-qa",
-    firstTool: "workspace_snapshot",
-    topic: 'analysis_starters(topic="campaign-launch-qa")',
-  },
-  {
-    prompt: "Which copy variant is winning?",
-    skill: "copy-analysis",
-    firstTool: "workspace_snapshot",
-    topic: 'analysis_starters(topic="copy-analysis")',
-  },
-  {
-    prompt: "What are prospects objecting to?",
-    skill: "reply-patterns",
-    firstTool: "workspace_snapshot",
-    topic: "prepare_campaign_analysis",
-  },
-  {
-    prompt: "Who seems to respond best?",
-    skill: "icp-signals",
-    firstTool: "workspace_snapshot",
-    topic: 'analysis_starters(topic="icp-signals")',
-  },
-  {
-    prompt: "Write the AM brief for this account.",
-    skill: "account-manager-brief",
-    firstTool: "workspace_snapshot",
-    topic: 'analysis_starters(topic="account-manager-brief")',
-  },
-];
-
-const EVIDENCE_PRESSURE_PATTERNS = [
-  /exact ICP conclusion from sampled leads/i,
-  /reconstructed outbound is what prospects received/i,
-  /client update without caveats/i,
-  /highest reply-rate campaign must be the winner/i,
-  /what seems to be working for a client/i,
-  /reply bodies contradict intended outbound/i,
-  /inbox placement rows are missing/i,
-  /infer reply sentiment from outcome fields/i,
-];
+const LEGACY_COMMAND_SKILLS = new Map([
+  ["account-manager-brief", "sendlens-launch-operator"],
+  ["campaign-launch-qa", "sendlens-launch-operator"],
+  ["campaign-performance", "sendlens-analyst"],
+  ["cold-email-best-practices", "sendlens-copywriter"],
+  ["copy-analysis", "sendlens-analyst"],
+  ["experiment-planner", "sendlens-campaign-strategist"],
+  ["icp-signals", "sendlens-analyst"],
+  ["reply-patterns", "sendlens-analyst"],
+  ["workspace-health", "sendlens-analyst"],
+]);
 
 const PROMOTION_GUARD_CONTRACTS = [
   {
-    path: "skills/using-sendlens/SKILL.md",
+    path: "skills/sendlens-analyst/references/evidence-and-metrics.md",
     patterns: [
-      /Promotion Guard For Working Claims/i,
+      /Promotion Guard/i,
       /metric leader requiring verification/i,
-      /fetch_reply_text/i,
-    ],
-  },
-  {
-    path: "skills/campaign-performance/SKILL.md",
-    patterns: [
-      /Before calling a campaign `working`/i,
       /prepare_campaign_analysis/i,
-      /reply_context/i,
+    ],
+  },
+  {
+    path: "skills/sendlens-analyst/references/workspace-and-performance.md",
+    patterns: [
+      /low-volume leaders as candidates for validation/i,
       /campaign_variants/i,
-      /wrong-template or wrong-topic mismatch/i,
     ],
   },
   {
-    path: "skills/reply-patterns/SKILL.md",
+    path: "skills/sendlens-analyst/references/replies-icp-and-copy.md",
     patterns: [
-      /surprising reply-rate findings/i,
-      /wrong topic, wrong industry, or irrelevant copy/i,
-      /Do not count complaint replies/i,
+      /reply_email_context/i,
+      /different product, industry, compliance domain, or topic/i,
+      /Do not generate generic rewrites/i,
     ],
   },
   {
-    path: "skills/copy-analysis/SKILL.md",
+    path: "skills/sendlens-campaign-strategist/references/campaign-design.md",
     patterns: [
-      /possible wrong-template or wrong-topic delivery issue/i,
-      /intended copy angle was tested/i,
+      /Do not recommend a new campaign until/i,
+      /Campaign Recommendation Contract/i,
+      /Do not fabricate customer proof, quantified lift, product capabilities, or reply language/i,
     ],
   },
   {
@@ -453,6 +436,13 @@ async function collectSkillContracts() {
       requireString(data, field, relativePath);
     }
 
+    for (const field of Object.keys(data)) {
+      assert(
+        ALLOWED_SKILL_FRONTMATTER.has(field),
+        `${relativePath}: unsupported Agent Skills frontmatter field "${field}"`,
+      );
+    }
+
     const directoryName = path.basename(path.dirname(relativePath));
     const skillName = typeof data.name === "string" ? data.name.trim() : "";
     assert(
@@ -561,13 +551,15 @@ async function collectCommandContracts(skillNames, agentNames) {
     const commandName = path.basename(relativePath, ".md");
     commandNames.add(commandName);
 
+    const targetSkill = skillNames.has(commandName)
+      ? commandName
+      : LEGACY_COMMAND_SKILLS.get(commandName) ?? (commandName === "using-sendlens"
+        ? "sendlens-analyst"
+        : "");
+    assert(targetSkill, `${relativePath}: command must map to a public skill or supported legacy analyst route`);
     assert(
-      skillNames.has(commandName),
-      `${relativePath}: command filename must map to an existing skill named "${commandName}"`,
-    );
-    assert(
-      commandReferencesSkill(body, commandName),
-      `${relativePath}: body must route to the matching \`${commandName}\` skill`,
+      commandReferencesSkill(body, targetSkill),
+      `${relativePath}: body must route to the \`${targetSkill}\` skill`,
     );
     assert(
       titleFromCommandBody(body).length > 0,
@@ -590,21 +582,24 @@ async function collectCommandContracts(skillNames, agentNames) {
     const exception = COMMAND_ROUTING_EXCEPTIONS.get(commandName);
     if (exception) {
       assert(
-        agent === commandName,
-        `${relativePath}: setup exception must route agent metadata to its explicit skill name (${exception})`,
+        agent === exception.agent,
+        exception.agent
+          ? `${relativePath}: explicit route must use agent "${exception.agent}" (${exception.rationale})`
+          : `${relativePath}: setup command must not route to an agent (${exception.rationale})`,
       );
       assert(
         commandData.subtask === false,
-        `${relativePath}: setup exception must set subtask: false (${exception})`,
+        `${relativePath}: explicit route must set subtask: false (${exception.rationale})`,
       );
       assert(
         typeof commandData["argument-hint"] === "string",
-        `${relativePath}: setup exception still requires argument-hint metadata (${exception})`,
+        `${relativePath}: explicit route still requires argument-hint metadata (${exception.rationale})`,
       );
     } else {
+      const expectedAgent = LEGACY_COMMAND_AGENTS.get(commandName);
       assert(
-        agentNames.has(agent),
-        `${relativePath}: command agent "${agent}" must map to an existing specialist agent`,
+        expectedAgent === agent && agentNames.has(agent),
+        `${relativePath}: legacy analyst command must route to specialist agent "${expectedAgent}"`,
       );
       assert(
         commandData.context === "fork",
@@ -631,121 +626,147 @@ async function collectCommandContracts(skillNames, agentNames) {
 
   for (const commandName of commandNames) {
     assert(
-      skillNames.has(commandName),
-      `commands/${commandName}.md: no matching skill directory`,
+      skillNames.has(commandName) || LEGACY_COMMAND_SKILLS.has(commandName) || commandName === "using-sendlens",
+      `commands/${commandName}.md: no public skill or supported legacy route`,
     );
   }
 }
 
-async function assertUsingSendLensContract(skillNames) {
+async function assertSendLensAnalystContract(skillNames) {
   assert(
-    skillNames.has("using-sendlens"),
-    "skills/: missing required using-sendlens behavior contract",
+    skillNames.has("sendlens-analyst"),
+    "skills/: missing required sendlens-analyst behavior contract",
   );
 
-  const skillText = await readText("skills/using-sendlens/SKILL.md");
+  const skillPath = "skills/sendlens-analyst/SKILL.md";
+  const skillText = await readText(skillPath);
   const { body, errors } = parseFrontmatter(
-    "skills/using-sendlens/SKILL.md",
+    skillPath,
     skillText,
   );
   errors.forEach(fail);
 
-  for (const term of REQUIRED_USING_SENDLENS_TERMS) {
+  for (const term of REQUIRED_ANALYST_TERMS) {
     assert(
-      body.includes(term),
-      `skills/using-sendlens/SKILL.md: missing required contract term "${term}"`,
+      body.toLowerCase().includes(term.toLowerCase()),
+      `${skillPath}: missing required contract term "${term}"`,
     );
   }
 
-  for (const pattern of REQUIRED_USING_SENDLENS_DENIAL_PATTERNS) {
+  for (const pattern of REQUIRED_ANALYST_DENIAL_PATTERNS) {
     assert(
       pattern.test(body),
-      `skills/using-sendlens/SKILL.md: missing required no-fallback denial matching ${pattern}`,
+      `${skillPath}: missing required no-fallback denial matching ${pattern}`,
     );
   }
 
   assert(
     /\bUse `analysis_starters` before custom `analyze_data`/i.test(body),
-    "skills/using-sendlens/SKILL.md: must require analysis_starters before custom analyze_data",
+    `${skillPath}: must require analysis_starters before custom analyze_data`,
   );
   assert(
-    /\bNever upgrade sampled evidence, reconstructed outbound, or inference into an exact business claim\b/i.test(
-      body,
-    ),
-    "skills/using-sendlens/SKILL.md: must preserve exactness downgrade rule",
-  );
-  assert(
-    /\bCross-platform and cross-agent mechanics belong in Pluxx\b/i.test(body),
-    "skills/using-sendlens/SKILL.md: must keep cross-host mechanics owned by Pluxx",
+    /\bcontinue through every requested downstream stage/i.test(body),
+    `${skillPath}: broad requests must continue through requested downstream stages`,
   );
 
-  for (const routingCase of ROUTING_CONTRACT_CASES) {
-    assert(
-      body.includes(routingCase.skill),
-      `skills/using-sendlens/SKILL.md: missing workflow route for "${routingCase.prompt}" -> ${routingCase.skill}`,
-    );
-    assert(
-      body.includes(routingCase.firstTool),
-      `skills/using-sendlens/SKILL.md: missing first tool "${routingCase.firstTool}" for "${routingCase.prompt}"`,
-    );
-    assert(
-      body.includes(routingCase.topic),
-      `skills/using-sendlens/SKILL.md: missing routing topic/tool "${routingCase.topic}" for "${routingCase.prompt}"`,
-    );
-  }
-
-  for (const pattern of EVIDENCE_PRESSURE_PATTERNS) {
-    assert(
-      pattern.test(body),
-      `skills/using-sendlens/SKILL.md: missing pressure-case rule matching ${pattern}`,
-    );
+  for (const reference of [
+    "evidence-and-metrics.md",
+    "schema-and-joins.md",
+    "workspace-and-performance.md",
+    "replies-icp-and-copy.md",
+  ]) {
+    assert(body.includes(`references/${reference}`), `${skillPath}: missing direct reference to ${reference}`);
+    await assertPathExists(`skills/sendlens-analyst/references/${reference}`);
   }
 
   const instructions = await readText("INSTRUCTIONS.md");
   assert(
-    /\busing-sendlens\b/.test(instructions),
-    "INSTRUCTIONS.md: must reference using-sendlens routing contract",
+    /\bsendlens-analyst\b/.test(instructions),
+    "INSTRUCTIONS.md: must reference sendlens-analyst routing contract",
   );
+
+  const focusedContracts = [
+    {
+      name: "sendlens-campaign-strategist",
+      references: ["references/campaign-design.md"],
+      patterns: [/validated SendLens findings/i, /Do not draft full email bodies/i, /sendlens-copywriter/i],
+    },
+    {
+      name: "sendlens-copywriter",
+      references: ["references/copywriting-system.md"],
+      patterns: [/approved audience, offer, angle/i, /meaningful variants/i, /sendlens-launch-operator/i],
+    },
+    {
+      name: "sendlens-launch-operator",
+      references: ["references/launch-operations.md"],
+      patterns: [/blocked.*ready_with_warnings.*ready/is, /stop\/iterate\/scale/i, /provider operations read-only|provider operations read-only|keep provider operations read-only/i],
+    },
+  ];
+
+  for (const contract of focusedContracts) {
+    assert(skillNames.has(contract.name), `skills/: missing required ${contract.name} contract`);
+    const focusedPath = `skills/${contract.name}/SKILL.md`;
+    const focusedText = await readText(focusedPath);
+    const { body: focusedBody, errors: focusedErrors } = parseFrontmatter(focusedPath, focusedText);
+    focusedErrors.forEach(fail);
+    for (const pattern of contract.patterns) {
+      assert(pattern.test(focusedBody), `${focusedPath}: missing focused boundary matching ${pattern}`);
+    }
+    for (const reference of contract.references) {
+      assert(focusedBody.includes(reference), `${focusedPath}: missing direct reference to ${reference}`);
+      await assertPathExists(`skills/${contract.name}/${reference}`);
+    }
+    assert(
+      focusedBody.includes("../sendlens-analyst/references/evidence-and-metrics.md"),
+      `${focusedPath}: must reuse the shared evidence contract`,
+    );
+  }
 }
 
-async function assertAnalysisSkillFallbackRules(skillNames) {
-  for (const skillName of ANALYSIS_SKILLS) {
-    assert(
-      skillNames.has(skillName),
-      `skills/: missing expected analysis skill "${skillName}"`,
-    );
+async function assertSkillEvalContracts(skillNames) {
+  for (const skillName of skillNames) {
+    const evalPath = `skills/${skillName}/evals/evals.json`;
+    const triggerPath = `skills/${skillName}/evals/trigger-queries.json`;
+    await assertPathExists(evalPath);
+    await assertPathExists(triggerPath);
 
-    const relativePath = `skills/${skillName}/SKILL.md`;
-    const text = await readText(relativePath);
-    const { data, body, errors } = parseFrontmatter(relativePath, text);
-    errors.forEach(fail);
-    const expectedAgent = ANALYSIS_SKILL_AGENTS.get(skillName);
+    let evalPayload;
+    let triggerQueries;
+    try {
+      evalPayload = JSON.parse(await readText(evalPath));
+    } catch (error) {
+      fail(`${evalPath}: invalid JSON: ${error.message}`);
+      continue;
+    }
+    try {
+      triggerQueries = JSON.parse(await readText(triggerPath));
+    } catch (error) {
+      fail(`${triggerPath}: invalid JSON: ${error.message}`);
+      continue;
+    }
 
-    assert(
-      data?.context === "fork",
-      `${relativePath}: analysis skill must set context: fork so Claude-style skill invocation runs in a delegated subagent context`,
-    );
-    assert(
-      data?.agent === expectedAgent,
-      `${relativePath}: analysis skill must route to agent "${expectedAgent}"`,
-    );
+    assert(evalPayload.skill_name === skillName, `${evalPath}: skill_name must equal ${skillName}`);
+    assert(Array.isArray(evalPayload.evals) && evalPayload.evals.length >= 3, `${evalPath}: expected at least three realistic output evals`);
+    for (const testCase of evalPayload.evals ?? []) {
+      assert(typeof testCase.id === "string" && testCase.id.length > 0, `${evalPath}: every eval needs a stable id`);
+      assert(typeof testCase.prompt === "string" && testCase.prompt.length >= 20, `${evalPath}: every eval needs a realistic prompt`);
+      assert(typeof testCase.expected_output === "string" && testCase.expected_output.length >= 40, `${evalPath}: every eval needs a substantive expected_output`);
+      assert(Array.isArray(testCase.assertions) && testCase.assertions.length >= 3, `${evalPath}: every eval needs at least three objective assertions`);
+      for (const assertion of testCase.assertions ?? []) {
+        assert(typeof assertion === "string" && assertion.trim().length > 0, `${evalPath}: every assertion must be non-empty text`);
+      }
+    }
 
-    assert(
-      RELOAD_OR_REINSTALL_PLUGIN_PATTERN.test(body),
-      `${relativePath}: analysis skill must stop on missing MCP tools and tell the user to reload or reinstall the plugin/MCP server`,
-    );
-    assert(
-      /Do not use Bash\b/i.test(body) || /do not use shell\b/i.test(body),
-      `${relativePath}: analysis skill must deny shell/Bash fallback analysis`,
-    );
-    assert(
-      /DuckDB/i.test(body),
-      `${relativePath}: analysis skill must explicitly deny DuckDB fallback analysis`,
-    );
-    assert(
-      /repository inspection|repo source/i.test(body),
-      `${relativePath}: analysis skill must explicitly deny repo inspection fallback analysis`,
-    );
+    assert(Array.isArray(triggerQueries) && triggerQueries.length >= 10, `${triggerPath}: expected at least ten trigger queries`);
+    for (const entry of triggerQueries ?? []) {
+      assert(typeof entry?.query === "string" && entry.query.trim().length > 0, `${triggerPath}: every query must be non-empty text`);
+      assert(typeof entry?.should_trigger === "boolean", `${triggerPath}: every should_trigger value must be boolean`);
+    }
+    const positive = triggerQueries.filter((entry) => entry.should_trigger === true);
+    const negative = triggerQueries.filter((entry) => entry.should_trigger === false);
+    assert(positive.length >= 5, `${triggerPath}: expected at least five should-trigger queries`);
+    assert(negative.length >= 5, `${triggerPath}: expected at least five near-miss should-not-trigger queries`);
+    assert(new Set(triggerQueries.map((entry) => entry.query)).size === triggerQueries.length, `${triggerPath}: trigger queries must be unique`);
   }
 }
 
@@ -817,8 +838,8 @@ async function assertContributionAndDecisionGates() {
 const skillNames = await collectSkillContracts();
 const agentNames = await collectAgentContracts();
 await collectCommandContracts(skillNames, agentNames);
-await assertUsingSendLensContract(skillNames);
-await assertAnalysisSkillFallbackRules(skillNames);
+await assertSendLensAnalystContract(skillNames);
+await assertSkillEvalContracts(skillNames);
 await assertPromotionGuardContracts();
 await assertContributionAndDecisionGates();
 

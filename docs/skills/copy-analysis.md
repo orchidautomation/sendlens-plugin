@@ -12,7 +12,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 ## Primary Surfaces
 
-- Skill source: `skills/copy-analysis/SKILL.md`
+- Analyst module: `skills/sendlens-analyst/references/replies-icp-and-copy.md`
 - Command: `/copy-analysis`
 - Default agent: `copy-auditor`
 - MCP tools: `workspace_snapshot`, `analysis_starters`, `analyze_data`, plus `load_campaign_data` for one-campaign work

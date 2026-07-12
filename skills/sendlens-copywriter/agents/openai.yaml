@@ -1,0 +1,4 @@
+interface:
+  display_name: "SendLens Copywriter"
+  short_description: "Write evidence-backed outbound sequences"
+  default_prompt: "Use $sendlens-copywriter to draft an evidence-backed outbound sequence with meaningful variants."

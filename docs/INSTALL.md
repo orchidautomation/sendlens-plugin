@@ -131,8 +131,10 @@ pluxx install --target codex claude-code --trust --dry-run
 
 Current local path shape:
 
-- Claude Code: `claude plugin install sendlens@pluxx-local-sendlens`
+- Claude Code: `claude plugin install sendlens@pluxx-local-sendlens`; the installed bundle is copied into Claude's versioned plugin cache
+- Cursor: `~/.cursor/plugins/local/sendlens`
 - Codex: `~/.codex/plugins/sendlens` via `~/.agents/plugins/marketplace.json`
+- OpenCode: `~/.config/opencode/plugins/sendlens`, plus its generated wrapper and synced skills
 
 To verify already installed local bundles:
 
@@ -204,6 +206,17 @@ hooks = true
 ```
 
 Codex hook support uses `hooks`; the older `codex_hooks` flag is deprecated and should not be treated as the current hook feature key.
+
+The Codex installer also registers SendLens specialist agents under the active Codex home. You should not copy `.codex/agents/*.toml` manually. If Codex reports an unknown SendLens agent type, rerun the installer, run `pluxx verify-install --target codex`, and restart Codex.
+
+SendLens specialist discovery is host-native:
+
+- Claude Code discovers plugin-root `agents/`. After `/reload-plugins`, use `/agents` to confirm the SendLens specialists are available; they can be selected explicitly with `--agent` or delegated by Claude.
+- Cursor discovers plugin-root `agents/`. After **Developer: Reload Window**, invoke a focused specialist such as `/campaign-strategist`, or use a broad SendLens prompt and let Cursor delegate.
+- Codex uses install-managed registration under the active Codex home because agent TOML is a project/user surface rather than a plugin-native registration surface.
+- OpenCode receives the same definitions from the generated plugin's `config` hook. After restart, invoke a specialist such as `@campaign-strategist`, or use a broad prompt and let OpenCode delegate.
+
+The bundled specialists are `workspace-triager`, `campaign-analyst`, `reply-auditor`, `icp-auditor`, `copy-auditor`, `campaign-strategist`, `campaign-copywriter`, `launch-operator`, and `synthesis-reviewer`. They are focused execution roles inside the five public SendLens skills, not nine separate products or services.
 
 If tools do not appear, the API key is missing, refresh is still running, or the cache is empty, see the [troubleshooting guide](./TROUBLESHOOTING.md).
 

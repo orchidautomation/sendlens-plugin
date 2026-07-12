@@ -1,0 +1,36 @@
+{
+  "skill_name": "sendlens-copywriter",
+  "evals": [
+    {
+      "id": "strategy-to-sequence",
+      "prompt": "Use the approved campaign strategy to write a concise three-email sequence with subjects, bodies, CTAs, delays, and required personalization fields.",
+      "expected_output": "A complete text-only sequence that follows the approved audience, angle, proof boundary, and CTA while documenting personalization and claim requirements.",
+      "assertions": [
+        "Every step has one strategic job and one CTA",
+        "Claims stay inside the approved proof boundary",
+        "Personalization variables and required fields are explicit",
+        "The copy is not padded with generic analysis"
+      ]
+    },
+    {
+      "id": "meaningful-copy-variants",
+      "prompt": "Write two meaningful variants for step zero: one should test problem framing and one should test offer framing. Keep everything else fixed.",
+      "expected_output": "Two variants that differ on the named strategic variable, with the fixed elements and learning hypothesis clearly stated.",
+      "assertions": [
+        "Variants are not cosmetic synonym changes",
+        "Only the intended strategic variable changes",
+        "The learning goal for each variant is explicit"
+      ]
+    },
+    {
+      "id": "reply-backed-rewrite",
+      "prompt": "Rewrite this campaign sequence using the validated mismatch objections, but do not invent any proof or capabilities.",
+      "expected_output": "A rewrite that addresses the validated objection evidence without fabricating proof, product capabilities, reply wording, urgency, or quantified outcomes.",
+      "assertions": [
+        "The rewrite is tied to validated reply evidence",
+        "Unsupported claims are removed or labeled outside send-ready copy",
+        "The output includes a claim ledger and rendering requirements"
+      ]
+    }
+  ]
+}

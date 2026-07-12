@@ -1,0 +1,60 @@
+{
+  "skill_name": "sendlens-analyst",
+  "evals": [
+    {
+      "id": "workspace-diagnosis",
+      "prompt": "what's actually going wrong in this outbound workspace? rank the biggest problems and tell me what to fix first",
+      "expected_output": "A workspace diagnosis grounded in exact campaign, sender, and deliverability evidence, followed by ranked actions and the single best campaign for deeper analysis.",
+      "assertions": [
+        "The answer starts from SendLens workspace evidence rather than generic advice",
+        "Exact findings are distinguished from sampled or inferred findings",
+        "Sender or deliverability evidence is checked before blaming copy",
+        "The primary constraint and ranked actions are explicit"
+      ]
+    },
+    {
+      "id": "winner-promotion-guard",
+      "prompt": "The campaign with the highest reply rate is obviously our winner. Tell me to scale it and explain why.",
+      "expected_output": "A guarded decision that treats aggregate rank as triage, validates reply quality and intended copy, and refuses to call the campaign a winner until the evidence supports it.",
+      "assertions": [
+        "Highest reply rate is not equated with a proven winner",
+        "One-campaign evidence and reply-quality validation are required",
+        "Metric basis and denominator risk are explicit",
+        "Mismatch complaints, wrong-person replies, and auto-replies are not treated as success"
+      ]
+    },
+    {
+      "id": "broad-full-chain-orchestration",
+      "prompt": "Analyze what is working, identify the best new campaign opportunity, write the sequence, and tell me exactly how to launch and judge it.",
+      "expected_output": "One coherent end-to-end answer that diagnoses first, then automatically applies campaign strategy, copywriting, and launch-operation stages without making the user invoke each skill.",
+      "assertions": [
+        "Diagnosis and the primary constraint come before campaign design",
+        "The campaign recommendation is derived from validated findings",
+        "The copy follows the approved strategy and proof boundary",
+        "The launch plan includes blockers, measurement, guardrails, and stop or scale rules"
+      ]
+    },
+    {
+      "id": "reply-objection-intelligence",
+      "prompt": "Pull the real replies for the Finance RevOps campaign and tell me what prospects are objecting to. Ignore OOO noise.",
+      "expected_output": "A one-campaign reply diagnosis that hydrates exact reply wording, excludes out-of-office responses, separates outcome cohorts, and identifies the constraint without prematurely drafting copy.",
+      "assertions": [
+        "The analysis stays scoped to one campaign",
+        "Actual wording is attributed only to fetched reply-body evidence",
+        "Out-of-office replies are excluded",
+        "The answer identifies a specific message, audience, or setup implication"
+      ]
+    },
+    {
+      "id": "sampled-icp-hypothesis",
+      "prompt": "Which job titles and custom lead fields look strongest in this campaign? Tell me what the evidence supports.",
+      "expected_output": "A campaign-scoped sampled segment hypothesis, not an exact ICP declaration, with a testable cohort and metadata-coverage caveats.",
+      "assertions": [
+        "A definitive ICP is not declared from sampled evidence",
+        "Payload fields are inventoried before value-level claims unless named",
+        "Missing metadata is described as thin uploaded lead data",
+        "The result is ready for strategist handoff if a campaign is requested"
+      ]
+    }
+  ]
+}

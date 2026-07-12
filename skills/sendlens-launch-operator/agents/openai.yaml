@@ -1,0 +1,4 @@
+interface:
+  display_name: "SendLens Launch Operator"
+  short_description: "Gate launches and operate experiments"
+  default_prompt: "Use $sendlens-launch-operator to assess launch readiness and define scale, stop, measurement, and learning rules."

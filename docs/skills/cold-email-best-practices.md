@@ -12,7 +12,8 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 ## Primary Surfaces
 
-- Skill source: `skills/cold-email-best-practices/SKILL.md`
+- Public skill: `skills/sendlens-copywriter/SKILL.md`
+- Reference: `skills/sendlens-copywriter/references/copywriting-system.md`
 - Command: `/cold-email-best-practices`
 - MCP tools: none required by the skill itself
 

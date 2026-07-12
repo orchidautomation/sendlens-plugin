@@ -62,6 +62,16 @@ hooks = true
 
 Codex hook support uses `hooks`; `codex_hooks` is deprecated and should not be treated as the current hook feature key.
 
+If Codex recognizes SendLens skills and tools but reports an unknown SendLens agent type, the plugin bundle is present but its custom-agent registration is missing or stale. Rerun the current installer, run `pluxx verify-install --target codex`, and restart Codex. The installer owns registration under the active Codex home; do not copy agent TOML files manually.
+
+If skills and tools work but a SendLens specialist is missing on another host:
+
+- Claude Code: rerun the installer, run `pluxx verify-install --target claude-code`, run `/reload-plugins`, then check `/agents`. Claude discovers the bundle's root `agents/` directory natively.
+- Cursor: rerun the installer, run `pluxx verify-install --target cursor`, then use **Developer: Reload Window** or restart Cursor. Cursor discovers the bundle's root `agents/` directory natively.
+- OpenCode: rerun the installer, run `pluxx verify-install --target opencode`, and restart OpenCode. The generated plugin registers agents through its `config` hook; try `@campaign-strategist` after restart.
+
+Do not manually scatter copied SendLens agent files across host config directories. The Pluxx installer owns the host-specific registration and verification path.
+
 Expected core tools:
 
 - `workspace_snapshot`

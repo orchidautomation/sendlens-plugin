@@ -1,0 +1,4 @@
+interface:
+  display_name: "SendLens Campaign Strategist"
+  short_description: "Turn evidence into campaign strategy"
+  default_prompt: "Use $sendlens-campaign-strategist to turn validated SendLens findings into an audience, offer, angle, sequence, and experiment recommendation."
