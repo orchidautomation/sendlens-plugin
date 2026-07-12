@@ -13,7 +13,12 @@ Call the SendLens MCP tool `setup_doctor`.
 
 Display the relevant status, failures, warnings, and next steps from the JSON response. The MCP tool is the source of truth for provider, runtime, cache, and workspace setup checks; do not replace those checks with Bash, manual shell probing, local file inspection, or DuckDB inspection.
 
-Codex custom-agent discovery is a host installation concern outside the MCP doctor. If Codex reports an unknown SendLens agent type, tell the user to rerun the current Pluxx-backed SendLens installer, run `pluxx verify-install --target codex`, and restart Codex. Pluxx should register the bundled agent TOML under the active Codex home automatically; do not ask the user to copy agent files by hand.
+Custom-agent discovery is a host installation concern outside the MCP doctor. Repair it with the host-native Pluxx path:
+
+- Claude Code: SendLens agents are native plugin components under `agents/`. Rerun the current Pluxx-backed installer, run `pluxx verify-install --target claude-code`, then run `/reload-plugins`. Confirm the specialists appear in `/agents`.
+- Cursor: SendLens agents are native plugin components under `agents/`. Rerun the installer, run `pluxx verify-install --target cursor`, then use **Developer: Reload Window** or restart Cursor.
+- Codex: Pluxx registers bundled agent TOML under the active Codex home. Rerun the installer, run `pluxx verify-install --target codex`, and restart Codex. Do not ask the user to copy agent files by hand.
+- OpenCode: the generated plugin injects SendLens agent definitions through its `config` hook. Rerun the installer, run `pluxx verify-install --target opencode`, restart OpenCode, and invoke a specialist with `@campaign-strategist` or another bundled agent name.
 
 When describing freshness, use the exact `cache_freshness.label` and timestamp from `setup_doctor`. Do not replace a seconds/minutes-old refresh with vague phrasing such as "earlier today."
 
@@ -62,6 +67,6 @@ Return:
 - cache freshness, using `cache_freshness.label` when present.
 - docs links for the relevant failure.
 - whether demo mode is enabled.
-- host registration repair guidance when Codex reports an unknown SendLens agent type.
+- host-native registration repair guidance when Claude Code, Cursor, Codex, or OpenCode cannot discover a SendLens specialist.
 
 Do not use Bash, local DuckDB inspection, `jq`, or repo-file fallbacks for SendLens analysis after setup succeeds. Analysis must go through SendLens MCP tools.
