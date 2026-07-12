@@ -1,6 +1,6 @@
 ---
 name: sendlens-launch-operator
-description: "Use when the user wants SendLens guidance for launching, resuming, cloning, scaling, pausing, or stopping a campaign, including blocker review, operational QA, measurement, guardrails, and learning or client handoff."
+description: "Use when the user wants SendLens guidance for a campaign launch, resume, clone, scale, pause, or stop decision, including blocker review, operational QA, measurement, guardrails, and learning or client handoff."
 ---
 
 # SendLens Launch Operator
