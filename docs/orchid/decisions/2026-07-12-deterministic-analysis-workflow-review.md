@@ -1,7 +1,7 @@
 # Deterministic analysis workflow re-evaluation
 
-Date: 2026-07-12  
-Baseline: `v0.1.49` / `c70a6e5`  
+Date: 2026-07-12
+Baseline: `v0.1.49` / `c70a6e5`
 Linear: `SENDOSS-89`, `SENDOSS-90`, `SENDOSS-92`, `SENDOSS-94`; related `SENDOSS-91`, `SENDOSS-93`, `SENDOSS-62`
 
 ## Decision
