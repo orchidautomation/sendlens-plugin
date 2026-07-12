@@ -60,7 +60,7 @@ export function buildCampaignReplyCoverageSummary({
     const stateRow = hydrationState.find((row) =>
       statusValue(row, "i_status") === status
       && row.latest_of_thread === latestOfThread
-    ) ?? findStatusRow(hydrationState, "i_status", status) ?? {};
+    ) ?? {};
     const exhausted = stateRow.exhausted === true || fetchRow.exhausted === true;
 
     return {
@@ -110,9 +110,13 @@ export function buildCampaignReplyCoverageSummary({
   const comparison = normalizedAggregateReplyCount == null
     ? `The campaign aggregate reply count is unavailable; ${hydratedReplyCount} stored reply-email rows have hydrated bodies within the selected List Email surface.`
     : `The campaign aggregate reports ${normalizedAggregateReplyCount} unique human replies; ${hydratedReplyCount} stored reply-email rows have hydrated bodies within the selected List Email surface, leaving an aggregate-to-hydrated numeric gap of ${coverageGapCount}.`;
-  const exhaustionExplanation = allSelectedStatusBucketsExhausted
-    ? "The selected status buckets are exhausted. Increasing to maximum depth does not guarantee recovery of this gap once those buckets are exhausted."
-    : "One or more selected status buckets are not exhausted. Additional depth may expose more rows within those buckets, but it does not guarantee that the aggregate-to-hydrated gap will close.";
+  const exhaustionExplanation = normalizedAggregateReplyCount == null
+    ? allSelectedStatusBucketsExhausted
+      ? "The selected status buckets are exhausted for this List Email surface. Increasing to maximum depth does not guarantee additional selected-surface rows once those buckets are exhausted."
+      : "One or more selected status buckets are not exhausted. Additional depth may expose more rows within those buckets."
+    : allSelectedStatusBucketsExhausted
+      ? "The selected status buckets are exhausted. Increasing to maximum depth does not guarantee recovery of this gap once those buckets are exhausted."
+      : "One or more selected status buckets are not exhausted. Additional depth may expose more rows within those buckets, but it does not guarantee that the aggregate-to-hydrated gap will close.";
   const semanticsExplanation =
     "The campaign aggregate and selected List Email surface are different evidence scopes. A numeric gap can reflect unselected or unclassified provider statuses, latest-of-thread behavior, historical or provider-retention differences, or campaign-aggregate versus List Email semantics; this response does not establish which cause applies.";
 

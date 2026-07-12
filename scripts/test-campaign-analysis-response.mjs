@@ -186,4 +186,65 @@ assert.doesNotMatch(
   /maximum depth (?:will|can) recover/i,
 );
 
+const mismatchedHydrationStateSummary = buildCampaignReplyCoverageSummary({
+  aggregateReplyCount: 1,
+  selectedStatuses: [1],
+  latestOfThread: true,
+  fetchByStatus: [],
+  storedContextByStatus: [
+    {
+      reply_email_i_status: 1,
+      reply_email_i_status_label: "interested",
+      fetched_reply_rows: 1,
+      hydrated_reply_body_rows: 1,
+    },
+  ],
+  hydrationState: [
+    { i_status: 1, latest_of_thread: false, exhausted: true },
+  ],
+});
+
+assert.equal(
+  mismatchedHydrationStateSummary.by_status[0].exhausted,
+  false,
+);
+assert.equal(
+  mismatchedHydrationStateSummary.all_selected_status_buckets_exhausted,
+  false,
+);
+
+const unavailableAggregateSummary = buildCampaignReplyCoverageSummary({
+  aggregateReplyCount: null,
+  selectedStatuses: [1],
+  latestOfThread: true,
+  fetchByStatus: [
+    {
+      i_status: 1,
+      rows_fetched: 1,
+      exhausted: true,
+    },
+  ],
+  storedContextByStatus: [
+    {
+      reply_email_i_status: 1,
+      reply_email_i_status_label: "interested",
+      fetched_reply_rows: 1,
+      hydrated_reply_body_rows: 1,
+    },
+  ],
+  hydrationState: [
+    { i_status: 1, latest_of_thread: true, exhausted: true },
+  ],
+});
+
+assert.equal(unavailableAggregateSummary.coverage_gap_count, null);
+assert.doesNotMatch(
+  unavailableAggregateSummary.coverage_explanation,
+  /this gap|aggregate-to-hydrated gap will close/i,
+);
+assert.match(
+  unavailableAggregateSummary.coverage_explanation,
+  /selected status buckets are exhausted for this List Email surface/i,
+);
+
 console.log("campaign analysis response tests passed");

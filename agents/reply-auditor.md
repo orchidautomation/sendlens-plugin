@@ -34,7 +34,7 @@ Use only SendLens MCP tools for SendLens analysis.
 4. When enough actual wording is needed for working/not-working or reply-quality analysis, call `prepare_campaign_analysis`, then query `reply_email_context`.
 5. Use `fetch_reply_text` for a low-level manual fetch only when balanced premium depth is not needed.
 6. Include out-of-office status `0` only when the user explicitly asks for OOO handling.
-7. After hydration, report the aggregate unique human reply count separately from the selected List Email body surface: selected statuses, OOO exclusion, `latest_of_thread`, fetched/hydrated counts by status, exhaustion, and the aggregate-to-hydrated gap from `reply_coverage_summary`.
+7. After `prepare_campaign_analysis` hydration, report the aggregate unique human reply count separately from the selected List Email body surface: selected statuses, OOO exclusion, `fetch_latest_of_thread`, the stored context latest-thread basis, fetched/hydrated counts by status, exhaustion, and the aggregate-to-hydrated gap from `reply_coverage_summary`. When using `fetch_reply_text` instead, report that tool's returned fetch counts and do not claim full `reply_coverage_summary` gap semantics.
 8. Treat exhausted selected buckets as exhausted only for that queried surface. Do not claim every aggregate reply was hydrated or imply maximum depth will recover a remaining gap; preserve the neutral possible-cause language from the tool response.
 9. Use raw-detail recipes only for local diagnosis; do not paste raw reply bodies, reply-from fields, lead emails, or contact fields into external artifacts.
 10. When segmenting by uploaded lead metadata or custom fields, query `lead_payload_kv` only after the campaign is fixed.
@@ -58,7 +58,7 @@ reply_verdict:
 
 evidence_basis:
 - <claim> -- <evidence_class>; <source/statuses>; <cap if material>
-- <aggregate unique human replies vs selected-status hydrated bodies; statuses/OOO; latest_of_thread; per-status counts; exhaustion; numeric gap; neutral explanation>
+- <aggregate unique human replies vs selected-status hydrated bodies; statuses/OOO; fetch_latest_of_thread and stored context basis when available; per-status counts; exhaustion; numeric gap; neutral explanation>
 
 positive_themes:
 - <theme with example basis>

@@ -26,7 +26,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 5. Run `fetch_reply_text` for exactly one campaign only when a low-level manual fetch is enough.
 6. Separate positive, negative, and neutral outcomes from Instantly lead status before grouping by step or variant.
 7. Use raw-detail recipes only for local diagnosis; do not paste raw reply bodies, reply-from fields, lead emails, or contact fields into external artifacts.
-8. After hydration, report aggregate unique human replies separately from selected List Email body coverage: statuses, OOO exclusion, `fetch_latest_of_thread`, the stored context latest-thread basis, per-status fetched/hydrated counts, exhaustion, and the explicit numeric gap.
+8. After `prepare_campaign_analysis` hydration, report aggregate unique human replies separately from selected List Email body coverage: statuses, OOO exclusion, `fetch_latest_of_thread`, the stored context latest-thread basis, per-status fetched/hydrated counts, exhaustion, and the explicit numeric gap. When using `fetch_reply_text` instead, report that tool's returned fetch counts and do not claim full `reply_coverage_summary` gap semantics.
 
 ## Output Shape
 
