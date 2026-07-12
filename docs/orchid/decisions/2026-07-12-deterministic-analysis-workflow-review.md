@@ -8,7 +8,7 @@ Linear: `SENDOSS-89`, `SENDOSS-90`, `SENDOSS-92`, `SENDOSS-94`; related `SENDOSS
 
 Consolidate and re-scope the project. Do not build `plan_analysis` (`SENDOSS-90`), free-form `analysis_starters(question=...)` ranking (`SENDOSS-92`), or standalone MCP workflow bundles (`SENDOSS-93`) as written. They duplicate intent routing that now belongs to the five-skill layer. Cancel `SENDOSS-94` as a standalone implementation issue and treat its scenarios as acceptance criteria owned by each behavior slice.
 
-No implementation issue is ready to start. The exact next action is a bounded evidence audit, coordinated in re-scoped `SENDOSS-92`, that separates three possible failure classes: host/skill routing, recipe selection, and SQL copy/parameter execution. The result determines whether to improve skill/eval coverage, design structured recipe discovery, or plan typed `execute_recipe` (`SENDOSS-91`). This review tranche does not implement code.
+Brandon subsequently clarified the product requirement: the five-skill architecture must explicitly spawn or delegate bounded specialist subagents on hosts that support them, and prompt/tests must enforce that behavior. Re-scope `SENDOSS-92` as the single review-ready implementation slice. Do not start code until Brandon approves its Linear contract.
 
 ## Why the original sequence no longer holds
 
@@ -45,21 +45,21 @@ The likely costs exceed the residual benefit:
 
 Keep deterministic facts at their owning tool boundary, as PR #54 does. Keep workflow selection in the tested skill layer.
 
-### `SENDOSS-92`: do not pursue as written
+### `SENDOSS-92`: enforce delegated specialist execution
 
-`analysis_starters` still accepts only `topic`, `recipe_id`, mode, and pagination. The agent must already know the topic. `search_catalog` partially fills the gap with deterministic concept hints for runway, scale, refill, deliverability, sender, rendered outbound, reply/reply body, payload, and tags, but it is a schema-discovery tool and does not rank the 58 recipes or cover every workflow family in `SENDOSS-92`.
+The current package proves that nine specialist agents exist, use `mode: subagent`, and survive host generation. It does not require the coordinator to spawn them. `INSTRUCTIONS.md` says to invoke a specialist only when native delegated agents are available and the extra pass materially improves the answer; `sendlens-analyst` says to use focused skills and continue through downstream stages. Prompt tests assert those terms and generated mappings, but not a required delegation sequence.
 
-That gap is real but not yet proven to be more consequential than the SQL copy/parameter failures in `SENDOSS-91`. Accepting a second free-form natural-language question at the MCP layer would also create two intent authorities: skills would interpret the user's job while `analysis_starters` independently interprets the same prose to choose recipes.
+The replacement contract is narrower than a new MCP planner and stronger than the current prose:
 
-Re-scope `SENDOSS-92` as the evidence gate rather than an implementation issue. Run representative broad, campaign-depth, reply-quality, action-spanning, and multi-concept recipe requests against the supported host bundles that can be exercised locally. For representative parameterized recipes, record whether failure occurs during skill selection, recipe selection, placeholder/parameter handling, or guarded execution. Use public-safe demo fixtures only.
+- the coordinator explicitly spawns or delegates the owning specialist when a supported host has native subagents and the request crosses a specialist boundary;
+- workspace triage selects one campaign before deeper campaign, reply, ICP, or copy delegation;
+- dependent strategy → copy → launch work runs sequentially using the compact handoff contract rather than parallel fan-out;
+- unrelated specialist work may run in parallel only after scope is fixed and file/data/tool contention is absent;
+- the coordinator owns evidence calibration, conflict resolution, and the final answer;
+- hosts without native subagents follow the same bounded lanes inline instead of silently dropping the specialist pass;
+- prompt contracts, generated-host inventory checks, skill evals, and at least one available host-native behavioral receipt fail or flag when required delegation is absent.
 
-If the audit shows a material recipe-selection failure after the correct skill is active, re-scope the interface so the skill layer translates natural language into shared explicit concept tokens and `analysis_starters` ranks from those tokens. Any future slice must:
-
-- reuse the existing concept-hint vocabulary rather than create a second matcher;
-- return 3–5 compact recipe summaries by default, with explicit match reasons;
-- prefer safe-summary recipes and suppress raw-detail defaults;
-- preserve existing topic, exact-ID, mode, and pagination behavior exactly;
-- land compatibility, privacy, provider-caveat, and response-size tests in the same PR.
+This enforces the shipped architecture at the orchestration boundary without adding `plan_analysis`, recipe ranking, typed execution, or workflow-bundle MCP tools.
 
 ### `SENDOSS-94`: consolidate into behavior slices
 
@@ -84,25 +84,28 @@ Keep only genuinely cross-cutting drift work as a re-scoped `SENDOSS-62` follow-
 - Do not return raw reply bodies, rendered bodies, recipient fields, contact fields, private identifiers, or customer campaign rows from routing/ranking calls.
 - Default to compact metadata. Full SQL remains an explicit exact-recipe or bounded-page request.
 - Treat skill routing as the workflow authority and MCP tools as deterministic evidence/query primitives.
+- Preserve bounded orchestration: no campaign-specialist fan-out before workspace triage selects scope, and no parallel execution for strategy/copy/launch stages that depend on prior handoffs.
+- Use host-native specialist subagents when available; preserve an explicit inline fallback when a host cannot delegate.
 
 ## Recommended Linear changes
 
-- `SENDOSS-90`: move to research/parked. Cancel only after the routed-request audit supports the five-skill supersession claim; a failed audit should improve the owning skill/eval surface before assuming an MCP planner is the fix.
-- `SENDOSS-92`: rewrite as the single research action: run the bounded routed-request, recipe-selection, and parameter-execution audit, then record which implementation issue—if any—is justified.
+- `SENDOSS-90`: cancel as superseded by the five-skill architecture plus the explicit delegation contract in `SENDOSS-92`.
+- `SENDOSS-92`: rewrite as the single high-priority Todo for human review: enforce bounded specialist spawning/delegation in prompts, generated bundles, evals, and behavioral verification.
 - `SENDOSS-94`: cancel as a standalone issue; move applicable acceptance scenarios into `SENDOSS-92`, `SENDOSS-91`, and any future behavior-bearing PR.
-- `SENDOSS-93`: move to research/parked with `SENDOSS-90`; cancel only if representative action-spanning requests confirm the five skills reliably compose the workflow.
-- `SENDOSS-91`: remove the `SENDOSS-90` blocker but do not plan implementation yet. Proceed only if the audit reproduces material SQL-copy or parameter-validation failures.
-- `SENDOSS-62`: return to research/rewrite before implementation because its counts and proposed all-table-reference invariant are stale.
-- `SENDOSS-89` / project: change the current focus from MCP workflow planning to the bounded behavioral evidence gate.
+- `SENDOSS-93`: cancel as superseded by enforced specialist delegation through the existing skills and agents.
+- `SENDOSS-91`: keep as low-priority future research; typed execution remains independent and has no current evidence gate.
+- `SENDOSS-62`: cancel the stale generated-map proposal; future behavior slices own source-derived semantic drift tests.
+- `SENDOSS-89` / project: make `SENDOSS-92` the sole active review queue and list all other work as future or sunset.
 
 ## Evidence reviewed
 
 - Local git history and diffs for `v0.1.47`–`v0.1.49`, including PRs #52–#55 and their review/validation records.
 - Current `skills/*/SKILL.md`, `agents/*.md`, `INSTRUCTIONS.md`, `README.md`, `docs/CATALOG.md`, `docs/MCP_RESPONSE_CONTRACT.md`, and the PR #53 decision/plan artifacts.
 - Current `plugin/query-recipes.ts`, `plugin/catalog.ts`, `plugin/server.ts`, `plugin/campaign-analysis-response.ts`, and relevant prompt, host-bundle, runtime, MCP-response, and reply-coverage tests.
+- Current prompt/test gap: specialist registration and `mode: subagent` are enforced, but coordinator spawning/delegation is discretionary and has no behavioral contract assertion.
 - Full Linear descriptions, relations, attachments, comments, project description, project comments, and project status updates for `SENDOSS-89`–`SENDOSS-94` and `SENDOSS-62`. No issue attachments or child comments existed; `SENDOSS-62` had one adoption comment.
 - Entire was checked, but this repo has no checkpoints on the branch and the CLI is not authenticated for search, so git/PR/Linear records are the available provenance source.
 
 ## Stop condition
 
-Do not implement code in this review tranche. Resume implementation only after the re-scoped `SENDOSS-92` audit identifies a material failure class and the corresponding issue contract, dependency/privacy boundaries, and project Execution Index agree with that evidence.
+Do not implement code until Brandon reviews and approves the re-scoped `SENDOSS-92` Linear contract. After approval, route to `ce-plan` and then `ce-work`; keep all other deterministic-analysis tickets out of the active queue.
