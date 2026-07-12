@@ -50,7 +50,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@orchid-labs/pluxx": "^0.1.29",
+    "@orchid-labs/pluxx": "^0.1.30",
     "@types/node": "^22.15.3",
     "typescript": "^5.8.3"
   }
