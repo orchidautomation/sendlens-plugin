@@ -16,7 +16,7 @@ After `prepare_campaign_analysis`, always use `reply_coverage_summary` and repor
 
 1. the aggregate unique human reply count from `campaign_overview.reply_count_unique`;
 2. the selected List Email statuses and whether OOO status `0` was excluded;
-3. the `latest_of_thread` setting;
+3. the `fetch_latest_of_thread` setting and the stored context latest-thread basis;
 4. fetched and hydrated reply-body counts by status;
 5. per-status and overall selected-bucket exhaustion state;
 6. the explicit aggregate-to-hydrated numeric gap; and

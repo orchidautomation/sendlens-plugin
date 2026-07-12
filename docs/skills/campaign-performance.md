@@ -25,7 +25,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 4. Use exact campaign and account aggregate tables for headline comparisons.
 5. If the user narrows to one campaign and needs fresher evidence, run `load_campaign_data`.
 6. Before one-campaign working/not-working, winner, scale, or kill claims, run `prepare_campaign_analysis`.
-7. Report aggregate unique human replies separately from the selected List Email body surface: statuses, OOO exclusion, `latest_of_thread`, per-status fetched/hydrated counts, exhaustion, and the aggregate-to-hydrated gap from `reply_coverage_summary`.
+7. Report aggregate unique human replies separately from the selected List Email body surface: statuses, OOO exclusion, `fetch_latest_of_thread`, the stored context latest-thread basis, per-status fetched/hydrated counts, exhaustion, and the aggregate-to-hydrated gap from `reply_coverage_summary`.
 
 ## Output Shape
 

@@ -129,7 +129,20 @@ assert.equal(coverageSummary.fetched_reply_count, 27);
 assert.equal(coverageSummary.coverage_gap_count, 6);
 assert.deepEqual(coverageSummary.coverage_scope.selected_statuses, [1, -1, -2]);
 assert.equal(coverageSummary.coverage_scope.ooo_status_excluded, true);
-assert.equal(coverageSummary.coverage_scope.latest_of_thread, true);
+assert.equal(coverageSummary.coverage_scope.fetch_latest_of_thread, true);
+assert.equal(coverageSummary.coverage_scope.stored_context_latest_of_thread, null);
+assert.match(
+  coverageSummary.coverage_scope.stored_context_latest_of_thread_basis,
+  /reply_email_context.*does not store.*latest_of_thread/i,
+);
+assert.match(
+  coverageSummary.hydrated_reply_count_basis,
+  /not proof of latest-thread-only coverage/i,
+);
+assert.match(
+  coverageSummary.coverage_gap_count_basis,
+  /not proof of missing reply bodies or latest-thread-only coverage/i,
+);
 assert.equal(coverageSummary.all_selected_status_buckets_exhausted, true);
 assert.equal(
   coverageSummary.coverage_state,

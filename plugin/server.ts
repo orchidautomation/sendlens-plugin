@@ -846,7 +846,7 @@ server.registerTool(
         "Use this for questions like why a campaign is performing, what is working, what is not working, or how reply quality breaks down for one selected campaign.",
         "Default balanced depth fetches interested, not interested, and wrong-person replies with up to 3 List email pages per status, through the 3-second email lane, stopping when each status has enough stored non-auto reply bodies or pagination is exhausted.",
         "After reply fetch, it backfills lead context through Instantly /leads/list contacts/ids so reply bodies stay visible even when the bounded lead scan missed those leads.",
-        "The reply_coverage_summary keeps campaign aggregate unique replies separate from hydrated List Email rows and reports selected statuses, OOO exclusion, latest_of_thread=true, per-status fetched/hydrated counts, exhaustion, the numeric gap, and a neutral explanation. Exhausted selected buckets do not prove complete aggregate reply hydration, and maximum depth does not guarantee recovery of a gap.",
+        "The reply_coverage_summary keeps campaign aggregate unique replies separate from hydrated List Email rows and reports selected statuses, OOO exclusion, the fetch request's latest_of_thread=true mode, the fact that stored reply_email_context counts do not track latest_of_thread, per-status fetched/hydrated counts, exhaustion, the numeric gap, and a neutral explanation. Exhausted selected buckets do not prove complete aggregate reply hydration, and maximum depth does not guarantee recovery of a gap.",
       ].join(" "),
     inputSchema: {
       campaign_id: z

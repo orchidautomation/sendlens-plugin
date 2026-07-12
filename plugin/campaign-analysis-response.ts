@@ -123,15 +123,18 @@ export function buildCampaignReplyCoverageSummary({
     stored_reply_count: storedReplyCount,
     hydrated_reply_count: hydratedReplyCount,
     hydrated_reply_count_basis:
-      "stored reply_email_context rows with hydrated_reply_body=true for the selected statuses",
+      "stored reply_email_context rows with hydrated_reply_body=true for the selected statuses; reply_email_context does not track latest_of_thread, so this count is not proof of latest-thread-only coverage",
     coverage_gap_count: coverageGapCount,
     coverage_gap_count_basis:
-      "max(aggregate_reply_count - hydrated_reply_count, 0); this is a cross-surface numeric comparison, not proof of missing reply bodies",
+      "max(aggregate_reply_count - hydrated_reply_count, 0); this is a cross-surface numeric comparison, not proof of missing reply bodies or latest-thread-only coverage",
     coverage_scope: {
       surface: "provider_list_email_selected_statuses",
       selected_statuses: selectedStatuses,
       ooo_status_excluded: !selectedStatuses.includes(0),
-      latest_of_thread: latestOfThread,
+      fetch_latest_of_thread: latestOfThread,
+      stored_context_latest_of_thread: null,
+      stored_context_latest_of_thread_basis:
+        "unknown: reply_email_context is keyed by reply row/status and does not store the List Email latest_of_thread request mode",
     },
     by_status: byStatus,
     all_selected_status_buckets_exhausted: allSelectedStatusBucketsExhausted,
