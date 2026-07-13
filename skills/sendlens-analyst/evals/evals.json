@@ -13,6 +13,28 @@
       ]
     },
     {
+      "id": "direct-fast-path-no-spawn",
+      "prompt": "Is my SendLens snapshot fresh, and how many active campaigns are in it?",
+      "expected_output": "A direct workspace_snapshot and refresh_status answer that does not spawn a specialist or add orchestration overhead to a simple inventory and freshness request.",
+      "assertions": [
+        "The request stays on the direct MCP fast path",
+        "No specialist agent is spawned",
+        "The answer reports only the requested freshness and inventory facts",
+        "Internal routing mechanics are not exposed"
+      ]
+    },
+    {
+      "id": "triage-before-campaign-depth",
+      "prompt": "Diagnose the whole workspace, pick the campaign that deserves a deeper reply and ICP review, and explain the priority.",
+      "expected_output": "A bounded delegated diagnosis in which workspace-triager selects one campaign before only the needed reply-auditor and icp-auditor depth lanes run.",
+      "assertions": [
+        "workspace-triager is delegated first on a host with native subagents",
+        "Exactly one campaign is selected before campaign-depth delegation",
+        "Only the reply and ICP specialist lanes needed by the decision run",
+        "synthesis-reviewer pressure-tests the client-safe recommendation before the coordinator synthesizes the evidence and final answer"
+      ]
+    },
+    {
       "id": "winner-promotion-guard",
       "prompt": "The campaign with the highest reply rate is obviously our winner. Tell me to scale it and explain why.",
       "expected_output": "A guarded decision that treats aggregate rank as triage, validates reply quality and intended copy, and refuses to call the campaign a winner until the evidence supports it.",
@@ -29,9 +51,23 @@
       "expected_output": "One coherent end-to-end answer that diagnoses first, then automatically applies campaign strategy, copywriting, and launch-operation stages without making the user invoke each skill.",
       "assertions": [
         "Diagnosis and the primary constraint come before campaign design",
+        "A delegation-capable host runs campaign-strategist, campaign-copywriter, and launch-operator as bounded specialist subagents",
+        "The dependent strategy, copy, and launch stages run sequentially in that order",
         "The campaign recommendation is derived from validated findings",
         "The copy follows the approved strategy and proof boundary",
-        "The launch plan includes blockers, measurement, guardrails, and stop or scale rules"
+        "The launch plan includes blockers, measurement, guardrails, and stop or scale rules",
+        "synthesis-reviewer pressure-tests the broad recommendation before the coordinator answers"
+      ]
+    },
+    {
+      "id": "inline-delegation-fallback",
+      "prompt": "My host cannot run subagents. Analyze one campaign, recommend the next strategy, write the copy, and define launch rules anyway.",
+      "expected_output": "An inline execution that preserves the same analyst, strategy, copy, launch, and synthesis lane boundaries and handoffs without claiming that any specialist was spawned.",
+      "assertions": [
+        "The same bounded specialist lanes are executed inline",
+        "Strategy, copy, and launch remain sequential and handoff-driven",
+        "The answer does not claim or imply that a subagent was spawned",
+        "Evidence, privacy, and read-only boundaries remain unchanged"
       ]
     },
     {

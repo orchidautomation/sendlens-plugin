@@ -420,17 +420,25 @@ async function assertGeneratedSubagentRouting() {
     );
   }
 
-  for (const [command, agent] of [
-    ["sendlens-analyst", "campaign-analyst"],
-    ["sendlens-campaign-strategist", "campaign-strategist"],
-    ["sendlens-copywriter", "campaign-copywriter"],
-    ["sendlens-launch-operator", "launch-operator"],
-    ["using-sendlens", "campaign-analyst"],
+  const generatedAnalystCommand = generatedCommands.find(
+    (entry) => entry.id === "sendlens-analyst",
+  );
+  assert(
+    generatedAnalystCommand?.agent === undefined &&
+      generatedAnalystCommand?.subtask === false,
+    'dist/codex/.codex/commands.generated.json: command "sendlens-analyst" must remain coordinator-owned with no direct specialist route',
+  );
+
+  for (const command of [
+    "using-sendlens",
+    "sendlens-campaign-strategist",
+    "sendlens-copywriter",
+    "sendlens-launch-operator",
   ]) {
     const generatedCommand = generatedCommands.find((entry) => entry.id === command);
     assert(
-      generatedCommand?.agent === agent && generatedCommand?.subtask === false,
-      `dist/codex/.codex/commands.generated.json: command "${command}" must preserve direct agent routing`,
+      generatedCommand?.agent === undefined && generatedCommand?.subtask === false,
+      `dist/codex/.codex/commands.generated.json: command "${command}" must remain coordinator-owned with no direct specialist route`,
     );
   }
 
@@ -470,6 +478,43 @@ async function assertExplicitHostDegradation() {
     /simple inventory and freshness questions/i.test(codexAgentGuidance),
     "dist/codex/AGENTS.md: expected simple inventory questions to stay on the MCP fast path",
   );
+  for (const pattern of [
+    /simple inventory, freshness, setup, (?:and|or) status requests[^.]*must not spawn/i,
+    /must (?:spawn|delegate) `workspace-triager` first/i,
+    /select (?:exactly )?one campaign before (?:spawning|delegating)/i,
+    /analyst evidence[^\n]*`campaign-strategist`[^\n]*`campaign-copywriter`[^\n]*`launch-operator`/i,
+    /run analyst evidence[^.]*sequentially/i,
+    /do not parallelize stages that consume an earlier handoff/i,
+    /focused strategy, copy, or launch request[^.]*delegate the owning/i,
+    /delegate only the lanes the user's decision requires/i,
+    /must (?:spawn|delegate) `synthesis-reviewer`[^.]*before the coordinator answers/i,
+    /coordinator owns every spawn/i,
+    /specialists must not spawn nested agents/i,
+    /parallel[^.]*only[^.]*independent specialist lanes/i,
+    /native delegation is unavailable[^.]*execute the same lane boundaries inline/i,
+    /must not claim or imply that a specialist was spawned/i,
+  ]) {
+    assert(
+      pattern.test(codexAgentGuidance),
+      `dist/codex/AGENTS.md: missing bounded specialist delegation contract matching ${pattern}`,
+    );
+  }
+
+  const generatedAgentFiles = await listFiles(
+    "dist/codex/.codex/agents",
+    (entry) => entry.isFile() && entry.name.endsWith(".toml"),
+  );
+  for (const relativePath of generatedAgentFiles) {
+    const agentBody = await readText(`dist/codex/.codex/agents/${relativePath}`);
+    assert(
+      /Do not delegate further subtasks\. Return the completed specialist handoff to the parent coordinator\./.test(agentBody),
+      `dist/codex/.codex/agents/${relativePath}: missing unconditional no-nested-delegation contract`,
+    );
+    assert(
+      !/Do not delegate further subtasks unless/i.test(agentBody),
+      `dist/codex/.codex/agents/${relativePath}: conditional nested delegation exception must be removed`,
+    );
+  }
 
   const codexCommands = await readJson(
     "dist/codex/.codex/commands.generated.json",

@@ -38,6 +38,21 @@ Use focused skills without forcing the user to name them:
 
 For a broad request such as “analyze what is working and tell me what to run and write next,” continue through every requested downstream stage in one answer. Do not stop after diagnosis or make the user invoke each skill.
 
+### Bounded Specialist Delegation
+
+The coordinator owns every spawn, handoff, evidence synthesis, conflict decision, and final answer. Specialists must not spawn nested agents.
+
+- Simple inventory, freshness, setup, or status requests must not spawn specialist agents. Keep those requests on the direct MCP or owning-skill fast path.
+- On a host with native delegation, a broad workspace diagnosis must delegate `workspace-triager` first.
+- Select exactly one campaign before delegating `campaign-analyst`, `reply-auditor`, `icp-auditor`, or `copy-auditor`. Delegate only the lanes the user's decision requires.
+- For a focused strategy, copy, or launch request, delegate the owning `campaign-strategist`, `campaign-copywriter`, or `launch-operator` after its minimum evidence prerequisites are satisfied.
+- For broad analysis-to-launch work, run analyst evidence → `campaign-strategist` → `campaign-copywriter` → `launch-operator` sequentially. Do not parallelize stages that consume an earlier handoff.
+- For broad or client-safe recommendations, the coordinator must delegate `synthesis-reviewer` as the final bounded check before the coordinator answers.
+- Parallel execution is allowed only for independent specialist lanes after campaign and scope are fixed and there is no shared tool, runtime, or data contention. Do not fan out every specialist by default.
+- When native delegation is unavailable, execute the same lane boundaries inline and preserve the same handoffs and evidence rules. The final answer must not claim or imply that a specialist was spawned.
+
+Do not expose internal spawning or routing mechanics in an ordinary final answer unless the user asks.
+
 For a focused request, use only the owning skill:
 
 - Campaign recommendation without full email bodies: `sendlens-campaign-strategist`.

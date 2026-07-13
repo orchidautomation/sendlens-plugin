@@ -64,8 +64,8 @@ const COMMAND_ROUTING_EXCEPTIONS = new Map([
   [
     "using-sendlens",
     {
-      agent: "campaign-analyst",
-      rationale: "Using SendLens is a backward-compatible explicit route into sendlens-analyst.",
+      agent: "",
+      rationale: "Using SendLens is a backward-compatible coordinator-owned route into sendlens-analyst.",
     },
   ],
   [
@@ -78,29 +78,29 @@ const COMMAND_ROUTING_EXCEPTIONS = new Map([
   [
     "sendlens-analyst",
     {
-      agent: "campaign-analyst",
-      rationale: "The main analyst command stays in the parent task so it can coordinate the closed-loop workflow.",
+      agent: "",
+      rationale: "The main analyst command stays coordinator-owned so it can spawn bounded specialists instead of entering one specialist directly.",
     },
   ],
   [
     "sendlens-campaign-strategist",
     {
-      agent: "campaign-strategist",
-      rationale: "Focused strategy stays in the parent task so its handoff can continue into copy or launch when requested.",
+      agent: "",
+      rationale: "Focused strategy stays coordinator-owned so the parent can delegate the specialist and retain the final handoff.",
     },
   ],
   [
     "sendlens-copywriter",
     {
-      agent: "campaign-copywriter",
-      rationale: "Focused copywriting uses the dedicated read-only copywriting specialist.",
+      agent: "",
+      rationale: "Focused copy stays coordinator-owned so the parent can delegate the specialist and retain the final handoff.",
     },
   ],
   [
     "sendlens-launch-operator",
     {
-      agent: "launch-operator",
-      rationale: "Focused launch operation stays in the parent task so the verdict and learning handoff remain coherent.",
+      agent: "",
+      rationale: "Focused launch operation stays coordinator-owned so the parent can delegate the specialist and retain the final verdict.",
     },
   ],
 ]);
@@ -124,6 +124,35 @@ const REQUIRED_ANALYST_DENIAL_PATTERNS = [
   /\bcached JSON\b/i,
   /\bshell output\b/i,
   /\bsetup scripts\b/i,
+];
+
+const REQUIRED_DELEGATION_AGENTS = [
+  "workspace-triager",
+  "campaign-analyst",
+  "reply-auditor",
+  "icp-auditor",
+  "copy-auditor",
+  "campaign-strategist",
+  "campaign-copywriter",
+  "launch-operator",
+  "synthesis-reviewer",
+];
+
+const REQUIRED_DELEGATION_PATTERNS = [
+  /simple inventory, freshness, setup, (?:and|or) status requests[^.]*must not spawn/i,
+  /must (?:spawn|delegate) `workspace-triager` first/i,
+  /select (?:exactly )?one campaign before (?:spawning|delegating)/i,
+  /analyst evidence[^\n]*`campaign-strategist`[^\n]*`campaign-copywriter`[^\n]*`launch-operator`/i,
+  /run analyst evidence[^.]*sequentially/i,
+  /do not parallelize stages that consume an earlier handoff/i,
+  /focused strategy, copy, or launch request[^.]*delegate the owning/i,
+  /delegate only the lanes the user's decision requires/i,
+  /must (?:spawn|delegate) `synthesis-reviewer`[^.]*before the coordinator answers/i,
+  /parallel[^.]*only[^.]*independent specialist lanes/i,
+  /coordinator owns every spawn/i,
+  /specialists must not spawn nested agents/i,
+  /native delegation is unavailable[^.]*execute the same lane boundaries inline/i,
+  /must not claim or imply that a specialist was spawned/i,
 ];
 
 const LEGACY_COMMAND_AGENTS = new Map([
@@ -712,6 +741,24 @@ async function assertSendLensAnalystContract(skillNames) {
     "INSTRUCTIONS.md: must reference sendlens-analyst routing contract",
   );
 
+  for (const [relativePath, contractBody] of [
+    [skillPath, body],
+    ["INSTRUCTIONS.md", instructions],
+  ]) {
+    for (const agent of REQUIRED_DELEGATION_AGENTS) {
+      assert(
+        contractBody.includes(`\`${agent}\``),
+        `${relativePath}: missing required delegation agent "${agent}"`,
+      );
+    }
+    for (const pattern of REQUIRED_DELEGATION_PATTERNS) {
+      assert(
+        pattern.test(contractBody),
+        `${relativePath}: missing required bounded delegation contract matching ${pattern}`,
+      );
+    }
+  }
+
   const focusedContracts = [
     {
       name: "sendlens-campaign-strategist",
@@ -781,6 +828,24 @@ async function assertSkillEvalContracts(skillNames) {
       assert(Array.isArray(testCase.assertions) && testCase.assertions.length >= 3, `${evalPath}: every eval needs at least three objective assertions`);
       for (const assertion of testCase.assertions ?? []) {
         assert(typeof assertion === "string" && assertion.trim().length > 0, `${evalPath}: every assertion must be non-empty text`);
+      }
+    }
+
+    if (skillName === "sendlens-analyst") {
+      const evalsById = new Map((evalPayload.evals ?? []).map((testCase) => [testCase.id, testCase]));
+      const requiredEvalSemantics = new Map([
+        ["direct-fast-path-no-spawn", [/direct MCP fast path/i, /no specialist agent is spawned/i]],
+        ["triage-before-campaign-depth", [/workspace-triager is delegated first/i, /exactly one campaign/i, /only the reply and ICP specialist lanes/i, /synthesis-reviewer/i]],
+        ["broad-full-chain-orchestration", [/campaign-strategist, campaign-copywriter, and launch-operator/i, /sequentially in that order/i, /synthesis-reviewer/i]],
+        ["inline-delegation-fallback", [/executed inline/i, /does not claim or imply that a subagent was spawned/i]],
+      ]);
+      for (const [requiredId, patterns] of requiredEvalSemantics) {
+        const testCase = evalsById.get(requiredId);
+        assert(testCase, `${evalPath}: missing delegation eval "${requiredId}"`);
+        const semanticText = [testCase?.prompt, testCase?.expected_output, ...(testCase?.assertions ?? [])].join("\n");
+        for (const pattern of patterns) {
+          assert(pattern.test(semanticText), `${evalPath}: delegation eval "${requiredId}" missing semantic contract matching ${pattern}`);
+        }
       }
     }
 
