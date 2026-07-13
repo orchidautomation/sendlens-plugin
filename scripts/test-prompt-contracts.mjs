@@ -222,6 +222,16 @@ const PROMOTION_GUARD_CONTRACTS = [
     ],
   },
   {
+    path: "plugin/query-recipes.ts",
+    patterns: [
+      /RB2B, Clay, or another external source/i,
+      /Missing keys are source-specific absence/i,
+      /not proof that metadata coverage is thin, visitor intent is missing/i,
+      /not automatically as a lead-list metadata coverage issue/i,
+      /intended template tokens and available payload keys first/i,
+    ],
+  },
+  {
     path: "skills/sendlens-analyst/SKILL.md",
     patterns: [
       /reply_coverage_summary/i,

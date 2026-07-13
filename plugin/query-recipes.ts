@@ -3109,7 +3109,7 @@ GROUP BY 1, 2, 3
 ORDER BY sampled_leads_with_key DESC, sampled_reply_share_pct DESC NULLS LAST, payload_key;`,
     notes: [
       "This is sampled evidence only and must stay scoped to one campaign.",
-      "Payload keys usually come from uploaded lead-list metadata or campaign custom fields; missing keys mean metadata coverage is thin, not that Instantly enrichment failed.",
+      "Payload keys can come from uploaded lead-list metadata, campaign custom fields, RB2B, Clay, or another external source. Missing keys are source-specific absence, not proof that metadata coverage is thin, visitor intent is missing, or Instantly enrichment failed; only diagnose missing metadata when an intended variable is demonstrably expected and remains unresolved or blank.",
       "Use this before `campaign-payload-key-signals` when you do not know the available payload keys.",
       "A key appearing in replied leads does not prove full-population lift; it identifies variables worth testing next.",
     ],
@@ -3169,7 +3169,7 @@ JOIN campaign_totals ct
 ORDER BY reply_share_with_key_pct DESC NULLS LAST, leads_with_key DESC, payload_key;`,
     notes: [
       "This is sampled evidence only and should produce hypotheses, not full-population claims.",
-      "Treat missing keys as a lead-list metadata coverage issue. Recommend adding richer metadata to future uploads when sparse fields block analysis.",
+      "Treat missing keys as source-specific absence, not automatically as a lead-list metadata coverage issue. Recommend richer future metadata only when a decision requires an intended variable that is demonstrably expected and unresolved or blank.",
       "Use it to decide which payload keys deserve value-level analysis with `campaign-payload-key-signals`.",
       "`lead_payload_kv` avoids JSON-path edge cases, so keys with spaces, dots, or punctuation can still be analyzed by exact key value.",
     ],
@@ -3225,7 +3225,7 @@ LIMIT 25;`,
     notes: [
       "Use this first when you do not know the campaign's payload keys yet.",
       "Payload structure is campaign-specific and should not be assumed to match other campaigns.",
-      "Blank `job_title` or payload fields should be described as missing uploaded lead metadata/custom fields. Recommend adding role/title, function, seniority, company category, geography, list source, and trigger fields to future uploads when needed.",
+      "Blank `job_title` or payload fields are source-specific absence, not automatically missing uploaded metadata, failed enrichment, or missing visitor intent. Inspect the campaign's intended template tokens and available payload keys first; recommend additional role, function, seniority, company category, geography, source, or trigger fields only when a specific decision requires them.",
     ],
   },
   {
