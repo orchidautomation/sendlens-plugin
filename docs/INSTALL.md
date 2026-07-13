@@ -119,7 +119,7 @@ Then build and install:
 ```bash
 npm run test:plugin
 pluxx validate
-pluxx build --target claude-code cursor codex opencode
+npm run build:hosts
 pluxx install --target claude-code cursor codex opencode --trust
 ```
 

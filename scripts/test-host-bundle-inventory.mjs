@@ -453,6 +453,18 @@ async function assertGeneratedSubagentRouting() {
 }
 
 async function assertExplicitHostDegradation() {
+  for (const documentationPath of ["README.md", "docs/INSTALL.md"]) {
+    const documentation = await readText(documentationPath);
+    assert(
+      documentation.includes("npm run build:hosts"),
+      `${documentationPath}: host builds must use the contract-enforcing npm script`,
+    );
+    assert(
+      !documentation.includes("pluxx build --target claude-code cursor codex opencode"),
+      `${documentationPath}: direct Pluxx host builds bypass Codex delegation enforcement`,
+    );
+  }
+
   const codexAgents = await exists("dist/codex/commands");
   assert(
     codexAgents === false,
