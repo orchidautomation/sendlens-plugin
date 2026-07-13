@@ -314,7 +314,7 @@ npm run build:plugin
 npm run refresh:plugin
 npm run benchmark:fast-sync
 pluxx validate
-pluxx build --target claude-code cursor codex opencode
+npm run build:hosts
 pluxx verify-install --target claude-code cursor codex opencode
 ```
 
