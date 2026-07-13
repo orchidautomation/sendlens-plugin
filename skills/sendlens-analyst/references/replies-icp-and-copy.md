@@ -31,10 +31,19 @@ Exhausted selected status buckets mean the queried buckets exposed no further ro
 - Use exact campaign aggregates for the baseline and sampled lead/payload evidence for hypotheses.
 - Inventory payload keys before value-level analysis unless the user names a key.
 - Keep every payload finding campaign-scoped.
-- Treat missing title, role, segment, source, or trigger fields as thin uploaded lead metadata, not provider enrichment failure.
+- Treat blank title, role, segment, source, or trigger fields as source-specific absence, not automatically as missing uploaded metadata or provider enrichment failure. Inspect campaign-scoped payload keys first; only call metadata missing when an intended template variable is demonstrably expected and remains unresolved or blank.
 - Convert strong sampled signals into a test cohort, not a permanent targeting rule.
 
 Useful future-upload fields include job title, function, seniority, company category, geography, list source, and campaign-specific trigger.
+
+### Visitor Intent And Source Provenance
+
+Keep rendering integrity, visitor-source provenance, and copy strategy separate:
+
+- A nonblank reconstructed message with no unresolved campaign-payload tokens rendered successfully against the available sampled lead variables. This does not prove exact delivery, identify the upstream visitor source, or prove the message used visit context.
+- Blank `website`, `personalization`, job-title, or Instantly-native visitor fields do not prove visitor intent is missing when leads may originate from RB2B, Clay, or another external source. Inspect campaign-scoped `lead_payload_kv`, intended template tokens, and reconstructed copy first.
+- Only diagnose missing personalization or a failed mapping when an intended variable is demonstrably expected and remains unresolved or blank. Otherwise say visitor-source provenance cannot be verified from cached evidence.
+- If rendered copy contains no page, timestamp, or behavioral reference, say the copy does not explicitly reference visitor behavior. Do not say the signal never reached the message without direct evidence of the upstream-to-template mapping and its failure.
 
 ## Copy Evidence
 

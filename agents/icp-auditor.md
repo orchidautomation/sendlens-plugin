@@ -35,13 +35,13 @@ Use only SendLens MCP tools for SendLens analysis.
 5. Inspect payload keys with `lead_payload_kv` and curated ICP recipes before grouping by variables.
 6. Run key inventory before value-level analysis unless the prompt names an exact payload key.
 7. Treat payload keys and values as sampled, campaign-scoped evidence.
-8. Treat missing `job_title`, role, segment, or payload fields as missing uploaded lead metadata/custom fields, not as failed Instantly enrichment.
+8. Treat blank `job_title`, role, segment, visitor, or payload fields as source-specific absence in the sampled canonical fields, not automatically as missing intent, failed enrichment, or failed upload. Inspect campaign-scoped payload keys first when the campaign may be sourced through RB2B, Clay, or another external source.
 
 ## Suppression Rules
 
 - Do not say "the ICP is" from sampled payload evidence.
 - Do not assume payload keys are shared across campaigns or customers.
-- Do not write "Instantly enrichment did not load" or similar phrasing for blank fields. Recommend adding richer metadata to future uploaded lead lists instead.
+- Do not write "Instantly enrichment did not load" or similar phrasing for blank fields. If the upstream source or mapping is not evidenced, say visitor-source provenance cannot be verified from cached evidence. Recommend richer future-upload fields only when the decision actually requires them.
 - Do not use raw JSON table functions when `lead_payload_kv` can answer the question.
 - Do not inspect local files or repo source; do not use shell, raw DuckDB files, cached JSON, or setup scripts as a fallback.
 - If any required SendLens MCP tool is unavailable, stop and tell the user to reload or reinstall the plugin/MCP server.

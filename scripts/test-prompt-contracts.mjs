@@ -214,6 +214,11 @@ const PROMOTION_GUARD_CONTRACTS = [
       /aggregate-to-hydrated numeric gap/i,
       /maximum depth does not guarantee recovery/i,
       /Do not assert which cause applies without evidence/i,
+      /source-specific absence, not automatically as missing uploaded metadata/i,
+      /rendering integrity, visitor-source provenance, and copy strategy/i,
+      /visitor-source provenance cannot be verified/i,
+      /does not explicitly reference visitor behavior/i,
+      /Do not (?:say|claim)[^.]*signal never reached the message/i,
     ],
   },
   {
@@ -259,6 +264,17 @@ const PROMOTION_GUARD_CONTRACTS = [
       /hydrated reply bodies already present in `reply_context`/i,
       /possible wrong-template delivery/i,
       /intended copy angle was tested/i,
+      /rendering integrity, visitor-source provenance, and copy strategy/i,
+      /RB2B, Clay, or another external source/i,
+      /rendered successfully against the available sampled lead variables/i,
+    ],
+  },
+  {
+    path: "agents/icp-auditor.md",
+    patterns: [
+      /source-specific absence/i,
+      /RB2B, Clay, or another external source/i,
+      /visitor-source provenance cannot be verified/i,
     ],
   },
   {
@@ -278,6 +294,9 @@ const PROMOTION_GUARD_CONTRACTS = [
       /broad aggregates only shortlist candidates/i,
       /Validate `reply_context` and `campaign_variants`/i,
       /fetch_reply_text` has returned exact reply bodies/i,
+      /rendering integrity, visitor-source provenance, and copy strategy/i,
+      /RB2B, Clay, or another external source/i,
+      /Only call personalization data missing or failed/i,
     ],
   },
 ];

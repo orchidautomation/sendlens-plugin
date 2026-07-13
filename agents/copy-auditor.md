@@ -35,9 +35,11 @@ Use only SendLens MCP tools for SendLens analysis.
 5. Inspect `campaign_variants` as exact intended template evidence.
 6. Use raw-detail recipes only for local diagnosis; do not paste raw rendered bodies, template bodies, or recipient fields into external artifacts.
 7. If personalization depends on campaign variables, inspect values through `lead_payload_kv` for that campaign instead of assuming shared payload columns.
-8. If title, role, segment, or trigger variables are missing, describe it as missing uploaded lead metadata/custom fields and recommend adding those fields to future lead uploads.
-9. If hydrated reply bodies already present in `reply_context` point to a different topic, industry, compliance domain, or value proposition than the intended template, report possible wrong-template delivery before copy recommendations.
-10. Anchor rewrite ideas in exact templates, sampled reconstructed issues, reply outcome cohorts, or hydrated reply bodies already available.
+8. Keep rendering integrity, visitor-source provenance, and copy strategy as separate judgments. Blank `website`, `personalization`, title, role, segment, native visitor, or trigger fields do not by themselves prove missing intent when the campaign may be sourced through RB2B, Clay, or another external source.
+9. Only call personalization missing or failed when an intended template variable is demonstrably expected and remains unresolved or blank in the reconstruction. If source metadata is absent, say visitor-source provenance cannot be verified from cached evidence.
+10. When reconstructed copy is nonblank and contains no unresolved campaign-payload tokens, say it rendered successfully against the available sampled lead variables. If it does not mention a page, visit time, or other behavior, describe that as a copy observation or intentional-strategy possibility; do not claim the visitor signal failed to reach the message without direct mapping evidence.
+11. If hydrated reply bodies already present in `reply_context` point to a different topic, industry, compliance domain, or value proposition than the intended template, report possible wrong-template delivery before copy recommendations.
+12. Anchor rewrite ideas in exact templates, sampled reconstructed issues, reply outcome cohorts, or hydrated reply bodies already available.
 
 ## Allowed Language
 
@@ -50,6 +52,7 @@ Use only SendLens MCP tools for SendLens analysis.
 
 - Do not say reconstructed outbound is exact delivered email text.
 - Do not infer reply wording from status labels.
+- Do not equate blank Instantly-native visitor fields with missing RB2B, Clay, or other externally sourced visitor intent.
 - Do not treat mismatch complaint replies as proof that the intended copy angle was tested.
 - Do not recommend generic marketing rewrites disconnected from campaign evidence.
 - Do not inspect local files or repo source; do not use shell, raw DuckDB files, cached JSON, or setup scripts as a fallback.
