@@ -12,7 +12,7 @@
   "scripts": {
     "clean:plugin": "rm -rf build dist .sendlens .sendlens-local .sendlens-state .sendlens-local-state",
     "build:plugin": "node scripts/generate-version.mjs && tsc -p tsconfig.plugin.json",
-    "build:hosts": "pluxx build --target claude-code cursor codex opencode && node scripts/enforce-codex-agent-contracts.mjs",
+    "build:hosts": "pluxx build --target claude-code cursor codex opencode",
     "benchmark:fast-sync": "bash ./scripts/benchmark-fast-refresh.sh",
     "doctor": "bash ./scripts/sendlens-doctor.sh",
     "demo:seed": "npm run --silent build:plugin && node ./build/plugin/demo-workspace.js",

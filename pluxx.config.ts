@@ -1,10 +1,66 @@
 import { definePlugin } from "pluxx";
-import { readFileSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { resolve } from "node:path";
 
 const pkg = JSON.parse(
   readFileSync(resolve(__dirname, "package.json"), "utf8"),
 ) as { version: string };
+
+const codexAgentDirectory = resolve(
+  __dirname,
+  "dist",
+  "codex",
+  ".codex",
+  "agents",
+);
+const conditionalDelegation =
+  "- Do not delegate further subtasks unless the parent task explicitly asks for additional specialist work.";
+const boundedDelegation =
+  "- Do not delegate further subtasks. Return the completed specialist handoff to the parent coordinator.";
+
+function enforceCodexAgentContracts() {
+  if (!existsSync(codexAgentDirectory)) return;
+
+  const agentFiles = readdirSync(codexAgentDirectory)
+    .filter((fileName) => fileName.endsWith(".toml"))
+    .sort();
+
+  if (agentFiles.length === 0) return;
+
+  let changed = 0;
+  for (const fileName of agentFiles) {
+    const agentPath = resolve(codexAgentDirectory, fileName);
+    const current = readFileSync(agentPath, "utf8");
+    const enforced = current.replaceAll(
+      conditionalDelegation,
+      boundedDelegation,
+    );
+
+    if (!enforced.includes(boundedDelegation)) {
+      throw new Error(
+        `${fileName}: generated agent config lacks a delegation contract to enforce`,
+      );
+    }
+
+    if (enforced !== current) {
+      writeFileSync(agentPath, enforced, "utf8");
+      changed += 1;
+    }
+  }
+
+  if (changed > 0) {
+    console.log(
+      `Enforced coordinator-owned delegation in ${changed} Codex agent configs.`,
+    );
+  }
+}
+
+process.once("beforeExit", enforceCodexAgentContracts);
 
 export default definePlugin({
   name: "sendlens",
