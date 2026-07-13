@@ -842,7 +842,7 @@ async function assertSkillEvalContracts(skillNames) {
       for (const [requiredId, patterns] of requiredEvalSemantics) {
         const testCase = evalsById.get(requiredId);
         assert(testCase, `${evalPath}: missing delegation eval "${requiredId}"`);
-        const semanticText = [testCase?.prompt, testCase?.expected_output, ...(testCase?.assertions ?? [])].join("\n");
+        const semanticText = [testCase?.expected_output, ...(testCase?.assertions ?? [])].join("\n");
         for (const pattern of patterns) {
           assert(pattern.test(semanticText), `${evalPath}: delegation eval "${requiredId}" missing semantic contract matching ${pattern}`);
         }
