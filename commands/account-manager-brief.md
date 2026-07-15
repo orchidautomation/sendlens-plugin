@@ -1,7 +1,8 @@
 ---
 description: "SendLens: prepare a client-safe account brief, risk summary, and action queue"
 argument-hint: "[campaign-name-or-instantly-tag]"
-agent: workspace-triager
+skill: sendlens-launch-operator
+agent: launch-operator
 subtask: true
 context: fork
 ---

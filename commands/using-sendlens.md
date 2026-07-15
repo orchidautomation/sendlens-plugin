@@ -1,6 +1,7 @@
 ---
 description: "SendLens: load the MCP-first analyst routing, evidence, and decision contract"
 argument-hint: "[sendlens-question]"
+skill: sendlens-analyst
 subtask: false
 ---
 

@@ -70,7 +70,7 @@ git checkout main
 git pull --ff-only
 
 npm version patch --no-git-tag-version
-git add package.json
+git add package.json package-lock.json
 git commit -m "Release 0.1.1"
 git push origin main
 

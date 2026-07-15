@@ -1,7 +1,8 @@
 ---
 description: "SendLens: QA campaign evidence and blockers before launch, scale, resume, or handoff"
 argument-hint: "[campaign-name]"
-agent: campaign-analyst
+skill: sendlens-launch-operator
+agent: launch-operator
 subtask: true
 context: fork
 ---

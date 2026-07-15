@@ -1,6 +1,7 @@
 ---
 description: "SendLens: inspect one campaign's sampled ICP, targeting, and payload signals"
 argument-hint: "[campaign-name] [instantly-tag]"
+skill: sendlens-analyst
 agent: icp-auditor
 subtask: true
 context: fork

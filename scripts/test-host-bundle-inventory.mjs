@@ -18,18 +18,19 @@ const PUBLIC_SKILLS = [
   "sendlens-launch-operator",
   "sendlens-setup",
 ];
-const LEGACY_COMMAND_AGENTS = new Map([
-  ["account-manager-brief", "workspace-triager"],
-  ["campaign-launch-qa", "campaign-analyst"],
+const COMMAND_AGENTS = new Map([
+  ["account-manager-brief", "launch-operator"],
+  ["campaign-launch-qa", "launch-operator"],
   ["campaign-performance", "campaign-analyst"],
-  ["cold-email-best-practices", "campaign-analyst"],
+  ["cold-email-best-practices", "campaign-copywriter"],
   ["copy-analysis", "copy-auditor"],
-  ["experiment-planner", "campaign-analyst"],
+  ["experiment-planner", "campaign-strategist"],
   ["icp-signals", "icp-auditor"],
   ["reply-patterns", "reply-auditor"],
   ["workspace-health", "workspace-triager"],
 ]);
-const LEGACY_COMMAND_SKILLS = new Map([
+const COMMAND_SKILLS = new Map([
+  ...PUBLIC_SKILLS.map((skill) => [skill, skill]),
   ["account-manager-brief", "sendlens-launch-operator"],
   ["campaign-launch-qa", "sendlens-launch-operator"],
   ["campaign-performance", "sendlens-analyst"],
@@ -176,7 +177,7 @@ async function sourceInventory() {
       `source commands: missing public skill command "${skill}"`,
     );
   }
-  for (const command of LEGACY_COMMAND_AGENTS.keys()) {
+  for (const command of COMMAND_AGENTS.keys()) {
     assert(
       commands.includes(command),
       `source commands: missing legacy analyst shortcut "${command}"`,
@@ -186,6 +187,13 @@ async function sourceInventory() {
     commands.includes("using-sendlens"),
     'source commands: missing legacy analyst shortcut "using-sendlens"',
   );
+  for (const [command, skill] of COMMAND_SKILLS) {
+    const commandText = await readText(`commands/${command}.md`);
+    assert(
+      frontmatterValue(commandText, "skill") === skill,
+      `commands/${command}.md: expected canonical skill: ${skill}`,
+    );
+  }
 
   return { skills, commands, agents };
 }
@@ -333,9 +341,7 @@ async function assertHostCommandInventory(commands) {
         command.description.trim().length > 0,
       `dist/codex/.codex/commands.generated.json: command "${command.id}" is missing generated description`,
     );
-    const expectedSkill = PUBLIC_SKILLS.includes(command.id)
-      ? command.id
-      : LEGACY_COMMAND_SKILLS.get(command.id);
+    const expectedSkill = COMMAND_SKILLS.get(command.id);
     assert(
       typeof command.template === "string" &&
         command.template.includes(`\`${expectedSkill}\` skill`),
@@ -354,7 +360,15 @@ async function assertHostCommandInventory(commands) {
 
 async function assertGeneratedSubagentRouting() {
   for (const host of ["claude-code", "cursor", "opencode"]) {
-    for (const [command, agent] of LEGACY_COMMAND_AGENTS) {
+    for (const [command, skill] of COMMAND_SKILLS) {
+      const commandText = await readText(`dist/${host}/commands/${command}.md`);
+      assert(
+        frontmatterValue(commandText, "skill") === skill,
+        `dist/${host}/commands/${command}.md: expected skill: ${skill}`,
+      );
+    }
+
+    for (const [command, agent] of COMMAND_AGENTS) {
       const commandText = await readText(`dist/${host}/commands/${command}.md`);
       assert(
         frontmatterValue(commandText, "context") === "fork",
@@ -402,7 +416,17 @@ async function assertGeneratedSubagentRouting() {
     );
   }
 
-  for (const [command, agent] of LEGACY_COMMAND_AGENTS) {
+  for (const [command, skill] of COMMAND_SKILLS) {
+    const generatedCommand = generatedCommands.find(
+      (entry) => entry.id === command,
+    );
+    assert(
+      generatedCommand?.skill === skill,
+      `dist/codex/.codex/commands.generated.json: command "${command}" must preserve skill "${skill}"`,
+    );
+  }
+
+  for (const [command, agent] of COMMAND_AGENTS) {
     const generatedCommand = generatedCommands.find(
       (entry) => entry.id === command,
     );
@@ -937,7 +961,7 @@ if (shouldBuild) {
     "build:hosts output must call out Codex command degradation",
   );
   assert(
-    /hooks on codex: re-expressed via hooks\/hooks\.json/i.test(buildOutput),
+    /hooks on codex: weakened to hooks\/hooks\.json, \.codex\/hooks\.json/i.test(buildOutput),
     "build:hosts output must call out Codex hook degradation",
   );
 

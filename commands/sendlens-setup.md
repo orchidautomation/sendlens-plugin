@@ -1,6 +1,7 @@
 ---
 description: "SendLens: run first-run setup, doctor checks, and zero-key demo seeding"
 argument-hint: ""
+skill: sendlens-setup
 subtask: false
 ---
 

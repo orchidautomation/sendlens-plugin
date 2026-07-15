@@ -1,7 +1,8 @@
 ---
 description: "SendLens: apply cold-email rules and benchmarks to campaign recommendations"
 argument-hint: "[approved-strategy-or-campaign]"
-agent: campaign-analyst
+skill: sendlens-copywriter
+agent: campaign-copywriter
 subtask: true
 context: fork
 ---
