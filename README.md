@@ -157,11 +157,11 @@ bash <(curl -fsSL https://sendlens.app/install.sh) --codex -y
 
 SendLens supports provider-scoped read-only setup modes:
 
-- Instantly-only: leave `SENDLENS_PROVIDER` unset or set `SENDLENS_PROVIDER=instantly`, then provide `SENDLENS_INSTANTLY_API_KEY`.
-- Smartlead-only: set `SENDLENS_PROVIDER=smartlead`, then provide `SENDLENS_SMARTLEAD_API_KEY`.
-- Both providers: set `SENDLENS_PROVIDER=all`, set `SENDLENS_CLIENT` for the shared local workspace, then provide both keys.
+- Instantly-only: provide `SENDLENS_INSTANTLY_API_KEY`.
+- Smartlead-only: provide `SENDLENS_SMARTLEAD_API_KEY`.
+- Both providers: provide both keys and set `SENDLENS_CLIENT` for the shared local workspace.
 
-Provider config is runtime env, not installed plugin state. For repeat use, put the variables in the folder where you launch your AI tool, or export them in the shell/global environment that starts the host. Smartlead uses query-string access, so SendLens suppresses that value in setup output, logs, traces, and errors.
+When `SENDLENS_PROVIDER` is omitted, SendLens infers `instantly`, `smartlead`, or `all` from the configured keys. Set `SENDLENS_PROVIDER` only when you need an explicit override. Provider config is runtime env, not installed plugin state. For repeat use, put the variables in the folder where you launch your AI tool, or export them in the shell/global environment that starts the host. Smartlead uses query-string access, so SendLens suppresses that value in setup output, logs, traces, and errors.
 
 Smartlead V1 is read-only. SendLens can refresh Smartlead campaign, account, lead, analytics, bounded message-history, and Smart Delivery evidence where the provider authorizes those surfaces. It does not add Smartlead write actions, webhook management, test mutation, campaign mutation, lead mutation, account mutation, or email send paths. Smart Delivery uses a separate support-gated service; SendLens records an explicit unsupported capability when access is absent, and empty rows never prove healthy placement.
 
@@ -181,20 +181,19 @@ SENDLENS_INSTANTLY_API_KEY="your_instantly_api_key" claude
 For Smartlead-only local development:
 
 ```bash
-SENDLENS_PROVIDER=smartlead SENDLENS_SMARTLEAD_API_KEY="your_smartlead_api_key" claude
+SENDLENS_SMARTLEAD_API_KEY="your_smartlead_api_key" claude
 ```
 
 For both providers:
 
 ```bash
-SENDLENS_PROVIDER=all \
 SENDLENS_CLIENT=acme \
 SENDLENS_INSTANTLY_API_KEY="your_instantly_api_key" \
 SENDLENS_SMARTLEAD_API_KEY="your_smartlead_api_key" \
 claude
 ```
 
-`SENDLENS_PROVIDER=all` with both provider keys requires `SENDLENS_CLIENT`; this keeps the Instantly and Smartlead refreshes in the same named local workspace cache.
+Both provider keys infer `SENDLENS_PROVIDER=all` and require `SENDLENS_CLIENT`; this keeps the Instantly and Smartlead refreshes in the same named local workspace cache.
 
 For repeat use, put it in the folder where you launch your AI tool:
 
@@ -211,7 +210,6 @@ For multiple clients, give each client its own cache path:
 # ~/clients/acme/.env
 SENDLENS_INSTANTLY_API_KEY=your_acme_instantly_api_key
 SENDLENS_SMARTLEAD_API_KEY=your_acme_smartlead_api_key
-SENDLENS_PROVIDER=all
 SENDLENS_CLIENT=acme
 SENDLENS_DB_PATH=$HOME/.sendlens/acme.duckdb
 SENDLENS_STATE_DIR=$HOME/.sendlens/acme-state
@@ -286,7 +284,7 @@ npm run refresh:plugin
 For Smartlead-only local development:
 
 ```bash
-SENDLENS_PROVIDER=smartlead SENDLENS_SMARTLEAD_API_KEY="your_smartlead_api_key" npm run refresh:plugin
+SENDLENS_SMARTLEAD_API_KEY="your_smartlead_api_key" npm run refresh:plugin
 ```
 
 For synthetic local demo data instead:

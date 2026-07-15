@@ -61,7 +61,14 @@ source_provider_mode() {
   local mode
   mode="$(trim_sendlens_value "${SENDLENS_PROVIDER:-}")"
   if [[ -z "${mode}" ]]; then
-    mode="instantly"
+    if [[ -n "$(trim_sendlens_value "${SENDLENS_INSTANTLY_API_KEY:-}")" \
+      && -n "$(trim_sendlens_value "${SENDLENS_SMARTLEAD_API_KEY:-}")" ]]; then
+      mode="all"
+    elif [[ -n "$(trim_sendlens_value "${SENDLENS_SMARTLEAD_API_KEY:-}")" ]]; then
+      mode="smartlead"
+    else
+      mode="instantly"
+    fi
   fi
   printf '%s' "${mode}" | tr '[:upper:]' '[:lower:]'
 }

@@ -24,7 +24,7 @@ When describing freshness, use the exact `cache_freshness.label` and timestamp f
 
 The doctor checks:
 
-- provider mode and required API key presence, unless `SENDLENS_DEMO_MODE=1` is enabled.
+- provider mode inferred from configured API keys (or explicitly overridden) and required API key presence, unless `SENDLENS_DEMO_MODE=1` is enabled.
 - Smartlead query-string API key redaction for `SENDLENS_PROVIDER=smartlead` or `SENDLENS_PROVIDER=all`.
 - whether existing local cache reads are available without live refresh credentials.
 - compiled MCP, refresh, and demo runtimes.

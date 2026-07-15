@@ -119,7 +119,7 @@ export default definePlugin({
       key: "sendlens-provider",
       title: "Source Provider Mode",
       description:
-        "Source data provider mode: instantly, smartlead, or all. Defaults to instantly. This is source identity and is separate from mailbox provider fields in analysis tables.",
+        "Optional source data override: instantly, smartlead, or all. When omitted, SendLens infers the mode from configured provider API keys. This is separate from mailbox provider fields in analysis tables.",
       type: "string",
       required: false,
       envVar: "SENDLENS_PROVIDER",
@@ -131,7 +131,7 @@ export default definePlugin({
       description:
         "Provider value for read-only Instantly workspace access. Pluxx resolves it at MCP runtime from launch-folder env files or the inherited host environment; installers must not store the value.",
       type: "secret",
-      required: true,
+      required: false,
       envVar: "SENDLENS_INSTANTLY_API_KEY",
       targets: ["claude-code", "cursor", "codex", "opencode"],
     },

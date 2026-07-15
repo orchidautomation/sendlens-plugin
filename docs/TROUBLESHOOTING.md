@@ -88,13 +88,14 @@ Expected core tools:
 
 ## Missing Provider API Key
 
-SendLens defaults to `SENDLENS_PROVIDER=instantly`, so real Instantly workspace analysis needs `SENDLENS_INSTANTLY_API_KEY`.
+SendLens infers the provider mode from the configured API keys. With no keys configured, it retains the Instantly-compatible local-cache default.
 
 Provider modes:
 
-- `SENDLENS_PROVIDER=instantly`: requires `SENDLENS_INSTANTLY_API_KEY`.
-- `SENDLENS_PROVIDER=smartlead`: requires `SENDLENS_SMARTLEAD_API_KEY`.
-- `SENDLENS_PROVIDER=all`: requires both keys plus `SENDLENS_CLIENT` for full live refresh into one shared local workspace; setup can still report partial readiness without printing either value.
+- `SENDLENS_INSTANTLY_API_KEY` alone infers `instantly`.
+- `SENDLENS_SMARTLEAD_API_KEY` alone infers `smartlead`.
+- Both keys infer `all` and require `SENDLENS_CLIENT` for full live refresh into one shared local workspace.
+- `SENDLENS_PROVIDER` can explicitly override the inferred mode when needed.
 
 Smartlead uses query-string access; SendLens setup output, logs, traces, errors, fixtures, and tests suppress the value. Smartlead V1 support is read-only and does not expose campaign, lead, account, email, webhook, or provider-setting mutation paths.
 
@@ -102,8 +103,7 @@ For local development, create `.env`:
 
 ```bash
 SENDLENS_INSTANTLY_API_KEY=your_key
-# Optional Smartlead-only or both-provider setup:
-SENDLENS_PROVIDER=smartlead
+# Or, for Smartlead-only setup:
 SENDLENS_SMARTLEAD_API_KEY=your_key
 ```
 

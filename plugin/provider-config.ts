@@ -43,11 +43,17 @@ export function resolveSourceProviderMode(
 ): ProviderModeResolution {
   const normalized = normalizeProviderMode(rawValue);
   if (!normalized || isUnresolvedProviderMode(rawValue)) {
+    const instantlyConfigured = Boolean(process.env.SENDLENS_INSTANTLY_API_KEY?.trim());
+    const smartleadConfigured = Boolean(process.env.SENDLENS_SMARTLEAD_API_KEY?.trim());
+    let inferredMode: SourceProviderMode = "instantly";
+    if (smartleadConfigured) {
+      inferredMode = instantlyConfigured ? "all" : "smartlead";
+    }
     return {
-      mode: "instantly",
+      mode: inferredMode,
       raw: normalized || null,
       valid: true,
-      defaulted: true,
+      defaulted: !instantlyConfigured && !smartleadConfigured,
     };
   }
 

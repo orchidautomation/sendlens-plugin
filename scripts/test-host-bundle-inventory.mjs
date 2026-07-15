@@ -694,8 +694,8 @@ async function assertNoCredentialsRequired() {
 async function assertDemoModeContracts() {
   const config = await readText("pluxx.config.ts");
   assert(
-    /key:\s*"instantly-api-key"[\s\S]*?required:\s*true/.test(config),
-    "pluxx.config.ts: Instantly API key userConfig must stay required for real refresh readiness while Pluxx keeps core-host stdio env runtime-inherited",
+    /key:\s*"instantly-api-key"[\s\S]*?required:\s*false/.test(config),
+    "pluxx.config.ts: Instantly API key must remain optional so a Smartlead key can configure the provider by itself",
   );
   assert(
     /launch-folder env files or the inherited host environment/.test(config),
@@ -795,8 +795,9 @@ async function assertInstallerFirstRefreshContract() {
   );
   assert(
     /sed 's\/\^\[\[:space:\]\]\*\/\/;s\/\[\[:space:\]\]\*\$\/\/'/.test(bootstrap)
-      && /provider_mode="\$\{provider_mode:-instantly\}"/.test(bootstrap),
-    "scripts/bootstrap-runtime.sh: expected edge trimming and an Instantly fallback for blank provider mode",
+      && /provider_mode="smartlead"/.test(bootstrap)
+      && /provider_mode="all"/.test(bootstrap),
+    "scripts/bootstrap-runtime.sh: expected edge trimming and key-based provider inference for installer first refresh",
   );
   assert(
     /First refresh completed/i.test(bootstrap),
@@ -856,30 +857,37 @@ async function assertSessionStartProviderContract() {
     const preloadPath = path.join(harnessRoot, "capture-refresh.cjs");
     await writeFile(
       preloadPath,
-      "if (process.argv.some((value) => value.endsWith('/build/plugin/refresh-cli.js'))) { require('node:fs').appendFileSync(process.env.SENDLENS_TEST_REFRESH_LOG, `${process.env.SENDLENS_PROVIDER}\\n`); process.exit(0); }\n",
+      "if (process.argv.some((value) => value.endsWith('/build/plugin/refresh-cli.js'))) { const { resolveSourceProviderMode } = require(`${process.env.PLUGIN_ROOT}/build/plugin/provider-config.js`); require('node:fs').appendFileSync(process.env.SENDLENS_TEST_REFRESH_LOG, `${resolveSourceProviderMode().mode}\\n`); process.exit(0); }\n",
     );
     const smartleadAccessName = ["SENDLENS", "SMARTLEAD", "API", "KEY"].join("_");
     const instantlyAccessName = ["SENDLENS", "INSTANTLY", "API", "KEY"].join("_");
     for (const host of ["claude-code", "codex"]) {
-      for (const providerMode of ["smartlead", "all"]) {
+      const startupCases = [
+        { label: "smartlead", providerMode: "smartlead", expectedCapture: "smartlead" },
+        { label: "all", providerMode: "all", expectedCapture: "all" },
+        { label: "smartlead-inferred", providerMode: null, expectedCapture: "smartlead" },
+      ];
+      for (const { label, providerMode, expectedCapture } of startupCases) {
         const bundleRoot = path.join(root, "dist", host);
-        const stateDir = path.join(harnessRoot, `state-${host}-${providerMode}`);
-        const capturePath = path.join(harnessRoot, `capture-${host}-${providerMode}.log`);
+        const stateDir = path.join(harnessRoot, `state-${host}-${label}`);
+        const capturePath = path.join(harnessRoot, `capture-${host}-${label}.log`);
+        const childEnv = {
+          ...process.env,
+          PLUGIN_ROOT: bundleRoot,
+          [smartleadAccessName]: "fixture-access-value",
+          [instantlyAccessName]: "",
+          SENDLENS_DB_PATH: path.join(stateDir, "workspace-cache.duckdb"),
+          SENDLENS_STATE_DIR: stateDir,
+          SENDLENS_DEMO_MODE: "0",
+          SENDLENS_TEST_REFRESH_LOG: capturePath,
+          NODE_OPTIONS: `--require=${preloadPath}`,
+        };
+        if (providerMode) childEnv.SENDLENS_PROVIDER = providerMode;
+        else delete childEnv.SENDLENS_PROVIDER;
         const result = spawnSync("bash", [path.join(root, `dist/${host}/scripts/session-start.sh`)], {
           cwd: bundleRoot,
           encoding: "utf8",
-          env: {
-            ...process.env,
-            PLUGIN_ROOT: bundleRoot,
-            SENDLENS_PROVIDER: providerMode,
-            [smartleadAccessName]: "fixture-access-value",
-            [instantlyAccessName]: "",
-            SENDLENS_DB_PATH: path.join(stateDir, "workspace-cache.duckdb"),
-            SENDLENS_STATE_DIR: stateDir,
-            SENDLENS_DEMO_MODE: "0",
-            SENDLENS_TEST_REFRESH_LOG: capturePath,
-            NODE_OPTIONS: `--require=${preloadPath}`,
-          },
+          env: childEnv,
         });
         const output = `${result.stdout}${result.stderr}`;
         let capture = "";
@@ -889,10 +897,10 @@ async function assertSessionStartProviderContract() {
           } catch {
             capture = "";
           }
-          if (capture.includes(providerMode)) break;
+          if (capture.includes(expectedCapture)) break;
           await new Promise((resolve) => setTimeout(resolve, 20));
         }
-        if (!capture.includes(providerMode)) {
+        if (!capture.includes(expectedCapture)) {
           try {
             capture = await readFile(capturePath, "utf8");
           } catch {
@@ -900,8 +908,8 @@ async function assertSessionStartProviderContract() {
           }
         }
         assert(
-          result.status === 0 && capture.includes(providerMode),
-          `dist/${host}/scripts/session-start.sh: ${providerMode} did not launch the provider-aware refresh command\n${output}`,
+          result.status === 0 && capture.includes(expectedCapture),
+          `dist/${host}/scripts/session-start.sh: ${label} did not launch the provider-aware refresh command\n${output}`,
         );
       }
       const bundleRoot = path.join(root, "dist", host);
