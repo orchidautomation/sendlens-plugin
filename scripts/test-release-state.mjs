@@ -16,6 +16,31 @@ const base = {
 
 assert.equal(compareSemver("1.2.4", "1.2.3"), 1);
 assert.equal(compareSemver("1.2.3-beta.2", "1.2.3-beta.10"), -1);
+assert.equal(
+  compareSemver("9007199254740993.0.0", "9007199254740992.0.0"),
+  1,
+);
+assert.equal(
+  compareSemver(
+    "1.2.3-beta.9007199254740993",
+    "1.2.3-beta.9007199254740992",
+  ),
+  1,
+);
+for (const invalidVersion of [
+  "1.2.3-",
+  "1.2.3-alpha..1",
+  "1.2.3-alpha.",
+  "1.2.3+",
+  "1.2.3+build..1",
+  "1.2.3-alpha.01",
+]) {
+  assert.throws(
+    () => compareSemver(invalidVersion, "1.2.3"),
+    /valid semantic versions/,
+  );
+}
+assert.equal(compareSemver("1.2.3+build.01", "1.2.3+build.2"), 0);
 assert.doesNotThrow(() => assertVersionAhead("1.2.4", "1.2.3"));
 assert.throws(() => assertVersionAhead("1.2.3", "1.2.3"), /must be greater/);
 assert.throws(() => assertMatchingVersions("1.2.3", "1.2.2", "1.2.2"), /must match/);
@@ -24,7 +49,7 @@ assert.deepEqual(
   resolveReleaseState({
     ...base,
     releaseLookup: { status: "found", isDraft: false, isPrerelease: false },
-    tagCommit: "old-sha",
+    tagCommit: "new-sha",
   }),
   {
     releaseNeeded: false,
@@ -50,6 +75,14 @@ for (const [releaseLookup, tagCommit, expected] of [
 
 assert.throws(
   () => resolveReleaseState({ ...base, releaseLookup: { status: "not_found" }, tagCommit: "old-sha" }),
+  /already points to old-sha/,
+);
+assert.throws(
+  () => resolveReleaseState({
+    ...base,
+    releaseLookup: { status: "found", isDraft: false, isPrerelease: false },
+    tagCommit: "old-sha",
+  }),
   /already points to old-sha/,
 );
 assert.throws(

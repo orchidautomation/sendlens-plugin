@@ -1,22 +1,39 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
-const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;
+const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+
+function parseSemver(version) {
+  const match = SEMVER_PATTERN.exec(version);
+  if (!match) return null;
+
+  const prerelease = match[4]?.split(".");
+  if (prerelease?.some((identifier) => /^0\d+$/.test(identifier))) return null;
+
+  return { match, prerelease };
+}
+
+function compareNumericStrings(left, right) {
+  if (left.length !== right.length) return left.length < right.length ? -1 : 1;
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
 
 export function compareSemver(left, right) {
-  const leftMatch = SEMVER_PATTERN.exec(left);
-  const rightMatch = SEMVER_PATTERN.exec(right);
-  if (!leftMatch || !rightMatch) {
+  const leftVersion = parseSemver(left);
+  const rightVersion = parseSemver(right);
+  if (!leftVersion || !rightVersion) {
     throw new Error(`Versions must be valid semantic versions: "${left}" and "${right}"`);
   }
 
+  const { match: leftMatch, prerelease: leftPre } = leftVersion;
+  const { match: rightMatch, prerelease: rightPre } = rightVersion;
+
   for (let index = 1; index <= 3; index += 1) {
-    const difference = Number(leftMatch[index]) - Number(rightMatch[index]);
-    if (difference !== 0) return Math.sign(difference);
+    const difference = compareNumericStrings(leftMatch[index], rightMatch[index]);
+    if (difference !== 0) return difference;
   }
 
-  const leftPre = leftMatch[4]?.split(".");
-  const rightPre = rightMatch[4]?.split(".");
   if (!leftPre && !rightPre) return 0;
   if (!leftPre) return 1;
   if (!rightPre) return -1;
@@ -29,7 +46,7 @@ export function compareSemver(left, right) {
     const leftNumeric = /^\d+$/.test(leftPre[index]);
     const rightNumeric = /^\d+$/.test(rightPre[index]);
     if (leftNumeric && rightNumeric) {
-      return Number(leftPre[index]) < Number(rightPre[index]) ? -1 : 1;
+      return compareNumericStrings(leftPre[index], rightPre[index]);
     }
     if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
     return leftPre[index] < rightPre[index] ? -1 : 1;
@@ -67,6 +84,13 @@ export function resolveReleaseState({
   const tagName = `v${packageVersion}`;
   const releaseRequiresPromotion = releaseLookup.status === "found"
     && (releaseLookup.isDraft || releaseLookup.isPrerelease);
+
+  if (tagCommit && tagCommit !== githubSha) {
+    throw new Error(
+      `Tag ${tagName} already points to ${tagCommit}, not ${githubSha}. Rerun the failed workflow for ${tagCommit} or advance the package version.`,
+    );
+  }
+
   if (releaseLookup.status === "found" && !releaseRequiresPromotion) {
     return {
       releaseNeeded: false,
@@ -76,12 +100,6 @@ export function resolveReleaseState({
       tagName,
       summary: `${tagName} is already published.`,
     };
-  }
-
-  if (tagCommit && tagCommit !== githubSha) {
-    throw new Error(
-      `Tag ${tagName} already points to ${tagCommit}, not ${githubSha}. Rerun the failed workflow for ${tagCommit} or advance the package version.`,
-    );
   }
 
   return {
