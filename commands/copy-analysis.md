@@ -1,6 +1,7 @@
 ---
 description: "SendLens: inspect one campaign's templates and reconstructed copy"
 argument-hint: "[campaign-name] [instantly-tag]"
+skill: sendlens-analyst
 agent: copy-auditor
 subtask: true
 context: fork

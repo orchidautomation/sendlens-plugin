@@ -1,6 +1,7 @@
 ---
 description: "SendLens: analyze one campaign's performance and step or variant winners"
 argument-hint: "[campaign-name] [instantly-tag]"
+skill: sendlens-analyst
 agent: campaign-analyst
 subtask: true
 context: fork

@@ -1,7 +1,8 @@
 ---
 description: "SendLens: plan the next evidence-backed campaign experiment and measurement contract"
 argument-hint: "[campaign-name-or-instantly-tag]"
-agent: campaign-analyst
+skill: sendlens-campaign-strategist
+agent: campaign-strategist
 subtask: true
 context: fork
 ---

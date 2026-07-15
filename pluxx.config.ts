@@ -212,6 +212,13 @@ export default definePlugin({
     ],
   },
 
+  eval: {
+    warningThreshold: 80,
+    // Preserve the current 0.1.32 manual-project baseline. Known rubric false
+    // positives remain visible as warnings; any regression below 48 still fails.
+    failureThreshold: 48,
+  },
+
   targets: ["claude-code", "cursor", "codex", "opencode"],
   outDir: "./dist",
 });

@@ -1,6 +1,7 @@
 ---
 description: "SendLens: inspect one campaign's positive, negative, and neutral reply outcomes"
 argument-hint: "[campaign-name] [instantly-tag]"
+skill: sendlens-analyst
 agent: reply-auditor
 subtask: true
 context: fork

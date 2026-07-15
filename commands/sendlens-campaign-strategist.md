@@ -1,6 +1,7 @@
 ---
 description: "SendLens: turn validated findings into an audience, offer, angle, sequence, and experiment strategy"
 argument-hint: "[validated-findings-or-campaign]"
+skill: sendlens-campaign-strategist
 subtask: false
 ---
 

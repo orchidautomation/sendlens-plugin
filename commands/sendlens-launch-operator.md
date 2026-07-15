@@ -1,6 +1,7 @@
 ---
 description: "SendLens: gate campaign launch or scale and define measurement, stop, and learning rules"
 argument-hint: "[campaign-or-approved-package]"
+skill: sendlens-launch-operator
 subtask: false
 ---
 

@@ -1,6 +1,7 @@
 ---
 description: "SendLens: diagnose outbound evidence and orchestrate an end-to-end answer when requested"
 argument-hint: "[question, campaign, provider, or tag]"
+skill: sendlens-analyst
 subtask: false
 ---
 

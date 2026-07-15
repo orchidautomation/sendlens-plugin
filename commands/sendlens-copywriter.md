@@ -1,6 +1,7 @@
 ---
 description: "SendLens: draft evidence-backed cold-email sequences and meaningful copy variants"
 argument-hint: "[approved-strategy-or-campaign]"
+skill: sendlens-copywriter
 subtask: false
 ---
 

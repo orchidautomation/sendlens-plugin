@@ -155,19 +155,19 @@ const REQUIRED_DELEGATION_PATTERNS = [
   /must not claim or imply that a specialist was spawned/i,
 ];
 
-const LEGACY_COMMAND_AGENTS = new Map([
-  ["account-manager-brief", "workspace-triager"],
-  ["campaign-launch-qa", "campaign-analyst"],
+const COMMAND_AGENTS = new Map([
+  ["account-manager-brief", "launch-operator"],
+  ["campaign-launch-qa", "launch-operator"],
   ["campaign-performance", "campaign-analyst"],
-  ["cold-email-best-practices", "campaign-analyst"],
+  ["cold-email-best-practices", "campaign-copywriter"],
   ["copy-analysis", "copy-auditor"],
-  ["experiment-planner", "campaign-analyst"],
+  ["experiment-planner", "campaign-strategist"],
   ["icp-signals", "icp-auditor"],
   ["reply-patterns", "reply-auditor"],
   ["workspace-health", "workspace-triager"],
 ]);
 
-const LEGACY_COMMAND_SKILLS = new Map([
+const COMMAND_SKILLS = new Map([
   ["account-manager-brief", "sendlens-launch-operator"],
   ["campaign-launch-qa", "sendlens-launch-operator"],
   ["campaign-performance", "sendlens-analyst"],
@@ -638,7 +638,7 @@ async function collectCommandContracts(skillNames, agentNames) {
 
     const targetSkill = skillNames.has(commandName)
       ? commandName
-      : LEGACY_COMMAND_SKILLS.get(commandName) ?? (commandName === "using-sendlens"
+      : COMMAND_SKILLS.get(commandName) ?? (commandName === "using-sendlens"
         ? "sendlens-analyst"
         : "");
     assert(targetSkill, `${relativePath}: command must map to a public skill or supported legacy analyst route`);
@@ -681,10 +681,10 @@ async function collectCommandContracts(skillNames, agentNames) {
         `${relativePath}: explicit route still requires argument-hint metadata (${exception.rationale})`,
       );
     } else {
-      const expectedAgent = LEGACY_COMMAND_AGENTS.get(commandName);
+      const expectedAgent = COMMAND_AGENTS.get(commandName);
       assert(
         expectedAgent === agent && agentNames.has(agent),
-        `${relativePath}: legacy analyst command must route to specialist agent "${expectedAgent}"`,
+        `${relativePath}: command must route to specialist agent "${expectedAgent}"`,
       );
       assert(
         commandData.context === "fork",
@@ -711,7 +711,7 @@ async function collectCommandContracts(skillNames, agentNames) {
 
   for (const commandName of commandNames) {
     assert(
-      skillNames.has(commandName) || LEGACY_COMMAND_SKILLS.has(commandName) || commandName === "using-sendlens",
+      skillNames.has(commandName) || COMMAND_SKILLS.has(commandName) || commandName === "using-sendlens",
       `commands/${commandName}.md: no public skill or supported legacy route`,
     );
   }
