@@ -857,7 +857,7 @@ async function assertSessionStartProviderContract() {
     const preloadPath = path.join(harnessRoot, "capture-refresh.cjs");
     await writeFile(
       preloadPath,
-      "if (process.argv.some((value) => value.endsWith('/build/plugin/refresh-cli.js'))) { require('node:fs').appendFileSync(process.env.SENDLENS_TEST_REFRESH_LOG, `${process.env.SENDLENS_PROVIDER}\\n`); process.exit(0); }\n",
+      "if (process.argv.some((value) => value.endsWith('/build/plugin/refresh-cli.js'))) { const { resolveSourceProviderMode } = require(`${process.env.PLUGIN_ROOT}/build/plugin/provider-config.js`); require('node:fs').appendFileSync(process.env.SENDLENS_TEST_REFRESH_LOG, `${resolveSourceProviderMode().mode}\\n`); process.exit(0); }\n",
     );
     const smartleadAccessName = ["SENDLENS", "SMARTLEAD", "API", "KEY"].join("_");
     const instantlyAccessName = ["SENDLENS", "INSTANTLY", "API", "KEY"].join("_");
@@ -865,7 +865,7 @@ async function assertSessionStartProviderContract() {
       const startupCases = [
         { label: "smartlead", providerMode: "smartlead", expectedCapture: "smartlead" },
         { label: "all", providerMode: "all", expectedCapture: "all" },
-        { label: "smartlead-inferred", providerMode: null, expectedCapture: "undefined" },
+        { label: "smartlead-inferred", providerMode: null, expectedCapture: "smartlead" },
       ];
       for (const { label, providerMode, expectedCapture } of startupCases) {
         const bundleRoot = path.join(root, "dist", host);
