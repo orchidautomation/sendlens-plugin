@@ -705,7 +705,10 @@ try {
       owner.apiKeyFingerprint,
       providerScopedFingerprint("smartlead", "smartlead-override-secret"),
     );
-    assert.equal(currentApiKeyFingerprint(), null);
+    assert.equal(
+      currentApiKeyFingerprint(),
+      providerScopedFingerprint("smartlead", "smartlead-override-secret"),
+    );
 
     process.env.SENDLENS_SMARTLEAD_API_KEY = "smartlead-override-new-secret";
     await assert.rejects(

@@ -91,22 +91,19 @@ Release installers prepare runtime dependencies. Pluxx-owned runtime launchers r
 Provider setup paths:
 
 ```bash
-# Instantly-only, also the default when SENDLENS_PROVIDER is unset
-SENDLENS_PROVIDER=instantly
+# Instantly-only
 SENDLENS_INSTANTLY_API_KEY=your_instantly_key
 
 # Smartlead-only
-SENDLENS_PROVIDER=smartlead
 SENDLENS_SMARTLEAD_API_KEY=your_smartlead_key
 
 # Both providers in one local workspace cache
-SENDLENS_PROVIDER=all
 SENDLENS_CLIENT=acme
 SENDLENS_INSTANTLY_API_KEY=your_instantly_key
 SENDLENS_SMARTLEAD_API_KEY=your_smartlead_key
 ```
 
-`SENDLENS_PROVIDER=all` with both provider keys requires `SENDLENS_CLIENT`; this keeps both provider refreshes in the same named local workspace.
+SendLens infers the provider mode from the configured keys. `SENDLENS_PROVIDER` remains available as an explicit `instantly`, `smartlead`, or `all` override. Both keys infer `all` and require `SENDLENS_CLIENT`; this keeps both provider refreshes in the same named local workspace.
 
 Smartlead uses a query-string access value, and setup output suppresses it in URLs, logs, traces, errors, and tests. Smartlead V1 support is read-only: SendLens can refresh supported Smartlead campaign, account, lead, analytics, and bounded message-history evidence, but it does not expose campaign, lead, account, email, webhook, or provider-setting mutation paths.
 

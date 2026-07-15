@@ -99,9 +99,18 @@ run_installer_first_refresh() {
   fi
 
   local provider_mode
-  provider_mode="$(printf '%s' "${SENDLENS_PROVIDER:-instantly}" | tr '[:upper:]' '[:lower:]')"
+  provider_mode="$(printf '%s' "${SENDLENS_PROVIDER:-}" | tr '[:upper:]' '[:lower:]')"
   provider_mode="$(printf '%s' "${provider_mode}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-  provider_mode="${provider_mode:-instantly}"
+  if [[ -z "${provider_mode}" ]]; then
+    if has_non_whitespace "${SENDLENS_INSTANTLY_API_KEY:-}" \
+      && has_non_whitespace "${SENDLENS_SMARTLEAD_API_KEY:-}"; then
+      provider_mode="all"
+    elif has_non_whitespace "${SENDLENS_SMARTLEAD_API_KEY:-}"; then
+      provider_mode="smartlead"
+    else
+      provider_mode="instantly"
+    fi
+  fi
   local provider_ready="false"
   case "${provider_mode}" in
     instantly) has_non_whitespace "${SENDLENS_INSTANTLY_API_KEY:-}" && provider_ready="true" ;;

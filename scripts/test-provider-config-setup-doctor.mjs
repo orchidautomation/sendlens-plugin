@@ -118,12 +118,36 @@ function assertInvalidProviderResult(result, entryPoint) {
 }
 
 try {
+  let tempDir = resetEnv("provider-mode-inference");
   assert.deepEqual(resolveSourceProviderMode(undefined), {
     mode: "instantly",
     raw: null,
     valid: true,
     defaulted: true,
   });
+  process.env.SENDLENS_INSTANTLY_API_KEY = "instantly-inference-value";
+  assert.deepEqual(resolveSourceProviderMode(undefined), {
+    mode: "instantly",
+    raw: null,
+    valid: true,
+    defaulted: false,
+  });
+  delete process.env.SENDLENS_INSTANTLY_API_KEY;
+  process.env.SENDLENS_SMARTLEAD_API_KEY = "smartlead-inference-value";
+  assert.deepEqual(resolveSourceProviderMode(undefined), {
+    mode: "smartlead",
+    raw: null,
+    valid: true,
+    defaulted: false,
+  });
+  process.env.SENDLENS_INSTANTLY_API_KEY = "instantly-inference-value";
+  assert.deepEqual(resolveSourceProviderMode(undefined), {
+    mode: "all",
+    raw: null,
+    valid: true,
+    defaulted: false,
+  });
+  assert.equal(resolveSourceProviderMode("instantly").mode, "instantly");
   assert.equal(resolveSourceProviderMode("SMARTLEAD").mode, "smartlead");
   assert.equal(resolveSourceProviderMode(" smartlead ").mode, "smartlead");
   assert.equal(resolveSourceProviderMode("all").mode, "all");
@@ -158,7 +182,7 @@ try {
   assertNoSensitiveValue(unreachableSmartlead, smartleadValue);
   assert.ok(unreachableSmartlead.message.includes("[REDACTED]"));
 
-  let tempDir = resetEnv("instantly-default-no-cache");
+  tempDir = resetEnv("instantly-default-no-cache");
   await fs.mkdir(tempDir, { recursive: true });
   let report = await buildSetupDoctorReport();
   assert.equal(report.capabilities.source_provider_mode, "instantly");
@@ -167,6 +191,20 @@ try {
   assert.equal(report.capabilities.demo_seed, true);
   assert.equal(findCheck(report, "Credentials")?.status, "fail");
   assert.ok(report.next_steps.some((step) => step.includes("seed_demo_workspace")));
+
+  tempDir = resetEnv("smartlead-key-only");
+  await fs.mkdir(tempDir, { recursive: true });
+  const smartleadKeyOnlyResult = await runScript(path.join(root, "scripts/check-env.sh"), {
+    PLUGIN_ROOT: root,
+    SENDLENS_CONTEXT_ROOT: tempDir,
+    SENDLENS_DB_PATH: path.join(tempDir, "workspace-cache.duckdb"),
+    SENDLENS_STATE_DIR: tempDir,
+    SENDLENS_SMARTLEAD_API_KEY: "smartlead-key-only-value",
+  });
+  assert.equal(smartleadKeyOnlyResult.code, 0);
+  assert.match(smartleadKeyOnlyResult.stderr, /Smartlead provider setup/);
+  assert.doesNotMatch(smartleadKeyOnlyResult.stderr, /SENDLENS_INSTANTLY_API_KEY is not set/);
+  assertNoSensitiveValue(smartleadKeyOnlyResult, "smartlead-key-only-value");
 
   tempDir = resetEnv("smartlead-missing");
   await fs.mkdir(tempDir, { recursive: true });
@@ -180,7 +218,6 @@ try {
 
   tempDir = resetEnv("smartlead-valid");
   await fs.mkdir(tempDir, { recursive: true });
-  process.env.SENDLENS_PROVIDER = "smartlead";
   process.env.SENDLENS_SMARTLEAD_API_KEY = smartleadValue;
   globalThis.fetch = async (url) => {
     const parsed = new URL(String(url));
@@ -195,6 +232,10 @@ try {
   assert.equal(report.capabilities.live_refresh, true);
   assert.equal(report.capabilities.demo_seed, true);
   assert.equal(report.capabilities.smartlead_key_validated, true);
+  assert.match(
+    findCheck(report, "Source provider mode")?.message ?? "",
+    /inferred as smartlead/i,
+  );
   assert.equal(findCheck(report, "Smartlead credentials")?.status, "pass");
   assertNoSensitiveValue(report, smartleadValue);
   assert.ok(
@@ -207,7 +248,6 @@ try {
 
   tempDir = resetEnv("all-valid");
   await fs.mkdir(tempDir, { recursive: true });
-  process.env.SENDLENS_PROVIDER = "all";
   process.env.SENDLENS_INSTANTLY_API_KEY = "instantly-test-value";
   process.env.SENDLENS_SMARTLEAD_API_KEY = smartleadValue;
   globalThis.fetch = async (url) => {
@@ -232,7 +272,6 @@ try {
 
   tempDir = resetEnv("all-valid-with-client");
   await fs.mkdir(tempDir, { recursive: true });
-  process.env.SENDLENS_PROVIDER = "all";
   process.env.SENDLENS_CLIENT = "acme";
   process.env.SENDLENS_INSTANTLY_API_KEY = "instantly-test-value";
   process.env.SENDLENS_SMARTLEAD_API_KEY = smartleadValue;
@@ -246,6 +285,7 @@ try {
   };
   report = await buildSetupDoctorReport();
   assert.equal(report.capabilities.source_provider_mode, "all");
+  assert.match(findCheck(report, "Source provider mode")?.message ?? "", /inferred as all/i);
   assert.equal(report.paths.selected_client, "acme");
   assert.equal(report.capabilities.live_refresh, true);
   assert.ok(report.next_steps.some((step) => step.includes("live Instantly and read-only Smartlead")));

@@ -16,7 +16,7 @@ This page is intentionally precise. It describes the OSS plugin's data handling 
 
 SendLens uses `SENDLENS_INSTANTLY_API_KEY` for Instantly API access. The key should be scoped and managed in Instantly according to the workspace owner's policy.
 
-Smartlead access uses `SENDLENS_PROVIDER=smartlead` or `SENDLENS_PROVIDER=all` plus `SENDLENS_SMARTLEAD_API_KEY`. Smartlead uses query-string API keys, so SendLens suppresses the value in URLs, traces, logs, setup output, errors, fixtures, and tests.
+Smartlead access uses `SENDLENS_SMARTLEAD_API_KEY`; when that is the only configured provider key, SendLens infers Smartlead mode. `SENDLENS_PROVIDER=smartlead` or `SENDLENS_PROVIDER=all` remains available as an explicit override. Smartlead uses query-string API keys, so SendLens suppresses the value in URLs, traces, logs, setup output, errors, fixtures, and tests.
 
 Smartlead V1 support is read-only. SendLens can refresh supported campaign, account, lead, analytics, bounded message-history, and support-gated Smart Delivery evidence, but it does not expose Smartlead campaign, lead, account, email, webhook, test, folder, or provider-setting mutation paths. Smart Delivery email-content and raw reply-header endpoints are intentionally not ingested.
 
@@ -57,7 +57,7 @@ Optional overrides:
 | `SENDLENS_CLIENT` | Selects client-specific env overlays |
 | `SENDLENS_CLIENTS_DIR` | Changes the directory used for client env overlays |
 | `SENDLENS_DEMO_MODE` | Enables synthetic demo-mode setup paths when supported by the installed bundle |
-| `SENDLENS_PROVIDER` | Selects source provider setup mode: `instantly`, `smartlead`, or `all`; defaults to `instantly` |
+| `SENDLENS_PROVIDER` | Optionally overrides the inferred source provider mode with `instantly`, `smartlead`, or `all` |
 | `SENDLENS_SMARTLEAD_API_KEY` | Dedicated Smartlead setup credential; suppress from URLs, traces, logs, setup output, errors, fixtures, and tests |
 
 ## What Gets Stored Locally

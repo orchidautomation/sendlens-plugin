@@ -258,7 +258,9 @@ export async function buildSetupDoctorReport() {
     message: providerMode.valid
       ? providerMode.defaulted
         ? "Source provider mode defaults to Instantly."
-        : `Source provider mode is ${providerMode.mode}.`
+        : providerMode.raw
+          ? `Source provider mode is ${providerMode.mode}.`
+          : `Source provider mode inferred as ${providerMode.mode} from configured API keys.`
       : providerMode.message ?? "Invalid source provider mode.",
     detail: providerMode.valid
       ? `Configured source providers: ${sourceProviders.join(", ")}. Use source_provider for data-source identity; sendlens.accounts.provider remains mailbox/email-service provider.`
