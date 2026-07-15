@@ -1,6 +1,6 @@
 {
   "name": "sendlens",
-  "version": "0.1.51",
+  "version": "0.1.52",
   "private": true,
   "description": "Privacy-first outbound campaign analysis for AI workspaces.",
   "license": "MIT",
@@ -30,6 +30,7 @@
     "test:mcp-response-contract": "node scripts/test-mcp-response-contract.mjs",
     "test:prompt-contracts": "node scripts/test-prompt-contracts.mjs",
     "test:host-bundles": "node scripts/test-host-bundle-inventory.mjs",
+    "test:release-state": "node scripts/test-release-state.mjs",
     "test:load-campaign-data-runtime": "npm run --silent build:plugin && node scripts/test-load-campaign-data-runtime.mjs",
     "test:provider-config": "npm run --silent build:plugin && node scripts/test-provider-config-setup-doctor.mjs",
     "test:instantly-client": "npm run --silent build:plugin && node scripts/test-instantly-client-pagination.mjs",

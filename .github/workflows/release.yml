@@ -2,19 +2,55 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: sendlens-production-release
+  cancel-in-progress: false
+  queue: max
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  github-release:
+  release-state:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    outputs:
+      release_needed: ${{ steps.version.outputs.release_needed }}
+      release_requires_promotion: ${{ steps.version.outputs.release_requires_promotion }}
+      tag_exists: ${{ steps.version.outputs.tag_exists }}
+      package_version: ${{ steps.version.outputs.package_version }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
+    env:
+      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release state
+        id: version
+        run: node scripts/release-state.mjs
+
+  github-release:
+    needs: release-state
+    if: needs.release-state.outputs.release_needed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -31,23 +67,11 @@ jobs:
       - name: Run Pluxx source diagnostics
         run: npx pluxx doctor
 
-      - name: Resolve release version
-        id: version
-        shell: bash
-        run: |
-          set -euo pipefail
-          TAG_NAME="${GITHUB_REF_NAME}"
-          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
-
-          if [ "${TAG_NAME#v}" != "${PACKAGE_VERSION}" ]; then
-            echo "Tag ${TAG_NAME} does not match package.json version ${PACKAGE_VERSION}" >&2
-            exit 1
-          fi
-
-          echo "package_version=${PACKAGE_VERSION}" >> "$GITHUB_OUTPUT"
-
       - name: Run release checks
         run: npm run release:check
+
+      - name: Run full Pluxx target release gate
+        run: npx pluxx test --target claude-code cursor codex opencode
 
       - name: Diagnose built host bundles
         env:
@@ -60,12 +84,25 @@ jobs:
 
       - name: Dry-run GitHub release assets with Pluxx
         env:
-          GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
-        run: npx pluxx publish --github-release --dry-run --version "${{ steps.version.outputs.package_version }}"
+        run: npx pluxx publish --github-release --dry-run --version "${{ needs.release-state.outputs.package_version }}"
+
+      - name: Create release tag
+        if: needs.release-state.outputs.tag_exists == 'false'
+        run: |
+          git tag "${{ needs.release-state.outputs.tag_name }}" "${GITHUB_SHA}"
+          git push origin "${{ needs.release-state.outputs.tag_name }}"
 
       - name: Publish GitHub release assets with Pluxx
         env:
-          GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
-        run: npx pluxx publish --github-release --version "${{ steps.version.outputs.package_version }}"
+        run: npx pluxx publish --github-release --version "${{ needs.release-state.outputs.package_version }}"
+
+      - name: Publish draft release when needed
+        if: needs.release-state.outputs.release_requires_promotion == 'true'
+        run: |
+          gh release edit "${{ needs.release-state.outputs.tag_name }}" --draft=false --prerelease=false --latest
+
+      - name: Verify GitHub release is published
+        run: |
+          test "$(gh release view "${{ needs.release-state.outputs.tag_name }}" --json isDraft,isPrerelease --jq '[.isDraft, .isPrerelease] | join(",")')" = "false,false"

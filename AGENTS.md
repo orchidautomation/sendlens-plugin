@@ -10,10 +10,19 @@
 
 - Use Linear as the source of truth for scoped work.
 - Preserve Brandon's and other agents' local changes. Read `git status --short --branch` before editing and do not revert unrelated work.
-- Keep implementation work on task branches or worktrees, not directly on `main`.
+- Treat `main` as the protected production branch and keep the original repo checkout as a clean, current mirror of `origin/main`. Do not implement directly on `main`.
+- Start each substantive task from a freshly fetched `origin/main` in one named branch and one worktree. Prefer `codex/<issue-key>-<slug>` for Codex work and `feat/<slug>` or `fix/<slug>` for human-led work.
+- Create the branch when creating the worktree. If Codex supplies a detached worktree, attach it to a meaningful task branch before editing or committing.
+- Use pull-request checks and built host bundles as the staging gate; do not maintain a long-lived `develop` or `staging` branch unless the release model is explicitly changed.
+- Build and run the task-appropriate local validation in the task worktree, then commit and push the task branch. Open a PR from that branch rather than pushing feature work to `main`.
 - For Smartlead Provider Parity work, branch from `codex/smartlead-api-parity-map` and target PRs back to `codex/smartlead-api-parity-map`, not `main`, unless Brandon explicitly redirects.
 - Link PRs and closeout comments back to Linear issue keys.
 - For safe same-branch PRs in this `orchidautomation/sendlens-plugin` repo, add the GitHub label `ai:autofix-enabled` unless Brandon opts out or the branch cannot be safely repaired by automation.
+- Keep review fixes on the same PR branch. Merge only after required checks and review pass.
+- The PR author owns the release version bump. Every PR into `main` must advance both package manifests to the same unreleased version.
+- Before merge, update the PR branch from current `main` and keep the required CI check current. Concurrent PRs may initially select the same next version; after the first merges, the other PR must advance its version again. Prefer a merge queue or strict up-to-date branch protection.
+- A push to `main` runs the version-gated release workflow. An already-published version is a successful no-op; an unreleased version must pass the full release checks before the workflow creates its tag and publishes the GitHub Release.
+- After merge, delete the remote task branch, remove its worktree, delete the local task branch, and fast-forward the original `main` checkout from `origin/main`.
 - Store durable Orchid artifacts under `docs/orchid/`.
 - Keep temporary/raw agent outputs in .agent-artifacts/.
 
