@@ -66,7 +66,7 @@ automation rather than pushed manually.
 1. Create a named task branch from the latest `origin/main`.
 2. Build and test the change in its isolated checkout.
 3. Update both package manifests to the intended release version.
-4. Push the task branch and open a pull request into `main`.
+4. Rebase or update the task branch from current `main`, then push it and open a pull request into `main`.
 5. Merge only after required checks and review pass.
 6. Let the `main` workflow create the tag and GitHub Release.
 
@@ -90,16 +90,25 @@ After the PR merges, the GitHub Actions release workflow will:
 - exit successfully without rebuilding when that version is already published
 - run `npm ci`
 - run `npm run release:check`
+- run the full Pluxx target test gate
 - dry-run the Pluxx release assets
 - create the matching `vX.Y.Z` tag at the merged commit
 - run `pluxx publish --github-release --version <version>`
+- finish a matching draft release during recovery and verify it is public
 - create or update the GitHub release with install scripts, archives, checksums, and manifest
 
-The workflow is serialized so release runs cannot publish concurrently. It also
-supports manual dispatch for recovery. If a tag was created but publishing
+The workflow is serialized and retains up to 100 pending main commits so release
+runs cannot publish concurrently or silently replace a queued release. Manual recovery dispatches are accepted only
+from `main`. If a tag was created but publishing
 failed, rerun the failed workflow at the same commit; the workflow reuses the
 matching tag. If that tag points at a different commit, the workflow fails and
 requires either recovery from the original commit or a new version.
+
+Every PR must advance the package version beyond the version currently on its
+target branch. Two concurrent PRs can initially choose the same next version, so
+branches must be updated from `main` before merge. Keep the required CI check
+current through branch protection or a merge queue; the second PR must then
+advance again before it can merge.
 
 ## Workflow Notes
 

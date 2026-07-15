@@ -19,7 +19,8 @@
 - Link PRs and closeout comments back to Linear issue keys.
 - For safe same-branch PRs in this `orchidautomation/sendlens-plugin` repo, add the GitHub label `ai:autofix-enabled` unless Brandon opts out or the branch cannot be safely repaired by automation.
 - Keep review fixes on the same PR branch. Merge only after required checks and review pass.
-- The PR author owns the release version bump. Any merge to `main` that should publish a new SendLens build must advance both package manifests to the same unreleased version.
+- The PR author owns the release version bump. Every PR into `main` must advance both package manifests to the same unreleased version.
+- Before merge, update the PR branch from current `main` and keep the required CI check current. Concurrent PRs may initially select the same next version; after the first merges, the other PR must advance its version again. Prefer a merge queue or strict up-to-date branch protection.
 - A push to `main` runs the version-gated release workflow. An already-published version is a successful no-op; an unreleased version must pass the full release checks before the workflow creates its tag and publishes the GitHub Release.
 - After merge, delete the remote task branch, remove its worktree, delete the local task branch, and fast-forward the original `main` checkout from `origin/main`.
 - Store durable Orchid artifacts under `docs/orchid/`.

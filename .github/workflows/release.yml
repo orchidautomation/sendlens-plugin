@@ -9,15 +9,18 @@ on:
 concurrency:
   group: sendlens-production-release
   cancel-in-progress: false
+  queue: max
 
 permissions:
   contents: read
 
 jobs:
   release-state:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       release_needed: ${{ steps.version.outputs.release_needed }}
+      release_requires_promotion: ${{ steps.version.outputs.release_requires_promotion }}
       tag_exists: ${{ steps.version.outputs.tag_exists }}
       package_version: ${{ steps.version.outputs.package_version }}
       tag_name: ${{ steps.version.outputs.tag_name }}
@@ -32,39 +35,7 @@ jobs:
 
       - name: Resolve release state
         id: version
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
-          LOCK_VERSION="$(node -p "require('./package-lock.json').version")"
-          LOCK_ROOT_VERSION="$(node -p "require('./package-lock.json').packages[''].version")"
-          TAG_NAME="v${PACKAGE_VERSION}"
-
-          echo "package_version=${PACKAGE_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
-
-          if [ "${PACKAGE_VERSION}" != "${LOCK_VERSION}" ] || [ "${PACKAGE_VERSION}" != "${LOCK_ROOT_VERSION}" ]; then
-            echo "package.json and package-lock.json versions must match before release" >&2
-            exit 1
-          fi
-
-          IS_DRAFT="$(gh release view "${TAG_NAME}" --json isDraft --jq '.isDraft' 2>/dev/null || true)"
-          if [ "${IS_DRAFT}" = "false" ]; then
-            echo "Release ${TAG_NAME} already exists; this push does not need a release."
-            echo "release_needed=false" >> "$GITHUB_OUTPUT"
-            echo "${TAG_NAME} is already published." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          TAG_COMMIT="$(git rev-list -n 1 "${TAG_NAME}" 2>/dev/null || true)"
-          if [ -n "${TAG_COMMIT}" ] && [ "${TAG_COMMIT}" != "${GITHUB_SHA}" ]; then
-            echo "Tag ${TAG_NAME} already points to ${TAG_COMMIT}, not ${GITHUB_SHA}." >&2
-            echo "Rerun the failed workflow for ${TAG_COMMIT} or advance the package version." >&2
-            exit 1
-          fi
-
-          echo "release_needed=true" >> "$GITHUB_OUTPUT"
-          echo "tag_exists=$([ -n "${TAG_COMMIT}" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+        run: node scripts/release-state.mjs
 
   github-release:
     needs: release-state
@@ -99,6 +70,9 @@ jobs:
       - name: Run release checks
         run: npm run release:check
 
+      - name: Run full Pluxx target release gate
+        run: npx pluxx test --target claude-code cursor codex opencode
+
       - name: Diagnose built host bundles
         env:
           SENDLENS_INSTANTLY_API_KEY: ci-placeholder
@@ -123,3 +97,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: npx pluxx publish --github-release --version "${{ needs.release-state.outputs.package_version }}"
+
+      - name: Publish draft release when needed
+        if: needs.release-state.outputs.release_requires_promotion == 'true'
+        run: |
+          gh release edit "${{ needs.release-state.outputs.tag_name }}" --draft=false --prerelease=false --latest
+
+      - name: Verify GitHub release is published
+        run: |
+          test "$(gh release view "${{ needs.release-state.outputs.tag_name }}" --json isDraft,isPrerelease --jq '[.isDraft, .isPrerelease] | join(",")')" = "false,false"
