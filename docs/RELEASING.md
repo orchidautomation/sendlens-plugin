@@ -57,39 +57,55 @@ Before releasing a change that affects skills, agents, MCP response shape, evide
 - host portability or generated bundle issues are routed to Pluxx
 - a decision record exists for durable behavior or ownership changes
 
-## Tag-Based Release Flow
+## Main-Branch Release Flow
 
-1. Update `package.json` version.
-2. Commit and push the version bump.
-3. Push the matching tag.
+Merging an unreleased package version into `main` starts the production release.
+The pull request is the staging and review gate; release tags are created by
+automation rather than pushed manually.
+
+1. Create a named task branch from the latest `origin/main`.
+2. Build and test the change in its isolated checkout.
+3. Update both package manifests to the intended release version.
+4. Push the task branch and open a pull request into `main`.
+5. Merge only after required checks and review pass.
+6. Let the `main` workflow create the tag and GitHub Release.
 
 Example:
 
 ```bash
-git checkout main
-git pull --ff-only
+git fetch origin main
+git worktree add -b feat/example-release ../sendlens-example-release origin/main
+
+cd ../sendlens-example-release
 
 npm version patch --no-git-tag-version
 git add package.json package-lock.json
-git commit -m "Release 0.1.1"
-git push origin main
-
-git tag v0.1.1
-git push origin v0.1.1
+git commit -m "feat: ship example change"
+git push -u origin feat/example-release
 ```
 
-The GitHub Actions release workflow will then:
+After the PR merges, the GitHub Actions release workflow will:
 
+- verify both package manifest versions match
+- exit successfully without rebuilding when that version is already published
 - run `npm ci`
 - run `npm run release:check`
-- verify the tag matches `package.json`
+- dry-run the Pluxx release assets
+- create the matching `vX.Y.Z` tag at the merged commit
 - run `pluxx publish --github-release --version <version>`
 - create or update the GitHub release with install scripts, archives, checksums, and manifest
+
+The workflow is serialized so release runs cannot publish concurrently. It also
+supports manual dispatch for recovery. If a tag was created but publishing
+failed, rerun the failed workflow at the same commit; the workflow reuses the
+matching tag. If that tag points at a different commit, the workflow fails and
+requires either recovery from the original commit or a new version.
 
 ## Workflow Notes
 
 - this repo does not publish an npm package today
 - the public distribution surface is GitHub Releases
+- `main` pushes without an unreleased package version are successful release no-ops
 - direct installer URLs should always point at `/releases/latest/download/...`
 - the hosted install URL should serve `https://sendlens.app/install.sh` as a redirect to the latest GitHub Release `install.sh` asset
 
