@@ -2175,7 +2175,10 @@ async function ensureSchema(conn: DuckDBConnection) {
         i.campaign_id,
         i.campaign_name,
         CASE
-          WHEN i.provider_lead_id = i.email OR i.provider_lead_id = i.normalized_email THEN NULL
+          WHEN lower(trim(i.provider_lead_id)) = lower(trim(i.email))
+            OR lower(trim(i.provider_lead_id)) = lower(trim(i.normalized_email))
+            OR regexp_matches(lower(trim(i.provider_lead_id)), '[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+')
+          THEN NULL
           ELSE i.provider_lead_id
         END AS provider_lead_id,
         CAST(NULL AS VARCHAR) AS email,

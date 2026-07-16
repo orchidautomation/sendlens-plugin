@@ -79,8 +79,8 @@ try {
      ('${workspaceId}', 'inst-1', 'instantly', 'inst-1', NULL, 'inst-lead-1', 'inst-lead-1', 'shared@example.com', 'shared@example.com', 'example.com', 'Sam', 'Shared', 'Acme Health', 'acme.example', 'active', 1, -1, '2026-06-01 09:00:00'::TIMESTAMP, '2026-06-02 09:00:00'::TIMESTAMP, 'VP Ops', '{"segment":"health"}', 'reply_full', '2026-06-01 09:00:00'::TIMESTAMP),
      ('${workspaceId}', 'inst-old', 'instantly', 'inst-old', NULL, 'inst-lead-old', 'inst-lead-old', 'shared@example.com', 'shared@example.com', 'example.com', 'Sam', 'Shared', 'Acme Health', 'acme.example', 'active', 0, NULL, '2025-06-01 09:00:00'::TIMESTAMP, NULL, 'VP Ops', '{"segment":"health"}', 'historical_sample', '2025-06-01 09:00:00'::TIMESTAMP),
      ('${workspaceId}', 'smartlead:101', 'smartlead', '101', 'smartlead:101', '1001', '1001', 'shared@example.com', 'shared@example.com', 'example.com', 'Sam', 'Shared', 'Acme Health', 'acme.example', 'active', 1, 1, '2026-06-06 09:00:00'::TIMESTAMP, '2026-06-07 09:00:00'::TIMESTAMP, 'VP Ops', '{"segment":"health"}', 'reply_full', '2026-06-06 09:00:00'::TIMESTAMP),
-     ('${workspaceId}', 'inst-1', 'instantly', 'inst-1', NULL, 'inst-noevent', 'inst-noevent', 'noevent@example.net', 'noevent@example.net', 'example.net', 'No', 'Event', 'Clock Skew Co', 'clock.example', 'active', 0, NULL, NULL, NULL, 'Ops', '{"segment":"skew"}', 'synthetic_no_event', '2026-06-10 09:00:00'::TIMESTAMP),
-     ('${workspaceId}', 'smartlead:101', 'smartlead', '101', 'smartlead:101', 'smart-noevent', 'smart-noevent', 'noevent@example.net', 'noevent@example.net', 'example.net', 'No', 'Event', 'Clock Skew Co', 'clock.example', 'active', 0, NULL, NULL, NULL, 'Ops', '{"segment":"skew"}', 'synthetic_no_event', '2026-06-10 09:00:00'::TIMESTAMP)`,
+     ('${workspaceId}', 'inst-1', 'instantly', 'inst-1', NULL, 'inst-noevent', ' NoEvent@Example.Net ', 'noevent@example.net', 'noevent@example.net', 'example.net', 'No', 'Event', 'Clock Skew Co', 'clock.example', 'active', 0, NULL, NULL, NULL, 'Ops', '{"segment":"skew"}', 'synthetic_no_event', '2026-06-10 09:00:00'::TIMESTAMP),
+     ('${workspaceId}', 'smartlead:101', 'smartlead', '101', 'smartlead:101', 'smart-noevent', 'smartlead:lead:noevent@example.net', 'noevent@example.net', 'noevent@example.net', 'example.net', 'No', 'Event', 'Clock Skew Co', 'clock.example', 'active', 0, NULL, NULL, NULL, 'Ops', '{"segment":"skew"}', 'synthetic_no_event', '2026-06-10 09:00:00'::TIMESTAMP)`,
   );
   await setActiveWorkspaceId(db, workspaceId, "fast");
 
@@ -242,6 +242,26 @@ try {
   assert.equal(noEventOverlapRows[0].contact_window_days, null);
   assert.equal(noEventOverlapRows[0].within_unsafe_window, null);
   assert.equal(noEventOverlapRows[0].overlap_risk_level, "timing_unknown");
+
+  const noEventDetailRows = await query(
+    db,
+    `SELECT source_provider, provider_lead_id
+     FROM sendlens.provider_overlap_risk_details
+     WHERE workspace_id = '${workspaceId}'
+       AND overlap_type = 'contact_email'
+       AND overlap_key = '${sha256("noevent@example.net")}'
+     ORDER BY source_provider`,
+  );
+  assert.deepEqual(
+    noEventDetailRows.map((row) => ({
+      source_provider: row.source_provider,
+      provider_lead_id: row.provider_lead_id,
+    })),
+    [
+      { source_provider: "instantly", provider_lead_id: null },
+      { source_provider: "smartlead", provider_lead_id: null },
+    ],
+  );
 
   const leadTimeRows = await query(
     db,
