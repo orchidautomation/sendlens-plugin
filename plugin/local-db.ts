@@ -1073,6 +1073,14 @@ async function ensureSchema(conn: DuckDBConnection) {
       lead_pages_fetched INTEGER,
       lead_cursor_exhausted BOOLEAN,
       lead_termination_reason VARCHAR,
+      sampling_algorithm_version VARCHAR,
+      sampling_seed VARCHAR,
+      requested_window_start_at TIMESTAMP,
+      requested_window_end_at TIMESTAMP,
+      effective_population_size INTEGER,
+      selected_record_count INTEGER,
+      population_fingerprint VARCHAR,
+      provenance_status VARCHAR DEFAULT 'unknown',
       coverage_note VARCHAR,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (workspace_id, campaign_id)
@@ -1137,6 +1145,14 @@ async function ensureSchema(conn: DuckDBConnection) {
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS lead_pages_fetched INTEGER",
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS lead_cursor_exhausted BOOLEAN",
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS lead_termination_reason VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS sampling_algorithm_version VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS sampling_seed VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS requested_window_start_at TIMESTAMP",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS requested_window_end_at TIMESTAMP",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS effective_population_size INTEGER",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS selected_record_count INTEGER",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS population_fingerprint VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS provenance_status VARCHAR DEFAULT 'unknown'",
     "ALTER TABLE sendlens.campaign_daily_metrics ADD COLUMN IF NOT EXISTS opportunities INTEGER",
     "ALTER TABLE sendlens.campaign_daily_metrics ADD COLUMN IF NOT EXISTS unique_opportunities INTEGER",
     "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
@@ -1194,6 +1210,14 @@ async function ensureSchema(conn: DuckDBConnection) {
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS provider_campaign_id VARCHAR",
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS campaign_source_id VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS sampling_algorithm_version VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS sampling_seed VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS requested_window_start_at TIMESTAMP",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS requested_window_end_at TIMESTAMP",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS effective_population_size INTEGER",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS selected_record_count INTEGER",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS population_fingerprint VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS provenance_status VARCHAR DEFAULT 'unknown'",
     `CREATE OR REPLACE VIEW sendlens.campaign_tags AS
       SELECT
         m.workspace_id,
@@ -1544,6 +1568,14 @@ async function ensureSchema(conn: DuckDBConnection) {
         COALESCE(sr.outbound_rows_sampled, 0) AS outbound_rows_sampled,
         COALESCE(sr.reply_outbound_rows, 0) AS reply_outbound_rows,
         COALESCE(sr.filtered_lead_rows, 0) AS filtered_lead_rows,
+        COALESCE(sr.sampling_algorithm_version, 'unknown') AS sampling_algorithm_version,
+        sr.sampling_seed,
+        sr.requested_window_start_at,
+        sr.requested_window_end_at,
+        sr.effective_population_size,
+        sr.selected_record_count,
+        sr.population_fingerprint,
+        COALESCE(sr.provenance_status, 'unknown') AS provenance_status,
         CASE
           WHEN COALESCE(ca.emails_sent_count, 0) = 0 THEN 0
           ELSE ROUND(100.0 * COALESCE(ca.reply_count_unique, 0) / ca.emails_sent_count, 2)
@@ -1941,6 +1973,14 @@ async function ensureSchema(conn: DuckDBConnection) {
         sl.custom_payload,
         sl.sample_source,
         sl.sampled_at,
+        COALESCE(sl.timestamp_last_contact, sl.timestamp_last_reply) AS provider_event_at,
+        sl.sampled_at AS evidence_observed_at,
+        sl.sampled_at AS evidence_sampled_at,
+        CASE
+          WHEN sl.timestamp_last_contact IS NOT NULL THEN 'provider_last_contact'
+          WHEN sl.timestamp_last_reply IS NOT NULL THEN 'provider_last_reply'
+          ELSE 'unavailable'
+        END AS provider_event_time_basis,
         CASE
           WHEN (
             COALESCE(sl.email_reply_count, 0) > 0
@@ -1986,7 +2026,7 @@ async function ensureSchema(conn: DuckDBConnection) {
         SELECT
           workspace_id,
           'contact_email' AS overlap_type,
-          normalized_email AS overlap_key,
+          sha256(normalized_email) AS overlap_key,
           source_provider,
           campaign_id,
           campaign_source_id,
@@ -1995,7 +2035,7 @@ async function ensureSchema(conn: DuckDBConnection) {
           normalized_domain,
           company_domain,
           company_name,
-          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          provider_event_at AS exposure_at,
           has_reply_signal,
           reply_outcome_label
         FROM sendlens.lead_evidence
@@ -2014,7 +2054,7 @@ async function ensureSchema(conn: DuckDBConnection) {
           normalized_domain,
           company_domain,
           company_name,
-          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          provider_event_at AS exposure_at,
           has_reply_signal,
           reply_outcome_label
         FROM sendlens.lead_evidence
@@ -2033,7 +2073,7 @@ async function ensureSchema(conn: DuckDBConnection) {
           normalized_domain,
           company_domain,
           company_name,
-          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          provider_event_at AS exposure_at,
           has_reply_signal,
           reply_outcome_label
         FROM sendlens.lead_evidence
@@ -2052,7 +2092,7 @@ async function ensureSchema(conn: DuckDBConnection) {
           normalized_domain,
           company_domain,
           company_name,
-          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          provider_event_at AS exposure_at,
           has_reply_signal,
           reply_outcome_label
         FROM sendlens.lead_evidence
@@ -2078,24 +2118,38 @@ async function ensureSchema(conn: DuckDBConnection) {
         GROUP BY 1, 2, 3
         HAVING COUNT(DISTINCT source_provider) > 1
       ),
+      provider_exposure_bounds AS (
+        SELECT
+          workspace_id,
+          overlap_type,
+          overlap_key,
+          source_provider,
+          MIN(exposure_at) AS first_provider_exposure_at,
+          MAX(exposure_at) AS last_provider_exposure_at
+        FROM identity_rows
+        WHERE exposure_at IS NOT NULL
+        GROUP BY 1, 2, 3, 4
+      ),
       cross_provider_pairs AS (
         SELECT
           a.workspace_id,
           a.overlap_type,
           a.overlap_key,
           MIN(
-            ABS(
-              CAST(date_diff('day', CAST(a.exposure_at AS DATE), CAST(b.exposure_at AS DATE)) AS INTEGER)
-            )
+            CASE
+              WHEN a.first_provider_exposure_at > b.last_provider_exposure_at
+                THEN CAST(date_diff('day', CAST(b.last_provider_exposure_at AS DATE), CAST(a.first_provider_exposure_at AS DATE)) AS INTEGER)
+              WHEN b.first_provider_exposure_at > a.last_provider_exposure_at
+                THEN CAST(date_diff('day', CAST(a.last_provider_exposure_at AS DATE), CAST(b.first_provider_exposure_at AS DATE)) AS INTEGER)
+              ELSE 0
+            END
           ) AS closest_cross_provider_window_days
-        FROM identity_rows a
-        JOIN identity_rows b
+        FROM provider_exposure_bounds a
+        JOIN provider_exposure_bounds b
           ON a.workspace_id = b.workspace_id
          AND a.overlap_type = b.overlap_type
          AND a.overlap_key = b.overlap_key
-         AND a.source_provider <> b.source_provider
-        WHERE a.exposure_at IS NOT NULL
-          AND b.exposure_at IS NOT NULL
+         AND a.source_provider < b.source_provider
         GROUP BY 1, 2, 3
       )
       SELECT
@@ -2134,7 +2188,7 @@ async function ensureSchema(conn: DuckDBConnection) {
         SELECT
           workspace_id,
           'contact_email' AS overlap_type,
-          normalized_email AS overlap_key,
+          sha256(normalized_email) AS overlap_key,
           source_provider,
           provider_campaign_id,
           campaign_source_id,
@@ -2146,7 +2200,10 @@ async function ensureSchema(conn: DuckDBConnection) {
           normalized_domain,
           company_domain,
           company_name,
-          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          provider_event_at AS exposure_at,
+          provider_event_time_basis,
+          evidence_observed_at,
+          evidence_sampled_at,
           has_reply_signal,
           reply_outcome_label,
           sample_source
@@ -2169,7 +2226,10 @@ async function ensureSchema(conn: DuckDBConnection) {
           normalized_domain,
           company_domain,
           company_name,
-          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          provider_event_at AS exposure_at,
+          provider_event_time_basis,
+          evidence_observed_at,
+          evidence_sampled_at,
           has_reply_signal,
           reply_outcome_label,
           sample_source
@@ -2192,7 +2252,10 @@ async function ensureSchema(conn: DuckDBConnection) {
           normalized_domain,
           company_domain,
           company_name,
-          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          provider_event_at AS exposure_at,
+          provider_event_time_basis,
+          evidence_observed_at,
+          evidence_sampled_at,
           has_reply_signal,
           reply_outcome_label,
           sample_source
@@ -2215,7 +2278,10 @@ async function ensureSchema(conn: DuckDBConnection) {
           normalized_domain,
           company_domain,
           company_name,
-          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          provider_event_at AS exposure_at,
+          provider_event_time_basis,
+          evidence_observed_at,
+          evidence_sampled_at,
           has_reply_signal,
           reply_outcome_label,
           sample_source
@@ -2240,13 +2306,22 @@ async function ensureSchema(conn: DuckDBConnection) {
         i.campaign_source_id,
         i.campaign_id,
         i.campaign_name,
-        i.provider_lead_id,
-        i.email,
-        i.normalized_email,
+        CASE
+          WHEN lower(trim(i.provider_lead_id)) = lower(trim(i.email))
+            OR lower(trim(i.provider_lead_id)) = lower(trim(i.normalized_email))
+            OR regexp_matches(lower(trim(i.provider_lead_id)), '[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+')
+          THEN NULL
+          ELSE i.provider_lead_id
+        END AS provider_lead_id,
+        CAST(NULL AS VARCHAR) AS email,
+        CAST(NULL AS VARCHAR) AS normalized_email,
         i.normalized_domain,
         i.company_domain,
         i.company_name,
         i.exposure_at,
+        i.provider_event_time_basis,
+        i.evidence_observed_at,
+        i.evidence_sampled_at,
         i.has_reply_signal,
         i.reply_outcome_label,
         i.sample_source

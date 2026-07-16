@@ -20,6 +20,7 @@ import {
   resolveLeadTemplate,
 } from "./instantly-ingest";
 import { buildWorkspaceSummary } from "./summary";
+import { buildSamplingProvenance } from "./sampling";
 
 const SOURCE_PROVIDER = "smartlead";
 const DEFAULT_LOOKBACK_DAYS = 30;
@@ -190,6 +191,33 @@ function sqlDate(value: unknown) {
 function sqlJson(value: unknown) {
   if (value == null) return "NULL";
   return `'${esc(JSON.stringify(value))}'`;
+}
+
+function smartleadSampleIdentity(lead: SmartleadRow) {
+  const providerLeadId = pickString(lead, ["id", "lead_id", "leadId"]);
+  const email = normalizeEmail(lead.email ?? lead.lead_email);
+  return providerLeadId ? `${SOURCE_PROVIDER}:lead:${providerLeadId}` : email;
+}
+
+function smartleadEventTimestamp(lead: SmartleadRow) {
+  return String(
+    lead.last_contacted_at ??
+    lead.timestamp_last_contact ??
+    lead.last_replied_at ??
+    lead.timestamp_last_reply ??
+    "",
+  ).trim();
+}
+
+function smartleadSampleWindow(leads: SmartleadRow[]) {
+  const timestamps = leads
+    .map(smartleadEventTimestamp)
+    .filter(Boolean)
+    .sort();
+  return {
+    start: timestamps[0] ?? null,
+    end: timestamps[timestamps.length - 1] ?? null,
+  };
 }
 
 function sanitizeRaw(value: unknown, depth = 0): unknown {
@@ -2320,6 +2348,18 @@ async function storeCampaignFacts(
   );
 
   const replySignalLeadCount = bundle.leads.filter(smartleadLeadHasReplySignal).length;
+  const samplingWindow = smartleadSampleWindow(bundle.leads);
+  const samplingProvenance = buildSamplingProvenance({
+    workspaceId,
+    campaignId: id,
+    sourceProvider: SOURCE_PROVIDER,
+    ingestMode: "smartlead_read_only",
+    sampleSource: "smartlead_campaign_leads",
+    recordIds: bundle.leads.map(smartleadSampleIdentity),
+    selectedRecordIds: bundle.leads.map(smartleadSampleIdentity),
+    requestedWindowStartAt: samplingWindow.start,
+    requestedWindowEndAt: samplingWindow.end,
+  });
   const coverageNote = [
     `Smartlead read-only ingest: ${bundle.leads.length} lead rows, ${templates.length} sequence variants, ${stepRows.length} step rows, ${bundle.dailyRows.length} date-grained campaign rows.`,
     messageHistoryCoverageNote(bundle.messageHistory.coverage),
@@ -2345,6 +2385,14 @@ async function storeCampaignFacts(
       "outbound_rows_sampled",
       "reply_outbound_rows",
       "filtered_lead_rows",
+      "sampling_algorithm_version",
+      "sampling_seed",
+      "requested_window_start_at",
+      "requested_window_end_at",
+      "effective_population_size",
+      "selected_record_count",
+      "population_fingerprint",
+      "provenance_status",
       "coverage_note",
       "created_at",
     ],
@@ -2365,6 +2413,14 @@ async function storeCampaignFacts(
       ${sqlInt(bundle.messageHistory.coverage.outboundRowsReconstructed)},
       ${sqlInt(bundle.messageHistory.coverage.outboundRowsReconstructed)},
       0,
+      ${sqlString(samplingProvenance.algorithmVersion)},
+      ${sqlString(samplingProvenance.seed)},
+      ${sqlTimestamp(samplingProvenance.requestedWindowStartAt)},
+      ${sqlTimestamp(samplingProvenance.requestedWindowEndAt)},
+      ${sqlInt(samplingProvenance.effectivePopulationSize)},
+      ${sqlInt(samplingProvenance.selectedRecordCount)},
+      ${sqlString(samplingProvenance.populationFingerprint)},
+      ${sqlString(samplingProvenance.provenanceStatus)},
       ${sqlString(coverageNote)},
       CURRENT_TIMESTAMP
     )`],
