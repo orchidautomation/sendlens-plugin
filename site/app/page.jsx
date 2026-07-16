@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import WaitlistForm from "./waitlist-form";
 
 const QUESTIONS = [
@@ -52,7 +54,7 @@ export default function Page() {
     <main className="stage">
       <section className="board">
         <aside className="board__hero">
-          <a href="/" className="brand">
+          <Link href="/" className="brand">
             <span className="brand-mark">
               <BrandMark size={56} />
             </span>
@@ -60,7 +62,7 @@ export default function Page() {
               <span className="brand-name__send">Send</span>
               <span className="brand-name__lens">Lens</span>
             </span>
-          </a>
+          </Link>
           <span className="board__rule" aria-hidden="true" />
 
           <div className="board__hero-inner">

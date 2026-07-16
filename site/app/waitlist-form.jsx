@@ -23,15 +23,17 @@ const INSTALL_COMMANDS = [
 const TOOLS = ["Instantly", "Smartlead", "HeyReach", "Other"];
 
 export default function WaitlistForm() {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState(() => ({
     name: "",
     email: "",
     company: "",
     title: "",
     teamType: "agency",
     tools: ["Instantly"],
-    useCase: ""
-  });
+    useCase: "",
+    website: "",
+    formStartedAt: Date.now()
+  }));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
@@ -121,7 +123,17 @@ export default function WaitlistForm() {
 
       {!submitted ? (
         <form onSubmit={onSubmit}>
-          <div className="form-grid">
+            <div className="form-grid">
+            <div className="field waitlist-trap" aria-hidden="true">
+              <label htmlFor="website">Website</label>
+              <input
+                autoComplete="off"
+                id="website"
+                tabIndex={-1}
+                value={form.website}
+                onChange={(event) => updateField("website", event.target.value)}
+              />
+            </div>
             <div className="field">
               <label htmlFor="name">Name</label>
               <input
