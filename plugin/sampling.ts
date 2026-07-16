@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   FULL_LEADS_THRESHOLD,
   MAX_SIGNAL_REPLY_LEADS,
@@ -9,6 +10,18 @@ import {
 } from "./constants";
 
 export type SamplingMode = "full" | "hybrid";
+export const DETERMINISTIC_SAMPLING_ALGORITHM_VERSION = "stable-hash-v1";
+
+export type SamplingProvenance = {
+  algorithmVersion: string;
+  seed: string;
+  requestedWindowStartAt: string | null;
+  requestedWindowEndAt: string | null;
+  effectivePopulationSize: number;
+  selectedRecordCount: number;
+  populationFingerprint: string;
+  provenanceStatus: "known";
+};
 
 export function shouldUseFullRawIngest(
   totalLeads: number,
@@ -88,4 +101,83 @@ export function reservoirSample<T>(items: T[], limit: number): T[] {
     }
   }
   return sample;
+}
+
+function sha256Hex(value: string) {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function stableToken(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+export function deriveSamplingSeed(parts: Array<unknown>) {
+  return sha256Hex(parts.map(stableToken).join("\x1f"));
+}
+
+export function populationFingerprint(recordIds: Array<unknown>) {
+  const hashedIds = recordIds
+    .map(stableToken)
+    .filter(Boolean)
+    .map((id) => sha256Hex(id))
+    .sort();
+  return sha256Hex(hashedIds.join("\n"));
+}
+
+export function deterministicSample<T>(
+  items: T[],
+  limit: number,
+  options: {
+    seed: string;
+    identity: (item: T) => unknown;
+  },
+): T[] {
+  if (limit <= 0 || items.length === 0) return [];
+  if (items.length <= limit) return [...items];
+
+  return [...items]
+    .map((item) => {
+      const identity = stableToken(options.identity(item));
+      return {
+        item,
+        identity,
+        rank: sha256Hex(`${options.seed}\x1f${identity}`),
+      };
+    })
+    .sort((a, b) => a.rank.localeCompare(b.rank) || a.identity.localeCompare(b.identity))
+    .slice(0, limit)
+    .map(({ item }) => item);
+}
+
+export function buildSamplingProvenance(options: {
+  workspaceId: string;
+  campaignId: string;
+  sourceProvider: string;
+  ingestMode: string;
+  sampleSource: string;
+  recordIds: Array<unknown>;
+  selectedRecordIds: Array<unknown>;
+  requestedWindowStartAt?: string | null;
+  requestedWindowEndAt?: string | null;
+}): SamplingProvenance {
+  const seed = deriveSamplingSeed([
+    DETERMINISTIC_SAMPLING_ALGORITHM_VERSION,
+    options.workspaceId,
+    options.sourceProvider,
+    options.campaignId,
+    options.ingestMode,
+    options.sampleSource,
+    options.requestedWindowStartAt ?? "",
+    options.requestedWindowEndAt ?? "",
+  ]);
+  return {
+    algorithmVersion: DETERMINISTIC_SAMPLING_ALGORITHM_VERSION,
+    seed,
+    requestedWindowStartAt: options.requestedWindowStartAt ?? null,
+    requestedWindowEndAt: options.requestedWindowEndAt ?? null,
+    effectivePopulationSize: options.recordIds.length,
+    selectedRecordCount: options.selectedRecordIds.length,
+    populationFingerprint: populationFingerprint(options.recordIds),
+    provenanceStatus: "known",
+  };
 }

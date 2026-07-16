@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -28,6 +29,10 @@ delete process.env.SENDLENS_DEMO_MODE;
 delete process.env.SENDLENS_INSTANTLY_API_KEY;
 delete process.env.SENDLENS_SMARTLEAD_API_KEY;
 delete process.env.SENDLENS_PROVIDER;
+
+function sha256(value) {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
 
 await resetDbConnectionForTests();
 
@@ -73,7 +78,9 @@ try {
      VALUES
      ('${workspaceId}', 'inst-1', 'instantly', 'inst-1', NULL, 'inst-lead-1', 'inst-lead-1', 'shared@example.com', 'shared@example.com', 'example.com', 'Sam', 'Shared', 'Acme Health', 'acme.example', 'active', 1, -1, '2026-06-01 09:00:00'::TIMESTAMP, '2026-06-02 09:00:00'::TIMESTAMP, 'VP Ops', '{"segment":"health"}', 'reply_full', '2026-06-01 09:00:00'::TIMESTAMP),
      ('${workspaceId}', 'inst-old', 'instantly', 'inst-old', NULL, 'inst-lead-old', 'inst-lead-old', 'shared@example.com', 'shared@example.com', 'example.com', 'Sam', 'Shared', 'Acme Health', 'acme.example', 'active', 0, NULL, '2025-06-01 09:00:00'::TIMESTAMP, NULL, 'VP Ops', '{"segment":"health"}', 'historical_sample', '2025-06-01 09:00:00'::TIMESTAMP),
-     ('${workspaceId}', 'smartlead:101', 'smartlead', '101', 'smartlead:101', '1001', '1001', 'shared@example.com', 'shared@example.com', 'example.com', 'Sam', 'Shared', 'Acme Health', 'acme.example', 'active', 1, 1, '2026-06-06 09:00:00'::TIMESTAMP, '2026-06-07 09:00:00'::TIMESTAMP, 'VP Ops', '{"segment":"health"}', 'reply_full', '2026-06-06 09:00:00'::TIMESTAMP)`,
+     ('${workspaceId}', 'smartlead:101', 'smartlead', '101', 'smartlead:101', '1001', '1001', 'shared@example.com', 'shared@example.com', 'example.com', 'Sam', 'Shared', 'Acme Health', 'acme.example', 'active', 1, 1, '2026-06-06 09:00:00'::TIMESTAMP, '2026-06-07 09:00:00'::TIMESTAMP, 'VP Ops', '{"segment":"health"}', 'reply_full', '2026-06-06 09:00:00'::TIMESTAMP),
+     ('${workspaceId}', 'inst-1', 'instantly', 'inst-1', NULL, 'inst-noevent', ' NoEvent@Example.Net ', 'noevent@example.net', 'noevent@example.net', 'example.net', 'No', 'Event', 'Clock Skew Co', 'clock.example', 'active', 0, NULL, NULL, NULL, 'Ops', '{"segment":"skew"}', 'synthetic_no_event', '2026-06-10 09:00:00'::TIMESTAMP),
+     ('${workspaceId}', 'smartlead:101', 'smartlead', '101', 'smartlead:101', 'smart-noevent', 'smartlead:lead:noevent@example.net', 'noevent@example.net', 'noevent@example.net', 'example.net', 'No', 'Event', 'Clock Skew Co', 'clock.example', 'active', 0, NULL, NULL, NULL, 'Ops', '{"segment":"skew"}', 'synthetic_no_event', '2026-06-10 09:00:00'::TIMESTAMP)`,
   );
   await setActiveWorkspaceId(db, workspaceId, "fast");
 
@@ -209,7 +216,7 @@ try {
      FROM sendlens.provider_overlap_risk
      WHERE workspace_id = '${workspaceId}'
        AND overlap_type = 'contact_email'
-       AND overlap_key = 'shared@example.com'`,
+       AND overlap_key = '${sha256("shared@example.com")}'`,
   );
   assert.equal(overlapRows.length, 1);
   assert.equal(Number(overlapRows[0].source_provider_count), 2);
@@ -221,6 +228,67 @@ try {
   assert.equal(Number(overlapRows[0].contact_window_days), 5);
   assert.equal(Boolean(overlapRows[0].within_unsafe_window), true);
   assert.equal(overlapRows[0].overlap_risk_level, "high");
+
+  const noEventOverlapRows = await query(
+    db,
+    `SELECT closest_cross_provider_window_days, contact_window_days, within_unsafe_window, overlap_risk_level
+     FROM sendlens.provider_overlap_risk
+     WHERE workspace_id = '${workspaceId}'
+       AND overlap_type = 'contact_email'
+       AND overlap_key = '${sha256("noevent@example.net")}'`,
+  );
+  assert.equal(noEventOverlapRows.length, 1);
+  assert.equal(noEventOverlapRows[0].closest_cross_provider_window_days, null);
+  assert.equal(noEventOverlapRows[0].contact_window_days, null);
+  assert.equal(noEventOverlapRows[0].within_unsafe_window, null);
+  assert.equal(noEventOverlapRows[0].overlap_risk_level, "timing_unknown");
+
+  const noEventDetailRows = await query(
+    db,
+    `SELECT source_provider, provider_lead_id
+     FROM sendlens.provider_overlap_risk_details
+     WHERE workspace_id = '${workspaceId}'
+       AND overlap_type = 'contact_email'
+       AND overlap_key = '${sha256("noevent@example.net")}'
+     ORDER BY source_provider`,
+  );
+  assert.deepEqual(
+    noEventDetailRows.map((row) => ({
+      source_provider: row.source_provider,
+      provider_lead_id: row.provider_lead_id,
+    })),
+    [
+      { source_provider: "instantly", provider_lead_id: null },
+      { source_provider: "smartlead", provider_lead_id: null },
+    ],
+  );
+
+  const leadTimeRows = await query(
+    db,
+    `SELECT provider_event_time_basis, provider_event_at, evidence_observed_at, evidence_sampled_at
+     FROM sendlens.lead_evidence
+     WHERE workspace_id = '${workspaceId}'
+       AND email = 'noevent@example.net'
+     ORDER BY source_provider`,
+  );
+  assert.equal(leadTimeRows.length, 2);
+  assert.deepEqual(
+    leadTimeRows.map((row) => row.provider_event_time_basis),
+    ["unavailable", "unavailable"],
+  );
+  assert.equal(leadTimeRows.every((row) => row.provider_event_at === null), true);
+  assert.equal(leadTimeRows.every((row) => row.evidence_observed_at !== null), true);
+
+  const provenanceRows = await query(
+    db,
+    `SELECT sampling_algorithm_version, provenance_status
+     FROM sendlens.campaign_overview
+     WHERE workspace_id = '${workspaceId}'
+       AND campaign_id = 'inst-1'`,
+  );
+  assert.equal(provenanceRows.length, 1);
+  assert.equal(provenanceRows[0].sampling_algorithm_version, "unknown");
+  assert.equal(provenanceRows[0].provenance_status, "unknown");
 
   const companyOverlapRows = await query(
     db,
@@ -238,7 +306,7 @@ try {
      FROM sendlens.provider_overlap_risk_details
      WHERE workspace_id = '${workspaceId}'
        AND overlap_type = 'contact_email'
-       AND overlap_key = 'shared@example.com'
+       AND overlap_key = '${sha256("shared@example.com")}'
      ORDER BY source_provider, campaign_source_id`,
   );
   assert.deepEqual(
@@ -253,22 +321,62 @@ try {
         source_provider: "instantly",
         campaign_source_id: "instantly:inst-1",
         provider_lead_id: "inst-lead-1",
-        normalized_email: "shared@example.com",
+        normalized_email: null,
       },
       {
         source_provider: "instantly",
         campaign_source_id: "instantly:inst-old",
         provider_lead_id: "inst-lead-old",
-        normalized_email: "shared@example.com",
+        normalized_email: null,
       },
       {
         source_provider: "smartlead",
         campaign_source_id: "smartlead:101",
         provider_lead_id: "1001",
-        normalized_email: "shared@example.com",
+        normalized_email: null,
       },
     ],
   );
+  assert.equal(
+    overlapDetailRows.every((row) => row.normalized_email === null),
+    true,
+  );
+  assert.equal(overlapDetailRows.every((row) => row.email === undefined || row.email === null), true);
+
+  const largeRows = [];
+  for (let index = 0; index < 1500; index += 1) {
+    const provider = index % 2 === 0 ? "instantly" : "smartlead";
+    const campaignId = provider === "instantly" ? "inst-1" : "smartlead:101";
+    const providerCampaignId = provider === "instantly" ? "inst-1" : "101";
+    const campaignSourceId = provider === "instantly" ? "instantly:inst-1" : "smartlead:101";
+    const email = `large-${index}@large.example`;
+    largeRows.push(
+      `('${workspaceId}', '${campaignId}', '${provider}', '${providerCampaignId}', '${campaignSourceId}', '${provider}:large-${index}', '${provider}:large-${index}', '${email}', '${email}', 'large.example', 'Large', '${index}', 'Large Fixture', 'large.example', 'active', 0, NULL, '2026-06-${String((index % 28) + 1).padStart(2, "0")} 09:00:00'::TIMESTAMP, NULL, 'Ops', '{"fixture":"large"}', 'large_synthetic', CURRENT_TIMESTAMP)`,
+    );
+  }
+  for (let index = 0; index < largeRows.length; index += 250) {
+    await run(
+      db,
+      `INSERT OR REPLACE INTO sendlens.sampled_leads
+       (workspace_id, campaign_id, source_provider, provider_campaign_id, campaign_source_id, id, provider_lead_id, email, normalized_email, normalized_domain, first_name, last_name, company_name, company_domain, status, email_reply_count, lt_interest_status, timestamp_last_contact, timestamp_last_reply, job_title, custom_payload, sample_source, sampled_at)
+       VALUES ${largeRows.slice(index, index + 250).join(",")}`,
+    );
+  }
+  const overlapStartedAt = Date.now();
+  const largeOverlapRows = await query(
+    db,
+    `SELECT source_provider_count, sampled_rows, closest_cross_provider_window_days
+     FROM sendlens.provider_overlap_risk
+     WHERE workspace_id = '${workspaceId}'
+       AND overlap_type = 'email_domain'
+       AND overlap_key = 'large.example'`,
+  );
+  const overlapElapsedMs = Date.now() - overlapStartedAt;
+  assert.equal(largeOverlapRows.length, 1);
+  assert.equal(Number(largeOverlapRows[0].source_provider_count), 2);
+  assert.equal(Number(largeOverlapRows[0].sampled_rows), 1500);
+  assert.equal(Number(largeOverlapRows[0].closest_cross_provider_window_days), 0);
+  assert.ok(overlapElapsedMs < 5000, `large overlap query took ${overlapElapsedMs}ms`);
 } finally {
   closeDb(db);
   await resetDbConnectionForTests();
