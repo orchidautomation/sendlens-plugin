@@ -149,17 +149,17 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
   sampled_outbound_emails:
     "Locally reconstructed outbound copy built from campaign templates plus lead variables. Do not treat it as exact delivered email text, including when Smartlead message-history coverage exists.",
   sampling_runs:
-    "Per-campaign ingest coverage metadata, including exact-vs-sampled mode and sample sizes.",
+    "Per-campaign ingest coverage metadata, including exact-vs-sampled mode, deterministic sampling provenance, requested event window, sample sizes, and legacy unknown provenance markers.",
   provider_capabilities:
     "Provider capability status by local workspace, including unsupported or partial surfaces such as Smartlead inbox placement.",
   campaign_overview:
     "Semantic campaign health view: exact metrics, status, tracking and deliverability settings, sample coverage, and reply/bounce rates in one place.",
   lead_evidence:
-    "Semantic lead evidence view with provider-qualified campaign and lead fields, reply signals, and preserved campaign-scoped payload JSON.",
+    "Semantic lead evidence view with provider-qualified campaign and lead fields, reply signals, provider event time, local observed/sample time, and preserved campaign-scoped payload JSON.",
   lead_payload_kv:
     "Campaign-scoped sampled lead payload key/value view for ICP analysis without using raw JSON table functions in agent-authored SQL.",
   provider_overlap_risk:
-    "Sampled cross-provider overlap-risk rollup for the same normalized email, domain, company domain, or company name, scored by the closest cross-provider contact window.",
+    "Sampled cross-provider overlap-risk rollup for the same normalized email, domain, company domain, or company name, scored by closest provider-event contact window when timing is available.",
   provider_overlap_risk_details:
     "Contributing sampled lead rows behind provider_overlap_risk, preserving provider-qualified campaign IDs and timing evidence for each overlap.",
   reply_context:
