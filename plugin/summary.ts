@@ -212,6 +212,14 @@ export async function buildWorkspaceSummary(
        sr.reply_rows,
        sr.nonreply_rows_sampled,
        sr.outbound_rows_sampled,
+       COALESCE(sr.sampling_algorithm_version, 'unknown') AS sampling_algorithm_version,
+       sr.sampling_seed,
+       sr.requested_window_start_at,
+       sr.requested_window_end_at,
+       sr.effective_population_size,
+       sr.selected_record_count,
+       sr.population_fingerprint,
+       COALESCE(sr.provenance_status, 'unknown') AS provenance_status,
        sr.coverage_note,
        sr.created_at
      FROM sendlens.sampling_runs sr
