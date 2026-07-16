@@ -5,8 +5,11 @@ const {
   allocateVariantEmailCaps,
   calculateAdaptiveNonReplyLeadSampleSize,
   calculateAdaptiveSignalReplyTarget,
+  buildSamplingProvenance,
   calculateNonReplyLeadSampleSize,
+  deterministicSample,
   inferSamplingMode,
+  populationFingerprint,
   shouldUseFullRawIngest,
 } = require("../build/plugin/sampling.js");
 
@@ -35,5 +38,42 @@ assert.equal(Object.values(caps).reduce((sum, count) => sum + count, 0), 100);
 assert.equal(caps["0:0"], 34);
 assert.equal(caps["0:1"], 33);
 assert.equal(caps["1:0"], 33);
+
+const population = Array.from({ length: 25 }, (_, index) => ({ id: `lead-${index}` }));
+const provenance = buildSamplingProvenance({
+  workspaceId: "ws_deterministic",
+  campaignId: "campaign_a",
+  sourceProvider: "instantly",
+  ingestMode: "hybrid",
+  sampleSource: "bounded_reply_signal_plus_nonreply_sample",
+  recordIds: population.map((row) => row.id),
+  selectedRecordIds: [],
+  requestedWindowStartAt: "2026-06-01 00:00:00",
+  requestedWindowEndAt: "2026-06-30 23:59:59",
+});
+const selectedIds = deterministicSample(population, 7, {
+  seed: provenance.seed,
+  identity: (row) => row.id,
+}).map((row) => row.id);
+const reorderedSelectedIds = deterministicSample([...population].reverse(), 7, {
+  seed: provenance.seed,
+  identity: (row) => row.id,
+}).map((row) => row.id);
+assert.deepEqual(reorderedSelectedIds, selectedIds);
+
+const expandedPopulation = [...population, { id: "lead-25" }];
+const expandedProvenance = buildSamplingProvenance({
+  workspaceId: "ws_deterministic",
+  campaignId: "campaign_a",
+  sourceProvider: "instantly",
+  ingestMode: "hybrid",
+  sampleSource: "bounded_reply_signal_plus_nonreply_sample",
+  recordIds: expandedPopulation.map((row) => row.id),
+  selectedRecordIds: [],
+  requestedWindowStartAt: "2026-06-01 00:00:00",
+  requestedWindowEndAt: "2026-06-30 23:59:59",
+});
+assert.notEqual(expandedProvenance.populationFingerprint, provenance.populationFingerprint);
+assert.equal(populationFingerprint([...population.map((row) => row.id)].reverse()), provenance.populationFingerprint);
 
 console.log("plugin sampling tests passed");

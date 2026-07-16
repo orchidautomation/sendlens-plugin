@@ -19,7 +19,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 ## Expected Flow
 
-1. Use campaign name or Instantly tag as the preferred scope when provided.
+1. Use campaign name or provider tag as the preferred scope when provided. Treat tag support as provider-specific evidence.
 2. Pull `analysis_starters(topic="campaign-performance")`.
 3. Use `workspace_snapshot.campaigns` for the first ranking pass.
 4. Use exact campaign and account aggregate tables for headline comparisons.

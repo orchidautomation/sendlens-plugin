@@ -1047,11 +1047,11 @@ server.registerTool(
         `SELECT
            reply_email_i_status,
            reply_email_i_status_label,
-           COUNT(*) AS fetched_reply_rows,
-           SUM(CASE WHEN hydrated_reply_body THEN 1 ELSE 0 END) AS hydrated_reply_body_rows,
-           SUM(CASE WHEN reply_is_auto_reply THEN 1 ELSE 0 END) AS auto_reply_rows,
-           SUM(CASE WHEN has_lead_context THEN 1 ELSE 0 END) AS rows_with_lead_context,
-           SUM(CASE WHEN has_template_context THEN 1 ELSE 0 END) AS rows_with_template_context,
+           COUNT(DISTINCT reply_email_id) AS fetched_reply_rows,
+           COUNT(DISTINCT CASE WHEN hydrated_reply_body THEN reply_email_id ELSE NULL END) AS hydrated_reply_body_rows,
+           COUNT(DISTINCT CASE WHEN reply_is_auto_reply THEN reply_email_id ELSE NULL END) AS auto_reply_rows,
+           COUNT(DISTINCT CASE WHEN has_lead_context THEN reply_email_id ELSE NULL END) AS rows_with_lead_context,
+           COUNT(DISTINCT CASE WHEN has_template_context THEN reply_email_id ELSE NULL END) AS rows_with_template_context,
            MIN(reply_received_at) AS oldest_reply_received_at,
            MAX(reply_received_at) AS newest_reply_received_at
          FROM sendlens.reply_email_context
@@ -1065,7 +1065,7 @@ server.registerTool(
         db,
         `SELECT
            context_gap_reason,
-           COUNT(*) AS rows
+           COUNT(DISTINCT reply_email_id) AS rows
          FROM sendlens.reply_email_context
          WHERE workspace_id = '${workspaceSafe}'
            AND campaign_id = '${campaignSafe}'
@@ -1916,7 +1916,15 @@ async function buildScopedWorkspaceSnapshot(
        co.total_opportunity_value,
        co.reply_lead_rows,
        co.nonreply_rows_sampled,
-       co.reply_outbound_rows
+       co.reply_outbound_rows,
+       co.sampling_algorithm_version,
+       co.sampling_seed,
+       co.requested_window_start_at,
+       co.requested_window_end_at,
+       co.effective_population_size,
+       co.selected_record_count,
+       co.population_fingerprint,
+       co.provenance_status
      FROM sendlens.campaign_overview co
      WHERE ${whereSql}
      ORDER BY co.emails_sent_count DESC, co.unique_reply_rate_pct DESC NULLS LAST
@@ -2112,6 +2120,14 @@ async function buildScopedWorkspaceSnapshot(
       reply_lead_rows: row.reply_lead_rows,
       nonreply_rows_sampled: row.nonreply_rows_sampled,
       reply_outbound_rows: row.reply_outbound_rows,
+      sampling_algorithm_version: row.sampling_algorithm_version ?? "unknown",
+      sampling_seed: row.sampling_seed ?? null,
+      requested_window_start_at: row.requested_window_start_at ?? null,
+      requested_window_end_at: row.requested_window_end_at ?? null,
+      effective_population_size: row.effective_population_size ?? null,
+      selected_record_count: row.selected_record_count ?? null,
+      population_fingerprint: row.population_fingerprint ?? null,
+      provenance_status: row.provenance_status ?? "unknown",
     })),
     campaigns: visibleCampaignRows,
     warnings,

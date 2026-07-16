@@ -1,6 +1,6 @@
 ---
 description: "SendLens: inspect one campaign's templates and reconstructed copy"
-argument-hint: "[campaign-name] [instantly-tag]"
+argument-hint: "[campaign-name] [provider-tag]"
 skill: sendlens-analyst
 agent: copy-auditor
 subtask: true
@@ -13,4 +13,4 @@ Use the `sendlens-analyst` skill and its reply/ICP/copy module when the user wan
 
 Arguments: $ARGUMENTS
 
-If arguments are provided, use campaign name and Instantly tag to scope the analysis before looking at templates or reconstructed copy.
+If arguments are provided, use campaign name and provider tag to scope the analysis before looking at templates or reconstructed copy. Treat tag support as provider-specific evidence.

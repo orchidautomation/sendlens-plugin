@@ -15,6 +15,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 - Public skill: `skills/sendlens-copywriter/SKILL.md`
 - Reference: `skills/sendlens-copywriter/references/copywriting-system.md`
 - Command: `/cold-email-best-practices`
+- Default agent: `campaign-copywriter`
 - MCP tools: none required by the skill itself
 
 ## Rules

@@ -13,6 +13,8 @@
 
 Never upgrade sampled, reconstructed, or inferred evidence into an exact business claim. Absent data is absent local evidence, not proof of health or failure.
 
+Keep provider operations read-only. Recommend actions; never create, edit, send, or mutate provider resources. Preserve provider-qualified evidence in mixed workspaces by naming the source provider and native campaign identifiers when they affect the claim.
+
 ## Metric Basis
 
 - Prefer unique human reply rate over open rate for cold outbound quality.

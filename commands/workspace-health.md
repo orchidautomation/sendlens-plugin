@@ -1,6 +1,6 @@
 ---
 description: "SendLens: triage workspace health and choose the next campaign to analyze"
-argument-hint: "[campaign-name-or-instantly-tag]"
+argument-hint: "[campaign-name-or-provider-tag]"
 skill: sendlens-analyst
 agent: workspace-triager
 subtask: true
@@ -13,6 +13,6 @@ Use the `sendlens-analyst` skill and its workspace/performance module when the u
 
 Arguments: $ARGUMENTS
 
-If arguments are provided, prefer scoping the triage to that campaign name or Instantly tag before expanding to the broader workspace.
+If arguments are provided, prefer scoping the triage to that campaign name or provider tag before expanding to the broader workspace. Treat tag support as provider-specific evidence.
 
 Default broad reads to active campaigns only unless the user explicitly asks for inactive or historical campaigns.

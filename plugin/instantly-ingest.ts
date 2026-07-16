@@ -34,11 +34,13 @@ import {
 } from "./local-db";
 import {
   allocateVariantEmailCaps,
+  buildSamplingProvenance,
   calculateAdaptiveNonReplyLeadSampleSize,
   calculateAdaptiveSignalReplyTarget,
   calculateNonReplyLeadSampleSize,
-  reservoirSample,
+  deterministicSample,
   shouldUseFullRawIngest,
+  type SamplingProvenance,
 } from "./sampling";
 import {
   buildRefreshScope,
@@ -123,6 +125,7 @@ type TagMappingRecord = Record<string, unknown>;
 type LeadSampleResult = {
   leads: LeadRecord[];
   source: string;
+  provenance: SamplingProvenance;
   cursorExhausted: boolean;
   terminationReason: string;
   pagesFetched: number;
@@ -271,6 +274,31 @@ function sqlDate(value: unknown) {
 function sqlJson(value: unknown) {
   if (value == null) return "NULL";
   return `'${esc(JSON.stringify(value))}'`;
+}
+
+function leadSampleIdentity(lead: LeadRecord) {
+  return normalizeEmail(lead.email) || String(lead.id ?? "");
+}
+
+function leadEventTimestamp(lead: LeadRecord) {
+  return String(
+    lead.timestamp_last_contact ??
+    lead.timestamp_last_reply ??
+    lead.timestamp_last_touch ??
+    lead.timestamp_last_open ??
+    "",
+  ).trim();
+}
+
+function leadSampleWindow(leads: LeadRecord[]) {
+  const timestamps = leads
+    .map(leadEventTimestamp)
+    .filter(Boolean)
+    .sort();
+  return {
+    start: timestamps[0] ?? null,
+    end: timestamps[timestamps.length - 1] ?? null,
+  };
 }
 
 function errorMessage(error: unknown) {
@@ -2094,6 +2122,7 @@ export async function hydrateReplyText(options: HydrateReplyTextOptions) {
 
 async function fetchLeadSample(
   apiKey: string,
+  workspaceId: string,
   campaignId: string,
   totalLeads: number,
   totalReplyLeads: number,
@@ -2131,11 +2160,24 @@ async function fetchLeadSample(
       collectLead(lead);
     }
     const nonReplyLeads = [...nonReplyPool];
+    const selectedLeads = [...replyLeads.values(), ...nonReplyLeads];
     const countReconciled = coverage.items.length === totalLeads && filteredRows === 0;
     const fullCoverage = coverage.exhausted && countReconciled;
+    const window = leadSampleWindow(selectedLeads);
     return {
-      leads: [...replyLeads.values(), ...nonReplyLeads],
+      leads: selectedLeads,
       source: fullCoverage ? "full_raw" : "bounded_raw_cursor_incomplete",
+      provenance: buildSamplingProvenance({
+        workspaceId,
+        campaignId,
+        sourceProvider: "instantly",
+        ingestMode: fullCoverage ? "full" : "hybrid",
+        sampleSource: fullCoverage ? "full_raw" : "bounded_raw_cursor_incomplete",
+        recordIds: selectedLeads.map(leadSampleIdentity),
+        selectedRecordIds: selectedLeads.map(leadSampleIdentity),
+        requestedWindowStartAt: window.start,
+        requestedWindowEndAt: window.end,
+      }),
       cursorExhausted: coverage.exhausted,
       terminationReason: coverage.exhausted && !countReconciled
         ? "provider_count_mismatch"
@@ -2194,10 +2236,37 @@ async function fetchLeadSample(
     }
   }
 
-  const nonReplyLeads = reservoirSample(nonReplyPool, target);
+  const window = leadSampleWindow(nonReplyPool);
+  const preSelectionProvenance = buildSamplingProvenance({
+    workspaceId,
+    campaignId,
+    sourceProvider: "instantly",
+    ingestMode: "hybrid",
+    sampleSource: "bounded_reply_signal_plus_nonreply_sample",
+    recordIds: nonReplyPool.map(leadSampleIdentity),
+    selectedRecordIds: [],
+    requestedWindowStartAt: window.start,
+    requestedWindowEndAt: window.end,
+  }).seed;
+  const nonReplyLeads = deterministicSample(nonReplyPool, target, {
+    seed: preSelectionProvenance,
+    identity: leadSampleIdentity,
+  });
+  const selectedLeads = [...replyLeads.values(), ...nonReplyLeads];
   return {
-    leads: [...replyLeads.values(), ...nonReplyLeads],
+    leads: selectedLeads,
     source: "bounded_reply_signal_plus_nonreply_sample",
+    provenance: buildSamplingProvenance({
+      workspaceId,
+      campaignId,
+      sourceProvider: "instantly",
+      ingestMode: "hybrid",
+      sampleSource: "bounded_reply_signal_plus_nonreply_sample",
+      recordIds: nonReplyPool.map(leadSampleIdentity),
+      selectedRecordIds: nonReplyLeads.map(leadSampleIdentity),
+      requestedWindowStartAt: window.start,
+      requestedWindowEndAt: window.end,
+    }),
     cursorExhausted,
     terminationReason,
     pagesFetched,
@@ -2260,6 +2329,7 @@ function buildReconstructedOutboundSample(
 
 async function hydrateCampaignRefreshBundle(
   apiKey: string,
+  workspaceId: string,
   campaign: Record<string, unknown>,
   analyticsRow: Record<string, unknown> | undefined,
   options: RefreshOptions,
@@ -2299,6 +2369,7 @@ async function hydrateCampaignRefreshBundle(
   const leadSampleStartedAt = Date.now();
   const leadSample = await fetchLeadSample(
     apiKey,
+    workspaceId,
     campaignId,
     totalLeads,
     totalUniqueReplies,
@@ -2822,6 +2893,14 @@ async function storeCampaignData(
       "lead_pages_fetched",
       "lead_cursor_exhausted",
       "lead_termination_reason",
+      "sampling_algorithm_version",
+      "sampling_seed",
+      "requested_window_start_at",
+      "requested_window_end_at",
+      "effective_population_size",
+      "selected_record_count",
+      "population_fingerprint",
+      "provenance_status",
       "coverage_note",
       "created_at",
     ],
@@ -2843,6 +2922,14 @@ async function storeCampaignData(
         ${sqlInt(leadSample.pagesFetched)},
         ${sqlBool(leadSample.cursorExhausted)},
         ${sqlString(leadSample.terminationReason)},
+        ${sqlString(leadSample.provenance.algorithmVersion)},
+        ${sqlString(leadSample.provenance.seed)},
+        ${sqlTimestamp(leadSample.provenance.requestedWindowStartAt)},
+        ${sqlTimestamp(leadSample.provenance.requestedWindowEndAt)},
+        ${sqlInt(leadSample.provenance.effectivePopulationSize)},
+        ${sqlInt(leadSample.provenance.selectedRecordCount)},
+        ${sqlString(leadSample.provenance.populationFingerprint)},
+        ${sqlString(leadSample.provenance.provenanceStatus)},
         ${sqlString(
           `${note} Outbound copy is reconstructed locally from campaign templates plus lead variables. Filtered ${leadSample.filteredRows} lead rows that belonged to other campaigns.`,
         )},
@@ -3481,6 +3568,7 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
         batch.map((campaign) =>
           hydrateCampaignRefreshBundle(
             apiKey,
+            workspaceId,
             campaign,
             analyticsByCampaign.get(String(campaign.id ?? "")),
             options,

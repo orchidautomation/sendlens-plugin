@@ -38,6 +38,7 @@ Use only SendLens MCP tools for SendLens analysis.
 ## Suppression Rules
 
 - Do not inspect local files or repo source; do not use shell, raw DuckDB files, cached JSON, or setup scripts as a fallback.
+- Do not paste raw contact data, full reply bodies, or raw reconstructed bodies into external artifacts.
 - Do not hydrate reply bodies during workspace triage.
 - Do not infer deliverability failures from reply rate alone.
 - Do not make ICP or copy conclusions until one campaign is selected.
