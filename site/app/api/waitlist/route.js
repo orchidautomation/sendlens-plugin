@@ -21,7 +21,9 @@ const FIELD_LIMITS = {
   tool: 80
 };
 
-const rateLimitState = new Map();
+// Best-effort defense in depth for repeated requests handled by one warm
+// server process. This is deliberately not treated as a globally shared quota.
+const processLocalRateLimitState = new Map();
 
 export const runtime = "nodejs";
 
@@ -91,21 +93,21 @@ function requestSignal(request) {
 }
 
 function pruneRateLimitState(now) {
-  if (rateLimitState.size <= MAX_TRACKED_KEYS) {
+  if (processLocalRateLimitState.size <= MAX_TRACKED_KEYS) {
     return;
   }
 
-  for (const [key, entry] of rateLimitState.entries()) {
+  for (const [key, entry] of processLocalRateLimitState.entries()) {
     if (entry.resetAt <= now) {
-      rateLimitState.delete(key);
+      processLocalRateLimitState.delete(key);
     }
   }
 }
 
 function checkRateLimit(key, limit, windowMs, now) {
-  const current = rateLimitState.get(key);
+  const current = processLocalRateLimitState.get(key);
   if (!current || current.resetAt <= now) {
-    rateLimitState.set(key, { count: 1, resetAt: now + windowMs });
+    processLocalRateLimitState.set(key, { count: 1, resetAt: now + windowMs });
     return { limited: false, resetAt: now + windowMs };
   }
 
@@ -163,8 +165,11 @@ function validatePayload(payload, now) {
     return jsonError("We could not accept that submission.", 400);
   }
 
-  const startedAt = Number(payload.formStartedAt || 0);
-  if (startedAt && now - startedAt < MIN_SUBMIT_MS) {
+  const startedAt = Number(payload.formStartedAt);
+  if (!Number.isFinite(startedAt) || startedAt <= 0) {
+    return jsonError("Submission is missing timing metadata.", 400);
+  }
+  if (now - startedAt < MIN_SUBMIT_MS) {
     return jsonError("Please wait a moment before submitting.", 429, {
       "Retry-After": "2"
     });
@@ -183,7 +188,7 @@ function validatePayload(payload, now) {
 }
 
 export function resetWaitlistRateLimitsForTests() {
-  rateLimitState.clear();
+  processLocalRateLimitState.clear();
 }
 
 export function createWaitlistPostHandler({ putRecord = put, now = () => Date.now() } = {}) {

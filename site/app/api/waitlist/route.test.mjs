@@ -120,9 +120,15 @@ test("bounds bot-like submissions with honeypot and timing controls", async () =
   assert.equal(tooFast.status, 429);
   assert.equal(tooFast.headers.get("retry-after"), "2");
   assert.deepEqual(await json(tooFast), { error: "Please wait a moment before submitting." });
+
+  const missingTiming = await handler(requestFor(validPayload({ formStartedAt: undefined })));
+  assert.equal(missingTiming.status, 400);
+  assert.deepEqual(await json(missingTiming), {
+    error: "Submission is missing timing metadata."
+  });
 });
 
-test("rate limits burst traffic by client signal", async () => {
+test("best-effort process-local throttle bounds burst traffic by client signal", async () => {
   const handler = createWaitlistPostHandler({
     now: () => fixedNow,
     putRecord: async () => {}
@@ -141,7 +147,7 @@ test("rate limits burst traffic by client signal", async () => {
   assert.deepEqual(await json(limited), { error: "Please wait before trying again." });
 });
 
-test("rate limits replayed email submissions", async () => {
+test("best-effort process-local throttle bounds replayed email submissions", async () => {
   const handler = createWaitlistPostHandler({
     now: () => fixedNow,
     putRecord: async () => {}
