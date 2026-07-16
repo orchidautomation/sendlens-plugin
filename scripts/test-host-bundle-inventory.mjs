@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -202,6 +202,10 @@ async function assertHostFiles({ skills, commands, agents }) {
   const commonSkillFiles = skills.map((name) => `skills/${name}/SKILL.md`);
   const commonAgentFiles = agents.map((name) => `agents/${name}.md`);
   const commonCommandFiles = commands.map((name) => `commands/${name}.md`);
+  const commonRuntimeFiles = [
+    "scripts/runtime-dependencies.cjs",
+    "scripts/runtime-dependencies.lock.json",
+  ];
 
   const requiredByHost = {
     "claude-code": [
@@ -212,6 +216,7 @@ async function assertHostFiles({ skills, commands, agents }) {
       "runtime/pluxx-mcp-env.mjs",
       "scripts/start-mcp.sh",
       "scripts/session-start.sh",
+      ...commonRuntimeFiles,
       "build/plugin/server.js",
       "build/plugin/refresh-cli.js",
       ...commonSkillFiles,
@@ -225,6 +230,7 @@ async function assertHostFiles({ skills, commands, agents }) {
       "hooks/hooks.json",
       "runtime/pluxx-mcp-env.mjs",
       "scripts/start-mcp.sh",
+      ...commonRuntimeFiles,
       "build/plugin/server.js",
       "build/plugin/refresh-cli.js",
       ...commonSkillFiles,
@@ -242,6 +248,7 @@ async function assertHostFiles({ skills, commands, agents }) {
       "runtime/pluxx-mcp-env.mjs",
       "scripts/start-mcp.sh",
       "scripts/session-start.sh",
+      ...commonRuntimeFiles,
       "build/plugin/server.js",
       "build/plugin/refresh-cli.js",
       ...commonSkillFiles,
@@ -253,6 +260,7 @@ async function assertHostFiles({ skills, commands, agents }) {
       "index.ts",
       "runtime/pluxx-mcp-env.mjs",
       "scripts/start-mcp.sh",
+      ...commonRuntimeFiles,
       "build/plugin/server.js",
       "build/plugin/refresh-cli.js",
       ...commonSkillFiles,
@@ -953,6 +961,58 @@ async function assertSessionStartProviderContract() {
   }
 }
 
+async function assertFreshGeneratedBundleBootstrap() {
+  const harnessRoot = await mkdtemp(path.join(os.tmpdir(), "sendlens-fresh-bundle-"));
+  try {
+    const bundleRoot = path.join(harnessRoot, "codex");
+    await cp(path.join(root, "dist", "codex"), bundleRoot, {
+      recursive: true,
+      verbatimSymlinks: true,
+    });
+    await rm(path.join(bundleRoot, "node_modules"), { recursive: true, force: true });
+
+    const bootstrap = spawnSync("bash", ["scripts/bootstrap-runtime.sh"], {
+      cwd: bundleRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: path.join(harnessRoot, "home"),
+        PLUGIN_ROOT: bundleRoot,
+        SENDLENS_RUNTIME_BOOTSTRAP_LOCK_TIMEOUT_SECONDS: "10",
+      },
+    });
+    assert(
+      bootstrap.status === 0,
+      `fresh dist/codex bootstrap failed\n${bootstrap.stdout}${bootstrap.stderr}`,
+    );
+
+    const verify = spawnSync(
+      "node",
+      ["scripts/runtime-dependencies.cjs", "verify", bundleRoot],
+      {
+        cwd: bundleRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          HOME: path.join(harnessRoot, "home"),
+          PLUGIN_ROOT: bundleRoot,
+        },
+      },
+    );
+    assert(
+      verify.status === 0,
+      `fresh dist/codex runtime dependency verification failed\n${verify.stdout}${verify.stderr}`,
+    );
+    try {
+      await stat(path.join(bundleRoot, "build", "plugin", "server.js"));
+    } catch {
+      fail("fresh dist/codex bundle: expected build/plugin/server.js startup entry");
+    }
+  } finally {
+    await rm(harnessRoot, { recursive: true, force: true });
+  }
+}
+
 const inventory = await sourceInventory();
 
 let buildOutput = "";
@@ -992,6 +1052,7 @@ await assertDemoModeContracts();
 await assertInstallerFirstRefreshContract();
 await assertAutomaticRefreshFallback();
 await assertSessionStartProviderContract();
+await assertFreshGeneratedBundleBootstrap();
 
 if (failures.length > 0) {
   console.error("Host bundle inventory failures:");

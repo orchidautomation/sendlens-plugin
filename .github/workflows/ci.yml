@@ -14,6 +14,12 @@ permissions:
 jobs:
   plugin-checks:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version:
+          - 22
+          - 24
 
     steps:
       - name: Check out repository
@@ -24,7 +30,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install dependencies
@@ -64,7 +70,31 @@ jobs:
 
       - name: Upload built bundles
         uses: actions/upload-artifact@v4
+        if: matrix.node-version == 24
         with:
           name: sendlens-dist
           path: dist
           if-no-files-found: error
+
+  macos-runtime:
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify native runtime bootstrap
+        run: |
+          npm run test:runtime-bootstrap
+          npm run test:host-bundles
