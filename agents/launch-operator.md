@@ -21,4 +21,4 @@ Resolve one campaign or proposed campaign package. Check sender assignment, lead
 
 Return `blocked`, `ready_with_warnings`, or `ready`; blockers and fixes; recommended launch configuration; primary metric; guardrails; read window; stop, iterate, and scale rules; fixed variables; and the learning or client handoff. Never mutate provider resources.
 
-Keep provider operations read-only. Do not inspect local files or repo source; do not use shell, raw DuckDB files, cached JSON, or setup scripts as a fallback. If any required SendLens MCP tool is unavailable, stop and tell the user to reload or reinstall the plugin/MCP server.
+Keep provider operations read-only. Do not paste raw contact data, full reply bodies, or raw reconstructed bodies into external artifacts. Do not inspect local files or repo source; do not use shell, raw DuckDB files, cached JSON, or setup scripts as a fallback. If any required SendLens MCP tool is unavailable, stop and tell the user to reload or reinstall the plugin/MCP server.

@@ -3,6 +3,17 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  COMMAND_AGENTS,
+  COMMAND_ARGUMENT_HINTS,
+  COMMAND_ROUTING_EXCEPTIONS,
+  COMMAND_SKILLS,
+  OPENAI_AGENT_SKILL_SUMMARIES,
+  PUBLIC_SKILLS,
+  REQUIRED_PRIVACY_PATTERNS,
+  REQUIRED_PROVIDER_PATTERNS,
+  REQUIRED_READ_ONLY_PATTERNS,
+} from "./sendlens-contract.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -60,51 +71,6 @@ const PROHIBITED_AGENT_SURFACES = [
   "MCP setup commands",
 ];
 
-const COMMAND_ROUTING_EXCEPTIONS = new Map([
-  [
-    "using-sendlens",
-    {
-      agent: "",
-      rationale: "Using SendLens is a backward-compatible coordinator-owned route into sendlens-analyst.",
-    },
-  ],
-  [
-    "sendlens-setup",
-    {
-      agent: "",
-      rationale: "Setup is explicit-invocation and runs the MCP setup doctor workflow without a specialist agent.",
-    },
-  ],
-  [
-    "sendlens-analyst",
-    {
-      agent: "",
-      rationale: "The main analyst command stays coordinator-owned so it can spawn bounded specialists instead of entering one specialist directly.",
-    },
-  ],
-  [
-    "sendlens-campaign-strategist",
-    {
-      agent: "",
-      rationale: "Focused strategy stays coordinator-owned so the parent can delegate the specialist and retain the final handoff.",
-    },
-  ],
-  [
-    "sendlens-copywriter",
-    {
-      agent: "",
-      rationale: "Focused copy stays coordinator-owned so the parent can delegate the specialist and retain the final handoff.",
-    },
-  ],
-  [
-    "sendlens-launch-operator",
-    {
-      agent: "",
-      rationale: "Focused launch operation stays coordinator-owned so the parent can delegate the specialist and retain the final verdict.",
-    },
-  ],
-]);
-
 const REQUIRED_ANALYST_TERMS = [
   "workspace_snapshot",
   "analysis_starters",
@@ -154,30 +120,6 @@ const REQUIRED_DELEGATION_PATTERNS = [
   /native delegation is unavailable[^.]*execute the same lane boundaries inline/i,
   /must not claim or imply that a specialist was spawned/i,
 ];
-
-const COMMAND_AGENTS = new Map([
-  ["account-manager-brief", "launch-operator"],
-  ["campaign-launch-qa", "launch-operator"],
-  ["campaign-performance", "campaign-analyst"],
-  ["cold-email-best-practices", "campaign-copywriter"],
-  ["copy-analysis", "copy-auditor"],
-  ["experiment-planner", "campaign-strategist"],
-  ["icp-signals", "icp-auditor"],
-  ["reply-patterns", "reply-auditor"],
-  ["workspace-health", "workspace-triager"],
-]);
-
-const COMMAND_SKILLS = new Map([
-  ["account-manager-brief", "sendlens-launch-operator"],
-  ["campaign-launch-qa", "sendlens-launch-operator"],
-  ["campaign-performance", "sendlens-analyst"],
-  ["cold-email-best-practices", "sendlens-copywriter"],
-  ["copy-analysis", "sendlens-analyst"],
-  ["experiment-planner", "sendlens-campaign-strategist"],
-  ["icp-signals", "sendlens-analyst"],
-  ["reply-patterns", "sendlens-analyst"],
-  ["workspace-health", "sendlens-analyst"],
-]);
 
 const PROMOTION_GUARD_CONTRACTS = [
   {
@@ -344,6 +286,14 @@ async function listFiles(directory, filter) {
 async function listSkillFiles() {
   const skillDirs = await listFiles("skills", (entry) => entry.isDirectory());
   return skillDirs.map((dir) => path.join(dir, "SKILL.md"));
+}
+
+async function readIfExists(relativePath) {
+  try {
+    return await readText(relativePath);
+  } catch {
+    return "";
+  }
 }
 
 async function readText(relativePath) {
@@ -537,6 +487,22 @@ async function collectSkillContracts() {
     checkDescription(data, relativePath);
 
     if (skillName) skillNames.add(skillName);
+
+    const openaiPath = `skills/${skillName}/agents/openai.yaml`;
+    await assertPathExists(openaiPath);
+    const openaiText = await readText(openaiPath);
+    const summaryPattern = OPENAI_AGENT_SKILL_SUMMARIES.get(skillName);
+    assert(
+      /^interface:\n/m.test(openaiText) &&
+        /display_name:\s*".+"/.test(openaiText) &&
+        /short_description:\s*".+"/.test(openaiText) &&
+        /default_prompt:\s*".+"/.test(openaiText),
+      `${openaiPath}: expected display_name, short_description, and default_prompt metadata`,
+    );
+    assert(
+      summaryPattern?.test(openaiText),
+      `${openaiPath}: generated OpenAI agent metadata must preserve the canonical ${skillName} trigger boundary`,
+    );
   }
 
   return skillNames;
@@ -602,6 +568,12 @@ async function collectAgentContracts() {
       /\buse only SendLens MCP tools\b/i.test(body),
       `${relativePath}: body must state that SendLens analysis uses only SendLens MCP tools`,
     );
+    for (const pattern of REQUIRED_PRIVACY_PATTERNS) {
+      assert(
+        pattern.test(body),
+        `${relativePath}: missing privacy/evidence boundary matching ${pattern}`,
+      );
+    }
     assert(
       RELOAD_OR_REINSTALL_PLUGIN_PATTERN.test(body),
       `${relativePath}: body must stop on missing MCP tools and tell the user to reload or reinstall the plugin/MCP server`,
@@ -636,11 +608,7 @@ async function collectCommandContracts(skillNames, agentNames) {
     const commandName = path.basename(relativePath, ".md");
     commandNames.add(commandName);
 
-    const targetSkill = skillNames.has(commandName)
-      ? commandName
-      : COMMAND_SKILLS.get(commandName) ?? (commandName === "using-sendlens"
-        ? "sendlens-analyst"
-        : "");
+    const targetSkill = COMMAND_SKILLS.get(commandName) ?? "";
     assert(targetSkill, `${relativePath}: command must map to a public skill or supported legacy analyst route`);
     assert(
       commandReferencesSkill(body, targetSkill),
@@ -698,6 +666,11 @@ async function collectCommandContracts(skillNames, agentNames) {
         typeof commandData["argument-hint"] === "string" &&
           commandData["argument-hint"].trim().length > 0,
         `${relativePath}: argument-hint must be a non-empty string`,
+      );
+      const expectedHint = COMMAND_ARGUMENT_HINTS.get(commandName);
+      assert(
+        commandData["argument-hint"] === expectedHint,
+        `${relativePath}: expected canonical argument hint "${expectedHint}"`,
       );
     }
   }
@@ -765,10 +738,40 @@ async function assertSendLensAnalystContract(skillNames) {
   }
 
   const instructions = await readText("INSTRUCTIONS.md");
+  const evidenceContract = await readText(
+    "skills/sendlens-analyst/references/evidence-and-metrics.md",
+  );
+  const catalog = await readText("docs/CATALOG.md");
   assert(
     /\bsendlens-analyst\b/.test(instructions),
     "INSTRUCTIONS.md: must reference sendlens-analyst routing contract",
   );
+
+  for (const [relativePath, contractBody] of [
+    [skillPath, body],
+    ["INSTRUCTIONS.md", instructions],
+    ["skills/sendlens-analyst/references/evidence-and-metrics.md", evidenceContract],
+  ]) {
+    for (const pattern of REQUIRED_READ_ONLY_PATTERNS) {
+      assert(
+        pattern.test(contractBody),
+        `${relativePath}: missing read-only mutation refusal matching ${pattern}`,
+      );
+    }
+  }
+
+  for (const [relativePath, contractBody] of [
+    [skillPath, body],
+    ["INSTRUCTIONS.md", instructions],
+    ["docs/CATALOG.md", catalog],
+  ]) {
+    for (const pattern of REQUIRED_PROVIDER_PATTERNS) {
+      assert(
+        pattern.test(contractBody),
+        `${relativePath}: missing provider contract language matching ${pattern}`,
+      );
+    }
+  }
 
   for (const [relativePath, contractBody] of [
     [skillPath, body],
@@ -823,6 +826,34 @@ async function assertSendLensAnalystContract(skillNames) {
       focusedBody.includes("../sendlens-analyst/references/evidence-and-metrics.md"),
       `${focusedPath}: must reuse the shared evidence contract`,
     );
+  }
+}
+
+async function assertDocumentationOwnershipContracts() {
+  const catalog = await readText("docs/CATALOG.md");
+  for (const [command, agent] of COMMAND_AGENTS) {
+    const docPath = `docs/skills/${command}.md`;
+    const commandPath = `commands/${command}.md`;
+    const [docText, commandText] = await Promise.all([
+      readIfExists(docPath),
+      readText(commandPath),
+    ]);
+    if (docText) {
+      assert(
+        new RegExp(`Default agent: \`${escapeRegExp(agent)}\``).test(docText),
+        `${docPath}: expected canonical default agent "${agent}"`,
+      );
+    }
+    assert(
+      new RegExp(String.raw`\| \`/${escapeRegExp(command)}\` \| [^|]+ \| \`${escapeRegExp(agent)}\` \|`).test(catalog),
+      `docs/CATALOG.md: command /${command} must list canonical default agent "${agent}"`,
+    );
+    if (commandText.includes("provider-tag")) {
+      assert(
+        /provider tag/i.test(commandText) && !/instantly-tag/i.test(commandText),
+        `${commandPath}: provider-neutral command hints must not use instantly-tag`,
+      );
+    }
   }
 }
 
@@ -963,6 +994,7 @@ await assertSendLensAnalystContract(skillNames);
 await assertSkillEvalContracts(skillNames);
 await assertPromotionGuardContracts();
 await assertContributionAndDecisionGates();
+await assertDocumentationOwnershipContracts();
 
 if (failures.length > 0) {
   console.error("Prompt/package contract failures:");

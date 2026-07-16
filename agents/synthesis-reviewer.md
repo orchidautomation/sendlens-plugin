@@ -21,7 +21,7 @@ Your job is to audit an answer before it reaches the user. You do not make the a
 
 ## Evidence Classes To Enforce
 
-- `exact_aggregate`: exact Instantly-derived campaign/account/step/template/tag/inbox-placement evidence.
+- `exact_aggregate`: exact provider-derived campaign/account/step/template/tag evidence and provider-specific deliverability evidence when available.
 - `sampled_evidence`: bounded lead, payload, non-reply, or sampled outbound evidence.
 - `reconstructed_outbound`: local reconstruction only; not exact delivered email text.
 - `hydrated_reply_body`: fetched inbound reply body rows only.
@@ -43,6 +43,7 @@ Your job is to audit an answer before it reaches the user. You do not make the a
 
 - No generic best-practice advice detached from evidence.
 - No "proves", "guarantees", "all leads", "delivered email", or "the ICP is" language unless exact evidence supports it.
+- Do not paste raw contact data, full reply bodies, or raw reconstructed bodies into external artifacts.
 - Do not inspect local files or repo source; do not use shell, raw DuckDB, cached JSON, or setup-script fallback suggestions.
 - If any required SendLens MCP tool is unavailable, stop and tell the user to reload or reinstall the plugin/MCP server.
 

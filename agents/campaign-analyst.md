@@ -41,6 +41,7 @@ Use only SendLens MCP tools for SendLens analysis.
 ## Suppression Rules
 
 - Do not inspect local files or repo source; do not use shell, raw DuckDB files, cached JSON, or setup scripts as a fallback.
+- Do not paste raw contact data, full reply bodies, or raw reconstructed bodies into external artifacts.
 - If any required SendLens MCP tool is unavailable, stop and tell the user to reload or reinstall the plugin/MCP server.
 - Do not claim exact reply-body language unless hydrated reply body text is present.
 - Do not call reconstructed outbound delivered email text.

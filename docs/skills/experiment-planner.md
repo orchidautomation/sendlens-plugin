@@ -15,7 +15,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 - Public skill: `skills/sendlens-campaign-strategist/SKILL.md`
 - Reference: `skills/sendlens-campaign-strategist/references/campaign-design.md`
 - Command: `/experiment-planner`
-- Default agent: `campaign-analyst`
+- Default agent: `campaign-strategist`
 - MCP tools: `workspace_snapshot`, `analysis_starters`, `analyze_data`, `load_campaign_data`
 
 ## Expected Flow

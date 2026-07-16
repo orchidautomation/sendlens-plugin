@@ -2,6 +2,8 @@
 
 SendLens is a local-first analysis plugin for outbound workspaces. Instantly remains the shipped full provider; Smartlead V1 support is read-only and provider-qualified where implemented.
 
+Preserve `source_provider`, `provider_campaign_id`, and `campaign_source_id` in mixed-provider claims so provider-specific evidence does not get collapsed into an Instantly-only interpretation.
+
 See also: [trust and privacy](./TRUST_AND_PRIVACY.md), [skill docs](./skills/README.md), [synthetic example outputs](./examples/SYNTHETIC_OUTPUTS.md), and [operator memory](./operator-memory/README.md).
 
 ## Workflow Map
@@ -38,15 +40,15 @@ Commands are host entry points in `commands/*.md`. Each public skill has an expl
 | `/sendlens-copywriter` | `[approved-strategy-or-campaign]` | `campaign-copywriter` | Evidence-backed sequence and meaningful copy variants |
 | `/sendlens-launch-operator` | `[campaign-or-approved-package]` | `launch-operator` | Readiness, configuration, measurement, stop/scale, and learning handoff |
 | `/sendlens-setup` | none | host default | Runs first-run setup, doctor checks, and zero-key demo seeding before analysis |
-| `/workspace-health` | `[campaign-name-or-instantly-tag]` | `workspace-triager` | First stop for broad workspace diagnosis |
-| `/campaign-performance` | `[campaign-name] [instantly-tag]` | `campaign-analyst` | Ranks campaigns, steps, variants, runway, and sequence fatigue |
-| `/copy-analysis` | `[campaign-name] [instantly-tag]` | `copy-auditor` | Scopes to one campaign before copy and personalization analysis |
-| `/icp-signals` | `[campaign-name] [instantly-tag]` | `icp-auditor` | Uses campaign payload keys instead of assuming global uploaded-metadata columns |
-| `/reply-patterns` | `[campaign-name] [instantly-tag]` | `reply-auditor` | Separates human reply outcomes before theme synthesis |
-| `/cold-email-best-practices` | none | host default | Applies policy rules such as reply-rate focus, tracking caution, and bounce thresholds |
-| `/campaign-launch-qa` | `[campaign-name]` | `campaign-analyst` | Returns blockers first, then warnings, ready checks, and next actions |
-| `/experiment-planner` | `[campaign-name-or-instantly-tag]` | `campaign-analyst` | Produces hypothesis, change, metric, guardrail, and stop condition |
-| `/account-manager-brief` | `[campaign-name-or-instantly-tag]` | `workspace-triager` | Produces client-safe update plus internal action queue |
+| `/workspace-health` | `[campaign-name-or-provider-tag]` | `workspace-triager` | First stop for broad workspace diagnosis |
+| `/campaign-performance` | `[campaign-name] [provider-tag]` | `campaign-analyst` | Ranks campaigns, steps, variants, runway, and sequence fatigue |
+| `/copy-analysis` | `[campaign-name] [provider-tag]` | `copy-auditor` | Scopes to one campaign before copy and personalization analysis |
+| `/icp-signals` | `[campaign-name] [provider-tag]` | `icp-auditor` | Uses campaign payload keys instead of assuming global uploaded-metadata columns |
+| `/reply-patterns` | `[campaign-name] [provider-tag]` | `reply-auditor` | Separates human reply outcomes before theme synthesis |
+| `/cold-email-best-practices` | `[approved-strategy-or-campaign]` | `campaign-copywriter` | Applies policy rules such as reply-rate focus, tracking caution, and bounce thresholds |
+| `/campaign-launch-qa` | `[campaign-name]` | `launch-operator` | Returns blockers first, then warnings, ready checks, and next actions |
+| `/experiment-planner` | `[campaign-name-or-provider-tag]` | `campaign-strategist` | Produces hypothesis, change, metric, guardrail, and stop condition |
+| `/account-manager-brief` | `[campaign-name-or-provider-tag]` | `launch-operator` | Produces client-safe update plus internal action queue |
 
 ## Agents
 
