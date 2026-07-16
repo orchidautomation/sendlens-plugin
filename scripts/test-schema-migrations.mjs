@@ -7,6 +7,7 @@ import path from "node:path";
 const require = createRequire(import.meta.url);
 const { DuckDBInstance } = require("@duckdb/node-api");
 const {
+  BASELINE_SCHEMA_MIGRATION_ID,
   CURRENT_SCHEMA_MIGRATION_ID,
   SchemaMigrationError,
   closeDb,
@@ -119,7 +120,10 @@ await withTempDb("sendlens-schema-fresh-", async () => {
       db,
       "SELECT migration_id FROM sendlens.schema_migrations ORDER BY migration_id",
     );
-    assert.deepEqual(migrations, [{ migration_id: CURRENT_SCHEMA_MIGRATION_ID }]);
+    assert.deepEqual(migrations, [
+      { migration_id: BASELINE_SCHEMA_MIGRATION_ID },
+      { migration_id: CURRENT_SCHEMA_MIGRATION_ID },
+    ]);
     const tables = await query(
       db,
       `SELECT table_name
@@ -159,7 +163,10 @@ await withTempDb("sendlens-schema-historical-", async (dbPath) => {
       db,
       "SELECT migration_id FROM sendlens.schema_migrations",
     );
-    assert.deepEqual(migrations, [{ migration_id: CURRENT_SCHEMA_MIGRATION_ID }]);
+    assert.deepEqual(migrations, [
+      { migration_id: BASELINE_SCHEMA_MIGRATION_ID },
+      { migration_id: CURRENT_SCHEMA_MIGRATION_ID },
+    ]);
     const cacheSchema = await query(
       db,
       "SELECT value FROM sendlens.plugin_state WHERE key = 'cache_schema_version'",
@@ -190,7 +197,48 @@ await withTempDb("sendlens-schema-run-once-", async () => {
       db,
       "SELECT COUNT(*) AS count FROM sendlens.schema_migrations",
     );
-    assert.equal(Number(migrations[0].count), 1);
+    assert.equal(Number(migrations[0].count), 2);
+  } finally {
+    closeDb(db);
+  }
+});
+
+await withTempDb("sendlens-schema-reply-view-upgrade-", async () => {
+  await openAndClose();
+  let db = await getDb({ timeoutMs: 0 });
+  try {
+    await run(db, `DELETE FROM sendlens.schema_migrations
+      WHERE migration_id = '${CURRENT_SCHEMA_MIGRATION_ID}'`);
+    await run(db, "DROP VIEW sendlens.reply_email_context");
+    await run(db, "CREATE OR REPLACE VIEW sendlens.reply_context AS SELECT 'stale' AS marker");
+  } finally {
+    closeDb(db);
+  }
+
+  await openAndClose();
+  db = await getDb({ timeoutMs: 0 });
+  try {
+    const columns = await query(
+      db,
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'sendlens'
+         AND table_name = 'reply_context'
+         AND column_name IN ('lead_email', 'reply_email_id')
+       ORDER BY column_name`,
+    );
+    assert.deepEqual(columns, [
+      { column_name: "lead_email" },
+      { column_name: "reply_email_id" },
+    ], "the follow-up migration must replace reply views in caches that already recorded the baseline");
+    const migrations = await query(
+      db,
+      "SELECT migration_id FROM sendlens.schema_migrations ORDER BY migration_id",
+    );
+    assert.deepEqual(migrations, [
+      { migration_id: BASELINE_SCHEMA_MIGRATION_ID },
+      { migration_id: CURRENT_SCHEMA_MIGRATION_ID },
+    ]);
   } finally {
     closeDb(db);
   }
@@ -198,7 +246,7 @@ await withTempDb("sendlens-schema-run-once-", async () => {
 
 await withTempDb("sendlens-schema-failure-", async (dbPath) => {
   const previousFailure = process.env.SENDLENS_TEST_FAIL_SCHEMA_MIGRATION_ID;
-  process.env.SENDLENS_TEST_FAIL_SCHEMA_MIGRATION_ID = CURRENT_SCHEMA_MIGRATION_ID;
+  process.env.SENDLENS_TEST_FAIL_SCHEMA_MIGRATION_ID = BASELINE_SCHEMA_MIGRATION_ID;
   await assert.rejects(
     openAndClose(),
     (error) =>

@@ -143,7 +143,7 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
   reply_email_hydration_state:
     "Pagination and cache state for on-demand reply text fetching by campaign, interest status, and thread mode.",
   reply_email_context:
-    "Email-anchored fetched reply context that keeps exact inbound reply bodies visible even when sampled lead context is missing.",
+    "Email-anchored fetched reply context with one row per fetched inbound reply email. Template joins collapse to a single unambiguous step/variant match; ambiguous template attribution is reported as a context gap.",
   sampled_leads:
     "Campaign-scoped lead evidence with reply-signal leads found during bounded scans, explicit reply-email backfills, and bounded non-reply samples. Do not use for population totals.",
   sampled_outbound_emails:
@@ -163,7 +163,7 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
   provider_overlap_risk_details:
     "Contributing sampled lead rows behind provider_overlap_risk, preserving provider-qualified campaign IDs and timing evidence for each overlap.",
   reply_context:
-    "Reply outcome view that joins replied leads to fetched inbound reply text when available plus originating templates and locally reconstructed copy.",
+    "Reply outcome view with one row per replied lead/fetched reply email at the available lead-email grain. Template joins collapse to a single unambiguous step/variant match instead of multiplying rows.",
   rendered_outbound_context:
     "Rendered outbound analysis view that joins reconstructed lead-level copy to campaign names and intended templates.",
 };
