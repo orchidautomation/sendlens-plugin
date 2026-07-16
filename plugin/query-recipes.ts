@@ -2225,29 +2225,16 @@ LIMIT 50;`,
     sent_at,
     regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}') AS subject_has_unresolved_token,
     regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}') AS body_has_unresolved_token,
-    trim(unnest(regexp_extract_all(COALESCE(rendered_subject, ''), '\\{\\{\\s*([^}]+?)\\s*\\}\\}', 1))) AS unresolved_token_name,
-    'subject' AS unresolved_token_location
+    trim(unnest(list_concat(
+      regexp_extract_all(COALESCE(rendered_subject, ''), '\\{\\{\\s*([^}]+?)\\s*\\}\\}', 1),
+      regexp_extract_all(COALESCE(rendered_body_text, ''), '\\{\\{\\s*([^}]+?)\\s*\\}\\}', 1)
+    ))) AS unresolved_token_name
   FROM sendlens.rendered_outbound_context
   WHERE campaign_id = '{{campaign_id}}'
-    AND regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}')
-  UNION ALL
-  SELECT
-    campaign_id,
-    campaign_name,
-    to_email,
-    step_resolved,
-    variant_resolved,
-    left(COALESCE(rendered_subject, ''), 160) AS rendered_subject_preview,
-    left(COALESCE(rendered_body_text, ''), 240) AS rendered_body_preview,
-    sample_source,
-    sent_at,
-    regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}') AS subject_has_unresolved_token,
-    regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}') AS body_has_unresolved_token,
-    trim(unnest(regexp_extract_all(COALESCE(rendered_body_text, ''), '\\{\\{\\s*([^}]+?)\\s*\\}\\}', 1))) AS unresolved_token_name,
-    'body' AS unresolved_token_location
-  FROM sendlens.rendered_outbound_context
-  WHERE campaign_id = '{{campaign_id}}'
-    AND regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}')
+    AND (
+      regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}')
+      OR regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}')
+    )
 ),
 classified_tokens AS (
   SELECT
@@ -2390,31 +2377,16 @@ LIMIT 50;`,
     sent_at,
     regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}') AS subject_has_unresolved_token,
     regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}') AS body_has_unresolved_token,
-    trim(unnest(regexp_extract_all(COALESCE(rendered_subject, ''), '\\{\\{\\s*([^}]+?)\\s*\\}\\}', 1))) AS unresolved_token_name,
-    'subject' AS unresolved_token_location
+    trim(unnest(list_concat(
+      regexp_extract_all(COALESCE(rendered_subject, ''), '\\{\\{\\s*([^}]+?)\\s*\\}\\}', 1),
+      regexp_extract_all(COALESCE(rendered_body_text, ''), '\\{\\{\\s*([^}]+?)\\s*\\}\\}', 1)
+    ))) AS unresolved_token_name
   FROM sendlens.rendered_outbound_context
   WHERE campaign_id = '{{campaign_id}}'
-    AND regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}')
-  UNION ALL
-  SELECT
-    campaign_id,
-    campaign_name,
-    to_email,
-    step_resolved,
-    variant_resolved,
-    rendered_subject,
-    rendered_body_text,
-    template_subject,
-    template_body_text,
-    sample_source,
-    sent_at,
-    regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}') AS subject_has_unresolved_token,
-    regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}') AS body_has_unresolved_token,
-    trim(unnest(regexp_extract_all(COALESCE(rendered_body_text, ''), '\\{\\{\\s*([^}]+?)\\s*\\}\\}', 1))) AS unresolved_token_name,
-    'body' AS unresolved_token_location
-  FROM sendlens.rendered_outbound_context
-  WHERE campaign_id = '{{campaign_id}}'
-    AND regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}')
+    AND (
+      regexp_matches(COALESCE(rendered_subject, ''), '\\{\\{[^}]+\\}\\}')
+      OR regexp_matches(COALESCE(rendered_body_text, ''), '\\{\\{[^}]+\\}\\}')
+    )
 ),
 classified_tokens AS (
   SELECT
@@ -2550,8 +2522,8 @@ LIMIT 50;`,
   GROUP BY 1, 2, 3
 )
 SELECT
-  COALESCE(fc.campaign_id, hs.campaign_id) AS campaign_id,
-  COALESCE(fc.i_status, hs.i_status) AS i_status,
+  hs.campaign_id,
+  hs.i_status,
   fc.reply_email_i_status_label,
   COALESCE(fc.stored_reply_rows, 0) AS stored_reply_rows,
   COALESCE(fc.stored_reply_body_rows, 0) AS stored_reply_body_rows,
@@ -2565,12 +2537,12 @@ SELECT
   hs.last_hydrated_at,
   fc.oldest_reply_received_at,
   fc.newest_reply_received_at
-FROM fetched_context fc
-FULL OUTER JOIN sendlens.reply_email_hydration_state hs
+FROM sendlens.reply_email_hydration_state hs
+LEFT JOIN fetched_context fc
   ON fc.campaign_id = hs.campaign_id
  AND fc.i_status = hs.i_status
-WHERE COALESCE(fc.campaign_id, hs.campaign_id) = '{{campaign_id}}'
-  AND COALESCE(fc.i_status, hs.i_status) IN (1, -1, -2)
+WHERE hs.campaign_id = '{{campaign_id}}'
+  AND hs.i_status IN (1, -1, -2)
 ORDER BY i_status DESC;`,
     notes: [
       "Run prepare_campaign_analysis first for premium analysis; this recipe audits what is now hydrated locally.",
@@ -3020,7 +2992,7 @@ LIMIT 100;`,
   sampled_reply_signal_rows,
   sampled_negative_rows
 FROM sendlens.provider_overlap_risk
-WHERE within_unsafe_window IS DISTINCT FROM FALSE
+WHERE COALESCE(within_unsafe_window, TRUE) = TRUE
 ORDER BY
   CASE overlap_risk_level
     WHEN 'high' THEN 0
@@ -3045,40 +3017,41 @@ LIMIT 100;`,
     question: "Are we contacting the same people or companies across multiple campaigns?",
     exactness: "sampled",
     rationale: "Find sampled contacts or company domains that appear in more than one campaign so analysts can spot overlap risk before blaming copy.",
-    sql: `WITH contact_exposure AS (
-  SELECT
-    'contact_email' AS exposure_type,
-    lower(email) AS exposure_key,
-    COUNT(DISTINCT campaign_id) AS campaigns_seen,
-    COUNT(*) AS sampled_rows,
-    MIN(campaign_name) AS campaign_example,
-    SUM(CASE WHEN has_reply_signal THEN 1 ELSE 0 END) AS sampled_reply_signal_rows,
-    SUM(CASE WHEN reply_outcome_label = 'negative' THEN 1 ELSE 0 END) AS sampled_negative_rows
-  FROM sendlens.lead_evidence
-  WHERE email IS NOT NULL
-  GROUP BY 1, 2
-  HAVING COUNT(DISTINCT campaign_id) > 1
+    sql: `WITH key_options AS (
+  SELECT ROW_NUMBER() OVER () AS key_index
+  FROM sendlens.campaigns
+  LIMIT 2
 ),
-company_exposure AS (
+exposure_keys AS (
   SELECT
-    'company_domain' AS exposure_type,
-    lower(company_domain) AS exposure_key,
-    COUNT(DISTINCT campaign_id) AS campaigns_seen,
-    COUNT(*) AS sampled_rows,
-    MIN(campaign_name) AS campaign_example,
-    SUM(CASE WHEN has_reply_signal THEN 1 ELSE 0 END) AS sampled_reply_signal_rows,
-    SUM(CASE WHEN reply_outcome_label = 'negative' THEN 1 ELSE 0 END) AS sampled_negative_rows
+    campaign_id,
+    campaign_name,
+    has_reply_signal,
+    reply_outcome_label,
+    CASE key_index
+      WHEN 1 THEN 'contact_email'
+      ELSE 'company_domain'
+    END AS exposure_type,
+    CASE key_index
+      WHEN 1 THEN lower(email)
+      ELSE lower(company_domain)
+    END AS exposure_key
   FROM sendlens.lead_evidence
-  WHERE company_domain IS NOT NULL
-    AND trim(company_domain) <> ''
-  GROUP BY 1, 2
-  HAVING COUNT(DISTINCT campaign_id) > 1
+  JOIN key_options ON TRUE
 )
-SELECT *
-FROM contact_exposure
-UNION ALL
-SELECT *
-FROM company_exposure
+SELECT
+  exposure_type,
+  exposure_key,
+  COUNT(DISTINCT campaign_id) AS campaigns_seen,
+  COUNT(*) AS sampled_rows,
+  MIN(campaign_name) AS campaign_example,
+  SUM(CASE WHEN has_reply_signal THEN 1 ELSE 0 END) AS sampled_reply_signal_rows,
+  SUM(CASE WHEN reply_outcome_label = 'negative' THEN 1 ELSE 0 END) AS sampled_negative_rows
+FROM exposure_keys
+WHERE exposure_key IS NOT NULL
+  AND trim(exposure_key) <> ''
+GROUP BY 1, 2
+HAVING COUNT(DISTINCT campaign_id) > 1
 ORDER BY campaigns_seen DESC, sampled_negative_rows DESC, sampled_rows DESC
 LIMIT 100;`,
     notes: [
@@ -3324,21 +3297,21 @@ ORDER BY sampled_reply_share_pct DESC NULLS LAST, sampled_lead_count DESC;`,
     exactness: "exact",
     rationale: "Use exact mappings to identify campaigns connected to a tag before deeper analysis.",
     sql: `SELECT
-  tag_label AS tag_name,
-  campaign_id,
-  campaign_name AS name,
-  status,
-  daily_limit,
-  emails_sent_count,
-  reply_count_unique,
-  unique_reply_rate_pct,
-  total_opportunities
+  ct.tag_label AS tag_name,
+  co.campaign_id,
+  co.campaign_name AS name,
+  co.status,
+  co.daily_limit,
+  co.emails_sent_count,
+  co.reply_count_unique,
+  co.unique_reply_rate_pct,
+  co.total_opportunities
 FROM sendlens.campaign_tags ct
 JOIN sendlens.campaign_overview co
   ON ct.workspace_id = co.workspace_id
  AND ct.campaign_id = co.campaign_id
-WHERE lower(trim(tag_label)) = lower(trim('{{tag_name}}'))
-ORDER BY unique_reply_rate_pct DESC NULLS LAST, emails_sent_count DESC;`,
+WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+ORDER BY co.unique_reply_rate_pct DESC NULLS LAST, co.emails_sent_count DESC;`,
     notes: [
       "This is exact for campaign-level tags and performance aggregates.",
       "Use it when the workspace organizes campaigns with tags.",
