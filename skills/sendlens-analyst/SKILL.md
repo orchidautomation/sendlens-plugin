@@ -82,6 +82,12 @@ unknowns:
 
 If required SendLens tools are missing, stop and tell the user to reload or reinstall the plugin/MCP server.
 
+## Example Requests
+
+- "What's working and not working in my outbound workspace?"
+- "Rank my campaigns and tell me which one deserves a deeper reply and ICP review."
+- "Analyze everything, recommend the next campaign, write it, and plan the launch."
+
 ## Default Output
 
 ```text

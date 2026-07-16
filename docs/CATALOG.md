@@ -118,6 +118,7 @@ Scripts live in `scripts/` and support local runtime setup, startup refresh, dev
 | `bootstrap-runtime.sh` | Install or repair runtime dependencies needed for local execution |
 | `benchmark-fast-refresh.sh` | Benchmark startup refresh behavior |
 | `test-*.mjs` | Validate SQL guardrails, cache locking, sampling, template rendering, local runtime behavior, and reply hydration contracts |
+| `test-behavioral-routing.mjs` | Execute the global skill-routing ownership matrix against every skill trigger-query file |
 
 ## Generated Host Surfaces
 

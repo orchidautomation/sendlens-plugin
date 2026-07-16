@@ -149,7 +149,7 @@ Do not fan out multiple campaign specialists until the workspace-level triage id
 
 When iterating on plugin code, use the tiered test pipeline in `package.json`. Each tier composes the one above it.
 
-- `npm run test:plugin:smoke` — sql-guard + prompt-contracts. ~1s. Use during a 1-2 minute inner loop.
+- `npm run test:plugin:smoke` — provider setup, sql-guard, prompt-contracts, and behavioral routing. ~1s. Use during a 1-2 minute inner loop.
 - `npm run test:plugin:fast` — smoke + campaign-analysis-depth + reply-fetch-contract. ~1-2s. Use before pushing a branch.
 - `npm run test:plugin` — fast + 7 heavier tests (db lock, ingest templates, instantly client pagination, sampling, runtime, cache identity, reply hydration, demo workspace, MCP response contract). ~4-5s. Required for `ci:plugin`.
 - `npm run ci:plugin` — `test:plugin` + `validate:plugin` + `lint:plugin` + `test:host-bundles`. Run before opening a PR.

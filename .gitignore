@@ -20,6 +20,8 @@ passthrough/runtime/state/
 .claude/
 .pluxx/*
 !.pluxx/behavioral-smoke.json
+!.pluxx/behavioral-routing-matrix.json
+!.pluxx/mcp.json
 .private/
 *10K_MRR*.md
 *10k*mrr*.md
