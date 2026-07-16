@@ -6,12 +6,25 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint .",
+    "typecheck": "node --check app/api/waitlist/route.js && node --check app/api/waitlist/route.test.mjs",
+    "test": "node --test app/api/waitlist/route.test.mjs",
+    "audit:prod": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {
-    "@vercel/blob": "^2.3.0",
-    "next": "^15.3.2",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
-  }
+    "@vercel/blob": "^2.6.1",
+    "next": "^15.5.20",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "overrides": {
+    "undici": "6.27.0",
+    "postcss": "8.5.19"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^15.5.20",
+    "typescript": "^5.8.3"
+  },
+  "type": "module"
 }
