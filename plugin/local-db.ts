@@ -31,7 +31,8 @@ const LOCK_ERROR_PATTERNS = [
   /replaying WAL file/i,
   /WAL replay/i,
 ];
-export const CURRENT_SCHEMA_MIGRATION_ID = "202607160001_current_schema_baseline";
+export const BASELINE_SCHEMA_MIGRATION_ID = "202607160001_current_schema_baseline";
+export const CURRENT_SCHEMA_MIGRATION_ID = "202607160002_refresh_reply_context_views";
 const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
 const cacheProviderModeContext = new AsyncLocalStorage<SourceProviderMode>();
 
@@ -564,7 +565,7 @@ async function appliedSchemaMigrationIds(conn: DuckDBConnection) {
 }
 
 function assertSupportedSchemaMigrations(appliedIds: string[]) {
-  const supportedIds = new Set([CURRENT_SCHEMA_MIGRATION_ID]);
+  const supportedIds = new Set([BASELINE_SCHEMA_MIGRATION_ID, CURRENT_SCHEMA_MIGRATION_ID]);
   const unknownIds = appliedIds.filter((migrationId) => !supportedIds.has(migrationId));
   if (unknownIds.length === 0) return;
 
@@ -2630,17 +2631,32 @@ async function ensureSchema(conn: DuckDBConnection) {
        AND CAST(cv.variant AS VARCHAR) = so.variant_resolved`,
   ];
 
+  if (!appliedIds.includes(BASELINE_SCHEMA_MIGRATION_ID)) {
+    await runSchemaMigration(conn, BASELINE_SCHEMA_MIGRATION_ID, async () => {
+      let providerQualifiedAccountKeysChecked = false;
+      for (const statement of statements) {
+        if (!providerQualifiedAccountKeysChecked && /\bCREATE\s+OR\s+REPLACE\s+VIEW\b/i.test(statement)) {
+          await ensureProviderQualifiedAccountPrimaryKeys(conn);
+          providerQualifiedAccountKeysChecked = true;
+        }
+        await run(conn, statement);
+      }
+      if (!providerQualifiedAccountKeysChecked) {
+        await ensureProviderQualifiedAccountPrimaryKeys(conn);
+      }
+      await stampCacheSchemaVersion(conn);
+    });
+  }
+
   await runSchemaMigration(conn, CURRENT_SCHEMA_MIGRATION_ID, async () => {
     let providerQualifiedAccountKeysChecked = false;
     for (const statement of statements) {
-      if (!providerQualifiedAccountKeysChecked && /\bCREATE\s+OR\s+REPLACE\s+VIEW\b/i.test(statement)) {
+      if (!/\bCREATE\s+OR\s+REPLACE\s+VIEW\b/i.test(statement)) continue;
+      if (!providerQualifiedAccountKeysChecked) {
         await ensureProviderQualifiedAccountPrimaryKeys(conn);
         providerQualifiedAccountKeysChecked = true;
       }
       await run(conn, statement);
-    }
-    if (!providerQualifiedAccountKeysChecked) {
-      await ensureProviderQualifiedAccountPrimaryKeys(conn);
     }
     await stampCacheSchemaVersion(conn);
   });
