@@ -144,8 +144,8 @@ Run `npm run test:mcp-response-contract` when changing MCP tools, response field
 - `lead_evidence` contains reply-signal leads found during bounded lead scans, explicit reply-email backfills, and bounded non-reply samples.
 - `lead_payload_kv` expands sampled lead `custom_payload` into campaign-scoped key/value rows so ICP analysis can stay inside SendLens tools without raw JSON table functions.
 - `provider_overlap_risk` and `provider_overlap_risk_details` are sampled cross-provider overlap primitives. They identify repeated normalized email/domain/company exposure across providers, expose both the overall sampled span and the closest cross-provider contact window, and are not full suppression or CRM dedupe audits unless all relevant campaigns were fully scanned.
-- `reply_context` is lead outcome evidence joined to fetched inbound reply text when available, templates, and reconstructed outbound context.
-- `reply_email_context` is email-anchored fetched reply context; use it after premium hydration because exact reply bodies remain visible even when lead/template context is missing.
+- `reply_context` is lead outcome evidence joined to fetched inbound reply text when available, templates, and reconstructed outbound context. Its grain is one row per replied lead/fetched reply email at the available lead-email grain; campaign variant attribution must resolve to one template candidate or template fields remain unknown.
+- `reply_email_context` is email-anchored fetched reply context; use it after premium hydration because exact reply bodies remain visible even when lead/template context is missing. Its grain is one row per fetched inbound reply email. Ambiguous campaign variant attribution is reported through `context_gap_reason = 'ambiguous_template_context'` rather than duplicated rows.
 - `rendered_outbound_context` is locally reconstructed copy, not byte-for-byte delivered email text. Smartlead outbound message-history rows are counted in coverage, but rendered outbound bodies stay reconstructed from templates plus lead variables unless a future exact outbound surface is added.
 
 ## Structured Content Strategy

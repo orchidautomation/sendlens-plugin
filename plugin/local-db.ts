@@ -2124,6 +2124,38 @@ async function ensureSchema(conn: DuckDBConnection) {
        AND i.overlap_type = r.overlap_type
        AND i.overlap_key = r.overlap_key`,
     `CREATE OR REPLACE VIEW sendlens.reply_context AS
+      WITH campaign_variant_context AS (
+        SELECT
+          workspace_id,
+          campaign_id,
+          COALESCE(source_provider, 'instantly') AS source_provider,
+          step,
+          variant,
+          COUNT(*) AS template_candidate_count,
+          CASE WHEN COUNT(*) = 1 THEN MAX(subject) ELSE NULL END AS template_subject,
+          CASE WHEN COUNT(*) = 1 THEN MAX(body_text) ELSE NULL END AS template_body_text
+        FROM sendlens.campaign_variants
+        GROUP BY 1, 2, 3, 4, 5
+      ),
+      sampled_outbound_context AS (
+        SELECT *
+        FROM (
+          SELECT
+            so.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY
+                workspace_id,
+                campaign_id,
+                COALESCE(source_provider, 'instantly'),
+                lower(to_email),
+                step_resolved,
+                variant_resolved
+              ORDER BY sent_at DESC NULLS LAST, id
+            ) AS outbound_context_rank
+          FROM sendlens.sampled_outbound_emails so
+        ) ranked_outbound
+        WHERE outbound_context_rank = 1
+      )
       SELECT
         le.workspace_id,
         le.campaign_id,
@@ -2162,8 +2194,8 @@ async function ensureSchema(conn: DuckDBConnection) {
         so.subject AS rendered_subject,
         so.body_text AS rendered_body_text,
         so.sample_source,
-        cv.subject AS template_subject,
-        cv.body_text AS template_body_text
+        cv.template_subject,
+        cv.template_body_text
       FROM sendlens.lead_evidence le
       LEFT JOIN sendlens.reply_emails re
         ON le.workspace_id = re.workspace_id
@@ -2175,21 +2207,53 @@ async function ensureSchema(conn: DuckDBConnection) {
          END
        )
        AND re.direction = 'inbound'
-      LEFT JOIN sendlens.sampled_outbound_emails so
+      LEFT JOIN sampled_outbound_context so
         ON le.workspace_id = so.workspace_id
        AND le.campaign_id = so.campaign_id
        AND le.source_provider = COALESCE(so.source_provider, 'instantly')
        AND le.email = so.to_email
        AND CAST(le.email_replied_step AS VARCHAR) = so.step_resolved
        AND CAST(COALESCE(le.email_replied_variant, 0) AS VARCHAR) = so.variant_resolved
-      LEFT JOIN sendlens.campaign_variants cv
+      LEFT JOIN campaign_variant_context cv
         ON le.workspace_id = cv.workspace_id
        AND le.campaign_id = cv.campaign_id
-       AND le.source_provider = COALESCE(cv.source_provider, 'instantly')
+       AND le.source_provider = cv.source_provider
        AND le.email_replied_step = cv.step
        AND COALESCE(le.email_replied_variant, 0) = cv.variant
       WHERE le.has_reply_signal = TRUE`,
     `CREATE OR REPLACE VIEW sendlens.reply_email_context AS
+      WITH campaign_variant_context AS (
+        SELECT
+          workspace_id,
+          campaign_id,
+          COALESCE(source_provider, 'instantly') AS source_provider,
+          step,
+          variant,
+          COUNT(*) AS template_candidate_count,
+          CASE WHEN COUNT(*) = 1 THEN MAX(subject) ELSE NULL END AS template_subject,
+          CASE WHEN COUNT(*) = 1 THEN MAX(body_text) ELSE NULL END AS template_body_text
+        FROM sendlens.campaign_variants
+        GROUP BY 1, 2, 3, 4, 5
+      ),
+      sampled_outbound_context AS (
+        SELECT *
+        FROM (
+          SELECT
+            so.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY
+                workspace_id,
+                campaign_id,
+                COALESCE(source_provider, 'instantly'),
+                lower(to_email),
+                step_resolved,
+                variant_resolved
+              ORDER BY sent_at DESC NULLS LAST, id
+            ) AS outbound_context_rank
+          FROM sendlens.sampled_outbound_emails so
+        ) ranked_outbound
+        WHERE outbound_context_rank = 1
+      )
       SELECT
         re.workspace_id,
         re.campaign_id,
@@ -2265,16 +2329,17 @@ async function ensureSchema(conn: DuckDBConnection) {
         so.subject AS rendered_subject,
         so.body_text AS rendered_body_text,
         so.sample_source AS rendered_sample_source,
-        cv.subject AS template_subject,
-        cv.body_text AS template_body_text,
+        cv.template_subject,
+        cv.template_body_text,
         CASE WHEN le.email IS NOT NULL THEN TRUE ELSE FALSE END AS has_lead_context,
-        CASE WHEN cv.campaign_id IS NOT NULL THEN TRUE ELSE FALSE END AS has_template_context,
+        CASE WHEN cv.template_candidate_count = 1 THEN TRUE ELSE FALSE END AS has_template_context,
         CASE WHEN re.body_text IS NOT NULL AND trim(re.body_text) <> '' THEN TRUE ELSE FALSE END AS hydrated_reply_body,
         CASE
           WHEN re.body_text IS NULL OR trim(re.body_text) = '' THEN 'missing_reply_body'
+          WHEN cv.template_candidate_count > 1 THEN 'ambiguous_template_context'
           WHEN le.email IS NULL AND cv.campaign_id IS NULL THEN 'missing_lead_and_template_context'
           WHEN le.email IS NULL THEN 'missing_lead_context'
-          WHEN cv.campaign_id IS NULL THEN 'missing_template_context'
+          WHEN cv.template_candidate_count IS NULL THEN 'missing_template_context'
           ELSE 'covered'
         END AS context_gap_reason
       FROM sendlens.reply_emails re
@@ -2290,7 +2355,7 @@ async function ensureSchema(conn: DuckDBConnection) {
            ELSE re.from_email
          END
        ) = lower(le.email)
-      LEFT JOIN sendlens.sampled_outbound_emails so
+      LEFT JOIN sampled_outbound_context so
         ON re.workspace_id = so.workspace_id
        AND re.campaign_id = so.campaign_id
        AND COALESCE(c.source_provider, le.source_provider, 'instantly') = COALESCE(so.source_provider, 'instantly')
@@ -2302,14 +2367,27 @@ async function ensureSchema(conn: DuckDBConnection) {
        ) = lower(so.to_email)
        AND COALESCE(CAST(le.email_replied_step AS VARCHAR), re.step_resolved) = so.step_resolved
        AND COALESCE(CAST(le.email_replied_variant AS VARCHAR), re.variant_resolved, '0') = so.variant_resolved
-      LEFT JOIN sendlens.campaign_variants cv
+      LEFT JOIN campaign_variant_context cv
         ON re.workspace_id = cv.workspace_id
        AND re.campaign_id = cv.campaign_id
-       AND COALESCE(c.source_provider, le.source_provider, 'instantly') = COALESCE(cv.source_provider, 'instantly')
+       AND COALESCE(c.source_provider, le.source_provider, 'instantly') = cv.source_provider
        AND TRY_CAST(COALESCE(CAST(le.email_replied_step AS VARCHAR), re.step_resolved) AS INTEGER) = cv.step
        AND TRY_CAST(COALESCE(CAST(le.email_replied_variant AS VARCHAR), re.variant_resolved, '0') AS INTEGER) = cv.variant
       WHERE re.direction = 'inbound'`,
     `CREATE OR REPLACE VIEW sendlens.rendered_outbound_context AS
+      WITH campaign_variant_context AS (
+        SELECT
+          workspace_id,
+          campaign_id,
+          COALESCE(source_provider, 'instantly') AS source_provider,
+          step,
+          variant,
+          COUNT(*) AS template_candidate_count,
+          CASE WHEN COUNT(*) = 1 THEN MAX(subject) ELSE NULL END AS template_subject,
+          CASE WHEN COUNT(*) = 1 THEN MAX(body_text) ELSE NULL END AS template_body_text
+        FROM sendlens.campaign_variants
+        GROUP BY 1, 2, 3, 4, 5
+      )
       SELECT
         so.workspace_id,
         so.campaign_id,
@@ -2330,17 +2408,17 @@ async function ensureSchema(conn: DuckDBConnection) {
         so.step_resolved,
         so.variant_resolved,
         so.sample_source,
-        cv.subject AS template_subject,
-        cv.body_text AS template_body_text
+        cv.template_subject,
+        cv.template_body_text
       FROM sendlens.sampled_outbound_emails so
       LEFT JOIN sendlens.campaigns c
         ON so.workspace_id = c.workspace_id
        AND so.campaign_id = c.id
        AND COALESCE(so.source_provider, 'instantly') = COALESCE(c.source_provider, 'instantly')
-      LEFT JOIN sendlens.campaign_variants cv
+      LEFT JOIN campaign_variant_context cv
         ON so.workspace_id = cv.workspace_id
        AND so.campaign_id = cv.campaign_id
-       AND COALESCE(so.source_provider, 'instantly') = COALESCE(cv.source_provider, 'instantly')
+       AND COALESCE(so.source_provider, 'instantly') = cv.source_provider
        AND CAST(cv.step AS VARCHAR) = so.step_resolved
        AND CAST(cv.variant AS VARCHAR) = so.variant_resolved`,
   ];

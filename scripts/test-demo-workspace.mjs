@@ -84,8 +84,8 @@ try {
     `SELECT reply_body_text
      FROM sendlens.reply_context
      WHERE campaign_id = 'demo-alpha'
-       AND reply_email_id IS NOT NULL
-     ORDER BY reply_received_at DESC
+       AND reply_email_id = 'reply-alpha-1'
+     ORDER BY reply_received_at DESC, reply_email_id
      LIMIT 1`,
   );
   assert.ok(String(replyRows[0].reply_body_text).includes("referral leakage"));

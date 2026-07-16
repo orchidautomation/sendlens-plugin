@@ -1047,11 +1047,11 @@ server.registerTool(
         `SELECT
            reply_email_i_status,
            reply_email_i_status_label,
-           COUNT(*) AS fetched_reply_rows,
-           SUM(CASE WHEN hydrated_reply_body THEN 1 ELSE 0 END) AS hydrated_reply_body_rows,
-           SUM(CASE WHEN reply_is_auto_reply THEN 1 ELSE 0 END) AS auto_reply_rows,
-           SUM(CASE WHEN has_lead_context THEN 1 ELSE 0 END) AS rows_with_lead_context,
-           SUM(CASE WHEN has_template_context THEN 1 ELSE 0 END) AS rows_with_template_context,
+           COUNT(DISTINCT reply_email_id) AS fetched_reply_rows,
+           COUNT(DISTINCT CASE WHEN hydrated_reply_body THEN reply_email_id ELSE NULL END) AS hydrated_reply_body_rows,
+           COUNT(DISTINCT CASE WHEN reply_is_auto_reply THEN reply_email_id ELSE NULL END) AS auto_reply_rows,
+           COUNT(DISTINCT CASE WHEN has_lead_context THEN reply_email_id ELSE NULL END) AS rows_with_lead_context,
+           COUNT(DISTINCT CASE WHEN has_template_context THEN reply_email_id ELSE NULL END) AS rows_with_template_context,
            MIN(reply_received_at) AS oldest_reply_received_at,
            MAX(reply_received_at) AS newest_reply_received_at
          FROM sendlens.reply_email_context
@@ -1065,7 +1065,7 @@ server.registerTool(
         db,
         `SELECT
            context_gap_reason,
-           COUNT(*) AS rows
+           COUNT(DISTINCT reply_email_id) AS rows
          FROM sendlens.reply_email_context
          WHERE workspace_id = '${workspaceSafe}'
            AND campaign_id = '${campaignSafe}'
