@@ -23,14 +23,11 @@ export class LocalSqlGuardError extends Error {
 type SelectNode = {
   type: "select";
   with: CteNode[] | null;
-  columns?: unknown[] | null;
   from: FromNode[] | null;
   where: ExprNode | null;
-  groupby?: unknown;
-  having?: ExprNode | null;
-  orderby?: unknown[] | null;
   _next?: SelectNode | null;
   set_op?: string | null;
+  [key: string]: unknown;
 };
 
 type CteNode = {
@@ -236,11 +233,18 @@ function walkSelectExpressions(
   workspaceId: string,
   visibleCtes: Set<string>,
 ) {
-  walkExprForSubqueries(node.columns, workspaceId, visibleCtes);
-  walkExprForSubqueries(node.where, workspaceId, visibleCtes);
-  walkExprForSubqueries(node.groupby, workspaceId, visibleCtes);
-  walkExprForSubqueries(node.having, workspaceId, visibleCtes);
-  walkExprForSubqueries(node.orderby, workspaceId, visibleCtes);
+  for (const [key, value] of Object.entries(node)) {
+    if (
+      key === "from"
+      || key === "set_op"
+      || key === "type"
+      || key === "with"
+      || key === "_next"
+    ) {
+      continue;
+    }
+    walkExprForSubqueries(value, workspaceId, visibleCtes);
+  }
 }
 
 function unwrapSelect(stmt: CteNode["stmt"] | null | undefined) {
@@ -248,8 +252,11 @@ function unwrapSelect(stmt: CteNode["stmt"] | null | undefined) {
   if ("type" in stmt && (stmt as SelectNode).type === "select") {
     return stmt as SelectNode;
   }
-  if ("ast" in stmt && stmt.ast) return stmt.ast;
-  return null;
+  if ("ast" in stmt && stmt.ast) return stmt.ast as SelectNode;
+  throw new LocalSqlGuardError(
+    "only SELECT statements are allowed in CTEs",
+    "not_select",
+  );
 }
 
 function walkExprForSubqueries(
@@ -263,6 +270,11 @@ function walkExprForSubqueries(
   seen.add(expr);
 
   const node = expr as Record<string, unknown>;
+  if (node.type === "select") {
+    rewriteSelect(node as unknown as SelectNode, workspaceId, cteNames);
+    return;
+  }
+
   const ast = node.ast;
   if (ast && typeof ast === "object" && (ast as SelectNode).type === "select") {
     rewriteSelect(ast as SelectNode, workspaceId, cteNames);

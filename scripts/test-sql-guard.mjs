@@ -219,6 +219,18 @@ assert.match(orderBySubquerySelect, /"?c"?\.workspace_id = 'ws_test'/);
 assert.match(orderBySubquerySelect, /"?sl"?\.workspace_id = 'ws_test'/);
 assert.equal(countWorkspaceFilters(orderBySubquerySelect), 2);
 
+const limitSubquerySelect = enforceLocalWorkspaceScope(
+  [
+    "SELECT c.id",
+    "FROM sendlens.campaigns c",
+    "LIMIT (SELECT count(*) FROM sendlens.sampled_leads sl)",
+  ].join(" "),
+  WORKSPACE_ID,
+);
+assert.match(limitSubquerySelect, /"?c"?\.workspace_id = 'ws_test'/);
+assert.match(limitSubquerySelect, /"?sl"?\.workspace_id = 'ws_test'/);
+assert.equal(countWorkspaceFilters(limitSubquerySelect), 2);
+
 const quotedIdentifierSelect = enforceLocalWorkspaceScope(
   'SELECT "c"."id" FROM sendlens."campaigns" AS "c"',
   WORKSPACE_ID,
@@ -280,9 +292,19 @@ assertGuardError(
   /not allowed/,
 );
 assertGuardError(
+  "SELECT c.id FROM sendlens.campaigns c LIMIT (SELECT count(*) FROM sendlens.plugin_state)",
+  "disallowed_table",
+  /not allowed/,
+);
+assertGuardError(
   "WITH outer_cte AS (WITH inner_cte AS (SELECT id FROM sendlens.plugin_state) SELECT id FROM inner_cte) SELECT id FROM outer_cte",
   "disallowed_table",
   /not allowed/,
+);
+assertGuardError(
+  "WITH changed AS (INSERT INTO sendlens.campaigns (id) VALUES ('x') RETURNING id) SELECT * FROM changed",
+  "not_select",
+  /only SELECT statements/,
 );
 assertGuardError(
   "SELECT * FROM sendlens.campaigns UNION SELECT * FROM sendlens.accounts",
