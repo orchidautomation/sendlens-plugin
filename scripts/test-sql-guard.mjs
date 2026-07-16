@@ -317,6 +317,16 @@ assertGuardError(
   /table-valued functions/,
 );
 assertGuardError(
+  "SELECT c.id FROM sendlens.campaigns c LEFT JOIN sendlens.campaign_analytics ca USING (campaign_id)",
+  "unsupported_shape",
+  /outer joins with USING/,
+);
+assertGuardError(
+  "SELECT ca.campaign_id FROM sendlens.campaigns c RIGHT JOIN sendlens.campaign_analytics ca USING (campaign_id)",
+  "unsupported_shape",
+  /outer joins with USING/,
+);
+assertGuardError(
   "WITH changed AS (INSERT INTO sendlens.campaigns (id) VALUES ('x') RETURNING id) SELECT * FROM changed",
   "not_select",
   /only SELECT statements/,

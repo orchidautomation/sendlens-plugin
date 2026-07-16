@@ -43,6 +43,7 @@ type FromNode = {
   expr?: { ast?: SelectNode; type?: string | null };
   join?: string | null;
   on?: ExprNode | null;
+  using?: unknown[] | null;
 };
 
 type ExprNode = {
@@ -194,6 +195,12 @@ function applyWorkspaceFilters(
     }
 
     if (join.includes("LEFT")) {
+      if (Array.isArray(source.entry.using) && source.entry.using.length > 0) {
+        throw new LocalSqlGuardError(
+          "outer joins with USING are not supported by the workspace guard",
+          "unsupported_shape",
+        );
+      }
       source.entry.on = andExpr(source.entry.on ?? null, source.filter);
       continue;
     }
@@ -212,8 +219,18 @@ function applyWorkspaceFilters(
 function firstLaterRightJoin(from: FromNode[], index: number) {
   if (index < 0) return null;
   for (let i = index + 1; i < from.length; i += 1) {
-    const join = normalizeJoin(from[i]?.join);
-    if (join.includes("RIGHT")) return from[i];
+    const entry = from[i];
+    if (!entry) continue;
+    const join = normalizeJoin(entry.join);
+    if (join.includes("RIGHT")) {
+      if (Array.isArray(entry.using) && entry.using.length > 0) {
+        throw new LocalSqlGuardError(
+          "outer joins with USING are not supported by the workspace guard",
+          "unsupported_shape",
+        );
+      }
+      return entry;
+    }
     if (join.includes("FULL")) {
       throw new LocalSqlGuardError(
         "full joins are not supported by the workspace guard",
