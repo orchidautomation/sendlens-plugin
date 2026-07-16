@@ -10,6 +10,7 @@ const {
   CURRENT_SCHEMA_MIGRATION_ID,
   SchemaMigrationError,
   closeDb,
+  getCacheReadiness,
   getDb,
   query,
   run,
@@ -64,6 +65,9 @@ async function createHistoricalDb(dbPath) {
         synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (workspace_id, id)
       )`,
+    );
+    await conn.run(
+      "INSERT INTO sendlens.plugin_state (key, value) VALUES ('cache_schema_version', 'sendlens.cache.v1')",
     );
     await conn.run(
       `INSERT INTO sendlens.campaigns (id, workspace_id, name, status)
@@ -156,6 +160,13 @@ await withTempDb("sendlens-schema-historical-", async (dbPath) => {
       "SELECT migration_id FROM sendlens.schema_migrations",
     );
     assert.deepEqual(migrations, [{ migration_id: CURRENT_SCHEMA_MIGRATION_ID }]);
+    const cacheSchema = await query(
+      db,
+      "SELECT value FROM sendlens.plugin_state WHERE key = 'cache_schema_version'",
+    );
+    assert.deepEqual(cacheSchema, [{ value: "sendlens.cache.v2" }]);
+    const readiness = await getCacheReadiness(db);
+    assert.equal(readiness.readable, true, "migrated historical caches must be readable");
   } finally {
     closeDb(db);
   }

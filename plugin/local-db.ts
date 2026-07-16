@@ -2666,6 +2666,17 @@ export async function stampCacheSchemaVersion(conn: DuckDBConnection) {
   const current = await getPluginState(conn, CACHE_OWNER_KEYS.schemaVersion);
   if (!current) {
     await setPluginState(conn, CACHE_OWNER_KEYS.schemaVersion, CURRENT_CACHE_SCHEMA_VERSION);
+    return;
+  }
+
+  const existingVersion = cacheSchemaVersionNumber(current);
+  const targetVersion = cacheSchemaVersionNumber(CURRENT_CACHE_SCHEMA_VERSION);
+  if (
+    existingVersion != null
+    && targetVersion != null
+    && existingVersion < targetVersion
+  ) {
+    await setPluginState(conn, CACHE_OWNER_KEYS.schemaVersion, CURRENT_CACHE_SCHEMA_VERSION);
   }
 }
 
