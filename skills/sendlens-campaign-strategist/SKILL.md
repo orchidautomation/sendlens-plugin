@@ -62,4 +62,10 @@ unknowns:
 - assumptions that could change the design
 ```
 
+## Example Requests
+
+- "Recommend the next campaign from these validated findings."
+- "Define the audience, exclusions, offer, and angle for our next outbound test."
+- "Turn these reply insights into a campaign sequence strategy."
+
 If required SendLens tools are missing, stop and tell the user to reload or reinstall the plugin/MCP server.

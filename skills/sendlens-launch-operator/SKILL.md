@@ -50,4 +50,10 @@ learning_handoff:
 - hypothesis, fixed variables, result to capture, next owner/action
 ```
 
+## Example Requests
+
+- "Is this campaign ready to launch tomorrow?"
+- "Define the monitoring, stop, and scale rules."
+- "Close out this campaign test and give me the learning handoff plus a client-safe update."
+
 If required SendLens tools are missing, stop and tell the user to reload or reinstall the plugin/MCP server.

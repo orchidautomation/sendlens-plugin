@@ -69,4 +69,10 @@ Return:
 - whether demo mode is enabled.
 - host-native registration repair guidance when Claude Code, Cursor, Codex, or OpenCode cannot discover a SendLens specialist.
 
+## Example Requests
+
+- "Install and configure SendLens."
+- "Run the SendLens setup doctor."
+- "Why are the SendLens tools missing?"
+
 Do not use Bash, local DuckDB inspection, `jq`, or repo-file fallbacks for SendLens analysis after setup succeeds. Analysis must go through SendLens MCP tools.
