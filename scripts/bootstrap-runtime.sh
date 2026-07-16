@@ -104,11 +104,22 @@ try_acquire_runtime_lock() {
 }
 
 recover_stale_runtime_lock() {
+  local recovery_lock="${LOCK_DIR}.recovery"
   local stale_lock="${LOCK_DIR}.stale.$$.$RANDOM"
-  if mv "${LOCK_DIR}" "${stale_lock}" 2>/dev/null; then
-    echo "[sendlens] Recovering stale runtime bootstrap lock older than ${BOOTSTRAP_LOCK_STALE_SECONDS}s." >&2
-    rm -rf "${stale_lock}" 2>/dev/null || true
+  if ! mkdir "${recovery_lock}" 2>/dev/null; then
+    return 0
   fi
+
+  (
+    trap 'rm -rf "${recovery_lock}" 2>/dev/null || true' EXIT
+    [[ -d "${LOCK_DIR}" ]] || exit 0
+    lock_is_live && exit 0
+    (( $(lock_age_seconds) >= BOOTSTRAP_LOCK_STALE_SECONDS )) || exit 0
+    if mv "${LOCK_DIR}" "${stale_lock}" 2>/dev/null; then
+      echo "[sendlens] Recovering stale runtime bootstrap lock older than ${BOOTSTRAP_LOCK_STALE_SECONDS}s." >&2
+      rm -rf "${stale_lock}" 2>/dev/null || true
+    fi
+  )
 }
 
 release_runtime_lock() {

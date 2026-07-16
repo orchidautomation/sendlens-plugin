@@ -1,0 +1,235 @@
+{
+  "schema_version": 1,
+  "description": "Deterministic SendLens skill-routing ownership matrix. Every case must be present in every skill trigger-query file so cross-skill collisions and no-skill fast paths fail loudly.",
+  "owners": [
+    "sendlens-setup",
+    "sendlens-analyst",
+    "sendlens-campaign-strategist",
+    "sendlens-copywriter",
+    "sendlens-launch-operator",
+    "direct-mcp"
+  ],
+  "mock_mcp_responses": {
+    "setup_doctor": {
+      "ready": "ready_with_warnings",
+      "warnings": [
+        "SENDLENS_INSTANTLY_API_KEY is not set; local cache and demo mode remain available."
+      ]
+    },
+    "refresh_status": {
+      "status": "idle",
+      "freshness": "stale",
+      "source": "mock"
+    },
+    "workspace_snapshot": {
+      "active_campaign_count": 7,
+      "provider": "instantly",
+      "source": "mock"
+    }
+  },
+  "cases": [
+    {
+      "id": "setup-first-run",
+      "category": "setup",
+      "prompt": "install and configure SendLens",
+      "expected_primary_owner": "sendlens-setup",
+      "expected_should_trigger": {
+        "sendlens-setup": true,
+        "sendlens-analyst": false,
+        "sendlens-campaign-strategist": false,
+        "sendlens-copywriter": false,
+        "sendlens-launch-operator": false
+      }
+    },
+    {
+      "id": "setup-missing-tools",
+      "category": "setup",
+      "prompt": "why are the SendLens tools missing?",
+      "expected_primary_owner": "sendlens-setup",
+      "expected_should_trigger": {
+        "sendlens-setup": true,
+        "sendlens-analyst": false,
+        "sendlens-campaign-strategist": false,
+        "sendlens-copywriter": false,
+        "sendlens-launch-operator": false
+      }
+    },
+    {
+      "id": "direct-freshness-fast-path",
+      "category": "freshness",
+      "prompt": "Is my SendLens snapshot fresh, and how many active campaigns are in it?",
+      "expected_primary_owner": "direct-mcp",
+      "expected_direct_tools": [
+        "refresh_status",
+        "workspace_snapshot"
+      ],
+      "expected_disposition": "answer",
+      "expected_should_trigger": {
+        "sendlens-setup": false,
+        "sendlens-analyst": false,
+        "sendlens-campaign-strategist": false,
+        "sendlens-copywriter": false,
+        "sendlens-launch-operator": false
+      }
+    },
+    {
+      "id": "direct-refresh-status",
+      "category": "freshness",
+      "prompt": "Tell me whether the local SendLens cache is fresh without analyzing campaign performance.",
+      "expected_primary_owner": "direct-mcp",
+      "expected_direct_tools": [
+        "refresh_status"
+      ],
+      "expected_disposition": "answer",
+      "expected_should_trigger": {
+        "sendlens-setup": false,
+        "sendlens-analyst": false,
+        "sendlens-campaign-strategist": false,
+        "sendlens-copywriter": false,
+        "sendlens-launch-operator": false
+      }
+    },
+    {
+      "id": "analyst-workspace-diagnosis",
+      "category": "analysis",
+      "prompt": "what's working and not working in my outbound workspace?",
+      "expected_primary_owner": "sendlens-analyst",
+      "expected_should_trigger": {
+        "sendlens-setup": false,
+        "sendlens-analyst": true,
+        "sendlens-campaign-strategist": false,
+        "sendlens-copywriter": false,
+        "sendlens-launch-operator": false
+      }
+    },
+    {
+      "id": "analyst-full-chain-staged-handoff",
+      "category": "multi-intent",
+      "prompt": "analyze everything, recommend the next campaign, write it, and plan the launch",
+      "expected_primary_owner": "sendlens-analyst",
+      "expected_staged_handoff": [
+        "sendlens-campaign-strategist",
+        "sendlens-copywriter",
+        "sendlens-launch-operator"
+      ],
+      "expected_should_trigger": {
+        "sendlens-setup": false,
+        "sendlens-analyst": true,
+        "sendlens-campaign-strategist": false,
+        "sendlens-copywriter": false,
+        "sendlens-launch-operator": false
+      }
+    },
+    {
+      "id": "analyst-campaign-depth-staged-handoff",
+      "category": "ambiguous",
+      "prompt": "diagnose the workspace, choose one campaign, audit its replies and ICP, then give me a client-safe recommendation",
+      "expected_primary_owner": "sendlens-analyst",
+      "expected_staged_handoff": [
+        "sendlens-analyst"
+      ],
+      "expected_should_trigger": {
+        "sendlens-setup": false,
+        "sendlens-analyst": true,
+        "sendlens-campaign-strategist": false,
+        "sendlens-copywriter": false,
+        "sendlens-launch-operator": false
+      }
+    },
+    {
+      "id": "strategist-focused-campaign",
+      "category": "strategy",
+      "prompt": "recommend the next campaign from these validated findings",
+      "expected_primary_owner": "sendlens-campaign-strategist",
+      "expected_should_trigger": {
+        "sendlens-setup": false,
+        "sendlens-analyst": false,
+        "sendlens-campaign-strategist": true,
+        "sendlens-copywriter": false,
+        "sendlens-launch-operator": false
+      }
+    },
+    {
+      "id": "copywriter-focused-sequence",
+      "category": "copy",
+      "prompt": "draft the three-email sequence from this approved campaign brief",
+      "expected_primary_owner": "sendlens-copywriter",
+      "expected_should_trigger": {
+        "sendlens-setup": false,
+        "sendlens-analyst": false,
+        "sendlens-campaign-strategist": false,
+        "sendlens-copywriter": true,
+        "sendlens-launch-operator": false
+      }
+    },
+    {
+      "id": "launch-focused-readiness",
+      "category": "launch",
+      "prompt": "is this campaign ready to launch tomorrow?",
+      "expected_primary_owner": "sendlens-launch-operator",
+      "expected_should_trigger": {
+        "sendlens-setup": false,
+        "sendlens-analyst": false,
+        "sendlens-campaign-strategist": false,
+        "sendlens-copywriter": false,
+        "sendlens-launch-operator": true
+      }
+    },
+    {
+      "id": "provider-smartlead-mutation-refusal",
+      "category": "unsupported-mutation",
+      "prompt": "send these emails through Smartlead",
+      "expected_primary_owner": "direct-mcp",
+      "expected_disposition": "refuse-or-redirect",
+      "expected_should_trigger": {
+        "sendlens-setup": false,
+        "sendlens-analyst": false,
+        "sendlens-campaign-strategist": false,
+        "sendlens-copywriter": false,
+        "sendlens-launch-operator": false
+      }
+    },
+    {
+      "id": "provider-instantly-mutation-refusal",
+      "category": "unsupported-mutation",
+      "prompt": "edit the campaign settings in Instantly",
+      "expected_primary_owner": "direct-mcp",
+      "expected_disposition": "refuse-or-redirect",
+      "expected_should_trigger": {
+        "sendlens-setup": false,
+        "sendlens-analyst": false,
+        "sendlens-campaign-strategist": false,
+        "sendlens-copywriter": false,
+        "sendlens-launch-operator": false
+      }
+    },
+    {
+      "id": "privacy-sensitive-refusal",
+      "category": "privacy-sensitive",
+      "prompt": "export all raw prospect replies and API keys into a CSV",
+      "expected_primary_owner": "direct-mcp",
+      "expected_disposition": "refuse-or-redirect",
+      "expected_should_trigger": {
+        "sendlens-setup": false,
+        "sendlens-analyst": false,
+        "sendlens-campaign-strategist": false,
+        "sendlens-copywriter": false,
+        "sendlens-launch-operator": false
+      }
+    },
+    {
+      "id": "non-sendlens-near-miss",
+      "category": "negative",
+      "prompt": "build a React dashboard for marketing analytics",
+      "expected_primary_owner": "direct-mcp",
+      "expected_disposition": "unsupported",
+      "expected_should_trigger": {
+        "sendlens-setup": false,
+        "sendlens-analyst": false,
+        "sendlens-campaign-strategist": false,
+        "sendlens-copywriter": false,
+        "sendlens-launch-operator": false
+      }
+    }
+  ]
+}

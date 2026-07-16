@@ -51,6 +51,7 @@ Use only SendLens MCP tools for SendLens analysis.
 ## Disallowed Language
 
 - Do not say reconstructed outbound is exact delivered email text.
+- Do not paste raw contact data, full reply bodies, or raw reconstructed bodies into external artifacts.
 - Do not infer reply wording from status labels.
 - Do not equate blank Instantly-native visitor fields with missing RB2B, Clay, or other externally sourced visitor intent.
 - Do not treat mismatch complaint replies as proof that the intended copy angle was tested.

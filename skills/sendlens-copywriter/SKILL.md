@@ -49,4 +49,10 @@ rendering_requirements:
 - required lead fields and unresolved risks
 ```
 
+## Example Requests
+
+- "Draft the three-email sequence from this approved campaign brief."
+- "Rewrite step zero based on the validated reply objections."
+- "Make two meaningful message variants that test different offers."
+
 If required SendLens tools are missing, stop and tell the user to reload or reinstall the plugin/MCP server.

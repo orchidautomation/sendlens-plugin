@@ -12,6 +12,23 @@ permissions:
   contents: read
 
 jobs:
+  site-checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Run site CI checks
+        run: npm run site:ci
+
   plugin-checks:
     runs-on: ubuntu-latest
     strategy:

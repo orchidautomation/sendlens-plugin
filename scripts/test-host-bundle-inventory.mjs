@@ -5,43 +5,19 @@ import { cp, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/pro
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  COMMAND_AGENTS,
+  COMMAND_ARGUMENT_HINTS,
+  COMMAND_SKILLS,
+  OPENAI_AGENT_SKILL_SUMMARIES,
+  PUBLIC_SKILLS,
+} from "./sendlens-contract.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 
 const failures = [];
 const packageJson = await readJson("package.json");
-const PUBLIC_SKILLS = [
-  "sendlens-analyst",
-  "sendlens-campaign-strategist",
-  "sendlens-copywriter",
-  "sendlens-launch-operator",
-  "sendlens-setup",
-];
-const COMMAND_AGENTS = new Map([
-  ["account-manager-brief", "launch-operator"],
-  ["campaign-launch-qa", "launch-operator"],
-  ["campaign-performance", "campaign-analyst"],
-  ["cold-email-best-practices", "campaign-copywriter"],
-  ["copy-analysis", "copy-auditor"],
-  ["experiment-planner", "campaign-strategist"],
-  ["icp-signals", "icp-auditor"],
-  ["reply-patterns", "reply-auditor"],
-  ["workspace-health", "workspace-triager"],
-]);
-const COMMAND_SKILLS = new Map([
-  ...PUBLIC_SKILLS.map((skill) => [skill, skill]),
-  ["account-manager-brief", "sendlens-launch-operator"],
-  ["campaign-launch-qa", "sendlens-launch-operator"],
-  ["campaign-performance", "sendlens-analyst"],
-  ["cold-email-best-practices", "sendlens-copywriter"],
-  ["copy-analysis", "sendlens-analyst"],
-  ["experiment-planner", "sendlens-campaign-strategist"],
-  ["icp-signals", "sendlens-analyst"],
-  ["reply-patterns", "sendlens-analyst"],
-  ["workspace-health", "sendlens-analyst"],
-  ["using-sendlens", "sendlens-analyst"],
-]);
 const shouldBuild =
   !process.argv.includes("--assume-dist") &&
   process.env.SENDLENS_HOST_INVENTORY_ASSUME_DIST !== "1";
@@ -193,6 +169,13 @@ async function sourceInventory() {
       frontmatterValue(commandText, "skill") === skill,
       `commands/${command}.md: expected canonical skill: ${skill}`,
     );
+    const expectedHint = COMMAND_ARGUMENT_HINTS.get(command);
+    if (expectedHint) {
+      assert(
+        frontmatterValue(commandText, "argument-hint") === expectedHint,
+        `commands/${command}.md: expected canonical argument hint: ${expectedHint}`,
+      );
+    }
   }
 
   return { skills, commands, agents };
@@ -374,6 +357,13 @@ async function assertGeneratedSubagentRouting() {
         frontmatterValue(commandText, "skill") === skill,
         `dist/${host}/commands/${command}.md: expected skill: ${skill}`,
       );
+      const expectedHint = COMMAND_ARGUMENT_HINTS.get(command);
+      if (expectedHint) {
+        assert(
+          frontmatterValue(commandText, "argument-hint") === expectedHint,
+          `dist/${host}/commands/${command}.md: expected argument-hint: ${expectedHint}`,
+        );
+      }
     }
 
     for (const [command, agent] of COMMAND_AGENTS) {
@@ -450,6 +440,15 @@ async function assertGeneratedSubagentRouting() {
       generatedCommand?.subtask === true,
       `dist/codex/.codex/commands.generated.json: command "${command}" must preserve subtask: true`,
     );
+    const expectedHint = COMMAND_ARGUMENT_HINTS.get(command);
+    if (expectedHint) {
+      assert(
+        generatedCommand?.argumentHint === expectedHint ||
+          generatedCommand?.argument_hint === expectedHint ||
+          generatedCommand?.argumentHint === undefined,
+        `dist/codex/.codex/commands.generated.json: command "${command}" must preserve argument hint "${expectedHint}" when emitted`,
+      );
+    }
   }
 
   const generatedAnalystCommand = generatedCommands.find(
@@ -618,9 +617,9 @@ async function assertExplicitHostDegradation() {
     "dist/codex/.codex/skills.generated.json: sendlens-analyst description must cover broad full-chain orchestration",
   );
   for (const [skillId, pattern] of [
-    ["sendlens-campaign-strategist", /campaign strategy.*audience.*offer.*angle/i],
-    ["sendlens-copywriter", /draft or rewrite.*subjects.*bodies.*CTAs/i],
-    ["sendlens-launch-operator", /launch.*scale.*stop.*measurement/i],
+    ...[...OPENAI_AGENT_SKILL_SUMMARIES].filter(
+      ([skillId]) => skillId !== "sendlens-analyst",
+    ),
   ]) {
     const focusedSkill = generatedSkills.find((skill) => skill.id === skillId);
     assert(

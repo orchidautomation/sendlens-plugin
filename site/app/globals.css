@@ -443,6 +443,13 @@ p { margin: 0; color: var(--ink-2); }
   flex-direction: column;
   gap: 5px;
 }
+.waitlist-trap {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
 .field-stack { grid-column: 1 / -1; }
 
 .field label, .field-stack label {

@@ -80,6 +80,25 @@ function run(command, args, options = {}) {
   });
 }
 
+function runAsync(command, args, options = {}) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, {
+      ...options,
+      env: {
+        ...process.env,
+        ...options.env,
+      },
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk) => { stdout += chunk; });
+    child.stderr?.on("data", (chunk) => { stderr += chunk; });
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
+  });
+}
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -178,6 +197,40 @@ stale_seconds=1
   assert.match(await readFile(npmLog, "utf8"), /fixture-runtime@1\.0\.0/);
 }
 
+async function testConcurrentStaleLockRecoveryInstallsOnce() {
+  const { bundleRoot, binDir } = await makeGeneratedBundleFixture();
+  const lockDir = path.join(bundleRoot, ".runtime-bootstrap.lock");
+  await mkdir(lockDir);
+  await writeFile(
+    path.join(lockDir, "owner.env"),
+    `pid=999999\nstarted_at=${Math.floor(Date.now() / 1000) - 10}\ntimeout_seconds=5\nstale_seconds=1\n`,
+  );
+  const npmLog = path.join(bundleRoot, "npm.log");
+  const command = path.join(bundleRoot, "scripts", "bootstrap-runtime.sh");
+  const env = {
+    PATH: `${binDir}:${process.env.PATH}`,
+    PLUGIN_ROOT: bundleRoot,
+    SENDLENS_TEST_NPM_LOG: npmLog,
+    SENDLENS_TEST_NPM_SLEEP: "0.5",
+    SENDLENS_RUNTIME_BOOTSTRAP_LOCK_TIMEOUT_SECONDS: "5",
+    SENDLENS_RUNTIME_BOOTSTRAP_LOCK_STALE_SECONDS: "1",
+  };
+
+  const results = await Promise.all(
+    Array.from({ length: 6 }, () => runAsync("bash", [command], { cwd: bundleRoot, env })),
+  );
+  for (const result of results) {
+    assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+  }
+  const installs = (await readFile(npmLog, "utf8")).trim().split("\n").filter(Boolean);
+  assert.equal(installs.length, 1, "concurrent stale-lock waiters must allow only one npm install");
+  const recoveryCount = results.reduce(
+    (count, result) => count + Number(/Recovering stale runtime bootstrap lock/.test(result.stderr)),
+    0,
+  );
+  assert.equal(recoveryCount, 1, "only one waiter may recover the observed stale lock");
+}
+
 async function testOldLiveLockTimesOutWithoutRecovery() {
   const { bundleRoot, binDir } = await makeGeneratedBundleFixture();
   const sleeper = spawn("node", ["-e", "setTimeout(() => {}, 5000)"], {
@@ -247,6 +300,7 @@ try {
   await testMissingGeneratedBundleDependenciesFailBeforeStartup();
   await testWrongGeneratedBundleDependencyVersionFails();
   await testStaleLockRecoversAndInstalls();
+  await testConcurrentStaleLockRecoveryInstallsOnce();
   await testOldLiveLockTimesOutWithoutRecovery();
   await testInvalidLockConfigFailsActionably();
   console.log("Runtime bootstrap tests passed.");
