@@ -11,6 +11,7 @@ const {
 const parser = new Parser();
 const DIALECT = { database: "postgresql" };
 const WORKSPACE_ID = "ws_test";
+const MALICIOUS_WORKSPACE_ID = "x' OR 1=1 --";
 
 function assertGuardError(sql, code, messagePattern) {
   assert.throws(
@@ -25,6 +26,11 @@ function assertGuardError(sql, code, messagePattern) {
 
 function countWorkspaceFilters(sql) {
   return [...sql.matchAll(/workspace_id = 'ws_test'/g)].length;
+}
+
+function assertWorkspaceLiteralEscaped(sql) {
+  assert.match(sql, /workspace_id = 'x'' OR 1=1 --'/);
+  assert.doesNotMatch(sql, /workspace_id = 'x' OR 1=1 --'/);
 }
 
 const tableFunctionFixtures = [
@@ -93,6 +99,34 @@ assert.match(joinedSelect, /"?c"?\.workspace_id = 'ws_test'/);
 assert.match(joinedSelect, /"?ca"?\.workspace_id = 'ws_test'/);
 assert.equal(countWorkspaceFilters(joinedSelect), 2);
 
+const leftJoinSelect = enforceLocalWorkspaceScope(
+  [
+    "SELECT c.name, ca.reply_count_unique",
+    "FROM sendlens.campaigns c",
+    "LEFT JOIN sendlens.campaign_analytics ca ON ca.campaign_id = c.id",
+    "WHERE c.status = 'active'",
+  ].join(" "),
+  WORKSPACE_ID,
+);
+assert.match(leftJoinSelect, /ON .*"?ca"?\.workspace_id = 'ws_test'/);
+assert.match(leftJoinSelect, /WHERE .*"?c"?\.workspace_id = 'ws_test'/);
+assert.doesNotMatch(leftJoinSelect, /WHERE .*"?ca"?\.workspace_id = 'ws_test'/);
+assert.equal(countWorkspaceFilters(leftJoinSelect), 2);
+
+const rightJoinSelect = enforceLocalWorkspaceScope(
+  [
+    "SELECT c.name, ca.reply_count_unique",
+    "FROM sendlens.campaigns c",
+    "RIGHT JOIN sendlens.campaign_analytics ca ON ca.campaign_id = c.id",
+    "WHERE ca.reply_count_unique > 0",
+  ].join(" "),
+  WORKSPACE_ID,
+);
+assert.match(rightJoinSelect, /ON .*"?c"?\.workspace_id = 'ws_test'/);
+assert.match(rightJoinSelect, /WHERE .*"?ca"?\.workspace_id = 'ws_test'/);
+assert.doesNotMatch(rightJoinSelect, /WHERE .*"?c"?\.workspace_id = 'ws_test'/);
+assert.equal(countWorkspaceFilters(rightJoinSelect), 2);
+
 const cteSelect = enforceLocalWorkspaceScope(
   [
     "WITH active_campaigns AS (",
@@ -148,6 +182,56 @@ assert.match(existsSubquerySelect, /"?c"?\.workspace_id = 'ws_test'/);
 assert.match(existsSubquerySelect, /"?sl"?\.workspace_id = 'ws_test'/);
 assert.equal(countWorkspaceFilters(existsSubquerySelect), 2);
 
+const selectScalarSubquery = enforceLocalWorkspaceScope(
+  [
+    "SELECT c.id,",
+    "  (SELECT count(*) FROM sendlens.sampled_leads sl WHERE sl.campaign_id = c.id) AS lead_count",
+    "FROM sendlens.campaigns c",
+  ].join(" "),
+  WORKSPACE_ID,
+);
+assert.match(selectScalarSubquery, /"?c"?\.workspace_id = 'ws_test'/);
+assert.match(selectScalarSubquery, /"?sl"?\.workspace_id = 'ws_test'/);
+assert.equal(countWorkspaceFilters(selectScalarSubquery), 2);
+
+const havingSubquerySelect = enforceLocalWorkspaceScope(
+  [
+    "SELECT c.status, count(*) AS campaign_count",
+    "FROM sendlens.campaigns c",
+    "GROUP BY c.status",
+    "HAVING count(*) > (SELECT count(*) FROM sendlens.sampled_leads sl)",
+  ].join(" "),
+  WORKSPACE_ID,
+);
+assert.match(havingSubquerySelect, /"?c"?\.workspace_id = 'ws_test'/);
+assert.match(havingSubquerySelect, /"?sl"?\.workspace_id = 'ws_test'/);
+assert.equal(countWorkspaceFilters(havingSubquerySelect), 2);
+
+const orderBySubquerySelect = enforceLocalWorkspaceScope(
+  [
+    "SELECT c.id",
+    "FROM sendlens.campaigns c",
+    "ORDER BY (SELECT count(*) FROM sendlens.sampled_leads sl WHERE sl.campaign_id = c.id)",
+  ].join(" "),
+  WORKSPACE_ID,
+);
+assert.match(orderBySubquerySelect, /"?c"?\.workspace_id = 'ws_test'/);
+assert.match(orderBySubquerySelect, /"?sl"?\.workspace_id = 'ws_test'/);
+assert.equal(countWorkspaceFilters(orderBySubquerySelect), 2);
+
+const quotedIdentifierSelect = enforceLocalWorkspaceScope(
+  'SELECT "c"."id" FROM sendlens."campaigns" AS "c"',
+  WORKSPACE_ID,
+);
+assert.match(quotedIdentifierSelect, /"?c"?\.workspace_id = 'ws_test'/);
+assert.equal(countWorkspaceFilters(quotedIdentifierSelect), 1);
+
+const escapedWorkspaceSelect = enforceLocalWorkspaceScope(
+  "SELECT c.id FROM sendlens.campaigns c",
+  MALICIOUS_WORKSPACE_ID,
+);
+assertWorkspaceLiteralEscaped(escapedWorkspaceSelect);
+
 const existingWhereSelect = enforceLocalWorkspaceScope(
   "SELECT c.id FROM sendlens.campaigns c WHERE c.status = 'active'",
   WORKSPACE_ID,
@@ -181,6 +265,26 @@ assertGuardError(
   /not allowed/,
 );
 assertGuardError(
+  "SELECT c.id, (SELECT count(*) FROM sendlens.plugin_state ps) AS leak FROM sendlens.campaigns c",
+  "disallowed_table",
+  /not allowed/,
+);
+assertGuardError(
+  "SELECT c.id FROM sendlens.campaigns c HAVING count(*) > (SELECT count(*) FROM sendlens.plugin_state)",
+  "disallowed_table",
+  /not allowed/,
+);
+assertGuardError(
+  "SELECT c.id FROM sendlens.campaigns c ORDER BY (SELECT count(*) FROM sendlens.plugin_state)",
+  "disallowed_table",
+  /not allowed/,
+);
+assertGuardError(
+  "WITH outer_cte AS (WITH inner_cte AS (SELECT id FROM sendlens.plugin_state) SELECT id FROM inner_cte) SELECT id FROM outer_cte",
+  "disallowed_table",
+  /not allowed/,
+);
+assertGuardError(
   "SELECT * FROM sendlens.campaigns UNION SELECT * FROM sendlens.accounts",
   "unsupported_shape",
   /set operations/,
@@ -190,5 +294,13 @@ assertGuardError(
   "unsupported_shape",
   /table-valued functions/,
 );
+
+for (const fixture of tableFunctionFixtures) {
+  assertGuardError(
+    `SELECT c.id, EXISTS (SELECT 1 FROM ${fixture.name}('/tmp/leads.csv')) AS has_rows FROM sendlens.campaigns c`,
+    "unsupported_shape",
+    /table-valued functions/,
+  );
+}
 
 console.log("sql guard tests passed");

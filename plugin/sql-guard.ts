@@ -23,8 +23,12 @@ export class LocalSqlGuardError extends Error {
 type SelectNode = {
   type: "select";
   with: CteNode[] | null;
+  columns?: unknown[] | null;
   from: FromNode[] | null;
   where: ExprNode | null;
+  groupby?: unknown;
+  having?: ExprNode | null;
+  orderby?: unknown[] | null;
   _next?: SelectNode | null;
   set_op?: string | null;
 };
@@ -40,6 +44,8 @@ type FromNode = {
   table?: string | null;
   as?: string | null;
   expr?: { ast?: SelectNode; type?: string | null };
+  join?: string | null;
+  on?: ExprNode | null;
 };
 
 type ExprNode = {
@@ -65,10 +71,8 @@ export function enforceLocalWorkspaceScope(sql: string, workspaceId: string) {
   try {
     ast = parser.astify(stripped, DIALECT);
   } catch (err) {
-    throw new LocalSqlGuardError(
-      `could not parse query: ${(err as Error).message}`,
-      "parse_failed",
-    );
+    void err;
+    throw new LocalSqlGuardError("could not parse query", "parse_failed");
   }
 
   if (Array.isArray(ast)) {
@@ -120,11 +124,12 @@ function rewriteSelect(
     }
   }
 
-  const injections: ExprNode[] = [];
+  const scopedSources: { entry: FromNode; filter: ExprNode }[] = [];
   if (Array.isArray(node.from)) {
     for (const entry of node.from) {
       if (entry?.expr?.ast) {
         rewriteSelect(entry.expr.ast, workspaceId, visibleCtes);
+        if (entry.on) walkExprForSubqueries(entry.on, workspaceId, visibleCtes);
         continue;
       }
 
@@ -156,20 +161,86 @@ function rewriteSelect(
       }
 
       const qualifier = entry.as || table;
-      injections.push(buildWorkspaceFilter(qualifier, workspaceId));
+      const filter = buildWorkspaceFilter(qualifier, workspaceId);
+      scopedSources.push({ entry, filter });
+      if (entry.on) walkExprForSubqueries(entry.on, workspaceId, visibleCtes);
     }
   }
 
-  if (injections.length > 0) {
-    node.where = injections.reduce(
+  applyWorkspaceFilters(node, scopedSources);
+
+  walkSelectExpressions(node, workspaceId, visibleCtes);
+}
+
+function applyWorkspaceFilters(
+  node: SelectNode,
+  sources: { entry: FromNode; filter: ExprNode }[],
+) {
+  const from = Array.isArray(node.from) ? node.from : [];
+  const whereFilters: ExprNode[] = [];
+
+  for (const source of sources) {
+    const index = from.indexOf(source.entry);
+    const join = normalizeJoin(source.entry.join);
+
+    if (join.includes("FULL")) {
+      throw new LocalSqlGuardError(
+        "full joins are not supported by the workspace guard",
+        "unsupported_shape",
+      );
+    }
+
+    const rightJoin = firstLaterRightJoin(from, index);
+    if (rightJoin) {
+      rightJoin.on = andExpr(rightJoin.on ?? null, source.filter);
+      continue;
+    }
+
+    if (join.includes("LEFT")) {
+      source.entry.on = andExpr(source.entry.on ?? null, source.filter);
+      continue;
+    }
+
+    whereFilters.push(source.filter);
+  }
+
+  if (whereFilters.length > 0) {
+    node.where = whereFilters.reduce(
       (acc, filter) => andExpr(acc, filter),
       node.where ?? null,
     );
   }
+}
 
-  if (node.where) {
-    walkExprForSubqueries(node.where, workspaceId, visibleCtes);
+function firstLaterRightJoin(from: FromNode[], index: number) {
+  if (index < 0) return null;
+  for (let i = index + 1; i < from.length; i += 1) {
+    const join = normalizeJoin(from[i]?.join);
+    if (join.includes("RIGHT")) return from[i];
+    if (join.includes("FULL")) {
+      throw new LocalSqlGuardError(
+        "full joins are not supported by the workspace guard",
+        "unsupported_shape",
+      );
+    }
   }
+  return null;
+}
+
+function normalizeJoin(join: string | null | undefined) {
+  return (join ?? "").toUpperCase();
+}
+
+function walkSelectExpressions(
+  node: SelectNode,
+  workspaceId: string,
+  visibleCtes: Set<string>,
+) {
+  walkExprForSubqueries(node.columns, workspaceId, visibleCtes);
+  walkExprForSubqueries(node.where, workspaceId, visibleCtes);
+  walkExprForSubqueries(node.groupby, workspaceId, visibleCtes);
+  walkExprForSubqueries(node.having, workspaceId, visibleCtes);
+  walkExprForSubqueries(node.orderby, workspaceId, visibleCtes);
 }
 
 function unwrapSelect(stmt: CteNode["stmt"] | null | undefined) {
@@ -221,9 +292,13 @@ function buildWorkspaceFilter(qualifier: string, workspaceId: string): ExprNode 
     } as unknown as ExprNode,
     right: {
       type: "single_quote_string",
-      value: workspaceId,
+      value: escapeSqlStringLiteralValue(workspaceId),
     } as unknown as ExprNode,
   };
+}
+
+function escapeSqlStringLiteralValue(value: string) {
+  return value.replace(/'/g, "''");
 }
 
 function andExpr(left: ExprNode | null, right: ExprNode): ExprNode {
