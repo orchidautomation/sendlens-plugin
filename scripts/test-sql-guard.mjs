@@ -302,6 +302,21 @@ assertGuardError(
   /not allowed/,
 );
 assertGuardError(
+  "WITH x AS (SELECT id FROM sendlens.campaigns) SELECT * FROM x a JOIN x b ON EXISTS (SELECT 1 FROM sendlens.plugin_state)",
+  "disallowed_table",
+  /not allowed/,
+);
+assertGuardError(
+  "WITH x AS (SELECT id FROM sendlens.campaigns) SELECT c.id FROM sendlens.campaigns c JOIN x ON EXISTS (SELECT 1 FROM sendlens.plugin_state)",
+  "disallowed_table",
+  /not allowed/,
+);
+assertGuardError(
+  "WITH x AS (SELECT id FROM sendlens.campaigns) SELECT * FROM x a JOIN x b ON EXISTS (SELECT 1 FROM read_csv_auto('/tmp/leads.csv'))",
+  "unsupported_shape",
+  /table-valued functions/,
+);
+assertGuardError(
   "WITH changed AS (INSERT INTO sendlens.campaigns (id) VALUES ('x') RETURNING id) SELECT * FROM changed",
   "not_select",
   /only SELECT statements/,

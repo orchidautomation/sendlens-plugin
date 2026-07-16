@@ -2522,8 +2522,8 @@ LIMIT 50;`,
   GROUP BY 1, 2, 3
 )
 SELECT
-  COALESCE(fc.campaign_id, hs.campaign_id) AS campaign_id,
-  COALESCE(fc.i_status, hs.i_status) AS i_status,
+  hs.campaign_id,
+  hs.i_status,
   fc.reply_email_i_status_label,
   COALESCE(fc.stored_reply_rows, 0) AS stored_reply_rows,
   COALESCE(fc.stored_reply_body_rows, 0) AS stored_reply_body_rows,
@@ -2537,12 +2537,12 @@ SELECT
   hs.last_hydrated_at,
   fc.oldest_reply_received_at,
   fc.newest_reply_received_at
-FROM fetched_context fc
-FULL OUTER JOIN sendlens.reply_email_hydration_state hs
+FROM sendlens.reply_email_hydration_state hs
+LEFT JOIN fetched_context fc
   ON fc.campaign_id = hs.campaign_id
  AND fc.i_status = hs.i_status
-WHERE COALESCE(fc.campaign_id, hs.campaign_id) = '{{campaign_id}}'
-  AND COALESCE(fc.i_status, hs.i_status) IN (1, -1, -2)
+WHERE hs.campaign_id = '{{campaign_id}}'
+  AND hs.i_status IN (1, -1, -2)
 ORDER BY i_status DESC;`,
     notes: [
       "Run prepare_campaign_analysis first for premium analysis; this recipe audits what is now hydrated locally.",

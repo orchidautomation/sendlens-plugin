@@ -137,6 +137,7 @@ function rewriteSelect(
           "unsupported_shape",
         );
       }
+      if (entry.on) walkExprForSubqueries(entry.on, workspaceId, visibleCtes);
       if (!entry.db && visibleCtes.has(table)) continue;
       if (!entry.db) {
         throw new LocalSqlGuardError(
@@ -160,7 +161,6 @@ function rewriteSelect(
       const qualifier = entry.as || table;
       const filter = buildWorkspaceFilter(qualifier, workspaceId);
       scopedSources.push({ entry, filter });
-      if (entry.on) walkExprForSubqueries(entry.on, workspaceId, visibleCtes);
     }
   }
 
