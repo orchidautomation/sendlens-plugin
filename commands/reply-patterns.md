@@ -1,6 +1,6 @@
 ---
 description: "SendLens: inspect one campaign's positive, negative, and neutral reply outcomes"
-argument-hint: "[campaign-name] [instantly-tag]"
+argument-hint: "[campaign-name] [provider-tag]"
 skill: sendlens-analyst
 agent: reply-auditor
 subtask: true
@@ -13,4 +13,4 @@ Use the `sendlens-analyst` skill and its reply/ICP/copy module when the user ask
 
 Arguments: $ARGUMENTS
 
-If arguments are provided, use campaign name and Instantly tag to narrow the reply analysis before comparing outcomes.
+If arguments are provided, use campaign name and provider tag to narrow the reply analysis before comparing outcomes. Treat tag support as provider-specific evidence.

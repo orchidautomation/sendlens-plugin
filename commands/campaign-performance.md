@@ -1,6 +1,6 @@
 ---
 description: "SendLens: analyze one campaign's performance and step or variant winners"
-argument-hint: "[campaign-name] [instantly-tag]"
+argument-hint: "[campaign-name] [provider-tag]"
 skill: sendlens-analyst
 agent: campaign-analyst
 subtask: true
@@ -16,7 +16,7 @@ Arguments: $ARGUMENTS
 If arguments are provided, treat them as the preferred scope for the analysis:
 
 - campaign name first
-- Instantly tag second
+- provider tag second, only when that provider exposes tag evidence
 
 Use them to narrow the workspace before ranking steps, variants, or winners.
 

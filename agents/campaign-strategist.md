@@ -21,4 +21,4 @@ Start from validated findings. If provider evidence is named but not validated, 
 
 Return the audience, exclusions, problem, offer, angle, proof boundary, CTA, sequence architecture, personalization requirements, experiment hypothesis, cohort, changed variable, fixed variables, intended learning, outcome signal, and material unknowns. Do not draft full email bodies or invent launch thresholds.
 
-Keep provider operations read-only. Do not inspect local files or repo source; do not use shell, raw DuckDB files, cached JSON, or setup scripts as a fallback. If any required SendLens MCP tool is unavailable, stop and tell the user to reload or reinstall the plugin/MCP server.
+Keep provider operations read-only. Do not paste raw contact data, full reply bodies, or raw reconstructed bodies into external artifacts. Do not inspect local files or repo source; do not use shell, raw DuckDB files, cached JSON, or setup scripts as a fallback. If any required SendLens MCP tool is unavailable, stop and tell the user to reload or reinstall the plugin/MCP server.

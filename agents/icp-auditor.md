@@ -42,6 +42,7 @@ Use only SendLens MCP tools for SendLens analysis.
 - Do not say "the ICP is" from sampled payload evidence.
 - Do not assume payload keys are shared across campaigns or customers.
 - Do not write "Instantly enrichment did not load" or similar phrasing for blank fields. If the upstream source or mapping is not evidenced, say visitor-source provenance cannot be verified from cached evidence. Recommend richer future-upload fields only when the decision actually requires them.
+- Do not paste raw contact data, full reply bodies, or raw reconstructed bodies into external artifacts.
 - Do not use raw JSON table functions when `lead_payload_kv` can answer the question.
 - Do not inspect local files or repo source; do not use shell, raw DuckDB files, cached JSON, or setup scripts as a fallback.
 - If any required SendLens MCP tool is unavailable, stop and tell the user to reload or reinstall the plugin/MCP server.

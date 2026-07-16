@@ -15,7 +15,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 - Public skill: `skills/sendlens-launch-operator/SKILL.md`
 - Reference: `skills/sendlens-launch-operator/references/launch-operations.md`
 - Command: `/campaign-launch-qa`
-- Default agent: `campaign-analyst`
+- Default agent: `launch-operator`
 - MCP tools: `workspace_snapshot`, `analysis_starters`, `analyze_data`, `load_campaign_data`
 
 ## Expected Flow

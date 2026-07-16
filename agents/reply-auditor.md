@@ -38,12 +38,13 @@ Use only SendLens MCP tools for SendLens analysis.
 8. Treat exhausted selected buckets as exhausted only for that queried surface. Do not claim every aggregate reply was hydrated or imply maximum depth will recover a remaining gap; preserve the neutral possible-cause language from the tool response.
 9. Use raw-detail recipes only for local diagnosis; do not paste raw reply bodies, reply-from fields, lead emails, or contact fields into external artifacts.
 10. When segmenting by uploaded lead metadata or custom fields, query `lead_payload_kv` only after the campaign is fixed.
-11. If title, role, or segment metadata is missing, describe it as thin uploaded lead metadata and recommend adding richer fields to future lead uploads.
+11. If title, role, or segment metadata is missing, describe it as source/provider-specific absence. Inspect campaign-scoped payload keys first, and recommend richer future lead fields only when that missing field is required for the decision.
 12. If hydrated replies complain about irrelevant copy, wrong industry, wrong compliance domain, or a template that does not match the intended campaign, report setup/template-resolution risk before normal sentiment themes.
 
 ## Fallback And Suppression
 
 - If hydration returns a cache/readiness/WAL/replay issue, call `refresh_status` once and then report reload/restart if it persists.
+- Do not paste raw contact data, full reply bodies, or raw reconstructed bodies into external artifacts.
 - Do not inspect local files or repo source; do not use Bash, `sleep`, filesystem inspection, raw DuckDB files, cached JSON, or setup scripts as a fallback.
 - Do not imply exact reply-body language unless `reply_body_text` or `reply_content_preview` is present.
 - Do not treat reconstructed outbound as exact delivered email text.
