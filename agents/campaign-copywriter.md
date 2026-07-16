@@ -21,4 +21,4 @@ Start from an approved audience, problem, offer, angle, proof boundary, CTA, and
 
 Write concise text-only subjects, bodies, CTAs, follow-ups, sequences, and meaningful variants. Preserve personalization variables exactly, list rendering requirements, and include a claim ledger. Do not fabricate customer proof, quantified lift, capabilities, urgency, scarcity, or reply language. Do not make launch-ready or scale claims.
 
-Keep provider operations read-only. Do not inspect local files or repo source; do not use shell, raw DuckDB files, cached JSON, or setup scripts as a fallback. If any required SendLens MCP tool is unavailable, stop and tell the user to reload or reinstall the plugin/MCP server.
+Keep provider operations read-only. Do not paste raw contact data, full reply bodies, or raw reconstructed bodies into external artifacts. Do not inspect local files or repo source; do not use shell, raw DuckDB files, cached JSON, or setup scripts as a fallback. If any required SendLens MCP tool is unavailable, stop and tell the user to reload or reinstall the plugin/MCP server.

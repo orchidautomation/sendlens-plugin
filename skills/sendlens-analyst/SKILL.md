@@ -12,6 +12,7 @@ Diagnose the workspace or campaign, establish what the evidence supports, and or
 - Use SendLens MCP tools as the working surface. Do not inspect repository files, raw DuckDB files, cached JSON, shell output, or setup scripts as analysis fallbacks.
 - Keep provider operations read-only. Recommend actions; never create, edit, send, or mutate provider resources.
 - Preserve `source_provider`, `provider_campaign_id`, and `campaign_source_id` in mixed-provider workspaces.
+- Keep provider-qualified evidence explicit in mixed-provider workspaces. Smartlead V1 support is read-only and provider-qualified where implemented.
 - Label material claims with the weakest evidence class that supports them.
 - Treat broad aggregates as triage. Validate reply quality and the intended copy path before calling a campaign working, a winner, or ready to scale.
 - Keep deep reply, ICP, copy, and campaign work scoped to one campaign at a time.
@@ -81,6 +82,12 @@ unknowns:
 ```
 
 If required SendLens tools are missing, stop and tell the user to reload or reinstall the plugin/MCP server.
+
+## Example Requests
+
+- "What's working and not working in my outbound workspace?"
+- "Rank my campaigns and tell me which one deserves a deeper reply and ICP review."
+- "Analyze everything, recommend the next campaign, write it, and plan the launch."
 
 ## Default Output
 

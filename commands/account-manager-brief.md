@@ -1,6 +1,6 @@
 ---
 description: "SendLens: prepare a client-safe account brief, risk summary, and action queue"
-argument-hint: "[campaign-name-or-instantly-tag]"
+argument-hint: "[campaign-name-or-provider-tag]"
 skill: sendlens-launch-operator
 agent: launch-operator
 subtask: true
@@ -13,6 +13,6 @@ Use the `sendlens-launch-operator` skill and its learning/client-handoff module 
 
 Arguments: $ARGUMENTS
 
-If arguments are provided, scope the brief to that campaign name or Instantly tag before ranking actions.
+If arguments are provided, scope the brief to that campaign name or provider tag before ranking actions. Treat tag support as provider-specific evidence.
 
 Return a client-safe update plus an internal action queue.

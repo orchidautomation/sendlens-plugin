@@ -41,3 +41,15 @@ See the [component catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRI
 - Use `fetch_reply_text` only when a low-level manual reply body fetch is enough.
 - Preserve evidence boundaries: exact, sampled, hybrid, reconstructed, and fetched.
 - Run strategist → copywriter → launch operator after diagnosis when a broad request spans the full chain.
+
+## Behavioral Routing Evaluations
+
+The executable ownership matrix lives in `.pluxx/behavioral-routing-matrix.json` and is checked by `npm run test:skill-routing`. The matrix is intentionally global: every case must appear in every `skills/<skill>/evals/trigger-queries.json` file, with exactly one `should_trigger: true` skill unless the case is a direct-MCP/no-skill fast path.
+
+When adding or debugging a routing case:
+
+- Add the prompt, owner, category, and expected per-skill trigger map to `.pluxx/behavioral-routing-matrix.json`.
+- Add the same prompt to every skill trigger-query file with the expected `should_trigger` value.
+- Use `direct-mcp` for freshness, setup-status, unsupported mutation, privacy-sensitive refusal, or non-SendLens prompts that should not load a specialist skill.
+- Use `expected_staged_handoff` only when one primary owner is allowed to orchestrate later skills, such as analyst-owned strategy → copy → launch workflows.
+- Run `npm run test:skill-routing`; zero cases, missing matrix prompts, missing mock MCP responses, or multiple primary owners are hard failures.

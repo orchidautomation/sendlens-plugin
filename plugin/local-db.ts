@@ -31,6 +31,8 @@ const LOCK_ERROR_PATTERNS = [
   /replaying WAL file/i,
   /WAL replay/i,
 ];
+export const BASELINE_SCHEMA_MIGRATION_ID = "202607160001_current_schema_baseline";
+export const CURRENT_SCHEMA_MIGRATION_ID = "202607160002_refresh_reply_context_views";
 const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
 const cacheProviderModeContext = new AsyncLocalStorage<SourceProviderMode>();
 
@@ -54,6 +56,17 @@ export class LocalDbUnavailableError extends Error {
   constructor(message: string, cause?: unknown) {
     super(message);
     this.name = "LocalDbUnavailableError";
+    this.cause = cause;
+  }
+}
+
+export class SchemaMigrationError extends Error {
+  code = "schema_migration_failed" as const;
+  cause: unknown;
+
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.name = "SchemaMigrationError";
     this.cause = cause;
   }
 }
@@ -488,7 +501,127 @@ async function ensureProviderQualifiedAccountPrimaryKeys(conn: DuckDBConnection)
   }
 }
 
+async function ensureSchemaMigrationLedger(conn: DuckDBConnection) {
+  await run(conn, "CREATE SCHEMA IF NOT EXISTS sendlens");
+  await run(
+    conn,
+    `CREATE TABLE IF NOT EXISTS sendlens.schema_migrations (
+      migration_id VARCHAR PRIMARY KEY,
+      applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+  );
+}
+
+async function sendlensTableExists(conn: DuckDBConnection, tableName: string) {
+  const rows = await query(
+    conn,
+    `SELECT table_name
+     FROM information_schema.tables
+     WHERE table_schema = 'sendlens'
+       AND table_name = '${esc(tableName)}'
+     LIMIT 1`,
+  );
+  return rows.length > 0;
+}
+
+function cacheSchemaVersionNumber(schemaVersion: string | null) {
+  const match = schemaVersion?.match(/^sendlens\.cache\.v(\d+)$/);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+async function assertNoUnsupportedFutureCacheSchema(conn: DuckDBConnection) {
+  const hasPluginState = await sendlensTableExists(conn, "plugin_state");
+  if (!hasPluginState) return;
+
+  const rows = await query(
+    conn,
+    `SELECT value
+     FROM sendlens.plugin_state
+     WHERE key = 'cache_schema_version'
+     LIMIT 1`,
+  );
+  const schemaVersion = typeof rows[0]?.value === "string" ? rows[0].value : null;
+  const existingVersion = cacheSchemaVersionNumber(schemaVersion);
+  const currentVersion = cacheSchemaVersionNumber(CURRENT_CACHE_SCHEMA_VERSION);
+  if (
+    existingVersion != null
+    && currentVersion != null
+    && existingVersion > currentVersion
+  ) {
+    throw new SchemaMigrationError(
+      `The local SendLens DuckDB cache uses newer unsupported schema version ${schemaVersion}. Upgrade SendLens before using this cache, or refresh into a separate SENDLENS_DB_PATH.`,
+    );
+  }
+}
+
+async function appliedSchemaMigrationIds(conn: DuckDBConnection) {
+  const rows = await query(
+    conn,
+    `SELECT migration_id
+     FROM sendlens.schema_migrations
+     ORDER BY migration_id`,
+  );
+  return rows.map((row) => String(row.migration_id));
+}
+
+function assertSupportedSchemaMigrations(appliedIds: string[]) {
+  const supportedIds = new Set([BASELINE_SCHEMA_MIGRATION_ID, CURRENT_SCHEMA_MIGRATION_ID]);
+  const unknownIds = appliedIds.filter((migrationId) => !supportedIds.has(migrationId));
+  if (unknownIds.length === 0) return;
+
+  throw new SchemaMigrationError(
+    `The local SendLens DuckDB cache was created or upgraded by a newer unsupported plugin schema migration (${unknownIds.join(", ")}). Upgrade SendLens before using this cache, or refresh into a separate SENDLENS_DB_PATH.`,
+  );
+}
+
+async function recordCompletedSchemaMigration(
+  conn: DuckDBConnection,
+  migrationId: string,
+) {
+  await run(
+    conn,
+    `INSERT INTO sendlens.schema_migrations (migration_id, applied_at)
+     VALUES ('${esc(migrationId)}', CURRENT_TIMESTAMP)`,
+  );
+}
+
+async function runSchemaMigration(
+  conn: DuckDBConnection,
+  migrationId: string,
+  migration: () => Promise<void>,
+) {
+  await run(conn, "BEGIN TRANSACTION");
+  try {
+    await migration();
+    if (process.env.SENDLENS_TEST_FAIL_SCHEMA_MIGRATION_ID === migrationId) {
+      throw new Error(`test requested failure after schema migration ${migrationId}`);
+    }
+    await recordCompletedSchemaMigration(conn, migrationId);
+    await run(conn, "COMMIT");
+  } catch (error) {
+    try {
+      await run(conn, "ROLLBACK");
+    } catch {
+      // The original migration failure is more useful to callers.
+    }
+    if (error instanceof SchemaMigrationError) throw error;
+    throw new SchemaMigrationError(
+      `Failed to apply SendLens schema migration ${migrationId}. The migration was not recorded and will be retried on the next connection after the cause is fixed.`,
+      error,
+    );
+  }
+}
+
 async function ensureSchema(conn: DuckDBConnection) {
+  await assertNoUnsupportedFutureCacheSchema(conn);
+  await ensureSchemaMigrationLedger(conn);
+  const appliedIds = await appliedSchemaMigrationIds(conn);
+  assertSupportedSchemaMigrations(appliedIds);
+  if (appliedIds.includes(CURRENT_SCHEMA_MIGRATION_ID)) {
+    await stampCacheSchemaVersion(conn);
+    return;
+  }
+
   const statements = [
     "CREATE SCHEMA IF NOT EXISTS sendlens",
     `CREATE TABLE IF NOT EXISTS sendlens.plugin_state (
@@ -941,6 +1074,14 @@ async function ensureSchema(conn: DuckDBConnection) {
       lead_pages_fetched INTEGER,
       lead_cursor_exhausted BOOLEAN,
       lead_termination_reason VARCHAR,
+      sampling_algorithm_version VARCHAR,
+      sampling_seed VARCHAR,
+      requested_window_start_at TIMESTAMP,
+      requested_window_end_at TIMESTAMP,
+      effective_population_size INTEGER,
+      selected_record_count INTEGER,
+      population_fingerprint VARCHAR,
+      provenance_status VARCHAR DEFAULT 'unknown',
       coverage_note VARCHAR,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (workspace_id, campaign_id)
@@ -1005,6 +1146,14 @@ async function ensureSchema(conn: DuckDBConnection) {
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS lead_pages_fetched INTEGER",
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS lead_cursor_exhausted BOOLEAN",
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS lead_termination_reason VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS sampling_algorithm_version VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS sampling_seed VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS requested_window_start_at TIMESTAMP",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS requested_window_end_at TIMESTAMP",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS effective_population_size INTEGER",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS selected_record_count INTEGER",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS population_fingerprint VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS provenance_status VARCHAR DEFAULT 'unknown'",
     "ALTER TABLE sendlens.campaign_daily_metrics ADD COLUMN IF NOT EXISTS opportunities INTEGER",
     "ALTER TABLE sendlens.campaign_daily_metrics ADD COLUMN IF NOT EXISTS unique_opportunities INTEGER",
     "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
@@ -1062,6 +1211,14 @@ async function ensureSchema(conn: DuckDBConnection) {
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS provider_campaign_id VARCHAR",
     "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS campaign_source_id VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS sampling_algorithm_version VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS sampling_seed VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS requested_window_start_at TIMESTAMP",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS requested_window_end_at TIMESTAMP",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS effective_population_size INTEGER",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS selected_record_count INTEGER",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS population_fingerprint VARCHAR",
+    "ALTER TABLE sendlens.sampling_runs ADD COLUMN IF NOT EXISTS provenance_status VARCHAR DEFAULT 'unknown'",
     `CREATE OR REPLACE VIEW sendlens.campaign_tags AS
       SELECT
         m.workspace_id,
@@ -1412,6 +1569,14 @@ async function ensureSchema(conn: DuckDBConnection) {
         COALESCE(sr.outbound_rows_sampled, 0) AS outbound_rows_sampled,
         COALESCE(sr.reply_outbound_rows, 0) AS reply_outbound_rows,
         COALESCE(sr.filtered_lead_rows, 0) AS filtered_lead_rows,
+        COALESCE(sr.sampling_algorithm_version, 'unknown') AS sampling_algorithm_version,
+        sr.sampling_seed,
+        sr.requested_window_start_at,
+        sr.requested_window_end_at,
+        sr.effective_population_size,
+        sr.selected_record_count,
+        sr.population_fingerprint,
+        COALESCE(sr.provenance_status, 'unknown') AS provenance_status,
         CASE
           WHEN COALESCE(ca.emails_sent_count, 0) = 0 THEN 0
           ELSE ROUND(100.0 * COALESCE(ca.reply_count_unique, 0) / ca.emails_sent_count, 2)
@@ -1809,6 +1974,14 @@ async function ensureSchema(conn: DuckDBConnection) {
         sl.custom_payload,
         sl.sample_source,
         sl.sampled_at,
+        COALESCE(sl.timestamp_last_contact, sl.timestamp_last_reply) AS provider_event_at,
+        sl.sampled_at AS evidence_observed_at,
+        sl.sampled_at AS evidence_sampled_at,
+        CASE
+          WHEN sl.timestamp_last_contact IS NOT NULL THEN 'provider_last_contact'
+          WHEN sl.timestamp_last_reply IS NOT NULL THEN 'provider_last_reply'
+          ELSE 'unavailable'
+        END AS provider_event_time_basis,
         CASE
           WHEN (
             COALESCE(sl.email_reply_count, 0) > 0
@@ -1854,7 +2027,7 @@ async function ensureSchema(conn: DuckDBConnection) {
         SELECT
           workspace_id,
           'contact_email' AS overlap_type,
-          normalized_email AS overlap_key,
+          sha256(normalized_email) AS overlap_key,
           source_provider,
           campaign_id,
           campaign_source_id,
@@ -1863,7 +2036,7 @@ async function ensureSchema(conn: DuckDBConnection) {
           normalized_domain,
           company_domain,
           company_name,
-          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          provider_event_at AS exposure_at,
           has_reply_signal,
           reply_outcome_label
         FROM sendlens.lead_evidence
@@ -1882,7 +2055,7 @@ async function ensureSchema(conn: DuckDBConnection) {
           normalized_domain,
           company_domain,
           company_name,
-          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          provider_event_at AS exposure_at,
           has_reply_signal,
           reply_outcome_label
         FROM sendlens.lead_evidence
@@ -1901,7 +2074,7 @@ async function ensureSchema(conn: DuckDBConnection) {
           normalized_domain,
           company_domain,
           company_name,
-          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          provider_event_at AS exposure_at,
           has_reply_signal,
           reply_outcome_label
         FROM sendlens.lead_evidence
@@ -1920,7 +2093,7 @@ async function ensureSchema(conn: DuckDBConnection) {
           normalized_domain,
           company_domain,
           company_name,
-          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          provider_event_at AS exposure_at,
           has_reply_signal,
           reply_outcome_label
         FROM sendlens.lead_evidence
@@ -1946,24 +2119,38 @@ async function ensureSchema(conn: DuckDBConnection) {
         GROUP BY 1, 2, 3
         HAVING COUNT(DISTINCT source_provider) > 1
       ),
+      provider_exposure_bounds AS (
+        SELECT
+          workspace_id,
+          overlap_type,
+          overlap_key,
+          source_provider,
+          MIN(exposure_at) AS first_provider_exposure_at,
+          MAX(exposure_at) AS last_provider_exposure_at
+        FROM identity_rows
+        WHERE exposure_at IS NOT NULL
+        GROUP BY 1, 2, 3, 4
+      ),
       cross_provider_pairs AS (
         SELECT
           a.workspace_id,
           a.overlap_type,
           a.overlap_key,
           MIN(
-            ABS(
-              CAST(date_diff('day', CAST(a.exposure_at AS DATE), CAST(b.exposure_at AS DATE)) AS INTEGER)
-            )
+            CASE
+              WHEN a.first_provider_exposure_at > b.last_provider_exposure_at
+                THEN CAST(date_diff('day', CAST(b.last_provider_exposure_at AS DATE), CAST(a.first_provider_exposure_at AS DATE)) AS INTEGER)
+              WHEN b.first_provider_exposure_at > a.last_provider_exposure_at
+                THEN CAST(date_diff('day', CAST(a.last_provider_exposure_at AS DATE), CAST(b.first_provider_exposure_at AS DATE)) AS INTEGER)
+              ELSE 0
+            END
           ) AS closest_cross_provider_window_days
-        FROM identity_rows a
-        JOIN identity_rows b
+        FROM provider_exposure_bounds a
+        JOIN provider_exposure_bounds b
           ON a.workspace_id = b.workspace_id
          AND a.overlap_type = b.overlap_type
          AND a.overlap_key = b.overlap_key
-         AND a.source_provider <> b.source_provider
-        WHERE a.exposure_at IS NOT NULL
-          AND b.exposure_at IS NOT NULL
+         AND a.source_provider < b.source_provider
         GROUP BY 1, 2, 3
       )
       SELECT
@@ -2002,7 +2189,7 @@ async function ensureSchema(conn: DuckDBConnection) {
         SELECT
           workspace_id,
           'contact_email' AS overlap_type,
-          normalized_email AS overlap_key,
+          sha256(normalized_email) AS overlap_key,
           source_provider,
           provider_campaign_id,
           campaign_source_id,
@@ -2014,7 +2201,10 @@ async function ensureSchema(conn: DuckDBConnection) {
           normalized_domain,
           company_domain,
           company_name,
-          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          provider_event_at AS exposure_at,
+          provider_event_time_basis,
+          evidence_observed_at,
+          evidence_sampled_at,
           has_reply_signal,
           reply_outcome_label,
           sample_source
@@ -2037,7 +2227,10 @@ async function ensureSchema(conn: DuckDBConnection) {
           normalized_domain,
           company_domain,
           company_name,
-          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          provider_event_at AS exposure_at,
+          provider_event_time_basis,
+          evidence_observed_at,
+          evidence_sampled_at,
           has_reply_signal,
           reply_outcome_label,
           sample_source
@@ -2060,7 +2253,10 @@ async function ensureSchema(conn: DuckDBConnection) {
           normalized_domain,
           company_domain,
           company_name,
-          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          provider_event_at AS exposure_at,
+          provider_event_time_basis,
+          evidence_observed_at,
+          evidence_sampled_at,
           has_reply_signal,
           reply_outcome_label,
           sample_source
@@ -2083,7 +2279,10 @@ async function ensureSchema(conn: DuckDBConnection) {
           normalized_domain,
           company_domain,
           company_name,
-          COALESCE(timestamp_last_contact, sampled_at) AS exposure_at,
+          provider_event_at AS exposure_at,
+          provider_event_time_basis,
+          evidence_observed_at,
+          evidence_sampled_at,
           has_reply_signal,
           reply_outcome_label,
           sample_source
@@ -2108,13 +2307,22 @@ async function ensureSchema(conn: DuckDBConnection) {
         i.campaign_source_id,
         i.campaign_id,
         i.campaign_name,
-        i.provider_lead_id,
-        i.email,
-        i.normalized_email,
+        CASE
+          WHEN lower(trim(i.provider_lead_id)) = lower(trim(i.email))
+            OR lower(trim(i.provider_lead_id)) = lower(trim(i.normalized_email))
+            OR regexp_matches(lower(trim(i.provider_lead_id)), '[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+')
+          THEN NULL
+          ELSE i.provider_lead_id
+        END AS provider_lead_id,
+        CAST(NULL AS VARCHAR) AS email,
+        CAST(NULL AS VARCHAR) AS normalized_email,
         i.normalized_domain,
         i.company_domain,
         i.company_name,
         i.exposure_at,
+        i.provider_event_time_basis,
+        i.evidence_observed_at,
+        i.evidence_sampled_at,
         i.has_reply_signal,
         i.reply_outcome_label,
         i.sample_source
@@ -2124,6 +2332,38 @@ async function ensureSchema(conn: DuckDBConnection) {
        AND i.overlap_type = r.overlap_type
        AND i.overlap_key = r.overlap_key`,
     `CREATE OR REPLACE VIEW sendlens.reply_context AS
+      WITH campaign_variant_context AS (
+        SELECT
+          workspace_id,
+          campaign_id,
+          COALESCE(source_provider, 'instantly') AS source_provider,
+          step,
+          variant,
+          COUNT(*) AS template_candidate_count,
+          CASE WHEN COUNT(*) = 1 THEN MAX(subject) ELSE NULL END AS template_subject,
+          CASE WHEN COUNT(*) = 1 THEN MAX(body_text) ELSE NULL END AS template_body_text
+        FROM sendlens.campaign_variants
+        GROUP BY 1, 2, 3, 4, 5
+      ),
+      sampled_outbound_context AS (
+        SELECT *
+        FROM (
+          SELECT
+            so.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY
+                workspace_id,
+                campaign_id,
+                COALESCE(source_provider, 'instantly'),
+                lower(to_email),
+                step_resolved,
+                variant_resolved
+              ORDER BY sent_at DESC NULLS LAST, id
+            ) AS outbound_context_rank
+          FROM sendlens.sampled_outbound_emails so
+        ) ranked_outbound
+        WHERE outbound_context_rank = 1
+      )
       SELECT
         le.workspace_id,
         le.campaign_id,
@@ -2162,8 +2402,8 @@ async function ensureSchema(conn: DuckDBConnection) {
         so.subject AS rendered_subject,
         so.body_text AS rendered_body_text,
         so.sample_source,
-        cv.subject AS template_subject,
-        cv.body_text AS template_body_text
+        cv.template_subject,
+        cv.template_body_text
       FROM sendlens.lead_evidence le
       LEFT JOIN sendlens.reply_emails re
         ON le.workspace_id = re.workspace_id
@@ -2175,21 +2415,53 @@ async function ensureSchema(conn: DuckDBConnection) {
          END
        )
        AND re.direction = 'inbound'
-      LEFT JOIN sendlens.sampled_outbound_emails so
+      LEFT JOIN sampled_outbound_context so
         ON le.workspace_id = so.workspace_id
        AND le.campaign_id = so.campaign_id
        AND le.source_provider = COALESCE(so.source_provider, 'instantly')
        AND le.email = so.to_email
        AND CAST(le.email_replied_step AS VARCHAR) = so.step_resolved
        AND CAST(COALESCE(le.email_replied_variant, 0) AS VARCHAR) = so.variant_resolved
-      LEFT JOIN sendlens.campaign_variants cv
+      LEFT JOIN campaign_variant_context cv
         ON le.workspace_id = cv.workspace_id
        AND le.campaign_id = cv.campaign_id
-       AND le.source_provider = COALESCE(cv.source_provider, 'instantly')
+       AND le.source_provider = cv.source_provider
        AND le.email_replied_step = cv.step
        AND COALESCE(le.email_replied_variant, 0) = cv.variant
       WHERE le.has_reply_signal = TRUE`,
     `CREATE OR REPLACE VIEW sendlens.reply_email_context AS
+      WITH campaign_variant_context AS (
+        SELECT
+          workspace_id,
+          campaign_id,
+          COALESCE(source_provider, 'instantly') AS source_provider,
+          step,
+          variant,
+          COUNT(*) AS template_candidate_count,
+          CASE WHEN COUNT(*) = 1 THEN MAX(subject) ELSE NULL END AS template_subject,
+          CASE WHEN COUNT(*) = 1 THEN MAX(body_text) ELSE NULL END AS template_body_text
+        FROM sendlens.campaign_variants
+        GROUP BY 1, 2, 3, 4, 5
+      ),
+      sampled_outbound_context AS (
+        SELECT *
+        FROM (
+          SELECT
+            so.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY
+                workspace_id,
+                campaign_id,
+                COALESCE(source_provider, 'instantly'),
+                lower(to_email),
+                step_resolved,
+                variant_resolved
+              ORDER BY sent_at DESC NULLS LAST, id
+            ) AS outbound_context_rank
+          FROM sendlens.sampled_outbound_emails so
+        ) ranked_outbound
+        WHERE outbound_context_rank = 1
+      )
       SELECT
         re.workspace_id,
         re.campaign_id,
@@ -2265,16 +2537,17 @@ async function ensureSchema(conn: DuckDBConnection) {
         so.subject AS rendered_subject,
         so.body_text AS rendered_body_text,
         so.sample_source AS rendered_sample_source,
-        cv.subject AS template_subject,
-        cv.body_text AS template_body_text,
+        cv.template_subject,
+        cv.template_body_text,
         CASE WHEN le.email IS NOT NULL THEN TRUE ELSE FALSE END AS has_lead_context,
-        CASE WHEN cv.campaign_id IS NOT NULL THEN TRUE ELSE FALSE END AS has_template_context,
+        CASE WHEN cv.template_candidate_count = 1 THEN TRUE ELSE FALSE END AS has_template_context,
         CASE WHEN re.body_text IS NOT NULL AND trim(re.body_text) <> '' THEN TRUE ELSE FALSE END AS hydrated_reply_body,
         CASE
           WHEN re.body_text IS NULL OR trim(re.body_text) = '' THEN 'missing_reply_body'
+          WHEN cv.template_candidate_count > 1 THEN 'ambiguous_template_context'
           WHEN le.email IS NULL AND cv.campaign_id IS NULL THEN 'missing_lead_and_template_context'
           WHEN le.email IS NULL THEN 'missing_lead_context'
-          WHEN cv.campaign_id IS NULL THEN 'missing_template_context'
+          WHEN cv.template_candidate_count IS NULL THEN 'missing_template_context'
           ELSE 'covered'
         END AS context_gap_reason
       FROM sendlens.reply_emails re
@@ -2290,7 +2563,7 @@ async function ensureSchema(conn: DuckDBConnection) {
            ELSE re.from_email
          END
        ) = lower(le.email)
-      LEFT JOIN sendlens.sampled_outbound_emails so
+      LEFT JOIN sampled_outbound_context so
         ON re.workspace_id = so.workspace_id
        AND re.campaign_id = so.campaign_id
        AND COALESCE(c.source_provider, le.source_provider, 'instantly') = COALESCE(so.source_provider, 'instantly')
@@ -2302,14 +2575,27 @@ async function ensureSchema(conn: DuckDBConnection) {
        ) = lower(so.to_email)
        AND COALESCE(CAST(le.email_replied_step AS VARCHAR), re.step_resolved) = so.step_resolved
        AND COALESCE(CAST(le.email_replied_variant AS VARCHAR), re.variant_resolved, '0') = so.variant_resolved
-      LEFT JOIN sendlens.campaign_variants cv
+      LEFT JOIN campaign_variant_context cv
         ON re.workspace_id = cv.workspace_id
        AND re.campaign_id = cv.campaign_id
-       AND COALESCE(c.source_provider, le.source_provider, 'instantly') = COALESCE(cv.source_provider, 'instantly')
+       AND COALESCE(c.source_provider, le.source_provider, 'instantly') = cv.source_provider
        AND TRY_CAST(COALESCE(CAST(le.email_replied_step AS VARCHAR), re.step_resolved) AS INTEGER) = cv.step
        AND TRY_CAST(COALESCE(CAST(le.email_replied_variant AS VARCHAR), re.variant_resolved, '0') AS INTEGER) = cv.variant
       WHERE re.direction = 'inbound'`,
     `CREATE OR REPLACE VIEW sendlens.rendered_outbound_context AS
+      WITH campaign_variant_context AS (
+        SELECT
+          workspace_id,
+          campaign_id,
+          COALESCE(source_provider, 'instantly') AS source_provider,
+          step,
+          variant,
+          COUNT(*) AS template_candidate_count,
+          CASE WHEN COUNT(*) = 1 THEN MAX(subject) ELSE NULL END AS template_subject,
+          CASE WHEN COUNT(*) = 1 THEN MAX(body_text) ELSE NULL END AS template_body_text
+        FROM sendlens.campaign_variants
+        GROUP BY 1, 2, 3, 4, 5
+      )
       SELECT
         so.workspace_id,
         so.campaign_id,
@@ -2330,33 +2616,50 @@ async function ensureSchema(conn: DuckDBConnection) {
         so.step_resolved,
         so.variant_resolved,
         so.sample_source,
-        cv.subject AS template_subject,
-        cv.body_text AS template_body_text
+        cv.template_subject,
+        cv.template_body_text
       FROM sendlens.sampled_outbound_emails so
       LEFT JOIN sendlens.campaigns c
         ON so.workspace_id = c.workspace_id
        AND so.campaign_id = c.id
        AND COALESCE(so.source_provider, 'instantly') = COALESCE(c.source_provider, 'instantly')
-      LEFT JOIN sendlens.campaign_variants cv
+      LEFT JOIN campaign_variant_context cv
         ON so.workspace_id = cv.workspace_id
        AND so.campaign_id = cv.campaign_id
-       AND COALESCE(so.source_provider, 'instantly') = COALESCE(cv.source_provider, 'instantly')
+       AND COALESCE(so.source_provider, 'instantly') = cv.source_provider
        AND CAST(cv.step AS VARCHAR) = so.step_resolved
        AND CAST(cv.variant AS VARCHAR) = so.variant_resolved`,
   ];
 
-  let providerQualifiedAccountKeysChecked = false;
-  for (const statement of statements) {
-    if (!providerQualifiedAccountKeysChecked && /\bCREATE\s+OR\s+REPLACE\s+VIEW\b/i.test(statement)) {
-      await ensureProviderQualifiedAccountPrimaryKeys(conn);
-      providerQualifiedAccountKeysChecked = true;
+  if (!appliedIds.includes(BASELINE_SCHEMA_MIGRATION_ID)) {
+    await runSchemaMigration(conn, BASELINE_SCHEMA_MIGRATION_ID, async () => {
+      let providerQualifiedAccountKeysChecked = false;
+      for (const statement of statements) {
+        if (!providerQualifiedAccountKeysChecked && /\bCREATE\s+OR\s+REPLACE\s+VIEW\b/i.test(statement)) {
+          await ensureProviderQualifiedAccountPrimaryKeys(conn);
+          providerQualifiedAccountKeysChecked = true;
+        }
+        await run(conn, statement);
+      }
+      if (!providerQualifiedAccountKeysChecked) {
+        await ensureProviderQualifiedAccountPrimaryKeys(conn);
+      }
+      await stampCacheSchemaVersion(conn);
+    });
+  }
+
+  await runSchemaMigration(conn, CURRENT_SCHEMA_MIGRATION_ID, async () => {
+    let providerQualifiedAccountKeysChecked = false;
+    for (const statement of statements) {
+      if (!/\bCREATE\s+OR\s+REPLACE\s+VIEW\b/i.test(statement)) continue;
+      if (!providerQualifiedAccountKeysChecked) {
+        await ensureProviderQualifiedAccountPrimaryKeys(conn);
+        providerQualifiedAccountKeysChecked = true;
+      }
+      await run(conn, statement);
     }
-    await run(conn, statement);
-  }
-  if (!providerQualifiedAccountKeysChecked) {
-    await ensureProviderQualifiedAccountPrimaryKeys(conn);
-  }
-  await stampCacheSchemaVersion(conn);
+    await stampCacheSchemaVersion(conn);
+  });
 }
 
 function esc(value: string) {
@@ -2531,6 +2834,17 @@ export async function getCacheOwnerMetadata(
 export async function stampCacheSchemaVersion(conn: DuckDBConnection) {
   const current = await getPluginState(conn, CACHE_OWNER_KEYS.schemaVersion);
   if (!current) {
+    await setPluginState(conn, CACHE_OWNER_KEYS.schemaVersion, CURRENT_CACHE_SCHEMA_VERSION);
+    return;
+  }
+
+  const existingVersion = cacheSchemaVersionNumber(current);
+  const targetVersion = cacheSchemaVersionNumber(CURRENT_CACHE_SCHEMA_VERSION);
+  if (
+    existingVersion != null
+    && targetVersion != null
+    && existingVersion < targetVersion
+  ) {
     await setPluginState(conn, CACHE_OWNER_KEYS.schemaVersion, CURRENT_CACHE_SCHEMA_VERSION);
   }
 }

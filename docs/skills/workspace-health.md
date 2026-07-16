@@ -20,7 +20,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 ## Expected Flow
 
-1. Start with `workspace_snapshot`, optionally scoped by exact Instantly tag or campaign-name fragment.
+1. Start with `workspace_snapshot`, optionally scoped by provider tag or campaign-name fragment. Treat tag support as provider-specific evidence.
 2. Pull `analysis_starters(topic="workspace-health")` before custom SQL.
 3. Keep broad reads active-only unless the user asks for inactive or historical campaigns.
 4. For deliverability questions, combine account health and inbox-placement evidence before blaming copy or targeting.

@@ -29,7 +29,9 @@ Treat this file as the host startup bias for SendLens. The user should not need 
 - For winner, scale, kill, working, or client-safe claims, treat broad aggregates as triage only. Load the campaign with `load_campaign_data` before making the claim.
 - For copy, reply, ICP, launch QA, and experiment planning, narrow to one campaign before deep analysis.
 - Keep evidence labels honest: `exact_aggregate`, `sampled_evidence`, `reconstructed_outbound`, `hydrated_reply_body`, `inference`, or `unsupported`.
-- Preserve provider labels when present: `source_provider`, `provider_campaign_id`, and `campaign_source_id` disambiguate mixed Instantly/Smartlead workspaces.
+- Keep provider operations read-only. Recommend actions; never create, edit, send, or mutate provider resources.
+- Preserve `source_provider`, `provider_campaign_id`, and `campaign_source_id` when present; these provider labels disambiguate mixed Instantly/Smartlead workspaces.
+- Smartlead V1 support is read-only and provider-qualified where implemented; keep Instantly-specific evidence language only on Instantly-only fields or tools.
 - Treat Smartlead inbox placement as `unsupported` in V1. Do not treat empty Smartlead inbox-placement rows as healthy placement or stale data.
 - Do not expose internal routing, skill-selection, or setup mechanics in the final answer unless the user asks. Show the evidence and answer the business question.
 
@@ -128,6 +130,7 @@ Do not expose these internal routing mechanics in an ordinary final answer unles
 - Reply-signal leads are found during bounded lead scans and can be supplemented by reply-email contact/id backfill. Non-reply leads are bounded locally.
 - `custom_payload` is preserved per lead as raw JSON text, but campaign-variable analysis should use `lead_payload_kv` and the ICP payload recipes. Do not assume payload keys are shared across campaigns or customers.
 - Call out coverage limitations explicitly when raw evidence was sampled.
+- Do not paste raw contact data, full reply bodies, or raw reconstructed bodies into external artifacts.
 
 ## Delegation Shape
 
@@ -149,7 +152,7 @@ Do not fan out multiple campaign specialists until the workspace-level triage id
 
 When iterating on plugin code, use the tiered test pipeline in `package.json`. Each tier composes the one above it.
 
-- `npm run test:plugin:smoke` — sql-guard + prompt-contracts. ~1s. Use during a 1-2 minute inner loop.
+- `npm run test:plugin:smoke` — provider setup, sql-guard, prompt-contracts, and behavioral routing. ~1s. Use during a 1-2 minute inner loop.
 - `npm run test:plugin:fast` — smoke + campaign-analysis-depth + reply-fetch-contract. ~1-2s. Use before pushing a branch.
 - `npm run test:plugin` — fast + 7 heavier tests (db lock, ingest templates, instantly client pagination, sampling, runtime, cache identity, reply hydration, demo workspace, MCP response contract). ~4-5s. Required for `ci:plugin`.
 - `npm run ci:plugin` — `test:plugin` + `validate:plugin` + `lint:plugin` + `test:host-bundles`. Run before opening a PR.

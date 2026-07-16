@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "source": {
+    "transport": "stdio",
+    "command": "bash",
+    "args": [
+      "./scripts/start-mcp.sh"
+    ]
+  },
+  "serverInfo": {
+    "name": "sendlens",
+    "version": "0.1.53"
+  },
+  "settings": {
+    "pluginName": "sendlens",
+    "displayName": "SendLens",
+    "description": "Privacy-first outbound campaign analysis for AI workspaces.",
+    "skillGrouping": "workflow",
+    "requestedHookMode": "safe",
+    "generatedHookMode": "safe",
+    "generatedHookEvents": [
+      "sessionStart"
+    ],
+    "runtimeAuthMode": "inline"
+  },
+  "userConfig": [],
+  "tools": [
+    {
+      "name": "refresh_data",
+      "description": "Refresh the local SendLens cache from the configured source provider."
+    },
+    {
+      "name": "load_campaign_data",
+      "description": "Load one selected campaign for copy, ICP, reply, or next-test diagnosis."
+    },
+    {
+      "name": "prepare_campaign_analysis",
+      "description": "Hydrate enough one-campaign reply evidence for working/not-working analysis."
+    },
+    {
+      "name": "fetch_reply_text",
+      "description": "Fetch exact inbound reply bodies for one selected campaign."
+    },
+    {
+      "name": "workspace_snapshot",
+      "description": "Return the first high-level read of the active local workspace."
+    },
+    {
+      "name": "list_tables",
+      "description": "List public SendLens tables and views for schema orientation."
+    },
+    {
+      "name": "list_columns",
+      "description": "List columns and DuckDB types for one public SendLens table or view."
+    },
+    {
+      "name": "search_catalog",
+      "description": "Search public SendLens table and column names by concept."
+    },
+    {
+      "name": "analysis_starters",
+      "description": "Return curated SQL recipes and exactness notes for common analysis paths."
+    },
+    {
+      "name": "setup_doctor",
+      "description": "Run a safe in-process setup doctor without shell commands or secret output."
+    },
+    {
+      "name": "seed_demo_workspace",
+      "description": "Seed and activate a synthetic demo workspace without provider credentials."
+    },
+    {
+      "name": "refresh_status",
+      "description": "Check the local SendLens refresh lifecycle and cache freshness state."
+    },
+    {
+      "name": "analyze_data",
+      "description": "Run focused read-only DuckDB SELECT/WITH analysis against the active local workspace."
+    }
+  ],
+  "resources": [],
+  "resourceTemplates": [],
+  "prompts": [],
+  "skills": [
+    {
+      "dirName": "sendlens-setup",
+      "title": "SendLens Setup",
+      "description": "First-run setup, doctor checks, host bundle verification, cache readiness, and zero-key demo seeding.",
+      "toolNames": [
+        "setup_doctor",
+        "seed_demo_workspace",
+        "refresh_status",
+        "refresh_data",
+        "workspace_snapshot"
+      ],
+      "resourceUris": [],
+      "resourceTemplateUris": [],
+      "promptNames": []
+    },
+    {
+      "dirName": "sendlens-analyst",
+      "title": "SendLens Analyst",
+      "description": "Workspace diagnosis, campaign triage, reply, ICP, copy, deliverability analysis, and broad orchestration.",
+      "toolNames": [
+        "workspace_snapshot",
+        "load_campaign_data",
+        "prepare_campaign_analysis",
+        "fetch_reply_text",
+        "analysis_starters",
+        "list_tables",
+        "list_columns",
+        "search_catalog",
+        "analyze_data",
+        "refresh_status"
+      ],
+      "resourceUris": [],
+      "resourceTemplateUris": [],
+      "promptNames": []
+    },
+    {
+      "dirName": "sendlens-campaign-strategist",
+      "title": "SendLens Campaign Strategist",
+      "description": "Focused campaign audience, exclusions, offer, angle, sequence architecture, and experiment strategy.",
+      "toolNames": [
+        "load_campaign_data",
+        "prepare_campaign_analysis",
+        "analysis_starters",
+        "analyze_data"
+      ],
+      "resourceUris": [],
+      "resourceTemplateUris": [],
+      "promptNames": []
+    },
+    {
+      "dirName": "sendlens-copywriter",
+      "title": "SendLens Copywriter",
+      "description": "Evidence-backed subjects, bodies, CTAs, sequences, rewrites, variants, and claim ledgers.",
+      "toolNames": [
+        "load_campaign_data",
+        "prepare_campaign_analysis",
+        "fetch_reply_text",
+        "analysis_starters",
+        "analyze_data"
+      ],
+      "resourceUris": [],
+      "resourceTemplateUris": [],
+      "promptNames": []
+    },
+    {
+      "dirName": "sendlens-launch-operator",
+      "title": "SendLens Launch Operator",
+      "description": "Launch, scale, resume, stop, measurement, readiness, learning, and client handoff workflows.",
+      "toolNames": [
+        "load_campaign_data",
+        "prepare_campaign_analysis",
+        "analysis_starters",
+        "analyze_data",
+        "refresh_status"
+      ],
+      "resourceUris": [],
+      "resourceTemplateUris": [],
+      "promptNames": []
+    }
+  ],
+  "managedFiles": []
+}
