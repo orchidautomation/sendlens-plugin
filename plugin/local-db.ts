@@ -31,6 +31,7 @@ const LOCK_ERROR_PATTERNS = [
   /replaying WAL file/i,
   /WAL replay/i,
 ];
+export const CURRENT_SCHEMA_MIGRATION_ID = "202607160001_current_schema_baseline";
 const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
 const cacheProviderModeContext = new AsyncLocalStorage<SourceProviderMode>();
 
@@ -54,6 +55,17 @@ export class LocalDbUnavailableError extends Error {
   constructor(message: string, cause?: unknown) {
     super(message);
     this.name = "LocalDbUnavailableError";
+    this.cause = cause;
+  }
+}
+
+export class SchemaMigrationError extends Error {
+  code = "schema_migration_failed" as const;
+  cause: unknown;
+
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.name = "SchemaMigrationError";
     this.cause = cause;
   }
 }
@@ -488,7 +500,127 @@ async function ensureProviderQualifiedAccountPrimaryKeys(conn: DuckDBConnection)
   }
 }
 
+async function ensureSchemaMigrationLedger(conn: DuckDBConnection) {
+  await run(conn, "CREATE SCHEMA IF NOT EXISTS sendlens");
+  await run(
+    conn,
+    `CREATE TABLE IF NOT EXISTS sendlens.schema_migrations (
+      migration_id VARCHAR PRIMARY KEY,
+      applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+  );
+}
+
+async function sendlensTableExists(conn: DuckDBConnection, tableName: string) {
+  const rows = await query(
+    conn,
+    `SELECT table_name
+     FROM information_schema.tables
+     WHERE table_schema = 'sendlens'
+       AND table_name = '${esc(tableName)}'
+     LIMIT 1`,
+  );
+  return rows.length > 0;
+}
+
+function cacheSchemaVersionNumber(schemaVersion: string | null) {
+  const match = schemaVersion?.match(/^sendlens\.cache\.v(\d+)$/);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+async function assertNoUnsupportedFutureCacheSchema(conn: DuckDBConnection) {
+  const hasPluginState = await sendlensTableExists(conn, "plugin_state");
+  if (!hasPluginState) return;
+
+  const rows = await query(
+    conn,
+    `SELECT value
+     FROM sendlens.plugin_state
+     WHERE key = 'cache_schema_version'
+     LIMIT 1`,
+  );
+  const schemaVersion = typeof rows[0]?.value === "string" ? rows[0].value : null;
+  const existingVersion = cacheSchemaVersionNumber(schemaVersion);
+  const currentVersion = cacheSchemaVersionNumber(CURRENT_CACHE_SCHEMA_VERSION);
+  if (
+    existingVersion != null
+    && currentVersion != null
+    && existingVersion > currentVersion
+  ) {
+    throw new SchemaMigrationError(
+      `The local SendLens DuckDB cache uses newer unsupported schema version ${schemaVersion}. Upgrade SendLens before using this cache, or refresh into a separate SENDLENS_DB_PATH.`,
+    );
+  }
+}
+
+async function appliedSchemaMigrationIds(conn: DuckDBConnection) {
+  const rows = await query(
+    conn,
+    `SELECT migration_id
+     FROM sendlens.schema_migrations
+     ORDER BY migration_id`,
+  );
+  return rows.map((row) => String(row.migration_id));
+}
+
+function assertSupportedSchemaMigrations(appliedIds: string[]) {
+  const supportedIds = new Set([CURRENT_SCHEMA_MIGRATION_ID]);
+  const unknownIds = appliedIds.filter((migrationId) => !supportedIds.has(migrationId));
+  if (unknownIds.length === 0) return;
+
+  throw new SchemaMigrationError(
+    `The local SendLens DuckDB cache was created or upgraded by a newer unsupported plugin schema migration (${unknownIds.join(", ")}). Upgrade SendLens before using this cache, or refresh into a separate SENDLENS_DB_PATH.`,
+  );
+}
+
+async function recordCompletedSchemaMigration(
+  conn: DuckDBConnection,
+  migrationId: string,
+) {
+  await run(
+    conn,
+    `INSERT INTO sendlens.schema_migrations (migration_id, applied_at)
+     VALUES ('${esc(migrationId)}', CURRENT_TIMESTAMP)`,
+  );
+}
+
+async function runSchemaMigration(
+  conn: DuckDBConnection,
+  migrationId: string,
+  migration: () => Promise<void>,
+) {
+  await run(conn, "BEGIN TRANSACTION");
+  try {
+    await migration();
+    if (process.env.SENDLENS_TEST_FAIL_SCHEMA_MIGRATION_ID === migrationId) {
+      throw new Error(`test requested failure after schema migration ${migrationId}`);
+    }
+    await recordCompletedSchemaMigration(conn, migrationId);
+    await run(conn, "COMMIT");
+  } catch (error) {
+    try {
+      await run(conn, "ROLLBACK");
+    } catch {
+      // The original migration failure is more useful to callers.
+    }
+    if (error instanceof SchemaMigrationError) throw error;
+    throw new SchemaMigrationError(
+      `Failed to apply SendLens schema migration ${migrationId}. The migration was not recorded and will be retried on the next connection after the cause is fixed.`,
+      error,
+    );
+  }
+}
+
 async function ensureSchema(conn: DuckDBConnection) {
+  await assertNoUnsupportedFutureCacheSchema(conn);
+  await ensureSchemaMigrationLedger(conn);
+  const appliedIds = await appliedSchemaMigrationIds(conn);
+  assertSupportedSchemaMigrations(appliedIds);
+  if (appliedIds.includes(CURRENT_SCHEMA_MIGRATION_ID)) {
+    await stampCacheSchemaVersion(conn);
+    return;
+  }
+
   const statements = [
     "CREATE SCHEMA IF NOT EXISTS sendlens",
     `CREATE TABLE IF NOT EXISTS sendlens.plugin_state (
@@ -2345,18 +2477,20 @@ async function ensureSchema(conn: DuckDBConnection) {
        AND CAST(cv.variant AS VARCHAR) = so.variant_resolved`,
   ];
 
-  let providerQualifiedAccountKeysChecked = false;
-  for (const statement of statements) {
-    if (!providerQualifiedAccountKeysChecked && /\bCREATE\s+OR\s+REPLACE\s+VIEW\b/i.test(statement)) {
-      await ensureProviderQualifiedAccountPrimaryKeys(conn);
-      providerQualifiedAccountKeysChecked = true;
+  await runSchemaMigration(conn, CURRENT_SCHEMA_MIGRATION_ID, async () => {
+    let providerQualifiedAccountKeysChecked = false;
+    for (const statement of statements) {
+      if (!providerQualifiedAccountKeysChecked && /\bCREATE\s+OR\s+REPLACE\s+VIEW\b/i.test(statement)) {
+        await ensureProviderQualifiedAccountPrimaryKeys(conn);
+        providerQualifiedAccountKeysChecked = true;
+      }
+      await run(conn, statement);
     }
-    await run(conn, statement);
-  }
-  if (!providerQualifiedAccountKeysChecked) {
-    await ensureProviderQualifiedAccountPrimaryKeys(conn);
-  }
-  await stampCacheSchemaVersion(conn);
+    if (!providerQualifiedAccountKeysChecked) {
+      await ensureProviderQualifiedAccountPrimaryKeys(conn);
+    }
+    await stampCacheSchemaVersion(conn);
+  });
 }
 
 function esc(value: string) {
@@ -2531,6 +2665,17 @@ export async function getCacheOwnerMetadata(
 export async function stampCacheSchemaVersion(conn: DuckDBConnection) {
   const current = await getPluginState(conn, CACHE_OWNER_KEYS.schemaVersion);
   if (!current) {
+    await setPluginState(conn, CACHE_OWNER_KEYS.schemaVersion, CURRENT_CACHE_SCHEMA_VERSION);
+    return;
+  }
+
+  const existingVersion = cacheSchemaVersionNumber(current);
+  const targetVersion = cacheSchemaVersionNumber(CURRENT_CACHE_SCHEMA_VERSION);
+  if (
+    existingVersion != null
+    && targetVersion != null
+    && existingVersion < targetVersion
+  ) {
     await setPluginState(conn, CACHE_OWNER_KEYS.schemaVersion, CURRENT_CACHE_SCHEMA_VERSION);
   }
 }
