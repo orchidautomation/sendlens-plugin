@@ -184,7 +184,7 @@ ensure_runtime_ready() {
     echo "[sendlens] SendLens runtime dependency metadata did not list any packages." >&2
     exit 1
   fi
-  npm install --no-save --no-audit --no-fund "${runtime_deps[@]}" >/dev/null
+  npm install --omit=dev --no-save --no-audit --no-fund "${runtime_deps[@]}" >/dev/null
 
   if ! runtime_ready; then
     node "${PLUGIN_ROOT}/scripts/runtime-dependencies.cjs" verify "${PLUGIN_ROOT}" >&2 || true

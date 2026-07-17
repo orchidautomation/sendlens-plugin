@@ -7,6 +7,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   readdir,
   rm,
   stat,
@@ -346,8 +347,7 @@ async function prepareTrustedOpenCodeCompanions(paths) {
   return { skillName, skillDir };
 }
 
-function installerEnv(platform, runRoot, releaseDir, paths) {
-  const homeDir = path.join(runRoot, "home");
+function installerEnv(platform, runRoot, releaseDir, paths, homeDir) {
   const tempDir = path.join(runRoot, "tmp");
   const archive = path.join(releaseDir, `${pluginName}-${platform}-latest.tar.gz`);
   const bundleEnvName = {
@@ -363,7 +363,6 @@ function installerEnv(platform, runRoot, releaseDir, paths) {
     TMPDIR: tempDir,
     TMP: tempDir,
     TEMP: tempDir,
-    NODE_PATH: path.join(root, "node_modules"),
     SENDLENS_SKIP_INSTALL_REFRESH: "1",
     PLUXX_CODEX_ENABLE_PLUGIN_HOOKS: "1",
     PLUXX_INSTALL_LOCK_ROOT: path.join(runRoot, "install-locks"),
@@ -372,9 +371,14 @@ function installerEnv(platform, runRoot, releaseDir, paths) {
   };
 }
 
-async function runInstaller(platform, releaseDir, { mismatch = false, openCodeSkillCollision = false } = {}) {
+async function runInstaller(
+  platform,
+  releaseDir,
+  { mismatch = false, openCodeSkillCollision = false, homeDir: requestedHomeDir } = {},
+) {
   const runRoot = await tempDir(`sendlens-legacy-${platform}-`);
-  await mkdir(path.join(runRoot, "home"), { recursive: true });
+  const homeDir = requestedHomeDir ?? path.join(runRoot, "home");
+  await mkdir(homeDir, { recursive: true });
   await mkdir(path.join(runRoot, "tmp"), { recursive: true });
   const paths = installPaths(platform, runRoot);
 
@@ -392,15 +396,19 @@ async function runInstaller(platform, releaseDir, { mismatch = false, openCodeSk
 
   const scriptName = platform === "claude-code" ? "install-claude-code.sh" : `install-${platform}.sh`;
   const result = run("bash", [path.join(releaseDir, scriptName)], {
-    env: installerEnv(platform, runRoot, releaseDir, paths),
+    env: installerEnv(platform, runRoot, releaseDir, paths, homeDir),
   });
 
-  return { result, runRoot, paths, openCodeSkill };
+  return { result, runRoot, homeDir, paths, openCodeSkill };
 }
 
 async function testTrustedLegacyUpgrades(releaseDir) {
+  const sharedHomeDir = await tempDir("sendlens-shared-runtime-home-");
+  const runtimeTargets = [];
   for (const platform of platforms) {
-    const { result, runRoot, paths, openCodeSkill } = await runInstaller(platform, releaseDir);
+    const { result, homeDir, paths, openCodeSkill } = await runInstaller(platform, releaseDir, {
+      homeDir: sharedHomeDir,
+    });
     assertRun(result, `${platform} trusted legacy upgrade`);
 
     assert.equal(
@@ -409,9 +417,10 @@ async function testTrustedLegacyUpgrades(releaseDir) {
       `${platform}: legacy marker should be replaced`,
     );
     assert.ok(
-      await pathExists(ownershipPath(platform, path.join(runRoot, "home"), paths.pluginInstallDir)),
+      await pathExists(ownershipPath(platform, homeDir, paths.pluginInstallDir)),
       `${platform}: ownership ledger should be written`,
     );
+    runtimeTargets.push(await realpath(path.join(paths.pluginInstallDir, "node_modules")));
     const installedManifest = await readJson(path.join(paths.pluginInstallDir, manifestRelativePath(platform)));
     const expectedManifest = await candidateManifest(platform);
     assert.equal(installedManifest.name, expectedManifest.name, `${platform}: manifest name`);
@@ -425,6 +434,29 @@ async function testTrustedLegacyUpgrades(releaseDir) {
       assert.match(skill, new RegExp(`name: ${pluginName}/${openCodeSkill.skillName}`));
     }
   }
+
+  assert.equal(
+    new Set(runtimeTargets).size,
+    1,
+    "core-four installs should link to one shared native runtime generation",
+  );
+  const runtimeEntries = await readdir(path.join(sharedHomeDir, ".pluxx", "runtimes", "entries"));
+  assert.equal(runtimeEntries.length, 1, "core-four installs should prepare one runtime entry");
+  const runtimeGenerations = await readdir(
+    path.join(
+      sharedHomeDir,
+      ".pluxx",
+      "runtimes",
+      "entries",
+      runtimeEntries[0],
+      "generations",
+    ),
+  );
+  assert.equal(
+    runtimeGenerations.length,
+    1,
+    "core-four installs should bootstrap one immutable runtime generation",
+  );
 }
 
 async function testMismatchedIdentitiesFailClosed(releaseDir) {
@@ -456,7 +488,7 @@ async function testOpenCodeUnrelatedSkillCollisionFailsClosed(releaseDir) {
 }
 
 try {
-  assert.equal(packageJson.devDependencies?.["@orchid-labs/pluxx"], "^0.1.33");
+  assert.equal(packageJson.devDependencies?.["@orchid-labs/pluxx"], "^0.1.34");
 
   assertRun(run("npm", ["run", "--silent", "build:plugin"]), "build:plugin");
   assertRun(run("npm", ["run", "--silent", "build:hosts"]), "build:hosts");
@@ -468,5 +500,8 @@ try {
 
   console.log("OK: generated SendLens installers adopt trusted legacy installs and reject mismatches");
 } finally {
-  await Promise.all(tempRoots.map((directory) => rm(directory, { recursive: true, force: true })));
+  for (const directory of tempRoots) {
+    run("chmod", ["-R", "u+w", directory]);
+    await rm(directory, { recursive: true, force: true });
+  }
 }

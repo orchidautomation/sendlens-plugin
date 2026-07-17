@@ -104,6 +104,16 @@ function escapeRegExp(value) {
 }
 
 async function testDependencyMetadataIsCurrent() {
+  const bootstrap = await readFile(
+    path.join(root, "scripts", "bootstrap-runtime.sh"),
+    "utf8",
+  );
+  assert.match(
+    bootstrap,
+    /npm install --omit=dev --no-save --no-audit --no-fund/,
+    "runtime bootstrap must omit build-only dependencies such as Pluxx",
+  );
+
   const result = run("node", ["scripts/runtime-dependencies.cjs", "assert-current"], {
     cwd: root,
   });

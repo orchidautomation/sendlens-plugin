@@ -186,6 +186,7 @@ async function assertHostFiles({ skills, commands, agents }) {
   const commonAgentFiles = agents.map((name) => `agents/${name}.md`);
   const commonCommandFiles = commands.map((name) => `commands/${name}.md`);
   const commonRuntimeFiles = [
+    ".pluxx-runtime.json",
     "scripts/runtime-dependencies.cjs",
     "scripts/runtime-dependencies.lock.json",
   ];
@@ -816,6 +817,33 @@ async function assertInstallerFirstRefreshContract() {
   );
 }
 
+async function assertSharedRuntimeContract() {
+  const platforms = ["claude-code", "cursor", "codex", "opencode"];
+  const contracts = await Promise.all(
+    platforms.map((platform) => readText(`dist/${platform}/.pluxx-runtime.json`)),
+  );
+
+  assert(
+    new Set(contracts).size === 1,
+    "generated host bundles must carry one identical shared-runtime contract",
+  );
+
+  const contract = JSON.parse(contracts[0]);
+  assert(
+    JSON.stringify(contract) === JSON.stringify({
+      schema: "pluxx.shared-runtime-config.v1",
+      namespace: "sendlens",
+      bootstrap: "scripts/bootstrap-runtime.sh",
+      inputs: [
+        "scripts/runtime-dependencies.cjs",
+        "scripts/runtime-dependencies.lock.json",
+      ],
+      output: "node_modules",
+    }),
+    "generated shared-runtime contract must fingerprint SendLens runtime inputs and node_modules output",
+  );
+}
+
 async function assertAutomaticRefreshFallback() {
   const sourceLauncher = await readText("scripts/start-mcp.sh");
   assert(
@@ -1049,6 +1077,7 @@ await assertExplicitHostDegradation();
 await assertNoCredentialsRequired();
 await assertDemoModeContracts();
 await assertInstallerFirstRefreshContract();
+await assertSharedRuntimeContract();
 await assertAutomaticRefreshFallback();
 await assertSessionStartProviderContract();
 await assertFreshGeneratedBundleBootstrap();
