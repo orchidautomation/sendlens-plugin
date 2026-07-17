@@ -249,6 +249,8 @@ for (const term of [
 for (const term of [
   "recipe metadata",
   "recipe `exactness`: `exact`, `sampled`, or `hybrid`",
+  "optional `route_card` metadata",
+  "preferred intent, grain, time basis, attribution, provider/population scope, tag role, prerequisites, cost, privacy, safe adaptations, and forbidden adaptations",
   "compact recipe index by default",
   "`recipe_id` exact lookup",
   "`mode=\"full\"` bounded pages with SQL",
@@ -267,6 +269,10 @@ for (const term of [
   "has_more",
   "recipes",
   "sql_available",
+  "route_card",
+  "rankRecipesForResponse",
+  "preferred_intent",
+  "forbidden_adaptations",
   'exactness: "exact" | "sampled" | "hybrid"',
   "notes: string[]",
 ]) {

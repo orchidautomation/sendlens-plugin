@@ -80,7 +80,7 @@ MCP tools are registered by the local `sendlens` stdio server. Responses are JSO
 | `load_campaign_data` | Hydrate one campaign for copy, ICP, reply, or next-test analysis | After selecting a campaign |
 | `prepare_campaign_analysis` | Hydrate enough exact reply bodies and backfilled lead context for premium one-campaign diagnosis | Before working/not-working, reply-quality, winner, scale, or kill claims |
 | `fetch_reply_text` | Fetch exact inbound reply body text for one campaign into local DuckDB | Only when actual reply wording is needed |
-| `analysis_starters` | Return curated SQL recipes and exactness notes | Before custom analysis for common questions |
+| `analysis_starters` | Return curated SQL recipes, exactness notes, and compact route cards for common/high-risk recipes | Before custom analysis for common questions; exact recipe routes before schema discovery |
 | `list_tables` | List public SendLens tables/views and descriptions | Schema orientation |
 | `list_columns` | List columns and DuckDB types for one table/view | Before custom SQL |
 | `search_catalog` | Search public schema names by concept, with partial matches and workflow starter hints | When the right table, column, or starter recipe is unclear |

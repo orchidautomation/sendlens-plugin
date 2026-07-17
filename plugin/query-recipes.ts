@@ -19,8 +19,24 @@ export type QueryRecipe = {
   question: string;
   exactness: "exact" | "sampled" | "hybrid";
   rationale: string;
+  route_card?: QueryRecipeRouteCard;
   sql: string;
   notes: string[];
+};
+
+export type QueryRecipeRouteCard = {
+  preferred_intent: string;
+  grain: string;
+  time_basis: string;
+  attribution: string;
+  provider_scope: string;
+  population_scope: string;
+  tag_role: string;
+  prerequisites: string[];
+  cost: "low" | "medium" | "high";
+  privacy: string;
+  safe_adaptations: string[];
+  forbidden_adaptations: string[];
 };
 
 export type QueryRecipeSummary = Omit<QueryRecipe, "sql" | "notes"> & {
@@ -48,6 +64,20 @@ const QUERY_RECIPES: QueryRecipe[] = [
     question: "What is working and not working across the workspace?",
     exactness: "exact",
     rationale: "Rank campaigns by exact reply and bounce performance before diving into deeper diagnosis.",
+    route_card: {
+      preferred_intent: "broad workspace triage and campaign shortlist",
+      grain: "one row per active campaign",
+      time_basis: "provider aggregate lifetime/current cached campaign state",
+      attribution: "campaign-level provider aggregates plus sampling coverage counts",
+      provider_scope: "provider-qualified when mixed-provider columns are present",
+      population_scope: "active campaigns only",
+      tag_role: "none; use tag recipes when the prompt names a tag",
+      prerequisites: ["active local cache"],
+      cost: "low",
+      privacy: "aggregate rows only; no contact, reply body, or rendered body detail",
+      safe_adaptations: ["add a provider or campaign-name filter", "change ordering among returned aggregate fields"],
+      forbidden_adaptations: ["use as proof a campaign is a winner without one-campaign reply/copy validation", "project sampled evidence to full-population totals"],
+    },
     sql: `SELECT
   campaign_id,
   campaign_name AS name,
@@ -78,6 +108,20 @@ ORDER BY unique_reply_rate_pct DESC NULLS LAST, bounce_rate_pct ASC NULLS LAST, 
     question: "Which sending accounts look unhealthy?",
     exactness: "exact",
     rationale: "Review exact recent account performance before blaming copy.",
+    route_card: {
+      preferred_intent: "workspace sender account health and bounce/warmup risk",
+      grain: "one row per sender account",
+      time_basis: "stored provider account 30-day aggregates",
+      attribution: "sender-account scoped, not campaign-attributed",
+      provider_scope: "provider-qualified account identity where available",
+      population_scope: "all cached sender accounts",
+      tag_role: "none; join account_tags only for account-tag questions",
+      prerequisites: ["cached account health surface"],
+      cost: "low",
+      privacy: "sender account emails are returned as operational evidence; no lead or reply bodies",
+      safe_adaptations: ["filter to one provider", "sort by warmup score or bounce rate"],
+      forbidden_adaptations: ["attribute account totals to one campaign without campaign assignment evidence", "treat missing inbox-placement rows as healthy placement"],
+    },
     sql: `SELECT
   email,
   status,
@@ -222,6 +266,20 @@ ORDER BY
     question: "Which inboxes are assigned to active campaigns with a given campaign tag, and which senders look risky?",
     exactness: "exact",
     rationale: "Use campaign-tagged active campaigns, resolved sender assignments, and stored account 30-day aggregates before workspace scans, placement checks, or day-level sender recomputation.",
+    route_card: {
+      preferred_intent: "exact campaign-tag sender assignment, sharing, and sender-risk inventory",
+      grain: "one row per active campaign and assigned sender account",
+      time_basis: "current active campaign assignments plus stored account 30-day aggregates",
+      attribution: "campaign tag selects campaigns; account aggregates stay sender-scoped",
+      provider_scope: "source_provider and campaign_source_id prevent cross-provider collisions",
+      population_scope: "active tagged campaigns; assigned senders retained regardless of account status",
+      tag_role: "requested tag is campaign_tag_label; assignment_account_tag_label only explains tag-based sender assignment",
+      prerequisites: ["known campaign tag", "resolved campaign_accounts sender inventory"],
+      cost: "low",
+      privacy: "returns sender account operational fields only; no leads, reply text, payloads, or row previews",
+      safe_adaptations: ["add an exact provider filter", "add a deterministic trim/case tag correction after a zero-row check"],
+      forbidden_adaptations: ["start with workspace_snapshot for this exact route", "scan placement or account_daily_metrics before the inventory result", "broaden provider, campaign, tag, time, or population after a miss"],
+    },
     sql: `WITH tagged_active_campaign_senders AS (
   SELECT
     ct.workspace_id,
@@ -2291,6 +2349,20 @@ LIMIT 50;`,
     question: "Did any reconstructed outbound copy still contain unresolved template tokens?",
     exactness: "sampled",
     rationale: "Summarize sampled reconstructed outbound rows where template variables appear to have leaked through unresolved before opening raw examples.",
+    route_card: {
+      preferred_intent: "safe personalization leak summary before raw reconstructed-copy inspection",
+      grain: "one row per unresolved token class/name in one campaign",
+      time_basis: "cached sampled/reconstructed outbound rows",
+      attribution: "local reconstruction from templates plus cached lead variables",
+      provider_scope: "campaign-scoped; preserve provider-qualified campaign IDs when supplied",
+      population_scope: "sampled rendered outbound evidence for one campaign",
+      tag_role: "none",
+      prerequisites: ["known campaign_id", "rendered outbound context available"],
+      cost: "medium",
+      privacy: "summary previews are bounded; raw recipient/body detail requires a separate raw-detail recipe and local authorization",
+      safe_adaptations: ["filter to one step or variant", "open raw detail only for locally authorized diagnosis"],
+      forbidden_adaptations: ["paste raw bodies or contact fields into external artifacts", "claim exact delivered copy from reconstructed evidence"],
+    },
     sql: `WITH tokenized_rows AS (
   SELECT
     campaign_id,
@@ -2901,6 +2973,20 @@ LIMIT 100;`,
     question: "What reply wording previews and coverage are available for fetched positive and negative replies?",
     exactness: "exact",
     rationale: "Use fetched inbound reply previews and counts after running fetch_reply_text for one campaign before opening raw bodies.",
+    route_card: {
+      preferred_intent: "safe fetched reply wording coverage after one-campaign reply hydration",
+      grain: "one row per campaign reply status/outcome",
+      time_basis: "fetched local reply_email rows at cache time",
+      attribution: "inbound reply email rows joined to campaign context",
+      provider_scope: "campaign-scoped; preserve provider-qualified campaign IDs when supplied",
+      population_scope: "selected fetched statuses for one campaign; out-of-office excluded by default",
+      tag_role: "none",
+      prerequisites: ["known campaign_id", "fetch_reply_text or prepare_campaign_analysis when fresh bodies are needed"],
+      cost: "medium",
+      privacy: "returns bounded subject/content previews and counts, not full bodies or email addresses",
+      safe_adaptations: ["change selected reply statuses deliberately", "follow with raw-detail recipe only for local authorized inspection"],
+      forbidden_adaptations: ["treat selected-status hydration as every aggregate reply", "export full reply bodies or addresses"],
+    },
     sql: `SELECT
   campaign_id,
   campaign_name,
@@ -3317,6 +3403,20 @@ ORDER BY tag_name;`,
     question: "Does a given Instantly tag apply to campaigns, accounts, or another resource type?",
     exactness: "exact",
     rationale: "Resolve tag scope before choosing campaign-tag, account-tag, or custom SQL analyses.",
+    route_card: {
+      preferred_intent: "determine whether a tag is a campaign tag, account tag, or ambiguous tag",
+      grain: "one row per tag resource type",
+      time_basis: "current cached tag mappings",
+      attribution: "tag metadata and mapping counts only",
+      provider_scope: "provider-qualified tag mappings where available",
+      population_scope: "all cached mappings for the exact normalized tag",
+      tag_role: "disambiguates campaign tags from assignment/account tags",
+      prerequisites: ["known tag label"],
+      cost: "low",
+      privacy: "tag metadata and counts only; no lead, account email, reply, or payload detail",
+      safe_adaptations: ["use trim/case-insensitive matching", "follow with a campaign-tag or account-tag recipe based on inferred scope"],
+      forbidden_adaptations: ["assume a tag on accounts scopes campaigns", "broaden to all tags after an exact user tag miss without saying so"],
+    },
     sql: `SELECT
   COALESCE(t.label, t.name) AS tag_name,
   lower(trim(COALESCE(t.label, t.name))) AS normalized_tag_name,
@@ -3415,6 +3515,7 @@ export function summarizeQueryRecipe(recipe: QueryRecipe): QueryRecipeSummary {
     question: recipe.question,
     exactness: recipe.exactness,
     rationale: recipe.rationale,
+    route_card: recipe.route_card,
     sql_available: true,
   };
 }
@@ -3451,7 +3552,7 @@ export function buildQueryRecipeResponse(options: QueryRecipeResponseOptions = {
     };
   }
 
-  const recipes = getQueryRecipes(options.topic);
+  const recipes = rankRecipesForResponse(getQueryRecipes(options.topic), mode);
   const startIndex = (page - 1) * pageSize;
   const pagedRecipes = recipes.slice(startIndex, startIndex + pageSize);
   const hasMore = startIndex + pageSize < recipes.length;
@@ -3472,4 +3573,11 @@ export function buildQueryRecipeResponse(options: QueryRecipeResponseOptions = {
         ? "Full SQL is included for this bounded page. Replace placeholders before calling analyze_data."
         : "Compact summaries omit SQL. Pass recipe_id for one full recipe, mode='full' for a bounded SQL page, or next_page to continue.",
   };
+}
+
+function rankRecipesForResponse(recipes: QueryRecipe[], mode: QueryRecipeMode) {
+  if (mode !== "summary") return recipes;
+  return [...recipes].sort((left, right) =>
+    Number(Boolean(right.route_card)) - Number(Boolean(left.route_card)),
+  );
 }

@@ -73,6 +73,7 @@ Where relevant, SendLens responses should include:
 
 - recipe metadata
 - recipe `exactness`: `exact`, `sampled`, or `hybrid`
+- optional `route_card` metadata for high-risk/common recipes: preferred intent, grain, time basis, attribution, provider/population scope, tag role, prerequisites, cost, privacy, safe adaptations, and forbidden adaptations
 - compact recipe index by default with `output_shape`, `returned_count`, `page`, `page_size`, `has_more`, and `next_page`
 - `recipe_id` exact lookup for one full recipe
 - `mode="full"` bounded pages with SQL and explicit placeholders

@@ -1559,7 +1559,7 @@ server.registerTool(
         "Use this before writing custom SQL when the user's question matches a known analysis path.",
         "Do not run recipe SQL blindly; replace placeholders like campaign_id, tag_name, or payload_key and preserve the recipe exactness notes in the final answer.",
         "By default returns a compact recipe index without SQL; pass recipe_id for one full recipe or mode='full' with page/page_size for a bounded SQL page.",
-        "Returns recipe metadata, exact/sample/hybrid classification, output-shape metadata, and SQL on demand; it does not query the database.",
+        "Returns recipe metadata, route cards for common/high-risk routes, exact/sample/hybrid classification, output-shape metadata, and SQL on demand; it does not query the database.",
       ].join(" "),
     inputSchema: {
       topic: z
