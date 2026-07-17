@@ -305,6 +305,8 @@ for (const term of [
   "caller rationale",
   "`row_count`, `result_truncated`, and output limits",
   "warnings when caps are hit",
+  "failure responses include a stable `error`, sanitized `code`, and safe `hint`",
+  "never echo submitted SQL, rewritten SQL, private literals, row previews, or engine detail",
 ]) {
   assertIncludes(source.docs, term, "analyze_data docs");
 }
@@ -316,9 +318,26 @@ for (const term of [
   "response_max_chars",
   "Result set was truncated",
   "rows: returnedRows",
+  "ANALYZE_DATA_SAFE_ERROR",
+  "analyzeDataFailurePayload",
+  "workspace_isolation",
 ]) {
   assertIncludes(source.server, term, "analyze_data runtime");
 }
+assertPattern(
+  source.server,
+  /err instanceof LocalSqlGuardError[\s\S]*?return jsonResponse\(analyzeDataFailurePayload\(err\.code\)\);/,
+  "analyze_data guard errors use sanitized payloads",
+);
+assertPattern(
+  source.server,
+  /return jsonResponse\(analyzeDataFailurePayload\("query_error"\)\);/,
+  "analyze_data runtime errors use sanitized payloads",
+);
+assert(
+  !/sql:\s*rewritten\s*\?\?\s*sql/.test(source.server),
+  "analyze_data failures must not echo submitted or rewritten SQL",
+);
 
 for (const term of [
   "resolves exactly one campaign",

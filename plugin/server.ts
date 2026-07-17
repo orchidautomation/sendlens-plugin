@@ -57,6 +57,7 @@ const REPLY_CONTEXT_SCAN_LIMIT = 500;
 const RENDERED_OUTBOUND_SAMPLE_LIMIT = 25;
 const SCOPED_SNAPSHOT_CAMPAIGN_LIMIT = 100;
 const RENDERED_OUTBOUND_REDACTED_PREVIEW_LIMIT = 3;
+const ANALYZE_DATA_SAFE_ERROR = "Query could not be executed safely.";
 const PLUXX_READINESS_FOLLOWUP = [
   "Temporary SendLens readiness gate in effect.",
   "If startup refresh is still running, this tool may wait briefly for the local snapshot before answering.",
@@ -137,6 +138,20 @@ function jsonResponse(payload: unknown) {
 
 function stripTrailingSemicolon(sql: string) {
   return sql.trim().replace(/;+\s*$/, "");
+}
+
+function analyzeDataFailurePayload(
+  code:
+    | LocalSqlGuardError["code"]
+    | "query_error"
+    | "workspace_isolation",
+) {
+  return {
+    error: ANALYZE_DATA_SAFE_ERROR,
+    code,
+    hint:
+      "Use one focused read-only SELECT/WITH query against sendlens.* public views. Do not include private literals in retries.",
+  };
 }
 
 function sqlSafe(value: string) {
@@ -1698,11 +1713,7 @@ server.registerTool(
         rewritten = enforceLocalWorkspaceScope(sql, workspaceId);
       } catch (err) {
         if (err instanceof LocalSqlGuardError) {
-          return jsonResponse({
-            error: err.message,
-            hint:
-              "Use only SELECT/WITH queries against sendlens.* tables. Workspace filters are injected automatically.",
-          });
+          return jsonResponse(analyzeDataFailurePayload(err.code));
         }
         throw err;
       }
@@ -1719,9 +1730,7 @@ server.registerTool(
       for (const row of returnedRows) {
         const rowWorkspace = row.workspace_id;
         if (rowWorkspace != null && rowWorkspace !== workspaceId) {
-          return jsonResponse({
-            error: "Workspace isolation check failed for this query result.",
-          });
+          return jsonResponse(analyzeDataFailurePayload("workspace_isolation"));
         }
       }
 
@@ -1749,10 +1758,7 @@ server.registerTool(
       if (err instanceof LocalDbUnavailableError) {
         return dbUnavailableResponse(err);
       }
-      return jsonResponse({
-        error: (err as Error).message,
-        sql: rewritten ?? sql,
-      });
+      return jsonResponse(analyzeDataFailurePayload("query_error"));
     } finally {
       if (db) closeDb(db);
     }

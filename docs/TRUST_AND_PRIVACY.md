@@ -36,6 +36,8 @@ The shipped tools are analysis and refresh tools:
 
 These tools read from configured providers or from the local cache. They do not expose mutation actions such as editing campaigns, changing senders, updating lead states, sending messages, managing webhooks, or deleting provider records.
 
+`analyze_data` failures are intentionally sanitized. Guard, parser, binder, runtime, workspace-isolation, and local-cache execution failures return a stable error shape with a bounded code and safe retry hint; they do not echo the submitted SQL, workspace-injected SQL, literals, row previews, provider/customer identifiers, email addresses, reply text, or engine detail.
+
 ## Local Storage
 
 Default local state:

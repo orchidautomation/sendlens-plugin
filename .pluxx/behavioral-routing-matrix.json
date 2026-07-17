@@ -103,6 +103,33 @@
       }
     },
     {
+      "id": "analyst-exact-tag-sender-risk",
+      "category": "analysis",
+      "prompt": "For the Priority Demo campaign tag, which assigned sender inboxes look risky?",
+      "expected_primary_owner": "sendlens-analyst",
+      "expected_route": {
+        "first_tool": "analysis_starters",
+        "recipe_id": "campaign-sender-inventory-by-tag",
+        "forbidden_before_recipe": [
+          "workspace_snapshot",
+          "list_tables",
+          "list_columns",
+          "search_catalog"
+        ]
+      },
+      "expected_call_budget": {
+        "fast_path_max_calls": 2,
+        "correction_max_calls": 4
+      },
+      "expected_should_trigger": {
+        "sendlens-setup": false,
+        "sendlens-analyst": true,
+        "sendlens-campaign-strategist": false,
+        "sendlens-copywriter": false,
+        "sendlens-launch-operator": false
+      }
+    },
+    {
       "id": "analyst-full-chain-staged-handoff",
       "category": "multi-intent",
       "prompt": "analyze everything, recommend the next campaign, write it, and plan the launch",

@@ -91,6 +91,7 @@ Where relevant, SendLens responses should include:
 - guarded SQL result rows
 - `row_count`, `result_truncated`, and output limits
 - warnings when caps are hit
+- failure responses include a stable `error`, sanitized `code`, and safe `hint`; they never echo submitted SQL, rewritten SQL, private literals, row previews, or engine detail
 
 `fetch_reply_text`
 

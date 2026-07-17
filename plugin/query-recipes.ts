@@ -219,33 +219,112 @@ ORDER BY
     id: "campaign-sender-inventory-by-tag",
     topic: "workspace-health",
     title: "Campaign sender inventory by tag",
-    question: "Which inboxes are assigned to campaigns with a given Instantly tag?",
+    question: "Which inboxes are assigned to active campaigns with a given campaign tag, and which senders look risky?",
     exactness: "exact",
-    rationale: "Use campaign sender assignments before making campaign-scoped domain or inbox-health claims.",
-    sql: `SELECT
-  ct.tag_label AS campaign_tag,
-  ca.campaign_id,
-  ca.campaign_name,
-  ca.account_email,
-  regexp_extract(ca.account_email, '@(.+)$', 1) AS domain,
-  ca.assignment_source,
-  ca.tag_label AS account_tag,
-  ca.status,
-  ca.warmup_status,
-  ca.warmup_score,
-  ca.total_sent_30d,
-  ca.total_bounces_30d,
-  ca.bounce_rate_30d_pct
-FROM sendlens.campaign_tags ct
-JOIN sendlens.campaign_accounts ca
-  ON ct.workspace_id = ca.workspace_id
- AND ct.campaign_id = ca.campaign_id
-WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
-ORDER BY ca.bounce_rate_30d_pct DESC NULLS LAST, ca.total_sent_30d DESC NULLS LAST, ca.campaign_name, ca.account_email;`,
+    rationale: "Use campaign-tagged active campaigns, resolved sender assignments, and stored account 30-day aggregates before workspace scans, placement checks, or day-level sender recomputation.",
+    sql: `WITH tagged_active_campaign_senders AS (
+  SELECT
+    ct.workspace_id,
+    ct.source_provider,
+    ct.campaign_id,
+    ct.campaign_source_id,
+    COALESCE(ct.campaign_name, co.campaign_name) AS campaign_name,
+    ct.tag_label AS campaign_tag_label,
+    co.status AS campaign_status,
+    ca.account_email,
+    ca.provider_account_id,
+    regexp_extract(ca.account_email, '@(.+)$', 1) AS sender_domain,
+    ca.assignment_source,
+    ca.tag_label AS assignment_account_tag_label,
+    ca.status AS account_status,
+    ca.warmup_status,
+    ca.warmup_score,
+    ca.daily_limit AS account_daily_limit,
+    ca.total_sent_30d AS stored_account_sent_30d,
+    ca.total_replies_30d AS stored_account_replies_30d,
+    ca.total_bounces_30d AS stored_account_bounces_30d,
+    ca.bounce_rate_30d_pct AS stored_account_bounce_rate_30d_pct
+  FROM sendlens.campaign_tags ct
+  JOIN sendlens.campaign_overview co
+    ON ct.workspace_id = co.workspace_id
+   AND ct.source_provider = co.source_provider
+   AND ct.campaign_id = co.campaign_id
+  JOIN sendlens.campaign_accounts ca
+    ON ct.workspace_id = ca.workspace_id
+   AND ct.source_provider = ca.source_provider
+   AND ct.campaign_id = ca.campaign_id
+  WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+    AND lower(COALESCE(co.status, '')) = 'active'
+),
+active_sender_campaign_counts AS (
+  SELECT
+    ca.workspace_id,
+    ca.source_provider,
+    lower(ca.account_email) AS account_email,
+    COUNT(DISTINCT ca.campaign_source_id) AS active_provider_campaigns_using_sender
+  FROM sendlens.campaign_accounts ca
+  JOIN sendlens.campaign_overview co
+    ON ca.workspace_id = co.workspace_id
+   AND ca.source_provider = co.source_provider
+   AND ca.campaign_id = co.campaign_id
+  WHERE lower(COALESCE(co.status, '')) = 'active'
+  GROUP BY 1, 2, 3
+)
+SELECT
+  tacs.campaign_tag_label,
+  tacs.source_provider,
+  tacs.campaign_id,
+  tacs.campaign_source_id,
+  tacs.campaign_name,
+  tacs.campaign_status,
+  tacs.account_email,
+  tacs.provider_account_id,
+  tacs.sender_domain,
+  tacs.assignment_source,
+  tacs.assignment_account_tag_label,
+  tacs.account_status,
+  tacs.warmup_status,
+  tacs.warmup_score,
+  tacs.account_daily_limit,
+  tacs.stored_account_sent_30d,
+  tacs.stored_account_replies_30d,
+  tacs.stored_account_bounces_30d,
+  tacs.stored_account_bounce_rate_30d_pct,
+  COALESCE(ascs.active_provider_campaigns_using_sender, 0) AS active_provider_campaigns_using_sender,
+  CASE
+    WHEN tacs.account_email IS NULL THEN 'missing_sender'
+    WHEN tacs.account_status IS NULL THEN 'missing_account_health'
+    WHEN lower(tacs.account_status) NOT IN ('active', 'connected') THEN 'disabled_or_inactive_sender'
+    WHEN COALESCE(tacs.stored_account_sent_30d, 0) = 0 THEN 'no_stored_30d_send_volume'
+    WHEN COALESCE(tacs.stored_account_bounce_rate_30d_pct, 0) >= 5 THEN 'high_bounce_risk'
+    WHEN COALESCE(ascs.active_provider_campaigns_using_sender, 0) > 1 THEN 'shared_active_sender'
+    ELSE 'monitor'
+  END AS sender_risk_signal
+FROM tagged_active_campaign_senders tacs
+LEFT JOIN active_sender_campaign_counts ascs
+  ON tacs.workspace_id = ascs.workspace_id
+ AND tacs.source_provider = ascs.source_provider
+ AND lower(tacs.account_email) = ascs.account_email
+ORDER BY
+  CASE sender_risk_signal
+    WHEN 'high_bounce_risk' THEN 1
+    WHEN 'disabled_or_inactive_sender' THEN 2
+    WHEN 'shared_active_sender' THEN 3
+    WHEN 'missing_account_health' THEN 4
+    WHEN 'no_stored_30d_send_volume' THEN 5
+    ELSE 6
+  END,
+  tacs.stored_account_bounce_rate_30d_pct DESC NULLS LAST,
+  tacs.stored_account_sent_30d DESC NULLS LAST,
+  tacs.campaign_name,
+  tacs.account_email;`,
     notes: [
       "Replace '{{tag_name}}' with a real campaign tag such as 'The Kiln'.",
-      "This resolves both direct campaign account lists and tag-based account assignments when account tag mappings are cached.",
-      "If this returns no rows, SendLens has no resolved campaign sender inventory for that tag yet.",
+      "This filters by campaign tag, not assignment account tag; `assignment_account_tag_label` is returned only to explain tag-based sender assignments.",
+      "The route is provider-qualified through `source_provider` and `campaign_source_id`, and only active campaigns contribute to the sender-sharing count.",
+      "Disabled or inactive sender accounts remain visible because account status is risk evidence, not a population filter.",
+      "Stored account 30-day aggregates come from `campaign_accounts`; do not recompute this route from `account_daily_metrics` unless the user asks for day-level history.",
+      "If this returns no rows, use at most one targeted tag/provider/trim/case coverage check before retrying; do not broaden campaign, provider, tag, time, or population scope silently.",
     ],
   },
   {

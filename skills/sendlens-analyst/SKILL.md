@@ -20,8 +20,8 @@ Diagnose the workspace or campaign, establish what the evidence supports, and or
 ## Diagnostic Workflow
 
 1. **Resolve the decision.** Preserve any campaign, provider, tag, and time scope. Decide whether the user needs diagnosis only or an end-to-end answer.
-2. **Start with exact evidence.** Use `workspace_snapshot` for broad or ambiguous requests. Use `refresh_status` only for readiness or freshness questions, and call `refresh_data` only when the user explicitly requests fresh data or changes workspace context.
-3. **Choose the narrowest evidence lane.** Use `analysis_starters` before custom `analyze_data`. Use `search_catalog` or `list_columns` when the schema is uncertain. Read [references/schema-and-joins.md](references/schema-and-joins.md) before custom SQL or cross-surface joins.
+2. **Start with exact evidence.** Use `workspace_snapshot` for broad or ambiguous requests. If the user gives an exact campaign, provider, campaign tag, or known routine intent, bypass broad snapshot triage and route to the matching `analysis_starters` recipe first. Use `refresh_status` only for readiness or freshness questions, and call `refresh_data` only when the user explicitly requests fresh data or changes workspace context.
+3. **Choose the narrowest evidence lane.** Use `analysis_starters` before custom `analyze_data`. For exact campaign-tag sender-risk or deliverability questions, choose `campaign-sender-inventory-by-tag` first and execute it before placement, daily-volume, broad workspace, or schema-discovery routes. Use `search_catalog` or `list_columns` only when the schema is uncertain after no exact recipe fits. Read [references/schema-and-joins.md](references/schema-and-joins.md) before custom SQL or cross-surface joins.
 4. **Diagnose constraints in order.** Check evidence readiness, volume and runway, sender and deliverability health, reply quality, ICP/lead quality, and copy or sequence mechanics. Read [references/workspace-and-performance.md](references/workspace-and-performance.md) for workspace, campaign, step, variant, runway, or deliverability work.
 5. **Load one campaign for depth.** Call `load_campaign_data` before deep copy, reply, ICP, launch, or campaign work. Call `prepare_campaign_analysis` when fetched reply wording could change working/not-working, scale/kill, copy, ICP, or client-safe recommendations. After every preparation call, use `reply_coverage_summary` to report the aggregate unique human reply count separately from selected-status hydration, including OOO exclusion, `fetch_latest_of_thread`, the stored context latest-thread basis, per-status fetched/hydrated counts, exhaustion, the numeric gap, and the neutral scope explanation.
 6. **Connect evidence to message and audience.** Read [references/replies-icp-and-copy.md](references/replies-icp-and-copy.md) before interpreting reply language, payload fields, intended templates, reconstructed outbound, or personalization.
@@ -82,6 +82,15 @@ unknowns:
 ```
 
 If required SendLens tools are missing, stop and tell the user to reload or reinstall the plugin/MCP server.
+
+## Query Budget Ladder
+
+- Exact routine fast path: one exact `analysis_starters` lookup plus one focused `analyze_data` call. Do not add `workspace_snapshot`, schema discovery, placement scans, or day-level recomputation.
+- Zero-row correction: use at most one targeted provider/tag/case/trim/coverage check and one corrected retry. Stop after the second failed filter.
+- Supported custom question: use one compact catalog or route lookup, one focused read-only `analyze_data` query, and at most one error-informed repair.
+- Broad triage: use `workspace_snapshot` only when the request is workspace-wide, ambiguous, or explicitly asks for a broad snapshot.
+
+Never silently broaden provider, campaign, tag, time, or population scope during recovery. If local public evidence is absent, unsafe, or the correction budget is exhausted, return `unsupported` with the precise gap instead of continuing to scan.
 
 ## Example Requests
 

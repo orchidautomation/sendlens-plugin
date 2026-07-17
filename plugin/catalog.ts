@@ -104,6 +104,21 @@ const CONCEPT_HINTS: ConceptHint[] = [
     reason: "Deliverability questions should inspect sender health, inbox-placement evidence, and campaign guardrails.",
   },
   {
+    concept: "campaign-tag sender risk",
+    triggers: [
+      "campaign tag sender risk",
+      "tag sender risk",
+      "tagged campaign sender",
+      "campaign tag inbox",
+      "campaign tag deliverability",
+      "tag deliverability",
+    ],
+    searchTerms: ["campaign_tags", "campaign_accounts", "campaign_overview", "accounts", "sender risk"],
+    topics: ["workspace-health"],
+    recipeIds: ["campaign-sender-inventory-by-tag", "campaign-tag-sender-coverage", "sender-deliverability-health"],
+    reason: "Exact campaign-tag sender-risk questions should use campaign-sender-inventory-by-tag first; placement and daily-volume routes are follow-ons only after the sender inventory is known.",
+  },
+  {
     concept: "sender",
     triggers: ["sender", "sender account", "inbox", "inboxes"],
     searchTerms: ["accounts", "campaign_accounts", "campaign_account_assignments", "account_daily_metrics"],

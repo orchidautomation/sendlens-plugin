@@ -793,6 +793,48 @@ const senderLoadBalanceRows = await runQuery(
 assert.equal(senderLoadBalanceRows.length, 2);
 assert.equal(senderLoadBalanceRows.some((row) => row.account_email === "direct@example.com"), true);
 assert.equal(senderLoadBalanceRows.some((row) => row.account_email === "tagged@example.com"), true);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.accounts
+   (workspace_id, email, status, warmup_status, warmup_score, daily_limit, total_sent_30d, total_replies_30d, total_bounces_30d, synced_at)
+   VALUES ('ws_test', 'disabled@example.com', 'disabled', 'paused', 10, 25, 333, 7, 33, CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.campaign_account_assignments
+   (workspace_id, campaign_id, assignment_type, assignment_key, account_email, tag_id, synced_at)
+   VALUES ('ws_test', 'c1', 'email', 'disabled@example.com', 'disabled@example.com', NULL, CURRENT_TIMESTAMP)`,
+);
+const campaignSenderInventoryRecipe = workspaceHealthRecipes.find((recipe) => recipe.id === "campaign-sender-inventory-by-tag");
+assert.ok(campaignSenderInventoryRecipe);
+assert.equal(campaignSenderInventoryRecipe.sql.includes("sendlens.account_daily_metrics"), false);
+assert.match(campaignSenderInventoryRecipe.sql, /campaign_tag_label/);
+assert.match(campaignSenderInventoryRecipe.sql, /assignment_account_tag_label/);
+assert.match(campaignSenderInventoryRecipe.sql, /source_provider = co\.source_provider/);
+assert.match(campaignSenderInventoryRecipe.sql, /lower\(COALESCE\(co\.status, ''\)\) = 'active'/);
+const senderInventoryRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(
+    campaignSenderInventoryRecipe.sql.replaceAll("{{tag_name}}", " priority "),
+    "ws_test",
+  ),
+);
+assert.equal(senderInventoryRows.length, 3);
+assert.equal(senderInventoryRows.some((row) => row.campaign_id === "c3"), false);
+const disabledInventoryRow = senderInventoryRows.find((row) => row.account_email === "disabled@example.com");
+assert.ok(disabledInventoryRow);
+assert.equal(disabledInventoryRow.account_status, "disabled");
+assert.equal(disabledInventoryRow.sender_risk_signal, "disabled_or_inactive_sender");
+assert.equal(Number(disabledInventoryRow.stored_account_sent_30d), 333);
+const directInventoryRow = senderInventoryRows.find((row) => row.account_email === "direct@example.com");
+assert.ok(directInventoryRow);
+assert.equal(Number(directInventoryRow.active_provider_campaigns_using_sender), 2);
+assert.equal(Number(directInventoryRow.stored_account_sent_30d), 100);
+const taggedInventoryRow = senderInventoryRows.find((row) => row.account_email === "tagged@example.com");
+assert.ok(taggedInventoryRow);
+assert.equal(taggedInventoryRow.campaign_tag_label, "Priority");
+assert.equal(taggedInventoryRow.assignment_account_tag_label, "Sender Pool");
+assert.equal(Number(taggedInventoryRow.stored_account_sent_30d), 200);
 const negativeConcentrationRecipe = workspaceHealthRecipes.find((recipe) => recipe.id === "negative-unsubscribe-concentration");
 assert.ok(negativeConcentrationRecipe);
 assert.match(negativeConcentrationRecipe.sql, /unsubscribed_count/);
