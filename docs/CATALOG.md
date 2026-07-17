@@ -93,8 +93,8 @@ The local schema exposes exact aggregate tables and semantic analysis views. Com
 | Surface | Classification | Use |
 | --- | --- | --- |
 | `campaigns`, `campaign_analytics`, `campaign_daily_metrics`, `step_analytics`, `campaign_variants` | Exact provider-qualified campaign surfaces where available | Campaign, step, variant, template, tracking/deliverability settings, provider dimensions, and daily performance analysis |
-| `accounts`, `account_daily_metrics`, `campaign_accounts` | Exact or resolved sender/account surfaces | Account health, sender coverage, and capacity checks |
-| `custom_tags`, `custom_tag_mappings`, `campaign_tags`, `account_tags` | Exact tag surfaces | Campaign and sender scoping |
+| `accounts`, `account_daily_metrics`, `campaign_accounts` | Exact or resolved sender/account surfaces | Account health, sender coverage, and capacity checks; `assignment_account_tag_label` disambiguates tag-based account assignments from campaign tags |
+| `custom_tags`, `custom_tag_mappings`, `campaign_tags`, `account_tags` | Exact tag surfaces | Campaign and sender scoping; `campaign_tag_label` is the explicit campaign-tag alias while legacy `tag_label` is retained |
 | `inbox_placement_tests`, `inbox_placement_analytics` | Exact when available from Instantly | Inbox placement and authentication evidence |
 | `inbox_placement_test_overview`, `sender_deliverability_health` | Semantic rollups over inbox placement data | Deliverability diagnosis with availability caveats |
 | `smartlead_delivery_tests`, `smartlead_delivery_evidence` | Exact support-gated Smart Delivery definitions, aggregates, and diagnostics | Smartlead placement, sender, authentication, and blacklist evidence without fake per-email rows |

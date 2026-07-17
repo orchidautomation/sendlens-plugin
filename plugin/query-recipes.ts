@@ -287,13 +287,13 @@ ORDER BY
     ct.campaign_id,
     ct.campaign_source_id,
     COALESCE(ct.campaign_name, co.campaign_name) AS campaign_name,
-    ct.tag_label AS campaign_tag_label,
+    ct.campaign_tag_label,
     co.status AS campaign_status,
     ca.account_email,
     ca.provider_account_id,
     regexp_extract(ca.account_email, '@(.+)$', 1) AS sender_domain,
     ca.assignment_source,
-    ca.tag_label AS assignment_account_tag_label,
+    ca.assignment_account_tag_label,
     ca.status AS account_status,
     ca.warmup_status,
     ca.warmup_score,
@@ -311,7 +311,7 @@ ORDER BY
     ON ct.workspace_id = ca.workspace_id
    AND ct.source_provider = ca.source_provider
    AND ct.campaign_id = ca.campaign_id
-  WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+  WHERE lower(trim(ct.campaign_tag_label)) = lower(trim('{{tag_name}}'))
     AND lower(COALESCE(co.status, '')) = 'active'
 ),
 active_sender_campaign_counts AS (

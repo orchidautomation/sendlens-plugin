@@ -9,6 +9,7 @@ const { DuckDBInstance } = require("@duckdb/node-api");
 const {
   BASELINE_SCHEMA_MIGRATION_ID,
   CURRENT_SCHEMA_MIGRATION_ID,
+  PREVIOUS_SCHEMA_MIGRATION_IDS,
   SchemaMigrationError,
   closeDb,
   getCacheReadiness,
@@ -237,6 +238,67 @@ await withTempDb("sendlens-schema-reply-view-upgrade-", async () => {
     );
     assert.deepEqual(migrations, [
       { migration_id: BASELINE_SCHEMA_MIGRATION_ID },
+      { migration_id: CURRENT_SCHEMA_MIGRATION_ID },
+    ]);
+  } finally {
+    closeDb(db);
+  }
+});
+
+await withTempDb("sendlens-schema-tag-alias-upgrade-", async () => {
+  await openAndClose();
+  let db = await getDb({ timeoutMs: 0 });
+  try {
+    await run(db, `DELETE FROM sendlens.schema_migrations
+      WHERE migration_id = '${CURRENT_SCHEMA_MIGRATION_ID}'`);
+    await run(
+      db,
+      `INSERT INTO sendlens.schema_migrations (migration_id, applied_at)
+       VALUES ('${PREVIOUS_SCHEMA_MIGRATION_IDS[0]}', CURRENT_TIMESTAMP)`,
+    );
+    await run(
+      db,
+      `CREATE OR REPLACE VIEW sendlens.campaign_tags AS
+       SELECT
+         workspace_id,
+         COALESCE(source_provider, 'instantly') AS source_provider,
+         resource_id AS campaign_id,
+         resource_id AS campaign_source_id,
+         NULL::VARCHAR AS campaign_name,
+         tag_id,
+         NULL::VARCHAR AS tag_label,
+         NULL::VARCHAR AS color,
+         NULL::VARCHAR AS description
+       FROM sendlens.custom_tag_mappings
+       WHERE false`,
+    );
+  } finally {
+    closeDb(db);
+  }
+
+  await openAndClose();
+  db = await getDb({ timeoutMs: 0 });
+  try {
+    const columns = await query(
+      db,
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'sendlens'
+         AND table_name IN ('campaign_tags', 'campaign_accounts')
+         AND column_name IN ('campaign_tag_label', 'assignment_account_tag_label')
+       ORDER BY column_name`,
+    );
+    assert.deepEqual(columns, [
+      { column_name: "assignment_account_tag_label" },
+      { column_name: "campaign_tag_label" },
+    ], "tag alias migration must replace semantic tag views for caches with the previous migration recorded");
+    const migrations = await query(
+      db,
+      "SELECT migration_id FROM sendlens.schema_migrations ORDER BY migration_id",
+    );
+    assert.deepEqual(migrations, [
+      { migration_id: BASELINE_SCHEMA_MIGRATION_ID },
+      { migration_id: PREVIOUS_SCHEMA_MIGRATION_IDS[0] },
       { migration_id: CURRENT_SCHEMA_MIGRATION_ID },
     ]);
   } finally {

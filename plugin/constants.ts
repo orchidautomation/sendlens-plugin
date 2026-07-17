@@ -89,7 +89,7 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
   campaign_account_assignments:
     "Exact campaign sender assignment settings from campaign details, including direct account emails and account-tag IDs.",
   campaign_accounts:
-    "Resolved campaign sender inventory that expands direct campaign accounts and tag-based account assignments, joined to account health when available.",
+    "Resolved campaign sender inventory that expands direct campaign accounts and tag-based account assignments, joined to account health when available; tag_label is the legacy assignment-account tag and assignment_account_tag_label is its explicit alias.",
   accounts:
     "Exact sending-account snapshot with warmup metadata and recent performance rollups.",
   account_daily_metrics:
@@ -99,7 +99,7 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
   custom_tag_mappings:
     "Exact provider custom tag assignments across tagged resources such as campaigns or accounts.",
   campaign_tags:
-    "Convenience view joining campaign tag mappings to campaign names for exact tag-based filtering.",
+    "Convenience view joining campaign tag mappings to campaign names for exact tag-based filtering; tag_label is retained and campaign_tag_label is the explicit campaign-tag alias.",
   account_tags:
     "Convenience view joining account tag mappings to account emails for exact sender filtering.",
   tag_scope_audit:

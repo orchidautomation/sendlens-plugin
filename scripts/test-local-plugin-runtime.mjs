@@ -377,13 +377,14 @@ assert.equal(renderedOutboundContext[0].template_body_text, "Hi {{firstName}}");
 
 const campaignTags = await runQuery(
   db,
-  "SELECT tag_label FROM sendlens.campaign_tags WHERE campaign_id = 'c1' LIMIT 1",
+  "SELECT tag_label, campaign_tag_label FROM sendlens.campaign_tags WHERE campaign_id = 'c1' LIMIT 1",
 );
 assert.equal(campaignTags[0].tag_label, "Priority");
+assert.equal(campaignTags[0].campaign_tag_label, "Priority");
 
 const campaignAccounts = await runQuery(
   db,
-  "SELECT account_email, assignment_source, tag_label, total_sent_30d, bounce_rate_30d_pct FROM sendlens.campaign_accounts WHERE campaign_id = 'c1' ORDER BY account_email",
+  "SELECT account_email, assignment_source, tag_label, assignment_account_tag_label, total_sent_30d, bounce_rate_30d_pct FROM sendlens.campaign_accounts WHERE campaign_id = 'c1' ORDER BY account_email",
 );
 assert.equal(campaignAccounts.length, 2);
 assert.equal(campaignAccounts[0].account_email, "direct@example.com");
@@ -392,6 +393,7 @@ assert.equal(Number(campaignAccounts[0].bounce_rate_30d_pct), 1);
 assert.equal(campaignAccounts[1].account_email, "tagged@example.com");
 assert.equal(campaignAccounts[1].assignment_source, "tag");
 assert.equal(campaignAccounts[1].tag_label, "Sender Pool");
+assert.equal(campaignAccounts[1].assignment_account_tag_label, "Sender Pool");
 assert.equal(Number(campaignAccounts[1].total_sent_30d), 200);
 
 const tagScopeViewRows = await runQuery(
@@ -810,6 +812,7 @@ assert.ok(campaignSenderInventoryRecipe);
 assert.equal(campaignSenderInventoryRecipe.sql.includes("sendlens.account_daily_metrics"), false);
 assert.match(campaignSenderInventoryRecipe.sql, /campaign_tag_label/);
 assert.match(campaignSenderInventoryRecipe.sql, /assignment_account_tag_label/);
+assert.doesNotMatch(campaignSenderInventoryRecipe.sql, /ct\.tag_label|ca\.tag_label/);
 assert.match(campaignSenderInventoryRecipe.sql, /source_provider = co\.source_provider/);
 assert.match(campaignSenderInventoryRecipe.sql, /lower\(COALESCE\(co\.status, ''\)\) = 'active'/);
 const senderInventoryRows = await runQuery(
