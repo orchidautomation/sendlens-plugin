@@ -114,6 +114,15 @@ export default definePlugin({
     "./scripts/",
   ],
 
+  sharedRuntime: {
+    bootstrap: "scripts/bootstrap-runtime.sh",
+    inputs: [
+      "scripts/runtime-dependencies.cjs",
+      "scripts/runtime-dependencies.lock.json",
+    ],
+    output: "node_modules",
+  },
+
   userConfig: [
     {
       key: "sendlens-provider",
