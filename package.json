@@ -1,6 +1,6 @@
 {
   "name": "sendlens",
-  "version": "0.1.61",
+  "version": "0.1.62",
   "private": true,
   "description": "Privacy-first outbound campaign analysis for AI workspaces.",
   "license": "MIT",
@@ -22,7 +22,7 @@
     "validate:plugin": "pluxx validate",
     "lint:plugin": "pluxx lint",
     "eval:plugin": "pluxx eval",
-    "ci:plugin": "npm run test:plugin && npm run validate:plugin && npm run lint:plugin && npm run eval:plugin && npm run test:host-bundles",
+    "ci:plugin": "npm run test:plugin && npm run validate:plugin && npm run lint:plugin && npm run eval:plugin && npm run test:host-bundles && npm run test:legacy-installer-compat",
     "release:check": "npm run ci:plugin",
     "refresh:plugin": "npm run --silent build:plugin && node ./build/plugin/refresh-cli.js",
     "start:plugin-mcp": "npm run --silent build:plugin && node ./build/plugin/server.js",
@@ -31,6 +31,7 @@
     "test:prompt-contracts": "node scripts/test-prompt-contracts.mjs",
     "test:skill-routing": "node scripts/test-behavioral-routing.mjs",
     "test:host-bundles": "node scripts/test-host-bundle-inventory.mjs",
+    "test:legacy-installer-compat": "node scripts/test-legacy-installer-compat.mjs",
     "test:runtime-bootstrap": "node scripts/test-bootstrap-runtime.mjs",
     "test:release-state": "node scripts/test-release-state.mjs",
     "test:load-campaign-data-runtime": "npm run --silent build:plugin && node scripts/test-load-campaign-data-runtime.mjs",
@@ -61,7 +62,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@orchid-labs/pluxx": "^0.1.32",
+    "@orchid-labs/pluxx": "^0.1.33",
     "@types/node": "^22.15.3",
     "typescript": "^5.8.3"
   }
