@@ -148,13 +148,15 @@ ORDER BY bounce_rate_30d_pct DESC NULLS LAST, warmup_score ASC NULLS LAST, total
     sql: `WITH tagged_campaign_senders AS (
   SELECT
     ct.workspace_id,
-    ct.tag_label AS campaign_tag,
+    ct.source_provider,
+    ct.campaign_source_id,
+    ct.campaign_tag_label AS campaign_tag,
     ca.campaign_id,
     ca.campaign_name,
     ca.account_email,
     regexp_extract(ca.account_email, '@(.+)$', 1) AS sender_domain,
     ca.assignment_source,
-    ca.tag_label AS assignment_account_tag,
+    ca.assignment_account_tag_label AS assignment_account_tag,
     ca.daily_limit AS account_daily_limit,
     ca.status,
     ca.warmup_status,
@@ -166,8 +168,10 @@ ORDER BY bounce_rate_30d_pct DESC NULLS LAST, warmup_score ASC NULLS LAST, total
   FROM sendlens.campaign_tags ct
   JOIN sendlens.campaign_accounts ca
     ON ct.workspace_id = ca.workspace_id
+   AND ct.source_provider = ca.source_provider
+   AND ct.campaign_source_id = ca.campaign_source_id
    AND ct.campaign_id = ca.campaign_id
-  WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+  WHERE lower(trim(ct.campaign_tag_label)) = lower(trim('{{tag_name}}'))
 ),
 sender_campaign_counts AS (
   SELECT
@@ -280,7 +284,7 @@ ORDER BY
       safe_adaptations: ["add an exact provider filter", "add a deterministic trim/case tag correction after a zero-row check"],
       forbidden_adaptations: ["start with workspace_snapshot for this exact route", "scan placement or account_daily_metrics before the inventory result", "broaden provider, campaign, tag, time, or population after a miss"],
     },
-    sql: `WITH tagged_active_campaign_senders AS (
+    sql: `WITH tagged_active_campaign_senders_raw AS (
   SELECT
     ct.workspace_id,
     ct.source_provider,
@@ -313,6 +317,45 @@ ORDER BY
    AND ct.campaign_id = ca.campaign_id
   WHERE lower(trim(ct.campaign_tag_label)) = lower(trim('{{tag_name}}'))
     AND lower(COALESCE(co.status, '')) = 'active'
+),
+tagged_active_campaign_senders AS (
+  SELECT
+    workspace_id,
+    source_provider,
+    campaign_id,
+    campaign_source_id,
+    campaign_name,
+    campaign_tag_label,
+    campaign_status,
+    account_email,
+    provider_account_id,
+    sender_domain,
+    CASE
+      WHEN MAX(CASE WHEN lower(COALESCE(assignment_source, '')) = 'email' THEN 1 ELSE 0 END) = 1 THEN 'email'
+      ELSE MIN(assignment_source)
+    END AS assignment_source,
+    string_agg(DISTINCT assignment_account_tag_label, ', ' ORDER BY assignment_account_tag_label)
+      FILTER (WHERE assignment_account_tag_label IS NOT NULL AND trim(assignment_account_tag_label) <> '') AS assignment_account_tag_label,
+    MAX(account_status) AS account_status,
+    MAX(warmup_status) AS warmup_status,
+    MAX(warmup_score) AS warmup_score,
+    MAX(account_daily_limit) AS account_daily_limit,
+    MAX(stored_account_sent_30d) AS stored_account_sent_30d,
+    MAX(stored_account_replies_30d) AS stored_account_replies_30d,
+    MAX(stored_account_bounces_30d) AS stored_account_bounces_30d,
+    MAX(stored_account_bounce_rate_30d_pct) AS stored_account_bounce_rate_30d_pct
+  FROM tagged_active_campaign_senders_raw
+  GROUP BY
+    workspace_id,
+    source_provider,
+    campaign_id,
+    campaign_source_id,
+    campaign_name,
+    campaign_tag_label,
+    campaign_status,
+    account_email,
+    provider_account_id,
+    sender_domain
 ),
 active_sender_campaign_counts AS (
   SELECT
@@ -395,6 +438,8 @@ ORDER BY
     sql: `WITH tagged_campaigns AS (
   SELECT
     ct.workspace_id,
+    ct.source_provider,
+    ct.campaign_source_id,
     co.campaign_id,
     co.campaign_name,
     co.status,
@@ -403,8 +448,10 @@ ORDER BY
   FROM sendlens.campaign_tags ct
   JOIN sendlens.campaign_overview co
     ON ct.workspace_id = co.workspace_id
+   AND ct.source_provider = co.source_provider
+   AND ct.campaign_source_id = co.campaign_source_id
    AND ct.campaign_id = co.campaign_id
-  WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+  WHERE lower(trim(ct.campaign_tag_label)) = lower(trim('{{tag_name}}'))
     AND co.status = 'active'
 ),
 sender_coverage AS (
@@ -418,9 +465,12 @@ sender_coverage AS (
   FROM tagged_campaigns tc
   LEFT JOIN sendlens.campaign_accounts ca
     ON tc.workspace_id = ca.workspace_id
+   AND tc.source_provider = ca.source_provider
+   AND tc.campaign_source_id = ca.campaign_source_id
    AND tc.campaign_id = ca.campaign_id
   LEFT JOIN sendlens.account_daily_metrics adm
     ON ca.workspace_id = adm.workspace_id
+   AND ca.source_provider = adm.source_provider
    AND lower(ca.account_email) = lower(adm.email)
   GROUP BY 1, 2
 )
@@ -530,6 +580,8 @@ ORDER BY date DESC;`,
     sql: `WITH tagged_campaigns AS (
   SELECT
     ct.workspace_id,
+    ct.source_provider,
+    ct.campaign_source_id,
     co.campaign_id,
     co.campaign_name,
     co.status,
@@ -538,26 +590,41 @@ ORDER BY date DESC;`,
   FROM sendlens.campaign_tags ct
   JOIN sendlens.campaign_overview co
     ON ct.workspace_id = co.workspace_id
+   AND ct.source_provider = co.source_provider
+   AND ct.campaign_source_id = co.campaign_source_id
    AND ct.campaign_id = co.campaign_id
-  WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+  WHERE lower(trim(ct.campaign_tag_label)) = lower(trim('{{tag_name}}'))
     AND co.status = 'active'
 ),
 campaign_days AS (
   SELECT
-    tc.campaign_id,
-    tc.campaign_name,
+    assigned.campaign_id,
+    assigned.campaign_name,
     adm.date,
-    COUNT(DISTINCT ca.account_email) AS assigned_accounts_with_metrics,
+    COUNT(DISTINCT assigned.account_email) AS assigned_accounts_with_metrics,
     SUM(COALESCE(adm.sent, 0)) AS sender_scoped_sent,
     SUM(COALESCE(adm.unique_replies, 0)) AS sender_scoped_unique_replies,
     SUM(COALESCE(adm.bounced, 0)) AS sender_scoped_bounces
-  FROM tagged_campaigns tc
-  JOIN sendlens.campaign_accounts ca
+  FROM (
+    SELECT DISTINCT
+      tc.workspace_id,
+      tc.source_provider,
+      tc.campaign_source_id,
+      tc.campaign_id,
+      tc.campaign_name,
+      ca.account_email
+    FROM tagged_campaigns tc
+    JOIN sendlens.campaign_accounts ca
     ON tc.workspace_id = ca.workspace_id
+   AND tc.source_provider = ca.source_provider
+   AND tc.campaign_source_id = ca.campaign_source_id
    AND tc.campaign_id = ca.campaign_id
+    WHERE ca.account_email IS NOT NULL
+  ) assigned
   JOIN sendlens.account_daily_metrics adm
-    ON ca.workspace_id = adm.workspace_id
-   AND lower(ca.account_email) = lower(adm.email)
+    ON assigned.workspace_id = adm.workspace_id
+   AND assigned.source_provider = adm.source_provider
+   AND lower(assigned.account_email) = lower(adm.email)
   GROUP BY 1, 2, 3
 )
 SELECT
@@ -591,6 +658,8 @@ ORDER BY cd.date DESC, cd.sender_scoped_sent DESC, cd.campaign_name;`,
     sql: `WITH tagged_campaigns AS (
   SELECT
     ct.workspace_id,
+    ct.source_provider,
+    ct.campaign_source_id,
     co.campaign_id,
     co.campaign_name,
     co.daily_limit AS campaign_daily_limit,
@@ -598,17 +667,22 @@ ORDER BY cd.date DESC, cd.sender_scoped_sent DESC, cd.campaign_name;`,
   FROM sendlens.campaign_tags ct
   JOIN sendlens.campaign_overview co
     ON ct.workspace_id = co.workspace_id
+   AND ct.source_provider = co.source_provider
+   AND ct.campaign_source_id = co.campaign_source_id
    AND ct.campaign_id = co.campaign_id
-  WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+  WHERE lower(trim(ct.campaign_tag_label)) = lower(trim('{{tag_name}}'))
     AND co.status = 'active'
 ),
 assigned_accounts AS (
   SELECT DISTINCT
     tc.workspace_id,
+    tc.source_provider,
     ca.account_email
   FROM tagged_campaigns tc
   JOIN sendlens.campaign_accounts ca
     ON tc.workspace_id = ca.workspace_id
+   AND tc.source_provider = ca.source_provider
+   AND tc.campaign_source_id = ca.campaign_source_id
    AND tc.campaign_id = ca.campaign_id
   WHERE ca.account_email IS NOT NULL
 ),
@@ -631,6 +705,7 @@ SELECT
 FROM assigned_accounts aa
 JOIN sendlens.account_daily_metrics adm
   ON aa.workspace_id = adm.workspace_id
+ AND aa.source_provider = adm.source_provider
  AND lower(aa.account_email) = lower(adm.email)
 CROSS JOIN capacity
 GROUP BY
@@ -656,6 +731,8 @@ ORDER BY adm.date DESC;`,
     sql: `WITH tagged_campaigns AS (
   SELECT
     ct.workspace_id,
+    ct.source_provider,
+    ct.campaign_source_id,
     co.campaign_id,
     co.campaign_name,
     co.daily_limit AS campaign_daily_limit,
@@ -663,18 +740,23 @@ ORDER BY adm.date DESC;`,
   FROM sendlens.campaign_tags ct
   JOIN sendlens.campaign_overview co
     ON ct.workspace_id = co.workspace_id
+   AND ct.source_provider = co.source_provider
+   AND ct.campaign_source_id = co.campaign_source_id
    AND ct.campaign_id = co.campaign_id
-  WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+  WHERE lower(trim(ct.campaign_tag_label)) = lower(trim('{{tag_name}}'))
     AND co.status = 'active'
 ),
 assigned_accounts AS (
   SELECT DISTINCT
     tc.workspace_id,
+    tc.source_provider,
     ca.account_email,
     ca.daily_limit AS account_daily_limit
   FROM tagged_campaigns tc
   JOIN sendlens.campaign_accounts ca
     ON tc.workspace_id = ca.workspace_id
+   AND tc.source_provider = ca.source_provider
+   AND tc.campaign_source_id = ca.campaign_source_id
    AND tc.campaign_id = ca.campaign_id
   WHERE ca.account_email IS NOT NULL
 ),
@@ -701,6 +783,7 @@ daily_volume AS (
   FROM assigned_accounts aa
   JOIN sendlens.account_daily_metrics adm
     ON aa.workspace_id = adm.workspace_id
+   AND aa.source_provider = adm.source_provider
    AND lower(aa.account_email) = lower(adm.email)
   GROUP BY 1
 )
@@ -739,21 +822,28 @@ ORDER BY dv.date DESC;`,
     sql: `WITH tagged_campaigns AS (
   SELECT
     ct.workspace_id,
+    ct.source_provider,
+    ct.campaign_source_id,
     co.campaign_id
   FROM sendlens.campaign_tags ct
   JOIN sendlens.campaign_overview co
     ON ct.workspace_id = co.workspace_id
+   AND ct.source_provider = co.source_provider
+   AND ct.campaign_source_id = co.campaign_source_id
    AND ct.campaign_id = co.campaign_id
-  WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+  WHERE lower(trim(ct.campaign_tag_label)) = lower(trim('{{tag_name}}'))
     AND co.status = 'active'
 ),
 assigned_accounts AS (
   SELECT DISTINCT
     tc.workspace_id,
+    tc.source_provider,
     ca.account_email
   FROM tagged_campaigns tc
   JOIN sendlens.campaign_accounts ca
     ON tc.workspace_id = ca.workspace_id
+   AND tc.source_provider = ca.source_provider
+   AND tc.campaign_source_id = ca.campaign_source_id
    AND tc.campaign_id = ca.campaign_id
   WHERE ca.account_email IS NOT NULL
 ),
@@ -768,6 +858,7 @@ daily_volume AS (
   FROM assigned_accounts aa
   JOIN sendlens.account_daily_metrics adm
     ON aa.workspace_id = adm.workspace_id
+   AND aa.source_provider = adm.source_provider
    AND lower(aa.account_email) = lower(adm.email)
   GROUP BY 1, 2, 3
 ),
@@ -819,7 +910,9 @@ ORDER BY date DESC;`,
     sql: `WITH tagged_campaigns AS (
   SELECT
     ct.workspace_id,
-    ct.tag_label,
+    ct.source_provider,
+    ct.campaign_source_id,
+    ct.campaign_tag_label,
     co.campaign_id,
     co.campaign_name,
     co.status,
@@ -836,11 +929,14 @@ ORDER BY date DESC;`,
   FROM sendlens.campaign_tags ct
   JOIN sendlens.campaign_overview co
     ON ct.workspace_id = co.workspace_id
+   AND ct.source_provider = co.source_provider
+   AND ct.campaign_source_id = co.campaign_source_id
    AND ct.campaign_id = co.campaign_id
   JOIN sendlens.campaigns c
     ON co.workspace_id = c.workspace_id
+   AND co.source_provider = c.source_provider
    AND co.campaign_id = c.id
-  WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+  WHERE lower(trim(ct.campaign_tag_label)) = lower(trim('{{tag_name}}'))
     AND co.status = 'active'
 ),
 recent_daily AS (
@@ -855,6 +951,8 @@ recent_daily AS (
   FROM tagged_campaigns tc
   LEFT JOIN sendlens.campaign_daily_metrics cdm
     ON tc.workspace_id = cdm.workspace_id
+   AND tc.source_provider = cdm.source_provider
+   AND tc.campaign_source_id = cdm.campaign_source_id
    AND tc.campaign_id = cdm.campaign_id
    AND cdm.date >= CURRENT_DATE - INTERVAL 30 DAY
 ),
@@ -910,7 +1008,7 @@ sequence_rollup AS (
   GROUP BY 1, 2
 )
 SELECT
-  tc.tag_label,
+  tc.campaign_tag_label,
   tc.campaign_id,
   tc.campaign_name,
   tc.campaign_daily_limit,
@@ -976,7 +1074,9 @@ ORDER BY
     sql: `WITH tagged_campaigns AS (
   SELECT
     ct.workspace_id,
-    ct.tag_label,
+    ct.source_provider,
+    ct.campaign_source_id,
+    ct.campaign_tag_label,
     co.campaign_id,
     co.campaign_name,
     co.daily_limit AS campaign_daily_limit,
@@ -985,12 +1085,14 @@ ORDER BY
   FROM sendlens.campaign_tags ct
   JOIN sendlens.campaign_overview co
     ON ct.workspace_id = co.workspace_id
+   AND ct.source_provider = co.source_provider
+   AND ct.campaign_source_id = co.campaign_source_id
    AND ct.campaign_id = co.campaign_id
-  WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+  WHERE lower(trim(ct.campaign_tag_label)) = lower(trim('{{tag_name}}'))
     AND co.status = 'active'
 )
 SELECT
-  tc.tag_label,
+  tc.campaign_tag_label,
   tc.campaign_id,
   tc.campaign_name,
   cdm.date,
@@ -1027,7 +1129,9 @@ ORDER BY cdm.date DESC, campaign_attributed_sent DESC, tc.campaign_name;`,
     sql: `WITH tagged_campaigns AS (
   SELECT
     ct.workspace_id,
-    ct.tag_label AS campaign_tag,
+    ct.source_provider,
+    ct.campaign_source_id,
+    ct.campaign_tag_label AS campaign_tag,
     co.campaign_id,
     co.campaign_name,
     co.status,
@@ -1045,11 +1149,14 @@ ORDER BY cdm.date DESC, campaign_attributed_sent DESC, tc.campaign_name;`,
   FROM sendlens.campaign_tags ct
   JOIN sendlens.campaign_overview co
     ON ct.workspace_id = co.workspace_id
+   AND ct.source_provider = co.source_provider
+   AND ct.campaign_source_id = co.campaign_source_id
    AND ct.campaign_id = co.campaign_id
   JOIN sendlens.campaigns c
     ON co.workspace_id = c.workspace_id
+   AND co.source_provider = c.source_provider
    AND co.campaign_id = c.id
-  WHERE lower(trim(ct.tag_label)) = lower(trim('{{campaign_tag_name}}'))
+  WHERE lower(trim(ct.campaign_tag_label)) = lower(trim('{{campaign_tag_name}}'))
     AND co.status = 'active'
 ),
 sender_candidates AS (
@@ -1058,25 +1165,32 @@ sender_candidates AS (
     tc.campaign_id,
     ca.account_email,
     regexp_extract(ca.account_email, '@(.+)$', 1) AS sender_domain,
-    ca.assignment_source,
-    ca.tag_label AS assignment_account_tag,
+    CASE
+      WHEN MAX(CASE WHEN lower(COALESCE(ca.assignment_source, '')) = 'email' THEN 1 ELSE 0 END) = 1 THEN 'email'
+      ELSE MIN(ca.assignment_source)
+    END AS assignment_source,
+    string_agg(DISTINCT ca.assignment_account_tag_label, ', ' ORDER BY ca.assignment_account_tag_label)
+      FILTER (WHERE ca.assignment_account_tag_label IS NOT NULL AND trim(ca.assignment_account_tag_label) <> '') AS assignment_account_tag,
     MAX(ca.daily_limit) AS account_daily_limit,
     MAX(ca.total_sent_30d) AS total_sent_30d,
     MAX(ca.total_replies_30d) AS total_replies_30d,
     MAX(ca.total_bounces_30d) AS total_bounces_30d,
     MAX(ca.bounce_rate_30d_pct) AS bounce_rate_30d_pct,
     MAX(CASE
-      WHEN lower(trim(COALESCE(account_tag.tag_label, ca.tag_label, ''))) = lower(trim('{{account_tag_name}}')) THEN 1
+      WHEN lower(trim(COALESCE(account_tag.tag_label, ca.assignment_account_tag_label, ''))) = lower(trim('{{account_tag_name}}')) THEN 1
       ELSE 0
     END) AS matches_account_tag
   FROM tagged_campaigns tc
   JOIN sendlens.campaign_accounts ca
     ON tc.workspace_id = ca.workspace_id
+   AND tc.source_provider = ca.source_provider
+   AND tc.campaign_source_id = ca.campaign_source_id
    AND tc.campaign_id = ca.campaign_id
   LEFT JOIN sendlens.account_tags account_tag
     ON ca.workspace_id = account_tag.workspace_id
+   AND ca.source_provider = account_tag.source_provider
    AND lower(ca.account_email) = lower(account_tag.account_email)
-  GROUP BY 1, 2, 3, 4, 5, 6
+  GROUP BY 1, 2, 3, 4
 ),
 sender_rollup AS (
   SELECT
@@ -1106,6 +1220,8 @@ recent_daily AS (
   FROM tagged_campaigns tc
   LEFT JOIN sendlens.campaign_daily_metrics cdm
     ON tc.workspace_id = cdm.workspace_id
+   AND tc.source_provider = cdm.source_provider
+   AND tc.campaign_source_id = cdm.campaign_source_id
    AND tc.campaign_id = cdm.campaign_id
    AND cdm.date >= CURRENT_DATE - INTERVAL 30 DAY
 ),
@@ -3374,6 +3490,7 @@ LIMIT 25;`,
     exactness: "exact",
     rationale: "Inspect the tag catalog before building filtered analyses.",
     sql: `SELECT
+  COALESCE(t.source_provider, m.source_provider, 'instantly') AS source_provider,
   t.id AS tag_id,
   COALESCE(t.label, t.name) AS tag_name,
   lower(trim(COALESCE(t.label, t.name))) AS normalized_tag_name,
@@ -3387,7 +3504,8 @@ FROM sendlens.custom_tags t
 LEFT JOIN sendlens.custom_tag_mappings m
   ON t.workspace_id = m.workspace_id
  AND t.id = m.tag_id
-GROUP BY 1, 2, 3, 4, 5, 9
+ AND COALESCE(t.source_provider, 'instantly') = COALESCE(m.source_provider, 'instantly')
+GROUP BY 1, 2, 3, 4, 5, 6, 10
 ORDER BY tag_name;`,
     notes: [
       "Use this first when the user says 'filter by tags'.",
@@ -3418,6 +3536,7 @@ ORDER BY tag_name;`,
       forbidden_adaptations: ["assume a tag on accounts scopes campaigns", "broaden to all tags after an exact user tag miss without saying so"],
     },
     sql: `SELECT
+  COALESCE(t.source_provider, m.source_provider, 'instantly') AS source_provider,
   COALESCE(t.label, t.name) AS tag_name,
   lower(trim(COALESCE(t.label, t.name))) AS normalized_tag_name,
   m.resource_type,
@@ -3434,7 +3553,7 @@ LEFT JOIN sendlens.custom_tag_mappings m
   ON t.workspace_id = m.workspace_id
  AND t.id = m.tag_id
 WHERE lower(trim(COALESCE(t.label, t.name))) = lower(trim('{{tag_name}}'))
-GROUP BY 1, 2, 3, 4
+GROUP BY 1, 2, 3, 4, 5
 ORDER BY tagged_resources DESC, inferred_resource_scope;`,
     notes: [
       "Replace '{{tag_name}}' with the user's tag label.",
@@ -3450,7 +3569,7 @@ ORDER BY tagged_resources DESC, inferred_resource_scope;`,
     exactness: "hybrid",
     rationale: "Join exact campaign tags to sampled lead evidence for directional tag-based analysis.",
     sql: `SELECT
-  ct.tag_label AS tag_name,
+  ct.campaign_tag_label AS tag_name,
   le.campaign_id,
   le.campaign_name,
   COUNT(*) AS sampled_lead_count,
@@ -3459,8 +3578,10 @@ ORDER BY tagged_resources DESC, inferred_resource_scope;`,
 FROM sendlens.lead_evidence le
 JOIN sendlens.campaign_tags ct
   ON le.workspace_id = ct.workspace_id
+ AND le.source_provider = ct.source_provider
+ AND le.campaign_source_id = ct.campaign_source_id
  AND le.campaign_id = ct.campaign_id
-WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+WHERE lower(trim(ct.campaign_tag_label)) = lower(trim('{{tag_name}}'))
 GROUP BY 1, 2, 3
 ORDER BY sampled_reply_share_pct DESC NULLS LAST, sampled_lead_count DESC;`,
     notes: [
@@ -3476,7 +3597,7 @@ ORDER BY sampled_reply_share_pct DESC NULLS LAST, sampled_lead_count DESC;`,
     exactness: "exact",
     rationale: "Use exact mappings to identify campaigns connected to a tag before deeper analysis.",
     sql: `SELECT
-  ct.tag_label AS tag_name,
+  ct.campaign_tag_label AS tag_name,
   co.campaign_id,
   co.campaign_name AS name,
   co.status,
@@ -3488,8 +3609,10 @@ ORDER BY sampled_reply_share_pct DESC NULLS LAST, sampled_lead_count DESC;`,
 FROM sendlens.campaign_tags ct
 JOIN sendlens.campaign_overview co
   ON ct.workspace_id = co.workspace_id
+ AND ct.source_provider = co.source_provider
+ AND ct.campaign_source_id = co.campaign_source_id
  AND ct.campaign_id = co.campaign_id
-WHERE lower(trim(ct.tag_label)) = lower(trim('{{tag_name}}'))
+WHERE lower(trim(ct.campaign_tag_label)) = lower(trim('{{tag_name}}'))
 ORDER BY co.unique_reply_rate_pct DESC NULLS LAST, co.emails_sent_count DESC;`,
     notes: [
       "This is exact for campaign-level tags and performance aggregates.",

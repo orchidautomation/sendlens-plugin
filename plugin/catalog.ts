@@ -282,7 +282,10 @@ async function publicColumnsForConnection(conn: DuckDBConnection): Promise<Publi
   const cacheKey = publicColumnCacheKey();
   const existing = publicColumnCache.get(cacheKey);
   if (existing) return existing;
-  const pending = hydratePublicColumns(conn);
+  const pending = hydratePublicColumns(conn).catch((error) => {
+    publicColumnCache.delete(cacheKey);
+    throw error;
+  });
   publicColumnCache.set(cacheKey, pending);
   return pending;
 }
@@ -382,7 +385,11 @@ function matchingConceptHints(needle: string): ConceptHint[] {
         ? needle.includes(normalizedTrigger)
         : new RegExp(`\\b${escapeRegExp(normalizedTrigger)}\\b`).test(needle);
     }),
-  );
+  ).sort((left, right) => conceptHintPriority(left) - conceptHintPriority(right));
+}
+
+function conceptHintPriority(hint: ConceptHint) {
+  return hint.concept === "campaign-tag sender risk" ? 0 : 1;
 }
 
 function scoreCatalogEntry(name: string, description: string, terms: string[], needle: string) {

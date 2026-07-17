@@ -23,6 +23,8 @@ export type AnalyzeDataDiagnostics = {
   cache_generation: string | null;
 };
 
+const PUBLIC_TABLE_SET = new Set(PUBLIC_TABLES as readonly string[]);
+
 export function buildAnalyzeDataDiagnostics(options: {
   status: AnalyzeDataDiagnosticStatus;
   startedAt: number;
@@ -45,13 +47,14 @@ export function buildAnalyzeDataDiagnostics(options: {
 
 export function referencedPublicSurfaces(sql: string | null) {
   if (!sql) return [];
-  const publicTables = new Set(PUBLIC_TABLES as readonly string[]);
   const surfaces: string[] = [];
+  const seen = new Set<string>();
   const surfacePattern = /\bsendlens\.([A-Za-z_][A-Za-z0-9_]*)\b/g;
   let match: RegExpExecArray | null;
   while ((match = surfacePattern.exec(sql)) !== null) {
     const tableName = match[1];
-    if (publicTables.has(tableName) && !surfaces.includes(tableName)) {
+    if (PUBLIC_TABLE_SET.has(tableName) && !seen.has(tableName)) {
+      seen.add(tableName);
       surfaces.push(tableName);
     }
     if (surfaces.length >= 12) break;

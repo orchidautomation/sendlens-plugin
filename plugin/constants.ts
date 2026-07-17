@@ -103,7 +103,7 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
   account_tags:
     "Convenience view joining account tag mappings to account emails for exact sender filtering.",
   tag_scope_audit:
-    "Semantic tag-scope rollup showing whether each custom tag is mapped to campaigns, accounts, or other resources.",
+    "Semantic tag-scope rollup showing whether each provider-qualified custom tag is mapped to campaigns, accounts, or other resources.",
   campaign_tag_sender_coverage:
     "Semantic campaign-tag coverage view showing which tagged active campaigns have resolved sender accounts and account daily metrics.",
   campaign_tag_daily_volume_by_campaign:

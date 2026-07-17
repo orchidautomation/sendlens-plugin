@@ -1607,6 +1607,7 @@ async function ensureSchema(conn: DuckDBConnection) {
     `CREATE OR REPLACE VIEW sendlens.tag_scope_audit AS
       SELECT
         t.workspace_id,
+        COALESCE(t.source_provider, m.source_provider, 'instantly') AS source_provider,
         t.id AS tag_id,
         COALESCE(t.label, t.name) AS tag_label,
         lower(trim(COALESCE(t.label, t.name))) AS normalized_tag_label,
@@ -1625,6 +1626,7 @@ async function ensureSchema(conn: DuckDBConnection) {
        AND t.id = m.tag_id
       GROUP BY
         t.workspace_id,
+        COALESCE(t.source_provider, m.source_provider, 'instantly'),
         t.id,
         COALESCE(t.label, t.name),
         lower(trim(COALESCE(t.label, t.name))),

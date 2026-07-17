@@ -33,6 +33,14 @@ const REGRESSION_RECIPE_IDS = new Set([
   "personalization-leak-audit",
   "personalization-leak-raw-detail",
 ]);
+const REQUIRED_ROUTE_CARD_RECIPE_IDS = [
+  "workspace-overview",
+  "account-health",
+  "campaign-sender-inventory-by-tag",
+  "personalization-leak-audit",
+  "fetched-reply-text-by-campaign",
+  "tag-scope-audit",
+];
 
 process.env.SENDLENS_DB_PATH = path.join(
   os.tmpdir(),
@@ -63,7 +71,11 @@ try {
   }
 
   const routeCardRecipes = recipes.filter((recipe) => recipe.route_card);
-  assert.ok(routeCardRecipes.length >= 5, "expected high-risk/common recipes to expose route cards");
+  assert.deepEqual(
+    routeCardRecipes.map((recipe) => recipe.id).sort(),
+    [...REQUIRED_ROUTE_CARD_RECIPE_IDS].sort(),
+    "the deliberate high-risk/common recipe-card set must stay explicit",
+  );
   for (const recipe of routeCardRecipes) {
     assertRouteCardComplete(recipe);
   }

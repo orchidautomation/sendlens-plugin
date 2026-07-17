@@ -128,17 +128,20 @@ await run(
 await run(
   db,
   `INSERT OR REPLACE INTO sendlens.custom_tags
-   (workspace_id, id, label, color, synced_at)
-   VALUES ('ws_test', 't1', 'Priority', '#ff0000', CURRENT_TIMESTAMP),
-          ('ws_test', 't2', 'Sender Pool', '#00ff00', CURRENT_TIMESTAMP)`,
+   (workspace_id, id, source_provider, label, color, synced_at)
+   VALUES ('ws_test', 't1', 'instantly', 'Priority', '#ff0000', CURRENT_TIMESTAMP),
+          ('ws_test', 't2', 'instantly', 'Sender Pool', '#00ff00', CURRENT_TIMESTAMP),
+          ('ws_test', 't3', 'smartlead', 'Priority', '#0000ff', CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
   `INSERT OR REPLACE INTO sendlens.custom_tag_mappings
-   (workspace_id, tag_id, resource_type, resource_id, synced_at)
-   VALUES ('ws_test', 't1', '2', 'c1', CURRENT_TIMESTAMP),
-          ('ws_test', 't1', '2', 'c3', CURRENT_TIMESTAMP),
-          ('ws_test', 't2', '1', 'tagged@example.com', CURRENT_TIMESTAMP)`,
+   (workspace_id, tag_id, source_provider, resource_type, resource_id, synced_at)
+   VALUES ('ws_test', 't1', 'instantly', '2', 'c1', CURRENT_TIMESTAMP),
+          ('ws_test', 't1', 'instantly', '2', 'c3', CURRENT_TIMESTAMP),
+          ('ws_test', 't2', 'instantly', '1', 'tagged@example.com', CURRENT_TIMESTAMP),
+          ('ws_test', 't2', 'instantly', '1', 'direct@example.com', CURRENT_TIMESTAMP),
+          ('ws_test', 't3', 'smartlead', '2', 'c1', CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
@@ -154,6 +157,12 @@ await run(
    VALUES ('ws_test', 'direct@example.com', '2026-05-01'::DATE, 10, 1, 2, CURRENT_TIMESTAMP),
           ('ws_test', 'tagged@example.com', '2026-05-01'::DATE, 20, 0, 3, CURRENT_TIMESTAMP),
           ('ws_test', 'direct@example.com', '2026-05-02'::DATE, 15, 0, 1, CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.account_daily_metrics
+   (workspace_id, email, source_provider, date, sent, bounced, unique_replies, synced_at)
+   VALUES ('ws_test', 'direct@example.com', 'smartlead', '2026-05-01'::DATE, 999, 99, 99, CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
@@ -231,6 +240,16 @@ assert.ok(
       && suggestion.recipe_ids.includes("campaign-tag-runway-inputs"),
   ),
 );
+const tagDeliverabilityGuidance = buildCatalogSearchGuidance("campaign tag deliverability", []);
+assert.equal(
+  tagDeliverabilityGuidance.analysis_starter_suggestions[0]?.concept,
+  "campaign-tag sender risk",
+  "campaign-tag deliverability prompts should route to exact sender inventory before generic deliverability",
+);
+assert.equal(
+  tagDeliverabilityGuidance.analysis_starter_suggestions[0]?.recipe_ids[0],
+  "campaign-sender-inventory-by-tag",
+);
 const runwayGuidance = buildCatalogSearchGuidance("runway", []);
 assert.match(runwayGuidance.message ?? "", /No direct schema matches/);
 assert.ok(runwayGuidance.suggested_narrower_terms.includes("campaign_overview"));
@@ -258,6 +277,34 @@ assert.equal(
   1,
   "concurrent warm catalog access should not query information_schema again",
 );
+const originalCatalogDbPath = process.env.SENDLENS_DB_PATH;
+const originalDemoMode = process.env.SENDLENS_DEMO_MODE;
+process.env.SENDLENS_DB_PATH = path.join(os.tmpdir(), `sendlens-catalog-key-${Date.now()}.duckdb`);
+await searchCatalog(db, "reply");
+assert.equal(
+  catalogColumnCacheStatsForTests().public_column_hydrations,
+  2,
+  "changing the resolved DB path should use a fresh public-column cache key",
+);
+process.env.SENDLENS_DEMO_MODE = "1";
+await searchCatalog(db, "reply");
+assert.equal(
+  catalogColumnCacheStatsForTests().public_column_hydrations,
+  3,
+  "changing demo mode should use a fresh public-column cache key",
+);
+process.env.SENDLENS_DB_PATH = originalCatalogDbPath;
+if (originalDemoMode == null) {
+  delete process.env.SENDLENS_DEMO_MODE;
+} else {
+  process.env.SENDLENS_DEMO_MODE = originalDemoMode;
+}
+await searchCatalog(db, "reply");
+assert.equal(
+  catalogColumnCacheStatsForTests().public_column_hydrations,
+  3,
+  "restoring a warm catalog cache key should not query information_schema again",
+);
 invalidateCatalogColumnCache();
 assert.equal(
   catalogColumnCacheStatsForTests().cache_generation,
@@ -270,7 +317,7 @@ await Promise.all([
 ]);
 assert.equal(
   catalogColumnCacheStatsForTests().public_column_hydrations,
-  2,
+  4,
   "catalog invalidation should trigger exactly one fresh public-column hydration",
 );
 const diagnosticCanary = "diagnostic-canary@example.invalid";
@@ -307,7 +354,7 @@ assert.equal(summary.exact_metrics.campaign_count, 3);
 assert.equal(summary.exact_metrics.active_campaign_count, 3);
 assert.equal(summary.exact_metrics.total_sent, 3275);
 assert.equal(summary.exact_metrics.total_unique_replies, 54);
-assert.ok(summary.summary.includes("2 custom tags stored locally"));
+assert.ok(summary.summary.includes("3 custom tags stored locally"));
 assert.ok(summary.summary.includes("1 Instantly inbox-placement tests"));
 assert.ok(summary.summary.includes("4 Instantly per-email analytics rows"));
 assert.ok(summary.summary.includes("0 Smart Delivery tests"));
@@ -460,32 +507,66 @@ assert.equal(renderedOutboundContext[0].template_body_text, "Hi {{firstName}}");
 
 const campaignTags = await runQuery(
   db,
-  "SELECT tag_label, campaign_tag_label FROM sendlens.campaign_tags WHERE campaign_id = 'c1' LIMIT 1",
+  "SELECT source_provider, campaign_source_id, tag_label, campaign_tag_label FROM sendlens.campaign_tags WHERE campaign_id = 'c1' ORDER BY source_provider",
 );
-assert.equal(campaignTags[0].tag_label, "Priority");
-assert.equal(campaignTags[0].campaign_tag_label, "Priority");
+assert.deepEqual(
+  campaignTags.map((row) => ({
+    source_provider: row.source_provider,
+    campaign_source_id: row.campaign_source_id,
+    tag_label: row.tag_label,
+    campaign_tag_label: row.campaign_tag_label,
+  })),
+  [
+    {
+      source_provider: "instantly",
+      campaign_source_id: "instantly:c1",
+      tag_label: "Priority",
+      campaign_tag_label: "Priority",
+    },
+    {
+      source_provider: "smartlead",
+      campaign_source_id: "smartlead:c1",
+      tag_label: "Priority",
+      campaign_tag_label: "Priority",
+    },
+  ],
+  "provider-native campaign ID collisions must stay provider-qualified in tag views",
+);
 
 const campaignAccounts = await runQuery(
   db,
-  "SELECT account_email, assignment_source, tag_label, assignment_account_tag_label, total_sent_30d, bounce_rate_30d_pct FROM sendlens.campaign_accounts WHERE campaign_id = 'c1' ORDER BY account_email",
+  "SELECT account_email, assignment_source, tag_label, assignment_account_tag_label, total_sent_30d, bounce_rate_30d_pct FROM sendlens.campaign_accounts WHERE campaign_id = 'c1' ORDER BY account_email, assignment_source",
 );
-assert.equal(campaignAccounts.length, 2);
+assert.equal(campaignAccounts.length, 3);
 assert.equal(campaignAccounts[0].account_email, "direct@example.com");
 assert.equal(campaignAccounts[0].assignment_source, "direct");
 assert.equal(Number(campaignAccounts[0].bounce_rate_30d_pct), 1);
-assert.equal(campaignAccounts[1].account_email, "tagged@example.com");
+assert.equal(campaignAccounts[1].account_email, "direct@example.com");
 assert.equal(campaignAccounts[1].assignment_source, "tag");
 assert.equal(campaignAccounts[1].tag_label, "Sender Pool");
 assert.equal(campaignAccounts[1].assignment_account_tag_label, "Sender Pool");
-assert.equal(Number(campaignAccounts[1].total_sent_30d), 200);
+assert.equal(Number(campaignAccounts[1].total_sent_30d), 100);
+assert.equal(campaignAccounts[2].account_email, "tagged@example.com");
+assert.equal(campaignAccounts[2].assignment_source, "tag");
+assert.equal(campaignAccounts[2].tag_label, "Sender Pool");
+assert.equal(campaignAccounts[2].assignment_account_tag_label, "Sender Pool");
+assert.equal(Number(campaignAccounts[2].total_sent_30d), 200);
 
 const tagScopeViewRows = await runQuery(
   db,
-  "SELECT inferred_resource_scope, tagged_resources FROM sendlens.tag_scope_audit WHERE normalized_tag_label = 'priority'",
+  "SELECT source_provider, inferred_resource_scope, tagged_resources FROM sendlens.tag_scope_audit WHERE normalized_tag_label = 'priority' ORDER BY source_provider",
 );
-assert.equal(tagScopeViewRows.length, 1);
-assert.equal(tagScopeViewRows[0].inferred_resource_scope, "campaign");
-assert.equal(Number(tagScopeViewRows[0].tagged_resources), 2);
+assert.deepEqual(
+  tagScopeViewRows.map((row) => ({
+    source_provider: row.source_provider,
+    inferred_resource_scope: row.inferred_resource_scope,
+    tagged_resources: Number(row.tagged_resources),
+  })),
+  [
+    { source_provider: "instantly", inferred_resource_scope: "campaign", tagged_resources: 2 },
+    { source_provider: "smartlead", inferred_resource_scope: "campaign", tagged_resources: 1 },
+  ],
+);
 
 const senderCoverageViewRows = await runQuery(
   db,
@@ -724,11 +805,18 @@ const workspaceHealthRecipes = getQueryRecipes("workspace-health");
 const tagCatalogRecipe = tagRecipes.find((recipe) => recipe.id === "tag-catalog");
 assert.ok(tagCatalogRecipe);
 const tagCatalogRows = await runQuery(db, enforceLocalWorkspaceScope(tagCatalogRecipe.sql, "ws_test"));
-const priorityTagCatalog = tagCatalogRows.find((row) => row.tag_name === "Priority");
+const priorityTagCatalog = tagCatalogRows.find(
+  (row) => row.tag_name === "Priority" && row.source_provider === "instantly",
+);
 assert.ok(priorityTagCatalog);
 assert.equal(priorityTagCatalog.normalized_tag_name, "priority");
 assert.equal(Number(priorityTagCatalog.tagged_campaigns), 2);
 assert.equal(Number(priorityTagCatalog.tagged_accounts), 0);
+const smartleadPriorityTagCatalog = tagCatalogRows.find(
+  (row) => row.tag_name === "Priority" && row.source_provider === "smartlead",
+);
+assert.ok(smartleadPriorityTagCatalog);
+assert.equal(Number(smartleadPriorityTagCatalog.tagged_campaigns), 1);
 const tagScopeAuditRecipe = tagRecipes.find((recipe) => recipe.id === "tag-scope-audit");
 assert.ok(tagScopeAuditRecipe);
 const tagScopeRows = await runQuery(
@@ -738,9 +826,17 @@ const tagScopeRows = await runQuery(
     "ws_test",
   ),
 );
-assert.equal(tagScopeRows.length, 1);
-assert.equal(tagScopeRows[0].inferred_resource_scope, "campaign");
-assert.equal(Number(tagScopeRows[0].tagged_resources), 2);
+assert.deepEqual(
+  tagScopeRows.map((row) => ({
+    source_provider: row.source_provider,
+    inferred_resource_scope: row.inferred_resource_scope,
+    tagged_resources: Number(row.tagged_resources),
+  })),
+  [
+    { source_provider: "instantly", inferred_resource_scope: "campaign", tagged_resources: 2 },
+    { source_provider: "smartlead", inferred_resource_scope: "campaign", tagged_resources: 1 },
+  ],
+);
 const senderCoverageRecipe = workspaceHealthRecipes.find((recipe) => recipe.id === "campaign-tag-sender-coverage");
 assert.ok(senderCoverageRecipe);
 const senderCoverageRows = await runQuery(
@@ -832,9 +928,9 @@ const tagAccountRunwayRows = await runQuery(
 assert.equal(tagAccountRunwayRows.length, 2);
 const alphaTagAccountRunway = tagAccountRunwayRows.find((row) => row.campaign_id === "c1");
 assert.ok(alphaTagAccountRunway);
-assert.equal(Number(alphaTagAccountRunway.tagged_sender_accounts), 1);
-assert.equal(Number(alphaTagAccountRunway.tagged_sender_daily_limit_total), 20);
-assert.equal(Number(alphaTagAccountRunway.effective_configured_daily_capacity_for_tagged_inboxes), 20);
+assert.equal(Number(alphaTagAccountRunway.tagged_sender_accounts), 2);
+assert.equal(Number(alphaTagAccountRunway.tagged_sender_daily_limit_total), 50);
+assert.equal(Number(alphaTagAccountRunway.effective_configured_daily_capacity_for_tagged_inboxes), 50);
 assert.equal(Number(alphaTagAccountRunway.completed_count), 0);
 const leadStateSampleRecipe = campaignRecipes.find((recipe) => recipe.id === "campaign-lead-state-sample-by-step");
 assert.ok(leadStateSampleRecipe);
@@ -907,6 +1003,11 @@ const senderInventoryRows = await runQuery(
 );
 assert.equal(senderInventoryRows.length, 3);
 assert.equal(senderInventoryRows.some((row) => row.campaign_id === "c3"), false);
+assert.equal(
+  senderInventoryRows.some((row) => row.source_provider === "smartlead"),
+  false,
+  "campaign-tag sender inventory must not cross providers when provider-native campaign IDs collide",
+);
 const disabledInventoryRow = senderInventoryRows.find((row) => row.account_email === "disabled@example.com");
 assert.ok(disabledInventoryRow);
 assert.equal(disabledInventoryRow.account_status, "disabled");
@@ -916,6 +1017,8 @@ const directInventoryRow = senderInventoryRows.find((row) => row.account_email =
 assert.ok(directInventoryRow);
 assert.equal(Number(directInventoryRow.active_provider_campaigns_using_sender), 2);
 assert.equal(Number(directInventoryRow.stored_account_sent_30d), 100);
+assert.equal(directInventoryRow.assignment_source, "direct");
+assert.equal(directInventoryRow.assignment_account_tag_label, "Sender Pool");
 const taggedInventoryRow = senderInventoryRows.find((row) => row.account_email === "tagged@example.com");
 assert.ok(taggedInventoryRow);
 assert.equal(taggedInventoryRow.campaign_tag_label, "Priority");
