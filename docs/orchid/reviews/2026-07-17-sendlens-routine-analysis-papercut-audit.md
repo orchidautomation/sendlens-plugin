@@ -1,12 +1,30 @@
 # SendLens Routine Analysis Papercut Audit
 
-- Status: living backlog
+- Status: implementation PR open
 - First audited: 2026-07-17
 - Last updated: 2026-07-17
 - Baseline: `v0.1.63` / `d9aa17e`
 Scope: analyst guidance, query routing, `analysis_starters`, SQL recipes, public schema/view naming, validation, and local query observability
 
 Implementation plan: `docs/orchid/plans/2026-07-17-sendlens-local-agentic-analytics-routing.md`
+
+## Implementation Traceability
+
+- PR: [orchidautomation/sendlens-plugin#73](https://github.com/orchidautomation/sendlens-plugin/pull/73)
+- Branch: `codex/sendlens-papercut-audit`
+- Package version under review: `0.1.64`
+- Scope covered in the accumulated PR: SLP-001, SLP-002, SLP-003, SLP-004, SLP-005, SLP-007, SLP-008, SLP-009, SLP-010, SLP-011, SLP-012, and SLP-013.
+- Verification evidence recorded on the PR includes the focused route, recipe, schema migration, provider-view, MCP response-contract, runtime diagnostic privacy, host-bundle, legacy installer, full plugin, validation, lint, and repo-preflight gates.
+- Sanitized acceptance signals added during implementation:
+  - exact campaign-tag sender-risk routing prefers `campaign-sender-inventory-by-tag`;
+  - campaign-tag and assignment-account-tag semantics remain separate through explicit aliases;
+  - direct and tag-based sender assignment duplicates dedupe in the canonical inventory path;
+  - provider-native campaign/account ID collisions do not cross providers in tag and sender-risk fixtures;
+  - inactive campaign assignments do not inflate the active sender-risk population;
+  - stored account 30-day aggregates remain the fast-path source, with no `account_daily_metrics` reference in the canonical inventory SQL;
+  - public catalog hydration rejects private tables before `information_schema`, single-flights cold access, reuses warm caches, and invalidates by database path, demo mode, schema generation, and explicit refresh/test reset;
+  - `analyze_data` success, zero-row, guard, and runtime-error MCP responses expose bounded diagnostics without SQL, literals, fixture identifiers, row previews, or private table names.
+- Open process gap: the implementation PR intentionally records that the plan requested separate Linear issue, branch, worktree, PR, and validation ownership for independently releasable U0-U5 slices, with U0 merged before U1. The current PR is an accumulated branch and should not be treated as satisfying that process requirement unless Brandon explicitly accepts the consolidation.
 
 ## Goal
 
