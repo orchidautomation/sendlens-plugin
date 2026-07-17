@@ -14,6 +14,7 @@ const files = {
   localDb: "plugin/local-db.ts",
   recipes: "plugin/query-recipes.ts",
   catalog: "plugin/catalog.ts",
+  analyzeDataDiagnostics: "plugin/analyze-data-diagnostics.ts",
   constants: "plugin/constants.ts",
   replyTextContract: "plugin/reply-text-contract.ts",
   campaignAnalysisResponse: "plugin/campaign-analysis-response.ts",
@@ -288,12 +289,18 @@ for (const term of [
   "`search_terms` and `suggested_narrower_terms`",
   "`analysis_starter_suggestions`",
   "workflow concepts such as runway, scale, refill, deliverability, sender accounts, rendered outbound, reply body, payload, and tags",
+  "hydrates public columns in one bounded pass and reuses warm public-column context",
   "`guidance` that points to relevant `analysis_starters` topics",
 ]) {
   assertIncludes(source.docs, term, "search_catalog docs");
 }
 for (const term of [
   "buildCatalogSearchGuidance",
+  "CatalogPublicTableError",
+  "invalidateCatalogColumnCache",
+  "publicColumnsForConnection",
+  "hydratePublicColumns",
+  "public_column_hydrations",
   "suggested_narrower_terms",
   "analysis_starter_suggestions",
   "campaign-tag-runway-inputs",
@@ -312,6 +319,8 @@ for (const term of [
   "`row_count`, `result_truncated`, and output limits",
   "warnings when caps are hit",
   "failure responses include a stable `error`, sanitized `code`, and safe `hint`",
+  '`diagnostics` with `schema_version: "analyze_data_diagnostics.v1"`',
+  "`status` (`ok`, `zero_rows`, `guard_rejected`, `query_error`, `cache_unavailable`, or `unknown`)",
   "never echo submitted SQL, rewritten SQL, private literals, row previews, or engine detail",
 ]) {
   assertIncludes(source.docs, term, "analyze_data docs");
@@ -326,19 +335,40 @@ for (const term of [
   "rows: returnedRows",
   "ANALYZE_DATA_SAFE_ERROR",
   "analyzeDataFailurePayload",
+  "buildAnalyzeDataDiagnostics",
+  "AnalyzeDataDiagnostics",
   "workspace_isolation",
 ]) {
   assertIncludes(source.server, term, "analyze_data runtime");
 }
+for (const term of [
+  "ANALYZE_DATA_DIAGNOSTICS_SCHEMA_VERSION",
+  "buildAnalyzeDataDiagnostics",
+  "referencedPublicSurfaces",
+  "elapsed_ms",
+  "referenced_surfaces",
+  "cache_generation",
+]) {
+  assertIncludes(
+    `${source.server}\n${source.analyzeDataDiagnostics}`,
+    term,
+    "analyze_data diagnostics runtime",
+  );
+}
 assertPattern(
   source.server,
-  /err instanceof LocalSqlGuardError[\s\S]*?return jsonResponse\(analyzeDataFailurePayload\(err\.code\)\);/,
-  "analyze_data guard errors use sanitized payloads",
+  /err instanceof LocalSqlGuardError[\s\S]*?analyzeDataFailurePayload\([\s\S]*?err\.code,[\s\S]*?status: "guard_rejected"/,
+  "analyze_data guard errors use sanitized diagnostic payloads",
 );
 assertPattern(
   source.server,
-  /return jsonResponse\(analyzeDataFailurePayload\("query_error"\)\);/,
-  "analyze_data runtime errors use sanitized payloads",
+  /analyzeDataFailurePayload\([\s\S]*?"query_error"[\s\S]*?status: "query_error"/,
+  "analyze_data runtime errors use sanitized diagnostic payloads",
+);
+assertPattern(
+  source.server,
+  /status: returnedRows\.length === 0 \? "zero_rows" : "ok"/,
+  "analyze_data success diagnostics distinguish zero-row results",
 );
 assert(
   !/sql:\s*rewritten\s*\?\?\s*sql/.test(source.server),

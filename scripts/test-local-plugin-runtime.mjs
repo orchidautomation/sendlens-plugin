@@ -15,8 +15,17 @@ const {
 const { buildQueryRecipeResponse, getQueryRecipes } = require("../build/plugin/query-recipes.js");
 const {
   buildCatalogSearchGuidance,
+  catalogColumnCacheStatsForTests,
+  CatalogPublicTableError,
+  invalidateCatalogColumnCache,
+  listColumns,
+  resetCatalogColumnCacheForTests,
   searchCatalog,
 } = require("../build/plugin/catalog.js");
+const {
+  buildAnalyzeDataDiagnostics,
+  referencedPublicSurfaces,
+} = require("../build/plugin/analyze-data-diagnostics.js");
 const {
   normalizeStepAnalyticsRows,
   toPlainText,
@@ -181,9 +190,27 @@ await run(
 
 await setActiveWorkspaceId(db, "ws_test");
 
+resetCatalogColumnCacheForTests();
+await assert.rejects(
+  listColumns(db, "schema_migrations"),
+  (error) =>
+    error instanceof CatalogPublicTableError
+    && error.code === "non_public_table",
+);
+assert.equal(
+  catalogColumnCacheStatsForTests().public_column_hydrations,
+  0,
+  "private column lookup must be rejected before information_schema hydration",
+);
+
 const broadCatalogMatches = await searchCatalog(
   db,
   "website visitor campaign reply payload rendered outbound inbox placement tags sender account runway",
+);
+assert.equal(
+  catalogColumnCacheStatsForTests().public_column_hydrations,
+  1,
+  "cold catalog search should hydrate public columns once",
 );
 assert.ok(broadCatalogMatches.length > 0);
 assert.ok(broadCatalogMatches.some((match) => match.table === "reply_emails" || match.table === "reply_context"));
@@ -216,6 +243,62 @@ assert.ok(
 );
 const runwayCatalogMatches = await searchCatalog(db, "runway");
 assert.equal(runwayCatalogMatches.length, 0);
+assert.equal(
+  catalogColumnCacheStatsForTests().public_column_hydrations,
+  1,
+  "warm catalog search should not query information_schema again",
+);
+await Promise.all([
+  searchCatalog(db, "reply"),
+  searchCatalog(db, "bounce"),
+  listColumns(db, "campaign_overview"),
+]);
+assert.equal(
+  catalogColumnCacheStatsForTests().public_column_hydrations,
+  1,
+  "concurrent warm catalog access should not query information_schema again",
+);
+invalidateCatalogColumnCache();
+assert.equal(
+  catalogColumnCacheStatsForTests().cache_generation,
+  1,
+  "explicit catalog invalidation should advance cache generation",
+);
+await Promise.all([
+  searchCatalog(db, "campaign"),
+  listColumns(db, "campaign_overview"),
+]);
+assert.equal(
+  catalogColumnCacheStatsForTests().public_column_hydrations,
+  2,
+  "catalog invalidation should trigger exactly one fresh public-column hydration",
+);
+const diagnosticCanary = "diagnostic-canary@example.invalid";
+assert.deepEqual(
+  referencedPublicSurfaces(
+    `SELECT * FROM sendlens.campaign_overview co JOIN sendlens.schema_migrations sm ON true WHERE co.campaign_name = '${diagnosticCanary}'`,
+  ),
+  ["campaign_overview"],
+  "diagnostics should surface only public sendlens tables and omit private names",
+);
+const diagnostics = buildAnalyzeDataDiagnostics({
+  status: "query_error",
+  startedAt: performance.now(),
+  refreshStatus: {
+    status: "succeeded",
+    lastSuccessAt: "2026-07-17T00:00:00.000Z",
+  },
+  sql: `SELECT missing FROM sendlens.campaign_overview WHERE campaign_name = '${diagnosticCanary}'`,
+  rowCount: 0,
+  resultTruncated: false,
+});
+assert.equal(diagnostics.schema_version, "analyze_data_diagnostics.v1");
+assert.equal(diagnostics.status, "query_error");
+assert.deepEqual(diagnostics.referenced_surfaces, ["campaign_overview"]);
+assert.equal(diagnostics.row_count, 0);
+assert.equal(diagnostics.result_truncated, false);
+assert.equal(diagnostics.cache_generation, "2026-07-17T00:00:00.000Z");
+assert.equal(JSON.stringify(diagnostics).includes(diagnosticCanary), false);
 
 const summary = await buildWorkspaceSummary(db);
 assert.equal(summary.schema_version, "workspace_snapshot.v1");

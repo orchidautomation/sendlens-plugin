@@ -38,6 +38,8 @@ These tools read from configured providers or from the local cache. They do not 
 
 `analyze_data` failures are intentionally sanitized. Guard, parser, binder, runtime, workspace-isolation, and local-cache execution failures return a stable error shape with a bounded code and safe retry hint; they do not echo the submitted SQL, workspace-injected SQL, literals, row previews, provider/customer identifiers, email addresses, reply text, or engine detail.
 
+`analyze_data` diagnostics are additive and bounded. They may report elapsed handler time, a small status enum, cache timestamp/generation, row/truncation counts, and referenced public SendLens surfaces parsed from `sendlens.<table>` names. They do not store route history or return SQL, private literals, raw row content, customer identifiers, email addresses, reply text, or non-public table names.
+
 ## Local Storage
 
 Default local state:

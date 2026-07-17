@@ -86,6 +86,8 @@ MCP tools are registered by the local `sendlens` stdio server. Responses are JSO
 | `search_catalog` | Search public schema names by concept, with partial matches and workflow starter hints | When the right table, column, or starter recipe is unclear |
 | `analyze_data` | Run guarded read-only DuckDB `SELECT`/`WITH` analysis | Focused questions after schema and filters are clear |
 
+`list_columns` and `search_catalog` only expose the `PUBLIC_TABLES` surfaces. Private names are rejected before schema reads, and catalog search hydrates all public columns with one bounded `information_schema` pass per cache/schema generation so follow-up searches reuse warm context instead of rediscovering one table at a time.
+
 ## Public Data Surfaces
 
 The local schema exposes exact aggregate tables and semantic analysis views. Common surfaces:
