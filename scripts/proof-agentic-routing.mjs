@@ -724,6 +724,7 @@ function assertSameRoute(caseResults, firstId, secondId) {
   const second = caseResults.find((item) => item.id === secondId);
   assert.ok(first && second, "same-route cases must both execute");
   assert.equal(second.same_route_as, firstId);
+  assert.notEqual(second.behavioral_case_id, first.behavioral_case_id);
   assert.equal(second.route_signature, first.route_signature);
 }
 

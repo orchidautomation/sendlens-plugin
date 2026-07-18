@@ -59,7 +59,7 @@
       {
         "id": "proof-equivalent-campaign-tag-sender-risk",
         "prompt_handle": "campaign-tag-sender-risk:reversed-phrasing",
-        "behavioral_case_id": "analyst-exact-tag-sender-risk",
+        "behavioral_case_id": "analyst-reversed-tag-sender-risk",
         "fixture_handles": ["campaign_tag:primary"],
         "expected_route": {
           "tools": ["analysis_starters", "analyze_data"],
@@ -186,6 +186,33 @@
       "id": "analyst-exact-tag-sender-risk",
       "category": "analysis",
       "prompt": "For the Priority Demo campaign tag, which assigned sender inboxes look risky?",
+      "expected_primary_owner": "sendlens-analyst",
+      "expected_route": {
+        "first_tool": "analysis_starters",
+        "recipe_id": "campaign-sender-inventory-by-tag",
+        "forbidden_before_recipe": [
+          "workspace_snapshot",
+          "list_tables",
+          "list_columns",
+          "search_catalog"
+        ]
+      },
+      "expected_call_budget": {
+        "fast_path_max_calls": 2,
+        "correction_max_calls": 4
+      },
+      "expected_should_trigger": {
+        "sendlens-setup": false,
+        "sendlens-analyst": true,
+        "sendlens-campaign-strategist": false,
+        "sendlens-copywriter": false,
+        "sendlens-launch-operator": false
+      }
+    },
+    {
+      "id": "analyst-reversed-tag-sender-risk",
+      "category": "analysis",
+      "prompt": "Which assigned sender inboxes look risky for the Priority Demo campaign tag?",
       "expected_primary_owner": "sendlens-analyst",
       "expected_route": {
         "first_tool": "analysis_starters",
