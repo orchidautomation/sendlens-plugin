@@ -15,8 +15,17 @@ const {
 const { buildQueryRecipeResponse, getQueryRecipes } = require("../build/plugin/query-recipes.js");
 const {
   buildCatalogSearchGuidance,
+  catalogColumnCacheStatsForTests,
+  CatalogPublicTableError,
+  invalidateCatalogColumnCache,
+  listColumns,
+  resetCatalogColumnCacheForTests,
   searchCatalog,
 } = require("../build/plugin/catalog.js");
+const {
+  buildAnalyzeDataDiagnostics,
+  referencedPublicSurfaces,
+} = require("../build/plugin/analyze-data-diagnostics.js");
 const {
   normalizeStepAnalyticsRows,
   toPlainText,
@@ -119,23 +128,27 @@ await run(
 await run(
   db,
   `INSERT OR REPLACE INTO sendlens.custom_tags
-   (workspace_id, id, label, color, synced_at)
-   VALUES ('ws_test', 't1', 'Priority', '#ff0000', CURRENT_TIMESTAMP),
-          ('ws_test', 't2', 'Sender Pool', '#00ff00', CURRENT_TIMESTAMP)`,
+   (workspace_id, id, source_provider, label, color, synced_at)
+   VALUES ('ws_test', 't1', 'instantly', 'Priority', '#ff0000', CURRENT_TIMESTAMP),
+          ('ws_test', 't2', 'instantly', 'Sender Pool', '#00ff00', CURRENT_TIMESTAMP),
+          ('ws_test', 't3', 'smartlead', 'Priority', '#0000ff', CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
   `INSERT OR REPLACE INTO sendlens.custom_tag_mappings
-   (workspace_id, tag_id, resource_type, resource_id, synced_at)
-   VALUES ('ws_test', 't1', '2', 'c1', CURRENT_TIMESTAMP),
-          ('ws_test', 't1', '2', 'c3', CURRENT_TIMESTAMP),
-          ('ws_test', 't2', '1', 'tagged@example.com', CURRENT_TIMESTAMP)`,
+   (workspace_id, tag_id, source_provider, resource_type, resource_id, synced_at)
+   VALUES ('ws_test', 't1', 'instantly', '2', 'c1', CURRENT_TIMESTAMP),
+          ('ws_test', 't1', 'instantly', '2', 'c3', CURRENT_TIMESTAMP),
+          ('ws_test', 't1', 'smartlead', '2', 'smartlead:cross-provider-only', CURRENT_TIMESTAMP),
+          ('ws_test', 't2', 'instantly', '1', 'tagged@example.com', CURRENT_TIMESTAMP),
+          ('ws_test', 't2', 'instantly', '1', 'direct@example.com', CURRENT_TIMESTAMP),
+          ('ws_test', 't3', 'smartlead', '2', 'c1', CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
   `INSERT OR REPLACE INTO sendlens.accounts
    (workspace_id, email, status, warmup_status, warmup_score, daily_limit, total_sent_30d, total_replies_30d, total_bounces_30d, synced_at)
-   VALUES ('ws_test', 'direct@example.com', 'active', 'healthy', 99, 30, 100, 5, 1, CURRENT_TIMESTAMP),
+   VALUES ('ws_test', 'direct@example.com', '1', 'healthy', 99, 30, 100, 5, 1, CURRENT_TIMESTAMP),
           ('ws_test', 'tagged@example.com', 'active', 'healthy', 98, 20, 200, 10, 4, CURRENT_TIMESTAMP)`,
 );
 await run(
@@ -148,10 +161,17 @@ await run(
 );
 await run(
   db,
+  `INSERT OR REPLACE INTO sendlens.account_daily_metrics
+   (workspace_id, email, source_provider, date, sent, bounced, unique_replies, synced_at)
+   VALUES ('ws_test', 'direct@example.com', 'smartlead', '2026-05-01'::DATE, 999, 99, 99, CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
   `INSERT OR REPLACE INTO sendlens.campaign_account_assignments
    (workspace_id, campaign_id, assignment_type, assignment_key, account_email, tag_id, synced_at)
    VALUES ('ws_test', 'c1', 'email', 'direct@example.com', 'direct@example.com', NULL, CURRENT_TIMESTAMP),
           ('ws_test', 'c1', 'tag', 't2', NULL, 't2', CURRENT_TIMESTAMP),
+          ('ws_test', 'c2', 'email', 'direct@example.com', 'direct@example.com', NULL, CURRENT_TIMESTAMP),
           ('ws_test', 'c4', 'email', 'direct@example.com', 'direct@example.com', NULL, CURRENT_TIMESTAMP)`,
 );
 await run(
@@ -181,9 +201,27 @@ await run(
 
 await setActiveWorkspaceId(db, "ws_test");
 
+resetCatalogColumnCacheForTests();
+await assert.rejects(
+  listColumns(db, "schema_migrations"),
+  (error) =>
+    error instanceof CatalogPublicTableError
+    && error.code === "non_public_table",
+);
+assert.equal(
+  catalogColumnCacheStatsForTests().public_column_hydrations,
+  0,
+  "private column lookup must be rejected before information_schema hydration",
+);
+
 const broadCatalogMatches = await searchCatalog(
   db,
   "website visitor campaign reply payload rendered outbound inbox placement tags sender account runway",
+);
+assert.equal(
+  catalogColumnCacheStatsForTests().public_column_hydrations,
+  1,
+  "cold catalog search should hydrate public columns once",
 );
 assert.ok(broadCatalogMatches.length > 0);
 assert.ok(broadCatalogMatches.some((match) => match.table === "reply_emails" || match.table === "reply_context"));
@@ -204,6 +242,29 @@ assert.ok(
       && suggestion.recipe_ids.includes("campaign-tag-runway-inputs"),
   ),
 );
+const tagDeliverabilityGuidance = buildCatalogSearchGuidance("campaign tag deliverability", []);
+assert.equal(
+  tagDeliverabilityGuidance.analysis_starter_suggestions[0]?.concept,
+  "campaign-tag sender risk",
+  "campaign-tag deliverability prompts should route to exact sender inventory before generic deliverability",
+);
+assert.equal(
+  tagDeliverabilityGuidance.analysis_starter_suggestions[0]?.recipe_ids[0],
+  "campaign-sender-inventory-by-tag",
+);
+const combinedSenderRiskGuidance = buildCatalogSearchGuidance(
+  "show sender deliverability risk for exact campaign tag Priority",
+  [],
+);
+assert.equal(
+  combinedSenderRiskGuidance.analysis_starter_suggestions[0]?.concept,
+  "campaign-tag sender risk",
+  "combined campaign-tag, sender, and deliverability intent should route independently of word order",
+);
+assert.equal(
+  combinedSenderRiskGuidance.analysis_starter_suggestions[0]?.recipe_ids[0],
+  "campaign-sender-inventory-by-tag",
+);
 const runwayGuidance = buildCatalogSearchGuidance("runway", []);
 assert.match(runwayGuidance.message ?? "", /No direct schema matches/);
 assert.ok(runwayGuidance.suggested_narrower_terms.includes("campaign_overview"));
@@ -216,6 +277,90 @@ assert.ok(
 );
 const runwayCatalogMatches = await searchCatalog(db, "runway");
 assert.equal(runwayCatalogMatches.length, 0);
+assert.equal(
+  catalogColumnCacheStatsForTests().public_column_hydrations,
+  1,
+  "warm catalog search should not query information_schema again",
+);
+await Promise.all([
+  searchCatalog(db, "reply"),
+  searchCatalog(db, "bounce"),
+  listColumns(db, "campaign_overview"),
+]);
+assert.equal(
+  catalogColumnCacheStatsForTests().public_column_hydrations,
+  1,
+  "concurrent warm catalog access should not query information_schema again",
+);
+const originalCatalogDbPath = process.env.SENDLENS_DB_PATH;
+const originalDemoMode = process.env.SENDLENS_DEMO_MODE;
+process.env.SENDLENS_DB_PATH = path.join(os.tmpdir(), `sendlens-catalog-key-${Date.now()}.duckdb`);
+await searchCatalog(db, "reply");
+assert.equal(
+  catalogColumnCacheStatsForTests().public_column_hydrations,
+  2,
+  "changing the resolved DB path should use a fresh public-column cache key",
+);
+process.env.SENDLENS_DEMO_MODE = "1";
+await searchCatalog(db, "reply");
+assert.equal(
+  catalogColumnCacheStatsForTests().public_column_hydrations,
+  3,
+  "changing demo mode should use a fresh public-column cache key",
+);
+process.env.SENDLENS_DB_PATH = originalCatalogDbPath;
+if (originalDemoMode == null) {
+  delete process.env.SENDLENS_DEMO_MODE;
+} else {
+  process.env.SENDLENS_DEMO_MODE = originalDemoMode;
+}
+await searchCatalog(db, "reply");
+assert.equal(
+  catalogColumnCacheStatsForTests().public_column_hydrations,
+  3,
+  "restoring a warm catalog cache key should not query information_schema again",
+);
+invalidateCatalogColumnCache();
+assert.equal(
+  catalogColumnCacheStatsForTests().cache_generation,
+  1,
+  "explicit catalog invalidation should advance cache generation",
+);
+await Promise.all([
+  searchCatalog(db, "campaign"),
+  listColumns(db, "campaign_overview"),
+]);
+assert.equal(
+  catalogColumnCacheStatsForTests().public_column_hydrations,
+  4,
+  "catalog invalidation should trigger exactly one fresh public-column hydration",
+);
+const diagnosticCanary = "diagnostic-canary@example.invalid";
+assert.deepEqual(
+  referencedPublicSurfaces(
+    `SELECT * FROM sendlens.campaign_overview co JOIN sendlens.schema_migrations sm ON true WHERE co.campaign_name = '${diagnosticCanary}'`,
+  ),
+  ["campaign_overview"],
+  "diagnostics should surface only public sendlens tables and omit private names",
+);
+const diagnostics = buildAnalyzeDataDiagnostics({
+  status: "query_error",
+  startedAt: performance.now(),
+  refreshStatus: {
+    status: "succeeded",
+    lastSuccessAt: "2026-07-17T00:00:00.000Z",
+  },
+  sql: `SELECT missing FROM sendlens.campaign_overview WHERE campaign_name = '${diagnosticCanary}'`,
+  rowCount: 0,
+  resultTruncated: false,
+});
+assert.equal(diagnostics.schema_version, "analyze_data_diagnostics.v1");
+assert.equal(diagnostics.status, "query_error");
+assert.deepEqual(diagnostics.referenced_surfaces, ["campaign_overview"]);
+assert.equal(diagnostics.row_count, 0);
+assert.equal(diagnostics.result_truncated, false);
+assert.equal(diagnostics.cache_generation, "2026-07-17T00:00:00.000Z");
+assert.equal(JSON.stringify(diagnostics).includes(diagnosticCanary), false);
 
 const summary = await buildWorkspaceSummary(db);
 assert.equal(summary.schema_version, "workspace_snapshot.v1");
@@ -224,7 +369,7 @@ assert.equal(summary.exact_metrics.campaign_count, 3);
 assert.equal(summary.exact_metrics.active_campaign_count, 3);
 assert.equal(summary.exact_metrics.total_sent, 3275);
 assert.equal(summary.exact_metrics.total_unique_replies, 54);
-assert.ok(summary.summary.includes("2 custom tags stored locally"));
+assert.ok(summary.summary.includes("3 custom tags stored locally"));
 assert.ok(summary.summary.includes("1 Instantly inbox-placement tests"));
 assert.ok(summary.summary.includes("4 Instantly per-email analytics rows"));
 assert.ok(summary.summary.includes("0 Smart Delivery tests"));
@@ -377,30 +522,66 @@ assert.equal(renderedOutboundContext[0].template_body_text, "Hi {{firstName}}");
 
 const campaignTags = await runQuery(
   db,
-  "SELECT tag_label FROM sendlens.campaign_tags WHERE campaign_id = 'c1' LIMIT 1",
+  "SELECT source_provider, campaign_source_id, tag_label, campaign_tag_label FROM sendlens.campaign_tags WHERE campaign_id = 'c1' ORDER BY source_provider",
 );
-assert.equal(campaignTags[0].tag_label, "Priority");
+assert.deepEqual(
+  campaignTags.map((row) => ({
+    source_provider: row.source_provider,
+    campaign_source_id: row.campaign_source_id,
+    tag_label: row.tag_label,
+    campaign_tag_label: row.campaign_tag_label,
+  })),
+  [
+    {
+      source_provider: "instantly",
+      campaign_source_id: "instantly:c1",
+      tag_label: "Priority",
+      campaign_tag_label: "Priority",
+    },
+    {
+      source_provider: "smartlead",
+      campaign_source_id: "smartlead:c1",
+      tag_label: "Priority",
+      campaign_tag_label: "Priority",
+    },
+  ],
+  "provider-native campaign ID collisions must stay provider-qualified in tag views",
+);
 
 const campaignAccounts = await runQuery(
   db,
-  "SELECT account_email, assignment_source, tag_label, total_sent_30d, bounce_rate_30d_pct FROM sendlens.campaign_accounts WHERE campaign_id = 'c1' ORDER BY account_email",
+  "SELECT account_email, assignment_source, tag_label, assignment_account_tag_label, total_sent_30d, bounce_rate_30d_pct FROM sendlens.campaign_accounts WHERE campaign_id = 'c1' ORDER BY account_email, assignment_source",
 );
-assert.equal(campaignAccounts.length, 2);
+assert.equal(campaignAccounts.length, 3);
 assert.equal(campaignAccounts[0].account_email, "direct@example.com");
 assert.equal(campaignAccounts[0].assignment_source, "direct");
 assert.equal(Number(campaignAccounts[0].bounce_rate_30d_pct), 1);
-assert.equal(campaignAccounts[1].account_email, "tagged@example.com");
+assert.equal(campaignAccounts[1].account_email, "direct@example.com");
 assert.equal(campaignAccounts[1].assignment_source, "tag");
 assert.equal(campaignAccounts[1].tag_label, "Sender Pool");
-assert.equal(Number(campaignAccounts[1].total_sent_30d), 200);
+assert.equal(campaignAccounts[1].assignment_account_tag_label, "Sender Pool");
+assert.equal(Number(campaignAccounts[1].total_sent_30d), 100);
+assert.equal(campaignAccounts[2].account_email, "tagged@example.com");
+assert.equal(campaignAccounts[2].assignment_source, "tag");
+assert.equal(campaignAccounts[2].tag_label, "Sender Pool");
+assert.equal(campaignAccounts[2].assignment_account_tag_label, "Sender Pool");
+assert.equal(Number(campaignAccounts[2].total_sent_30d), 200);
 
 const tagScopeViewRows = await runQuery(
   db,
-  "SELECT inferred_resource_scope, tagged_resources FROM sendlens.tag_scope_audit WHERE normalized_tag_label = 'priority'",
+  "SELECT source_provider, inferred_resource_scope, tagged_resources FROM sendlens.tag_scope_audit WHERE normalized_tag_label = 'priority' ORDER BY source_provider",
 );
-assert.equal(tagScopeViewRows.length, 1);
-assert.equal(tagScopeViewRows[0].inferred_resource_scope, "campaign");
-assert.equal(Number(tagScopeViewRows[0].tagged_resources), 2);
+assert.deepEqual(
+  tagScopeViewRows.map((row) => ({
+    source_provider: row.source_provider,
+    inferred_resource_scope: row.inferred_resource_scope,
+    tagged_resources: Number(row.tagged_resources),
+  })),
+  [
+    { source_provider: "instantly", inferred_resource_scope: "campaign", tagged_resources: 2 },
+    { source_provider: "smartlead", inferred_resource_scope: "campaign", tagged_resources: 1 },
+  ],
+);
 
 const senderCoverageViewRows = await runQuery(
   db,
@@ -639,11 +820,18 @@ const workspaceHealthRecipes = getQueryRecipes("workspace-health");
 const tagCatalogRecipe = tagRecipes.find((recipe) => recipe.id === "tag-catalog");
 assert.ok(tagCatalogRecipe);
 const tagCatalogRows = await runQuery(db, enforceLocalWorkspaceScope(tagCatalogRecipe.sql, "ws_test"));
-const priorityTagCatalog = tagCatalogRows.find((row) => row.tag_name === "Priority");
+const priorityTagCatalog = tagCatalogRows.find(
+  (row) => row.tag_name === "Priority" && row.source_provider === "instantly",
+);
 assert.ok(priorityTagCatalog);
 assert.equal(priorityTagCatalog.normalized_tag_name, "priority");
 assert.equal(Number(priorityTagCatalog.tagged_campaigns), 2);
 assert.equal(Number(priorityTagCatalog.tagged_accounts), 0);
+const smartleadPriorityTagCatalog = tagCatalogRows.find(
+  (row) => row.tag_name === "Priority" && row.source_provider === "smartlead",
+);
+assert.ok(smartleadPriorityTagCatalog);
+assert.equal(Number(smartleadPriorityTagCatalog.tagged_campaigns), 1);
 const tagScopeAuditRecipe = tagRecipes.find((recipe) => recipe.id === "tag-scope-audit");
 assert.ok(tagScopeAuditRecipe);
 const tagScopeRows = await runQuery(
@@ -653,9 +841,17 @@ const tagScopeRows = await runQuery(
     "ws_test",
   ),
 );
-assert.equal(tagScopeRows.length, 1);
-assert.equal(tagScopeRows[0].inferred_resource_scope, "campaign");
-assert.equal(Number(tagScopeRows[0].tagged_resources), 2);
+assert.deepEqual(
+  tagScopeRows.map((row) => ({
+    source_provider: row.source_provider,
+    inferred_resource_scope: row.inferred_resource_scope,
+    tagged_resources: Number(row.tagged_resources),
+  })),
+  [
+    { source_provider: "instantly", inferred_resource_scope: "campaign", tagged_resources: 2 },
+    { source_provider: "smartlead", inferred_resource_scope: "campaign", tagged_resources: 1 },
+  ],
+);
 const senderCoverageRecipe = workspaceHealthRecipes.find((recipe) => recipe.id === "campaign-tag-sender-coverage");
 assert.ok(senderCoverageRecipe);
 const senderCoverageRows = await runQuery(
@@ -747,9 +943,9 @@ const tagAccountRunwayRows = await runQuery(
 assert.equal(tagAccountRunwayRows.length, 2);
 const alphaTagAccountRunway = tagAccountRunwayRows.find((row) => row.campaign_id === "c1");
 assert.ok(alphaTagAccountRunway);
-assert.equal(Number(alphaTagAccountRunway.tagged_sender_accounts), 1);
-assert.equal(Number(alphaTagAccountRunway.tagged_sender_daily_limit_total), 20);
-assert.equal(Number(alphaTagAccountRunway.effective_configured_daily_capacity_for_tagged_inboxes), 20);
+assert.equal(Number(alphaTagAccountRunway.tagged_sender_accounts), 2);
+assert.equal(Number(alphaTagAccountRunway.tagged_sender_daily_limit_total), 50);
+assert.equal(Number(alphaTagAccountRunway.effective_configured_daily_capacity_for_tagged_inboxes), 50);
 assert.equal(Number(alphaTagAccountRunway.completed_count), 0);
 const leadStateSampleRecipe = campaignRecipes.find((recipe) => recipe.id === "campaign-lead-state-sample-by-step");
 assert.ok(leadStateSampleRecipe);
@@ -783,16 +979,139 @@ assert.equal(
 );
 const senderLoadBalanceRecipe = workspaceHealthRecipes.find((recipe) => recipe.id === "sender-load-balance-by-campaign-tag");
 assert.ok(senderLoadBalanceRecipe);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.campaigns
+   (id, workspace_id, source_provider, provider_campaign_id, campaign_source_id, organization_id, name, status, daily_limit, synced_at)
+   VALUES ('smartlead:c1', 'ws_test', 'smartlead', 'c1', 'smartlead:c1', 'ws_test', 'Smartlead Alpha', 'active', 10, CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.accounts
+   (workspace_id, email, source_provider, provider_account_id, account_source_id, status, warmup_status, warmup_score, daily_limit, total_sent_30d, total_replies_30d, total_bounces_30d, synced_at)
+   VALUES ('ws_test', 'direct@example.com', 'smartlead', 'smart-acct-1', 'smartlead:smart-acct-1', 'active', 'healthy', 90, 10, 999, 99, 99, CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.custom_tag_mappings
+   (workspace_id, tag_id, source_provider, resource_type, resource_id, provider_resource_id, synced_at)
+   VALUES ('ws_test', 't3', 'smartlead', '2', 'smartlead:c1', 'c1', CURRENT_TIMESTAMP),
+          ('ws_test', 't1', 'instantly', '2', 'c2', 'c2', CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.campaign_account_assignments
+   (workspace_id, campaign_id, source_provider, provider_campaign_id, campaign_source_id, assignment_type, assignment_key, account_email, provider_account_id, tag_id, synced_at)
+   VALUES ('ws_test', 'smartlead:c1', 'smartlead', 'c1', 'smartlead:c1', 'email', 'direct@example.com', 'direct@example.com', 'smart-acct-1', NULL, CURRENT_TIMESTAMP)`,
+);
 const senderLoadBalanceRows = await runQuery(
   db,
   enforceLocalWorkspaceScope(
-    senderLoadBalanceRecipe.sql.replaceAll("{{tag_name}}", "Priority"),
+    senderLoadBalanceRecipe.sql
+      .replaceAll("{{tag_name}}", "Priority")
+      .replaceAll("CURRENT_DATE - INTERVAL 30 DAY", "'2026-05-03'::DATE - INTERVAL 30 DAY"),
     "ws_test",
   ),
 );
-assert.equal(senderLoadBalanceRows.length, 2);
+assert.equal(senderLoadBalanceRows.length, 3);
 assert.equal(senderLoadBalanceRows.some((row) => row.account_email === "direct@example.com"), true);
 assert.equal(senderLoadBalanceRows.some((row) => row.account_email === "tagged@example.com"), true);
+const directSenderLoadRow = senderLoadBalanceRows.find(
+  (row) => row.source_provider === "instantly" && row.account_email === "direct@example.com",
+);
+assert.equal(directSenderLoadRow.source_provider, "instantly");
+assert.equal(Number(directSenderLoadRow.account_sent_30d), 25, "sender load must not mix Smartlead daily metrics for the same email");
+assert.equal(Number(directSenderLoadRow.all_active_campaigns_using_sender), 2, "paused campaign assignments must not inflate active sharing");
+assert.equal(Number(directSenderLoadRow.tagged_campaign_count), 1);
+const smartleadSenderLoadRow = senderLoadBalanceRows.find(
+  (row) => row.source_provider === "smartlead" && row.account_email === "direct@example.com",
+);
+assert.ok(smartleadSenderLoadRow);
+assert.equal(Number(smartleadSenderLoadRow.account_sent_30d), 999);
+assert.equal(Number(smartleadSenderLoadRow.all_active_campaigns_using_sender), 1);
+assert.equal(Number(smartleadSenderLoadRow.tagged_campaign_count), 1);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.accounts
+   (workspace_id, email, status, warmup_status, warmup_score, daily_limit, total_sent_30d, total_replies_30d, total_bounces_30d, synced_at)
+   VALUES ('ws_test', 'disabled@example.com', 'disabled', 'paused', 10, 25, 333, 7, 33, CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.campaign_account_assignments
+   (workspace_id, campaign_id, assignment_type, assignment_key, account_email, tag_id, synced_at)
+   VALUES ('ws_test', 'c1', 'email', 'disabled@example.com', 'disabled@example.com', NULL, CURRENT_TIMESTAMP)`,
+);
+const campaignSenderInventoryRecipe = workspaceHealthRecipes.find((recipe) => recipe.id === "campaign-sender-inventory-by-tag");
+assert.ok(campaignSenderInventoryRecipe);
+assert.equal(campaignSenderInventoryRecipe.sql.includes("sendlens.account_daily_metrics"), false);
+assert.match(campaignSenderInventoryRecipe.sql, /campaign_tag_label/);
+assert.match(campaignSenderInventoryRecipe.sql, /assignment_account_tag_label/);
+assert.doesNotMatch(campaignSenderInventoryRecipe.sql, /ct\.tag_label|ca\.tag_label/);
+assert.match(campaignSenderInventoryRecipe.sql, /source_provider = co\.source_provider/);
+assert.match(campaignSenderInventoryRecipe.sql, /lower\(COALESCE\(co\.status, ''\)\) = 'active'/);
+const senderInventoryRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(
+    campaignSenderInventoryRecipe.sql.replaceAll("{{tag_name}}", " priority "),
+    "ws_test",
+  ),
+);
+assert.equal(senderInventoryRows.length, 4);
+assert.equal(senderInventoryRows.some((row) => row.campaign_id === "c3"), false);
+assert.equal(senderInventoryRows.some((row) => row.campaign_id === "c2"), false);
+const disabledInventoryRow = senderInventoryRows.find((row) => row.account_email === "disabled@example.com");
+assert.ok(disabledInventoryRow);
+assert.equal(disabledInventoryRow.account_status, "disabled");
+assert.equal(disabledInventoryRow.sender_risk_signal, "disabled_or_inactive_sender");
+assert.equal(Number(disabledInventoryRow.stored_account_sent_30d), 333);
+const directInventoryRow = senderInventoryRows.find(
+  (row) => row.source_provider === "instantly" && row.account_email === "direct@example.com",
+);
+assert.ok(directInventoryRow);
+assert.equal(directInventoryRow.account_status, "1");
+assert.notEqual(directInventoryRow.sender_risk_signal, "disabled_or_inactive_sender");
+assert.equal(directInventoryRow.sender_risk_signal, "shared_active_sender");
+assert.equal(Number(directInventoryRow.active_provider_campaigns_using_sender), 2);
+assert.equal(Number(directInventoryRow.stored_account_sent_30d), 100);
+assert.equal(directInventoryRow.assignment_source, "direct");
+assert.equal(directInventoryRow.assignment_account_tag_label, "Sender Pool");
+const smartleadInventoryRow = senderInventoryRows.find(
+  (row) => row.source_provider === "smartlead" && row.account_email === "direct@example.com",
+);
+assert.ok(smartleadInventoryRow);
+assert.equal(smartleadInventoryRow.campaign_id, "smartlead:c1");
+assert.equal(smartleadInventoryRow.campaign_source_id, "smartlead:c1");
+assert.equal(Number(smartleadInventoryRow.active_provider_campaigns_using_sender), 1);
+assert.equal(Number(smartleadInventoryRow.stored_account_sent_30d), 999);
+assert.equal(smartleadInventoryRow.sender_risk_signal, "high_bounce_risk");
+const taggedInventoryRow = senderInventoryRows.find((row) => row.account_email === "tagged@example.com");
+assert.ok(taggedInventoryRow);
+assert.equal(taggedInventoryRow.campaign_tag_label, "Priority");
+assert.equal(taggedInventoryRow.assignment_account_tag_label, "Sender Pool");
+assert.equal(Number(taggedInventoryRow.stored_account_sent_30d), 200);
+await run(
+  db,
+  `DELETE FROM sendlens.campaign_account_assignments
+   WHERE workspace_id = 'ws_test' AND source_provider = 'smartlead' AND campaign_id = 'smartlead:c1'`,
+);
+await run(
+  db,
+  `DELETE FROM sendlens.custom_tag_mappings
+   WHERE workspace_id = 'ws_test'
+     AND ((source_provider = 'smartlead' AND tag_id = 't3' AND resource_id = 'smartlead:c1')
+       OR (source_provider = 'instantly' AND tag_id = 't1' AND resource_id = 'c2'))`,
+);
+await run(
+  db,
+  `DELETE FROM sendlens.accounts
+   WHERE workspace_id = 'ws_test' AND source_provider = 'smartlead' AND email = 'direct@example.com'`,
+);
+await run(
+  db,
+  `DELETE FROM sendlens.campaigns
+   WHERE workspace_id = 'ws_test' AND source_provider = 'smartlead' AND id = 'smartlead:c1'`,
+);
 const negativeConcentrationRecipe = workspaceHealthRecipes.find((recipe) => recipe.id === "negative-unsubscribe-concentration");
 assert.ok(negativeConcentrationRecipe);
 assert.match(negativeConcentrationRecipe.sql, /unsubscribed_count/);

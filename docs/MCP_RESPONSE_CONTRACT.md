@@ -73,6 +73,7 @@ Where relevant, SendLens responses should include:
 
 - recipe metadata
 - recipe `exactness`: `exact`, `sampled`, or `hybrid`
+- optional `route_card` metadata for high-risk/common recipes: preferred intent, grain, time basis, attribution, provider/population scope, tag role, prerequisites, cost, privacy, safe adaptations, and forbidden adaptations
 - compact recipe index by default with `output_shape`, `returned_count`, `page`, `page_size`, `has_more`, and `next_page`
 - `recipe_id` exact lookup for one full recipe
 - `mode="full"` bounded pages with SQL and explicit placeholders
@@ -83,6 +84,7 @@ Where relevant, SendLens responses should include:
 - returns `matches` for table and column hits, including partial matches for broad multi-token queries
 - returns `search_terms` and `suggested_narrower_terms` so operators can retry with schema-specific language
 - returns `analysis_starter_suggestions` for workflow concepts such as runway, scale, refill, deliverability, sender accounts, rendered outbound, reply body, payload, and tags
+- hydrates public columns in one bounded pass and reuses warm public-column context for follow-up searches
 - when schema search finds no direct match for a workflow concept, returns `guidance` that points to relevant `analysis_starters` topics instead of silently failing
 
 `analyze_data`
@@ -91,6 +93,8 @@ Where relevant, SendLens responses should include:
 - guarded SQL result rows
 - `row_count`, `result_truncated`, and output limits
 - warnings when caps are hit
+- additive privacy-safe `diagnostics` with `schema_version: "analyze_data_diagnostics.v1"`, monotonic `elapsed_ms`, bounded public `referenced_surfaces`, `status` (`ok`, `zero_rows`, `guard_rejected`, `query_error`, `cache_unavailable`, or `unknown`), row/truncation counts, and cache timestamp/generation metadata
+- failure responses include a stable `error`, sanitized `code`, and safe `hint`; they never echo submitted SQL, rewritten SQL, private literals, row previews, or engine detail
 
 `fetch_reply_text`
 

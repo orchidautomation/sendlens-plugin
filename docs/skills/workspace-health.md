@@ -20,13 +20,14 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 ## Expected Flow
 
-1. Start with `workspace_snapshot`, optionally scoped by provider tag or campaign-name fragment. Treat tag support as provider-specific evidence.
-2. Pull `analysis_starters(topic="workspace-health")` before custom SQL.
-3. Keep broad reads active-only unless the user asks for inactive or historical campaigns.
-4. For deliverability questions, combine account health and inbox-placement evidence before blaming copy or targeting.
-5. Use `inbox_placement_analytics_labeled` when provider, recipient geography, or recipient type labels matter.
-6. Do not hydrate replies broadly during workspace triage; choose one campaign and hand off to `prepare_campaign_analysis` when depth is needed.
-7. End with specific actions ordered by likely impact.
+1. Start with `workspace_snapshot` only for broad or ambiguous workspace-health questions, optionally scoped by provider tag or campaign-name fragment. Treat tag support as provider-specific evidence.
+2. For exact campaign-tag sender-risk, inbox-assignment, or tag-scoped deliverability questions, bypass broad triage: pull `analysis_starters(recipe_id="campaign-sender-inventory-by-tag", mode="full")`, execute it once with `analyze_data`, and only then decide whether placement or daily-volume follow-up is needed.
+3. Pull `analysis_starters(topic="workspace-health")` before custom SQL when no exact recipe ID already fits.
+4. Keep broad reads active-only unless the user asks for inactive or historical campaigns.
+5. For deliverability questions, combine account health and inbox-placement evidence before blaming copy or targeting.
+6. Use `inbox_placement_analytics_labeled` when provider, recipient geography, or recipient type labels matter.
+7. Do not hydrate replies broadly during workspace triage; choose one campaign and hand off to `prepare_campaign_analysis` when depth is needed.
+8. End with specific actions ordered by likely impact.
 
 ## Output Shape
 

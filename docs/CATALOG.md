@@ -80,11 +80,13 @@ MCP tools are registered by the local `sendlens` stdio server. Responses are JSO
 | `load_campaign_data` | Hydrate one campaign for copy, ICP, reply, or next-test analysis | After selecting a campaign |
 | `prepare_campaign_analysis` | Hydrate enough exact reply bodies and backfilled lead context for premium one-campaign diagnosis | Before working/not-working, reply-quality, winner, scale, or kill claims |
 | `fetch_reply_text` | Fetch exact inbound reply body text for one campaign into local DuckDB | Only when actual reply wording is needed |
-| `analysis_starters` | Return curated SQL recipes and exactness notes | Before custom analysis for common questions |
+| `analysis_starters` | Return curated SQL recipes, exactness notes, and compact route cards for common/high-risk recipes | Before custom analysis for common questions; exact recipe routes before schema discovery |
 | `list_tables` | List public SendLens tables/views and descriptions | Schema orientation |
 | `list_columns` | List columns and DuckDB types for one table/view | Before custom SQL |
 | `search_catalog` | Search public schema names by concept, with partial matches and workflow starter hints | When the right table, column, or starter recipe is unclear |
 | `analyze_data` | Run guarded read-only DuckDB `SELECT`/`WITH` analysis | Focused questions after schema and filters are clear |
+
+`list_columns` and `search_catalog` only expose the `PUBLIC_TABLES` surfaces. Private names are rejected before schema reads, and catalog search hydrates all public columns with one bounded `information_schema` pass per cache/schema generation so follow-up searches reuse warm context instead of rediscovering one table at a time.
 
 ## Public Data Surfaces
 
@@ -93,8 +95,8 @@ The local schema exposes exact aggregate tables and semantic analysis views. Com
 | Surface | Classification | Use |
 | --- | --- | --- |
 | `campaigns`, `campaign_analytics`, `campaign_daily_metrics`, `step_analytics`, `campaign_variants` | Exact provider-qualified campaign surfaces where available | Campaign, step, variant, template, tracking/deliverability settings, provider dimensions, and daily performance analysis |
-| `accounts`, `account_daily_metrics`, `campaign_accounts` | Exact or resolved sender/account surfaces | Account health, sender coverage, and capacity checks |
-| `custom_tags`, `custom_tag_mappings`, `campaign_tags`, `account_tags` | Exact tag surfaces | Campaign and sender scoping |
+| `accounts`, `account_daily_metrics`, `campaign_accounts` | Exact or resolved sender/account surfaces | Account health, sender coverage, and capacity checks; `assignment_account_tag_label` disambiguates tag-based account assignments from campaign tags |
+| `custom_tags`, `custom_tag_mappings`, `campaign_tags`, `account_tags` | Exact tag surfaces | Campaign and sender scoping; `campaign_tag_label` is the explicit campaign-tag alias while legacy `tag_label` is retained |
 | `inbox_placement_tests`, `inbox_placement_analytics` | Exact when available from Instantly | Inbox placement and authentication evidence |
 | `inbox_placement_test_overview`, `sender_deliverability_health` | Semantic rollups over inbox placement data | Deliverability diagnosis with availability caveats |
 | `smartlead_delivery_tests`, `smartlead_delivery_evidence` | Exact support-gated Smart Delivery definitions, aggregates, and diagnostics | Smartlead placement, sender, authentication, and blacklist evidence without fake per-email rows |

@@ -169,6 +169,33 @@ function assertMatrixCoverage(matrix, skillNames) {
   }
 }
 
+function assertExactSenderRiskRoute(matrix) {
+  const routeCase = (matrix?.cases ?? []).find(
+    (caseEntry) => caseEntry.id === "analyst-exact-tag-sender-risk",
+  );
+  assert(routeCase, `${matrixPath}: missing exact tag sender-risk routing case`);
+  assert(
+    routeCase.expected_primary_owner === "sendlens-analyst",
+    `${matrixPath}: exact tag sender-risk case must stay analyst-owned`,
+  );
+  assert(
+    routeCase.expected_route?.first_tool === "analysis_starters",
+    `${matrixPath}: exact tag sender-risk must start with analysis_starters`,
+  );
+  assert(
+    routeCase.expected_route?.recipe_id === "campaign-sender-inventory-by-tag",
+    `${matrixPath}: exact tag sender-risk must route to campaign-sender-inventory-by-tag`,
+  );
+  assert(
+    routeCase.expected_route?.forbidden_before_recipe?.includes("workspace_snapshot"),
+    `${matrixPath}: exact tag sender-risk must forbid workspace_snapshot before recipe lookup`,
+  );
+  assert(
+    routeCase.expected_call_budget?.fast_path_max_calls === 2,
+    `${matrixPath}: exact tag sender-risk fast path must stay within two calls`,
+  );
+}
+
 function assertTriggerFilesMatchMatrix(matrix, triggerMaps, skillNames) {
   let executedAssertions = 0;
   for (const caseEntry of matrix.cases ?? []) {
@@ -224,9 +251,10 @@ for (const skillName of skillNames) {
 }
 
 if (matrix) {
-  assertMockCoverage(matrix);
-  assertMatrixCoverage(matrix, skillNames);
-  assertTriggerFilesMatchMatrix(matrix, triggerMaps, skillNames);
+assertMockCoverage(matrix);
+assertMatrixCoverage(matrix, skillNames);
+assertExactSenderRiskRoute(matrix);
+assertTriggerFilesMatchMatrix(matrix, triggerMaps, skillNames);
 }
 
 if (failures.length > 0) {

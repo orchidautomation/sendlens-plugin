@@ -1,5 +1,5 @@
 import type { DuckDBConnection } from "@duckdb/node-api";
-import { query } from "./local-db";
+import { CURRENT_SCHEMA_MIGRATION_ID, query, resolveDbPath } from "./local-db";
 import { PUBLIC_TABLES, TABLE_DESCRIPTIONS, type PublicTableName } from "./constants";
 
 export type TableInfo = {
@@ -11,6 +11,15 @@ export type ColumnInfo = {
   name: string;
   type: string;
 };
+
+export class CatalogPublicTableError extends Error {
+  code = "non_public_table" as const;
+
+  constructor(public readonly tableName: string) {
+    super(`Table "${tableName}" is not a public SendLens surface.`);
+    this.name = "CatalogPublicTableError";
+  }
+}
 
 export type CatalogMatch = {
   kind: "table" | "column";
@@ -42,6 +51,12 @@ type ConceptHint = {
   recipeIds: string[];
   reason: string;
 };
+
+type PublicColumnCache = Map<PublicTableName, ColumnInfo[]>;
+
+const publicColumnCache = new Map<string, Promise<PublicColumnCache>>();
+let publicColumnHydrationCountForTests = 0;
+let publicColumnCacheGeneration = 0;
 
 const STOP_WORDS = new Set([
   "a",
@@ -102,6 +117,21 @@ const CONCEPT_HINTS: ConceptHint[] = [
     topics: ["workspace-health", "campaign-launch-qa"],
     recipeIds: ["sender-deliverability-health", "inbox-placement-test-overview", "campaign-tracking-deliverability-settings"],
     reason: "Deliverability questions should inspect sender health, inbox-placement evidence, and campaign guardrails.",
+  },
+  {
+    concept: "campaign-tag sender risk",
+    triggers: [
+      "campaign tag sender risk",
+      "tag sender risk",
+      "tagged campaign sender",
+      "campaign tag inbox",
+      "campaign tag deliverability",
+      "tag deliverability",
+    ],
+    searchTerms: ["campaign_tags", "campaign_accounts", "campaign_overview", "accounts", "sender risk"],
+    topics: ["workspace-health"],
+    recipeIds: ["campaign-sender-inventory-by-tag", "campaign-tag-sender-coverage", "sender-deliverability-health"],
+    reason: "Exact campaign-tag sender-risk questions should use campaign-sender-inventory-by-tag first; placement and daily-volume routes are follow-ons only after the sender inventory is known.",
   },
   {
     concept: "sender",
@@ -165,17 +195,10 @@ export async function listColumns(
   tableName: string,
 ): Promise<ColumnInfo[]> {
   const clean = tableName.replace(/^sendlens\./i, "").trim();
-  const rows = await query(
-    conn,
-    `SELECT column_name AS name, data_type AS type
-     FROM information_schema.columns
-     WHERE table_schema = 'sendlens' AND table_name = '${clean.replace(/'/g, "''")}'
-     ORDER BY ordinal_position`,
-  );
-  return rows.map((row) => ({
-    name: String(row.name),
-    type: String(row.type),
-  }));
+  if (!isPublicTableName(clean)) {
+    throw new CatalogPublicTableError(clean);
+  }
+  return (await publicColumnsForConnection(conn)).get(clean) ?? [];
 }
 
 export async function searchCatalog(
@@ -205,8 +228,9 @@ export async function searchCatalog(
     }
   }
 
+  const publicColumns = await publicColumnsForConnection(conn);
   for (const table of PUBLIC_TABLES) {
-    const columns = await listColumns(conn, table);
+    const columns = publicColumns.get(table) ?? [];
     for (const column of columns) {
       const description = `${column.name} (${column.type})`;
       const scored = scoreCatalogEntry(`${table} ${column.name}`, description, terms, needle);
@@ -230,6 +254,77 @@ export async function searchCatalog(
     .map(({ match }) => match);
 
   return limitCatalogMatches(sortedMatches, terms.length > 1 ? 4 : 25, 25);
+}
+
+export function resetCatalogColumnCacheForTests() {
+  publicColumnCache.clear();
+  publicColumnHydrationCountForTests = 0;
+  publicColumnCacheGeneration = 0;
+}
+
+export function invalidateCatalogColumnCache() {
+  publicColumnCache.clear();
+  publicColumnCacheGeneration += 1;
+}
+
+export function catalogColumnCacheStatsForTests() {
+  return {
+    public_column_hydrations: publicColumnHydrationCountForTests,
+    cache_generation: publicColumnCacheGeneration,
+  };
+}
+
+function isPublicTableName(tableName: string): tableName is PublicTableName {
+  return (PUBLIC_TABLES as readonly string[]).includes(tableName);
+}
+
+async function publicColumnsForConnection(conn: DuckDBConnection): Promise<PublicColumnCache> {
+  const cacheKey = publicColumnCacheKey();
+  const existing = publicColumnCache.get(cacheKey);
+  if (existing) return existing;
+  const pending = hydratePublicColumns(conn).catch((error) => {
+    publicColumnCache.delete(cacheKey);
+    throw error;
+  });
+  publicColumnCache.set(cacheKey, pending);
+  return pending;
+}
+
+async function hydratePublicColumns(conn: DuckDBConnection): Promise<PublicColumnCache> {
+  publicColumnHydrationCountForTests += 1;
+  const tableNames = PUBLIC_TABLES.map((table) => `'${table.replace(/'/g, "''")}'`).join(", ");
+  const rows = await query(
+    conn,
+    `SELECT table_name, column_name AS name, data_type AS type
+     FROM information_schema.columns
+     WHERE table_schema = 'sendlens'
+       AND table_name IN (${tableNames})
+     ORDER BY table_name, ordinal_position`,
+  );
+  const columnsByTable: PublicColumnCache = new Map(PUBLIC_TABLES.map((table) => [table, []]));
+  for (const row of rows) {
+    const table = String(row.table_name);
+    if (!isPublicTableName(table)) continue;
+    columnsByTable.get(table)?.push({
+      name: String(row.name),
+      type: String(row.type),
+    });
+  }
+  return columnsByTable;
+}
+
+function publicColumnCacheKey() {
+  return [
+    resolveDbPath(),
+    CURRENT_SCHEMA_MIGRATION_ID,
+    normalizedMode(process.env.SENDLENS_DEMO_MODE),
+    publicColumnCacheGeneration,
+  ].join("\u001f");
+}
+
+function normalizedMode(value: string | undefined) {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" ? "demo" : "default";
 }
 
 export function buildCatalogSearchGuidance(search: string, matches: CatalogMatch[]): CatalogSearchGuidance {
@@ -284,13 +379,26 @@ function buildRawSearchTerms(needle: string): string[] {
 
 function matchingConceptHints(needle: string): ConceptHint[] {
   return CONCEPT_HINTS.filter((hint) =>
-    hint.triggers.some((trigger) => {
+    (hint.concept === "campaign-tag sender risk" && hasCampaignTagSenderRiskIntent(needle))
+    || hint.triggers.some((trigger) => {
       const normalizedTrigger = trigger.toLowerCase();
       return normalizedTrigger.includes(" ")
         ? needle.includes(normalizedTrigger)
         : new RegExp(`\\b${escapeRegExp(normalizedTrigger)}\\b`).test(needle);
     }),
-  );
+  ).sort((left, right) => conceptHintPriority(left) - conceptHintPriority(right));
+}
+
+function hasCampaignTagSenderRiskIntent(needle: string) {
+  const hasCampaign = /\bcampaigns?\b/.test(needle);
+  const hasTag = /\btags?\b|\btagged\b/.test(needle);
+  const hasSender = /\bsenders?\b|\baccounts?\b|\binboxes?\b/.test(needle);
+  const hasRisk = /\bdeliverability\b|\brisks?\b|\bbounces?\b|\bhealth\b|\bspam\b|\bplacement\b/.test(needle);
+  return hasCampaign && hasTag && hasSender && hasRisk;
+}
+
+function conceptHintPriority(hint: ConceptHint) {
+  return hint.concept === "campaign-tag sender risk" ? 0 : 1;
 }
 
 function scoreCatalogEntry(name: string, description: string, terms: string[], needle: string) {

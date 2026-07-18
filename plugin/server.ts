@@ -1,7 +1,14 @@
 import * as z from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { buildCatalogSearchGuidance, listColumns, listTables, searchCatalog } from "./catalog";
+import {
+  buildCatalogSearchGuidance,
+  CatalogPublicTableError,
+  invalidateCatalogColumnCache,
+  listColumns,
+  listTables,
+  searchCatalog,
+} from "./catalog";
 import { isDemoMode, seedDemoWorkspace } from "./demo-workspace";
 import { loadSendLensEnv } from "./env";
 import {
@@ -34,6 +41,10 @@ import {
   CAMPAIGN_ANALYSIS_REPLY_PREVIEW_MAX_CHARS,
   redactCampaignAnalysisReplySample,
 } from "./campaign-analysis-response";
+import {
+  buildAnalyzeDataDiagnostics,
+  type AnalyzeDataDiagnostics,
+} from "./analyze-data-diagnostics";
 import { buildQueryRecipeResponse, QUERY_RECIPE_TOPICS } from "./query-recipes";
 import { toReplyTextFetchResult } from "./reply-text-contract";
 import { readRefreshStatus } from "./refresh-status";
@@ -57,6 +68,7 @@ const REPLY_CONTEXT_SCAN_LIMIT = 500;
 const RENDERED_OUTBOUND_SAMPLE_LIMIT = 25;
 const SCOPED_SNAPSHOT_CAMPAIGN_LIMIT = 100;
 const RENDERED_OUTBOUND_REDACTED_PREVIEW_LIMIT = 3;
+const ANALYZE_DATA_SAFE_ERROR = "Query could not be executed safely.";
 const PLUXX_READINESS_FOLLOWUP = [
   "Temporary SendLens readiness gate in effect.",
   "If startup refresh is still running, this tool may wait briefly for the local snapshot before answering.",
@@ -137,6 +149,25 @@ function jsonResponse(payload: unknown) {
 
 function stripTrailingSemicolon(sql: string) {
   return sql.trim().replace(/;+\s*$/, "");
+}
+
+function analyzeDataFailurePayload(
+  code:
+    | LocalSqlGuardError["code"]
+    | "cache_unavailable"
+    | "query_error"
+    | "workspace_isolation",
+  diagnostics?: AnalyzeDataDiagnostics,
+) {
+  return {
+    error: ANALYZE_DATA_SAFE_ERROR,
+    code,
+    hint:
+      code === "cache_unavailable"
+        ? "Use refresh_status once to check local cache readiness, then refresh or reload the plugin before retrying. Do not include private literals in retries."
+        : "Use one focused read-only SELECT/WITH query against sendlens.* public views. Do not include private literals in retries.",
+    diagnostics,
+  };
 }
 
 function sqlSafe(value: string) {
@@ -503,15 +534,16 @@ async function ensureDemoWorkspaceForRead() {
   return seedDemoWorkspace();
 }
 
-function dbUnavailableResponse(error: LocalDbUnavailableError) {
+function dbUnavailableResponse(error: LocalDbUnavailableError, extra?: Record<string, unknown>) {
   return jsonResponse({
     error: error.message,
     hint:
       "Use refresh_status once to check whether a refresh is still running. If refresh_status is succeeded and this persists, reload or restart the host/plugin session before retrying. Do not use Bash, sleep, local file inspection, or DuckDB shell access as a fallback.",
+    ...extra,
   });
 }
 
-function cacheReadinessResponse(error: CacheReadinessError) {
+function cacheReadinessResponse(error: CacheReadinessError, extra?: Record<string, unknown>) {
   return jsonResponse({
     error: error.message,
     issue: error.issue,
@@ -538,6 +570,7 @@ function cacheReadinessResponse(error: CacheReadinessError) {
       error.issue === "client_env_mismatch"
         ? "Restart or reload the host so .env.clients/<client>.env replaces stale SendLens process env values, then run setup_doctor before refresh_data."
         : "Run refresh_data with the currently configured Instantly key to rebuild and stamp the local cache. If you intentionally want the old cached data, unset SENDLENS_INSTANTLY_API_KEY before starting the host.",
+    ...extra,
   });
 }
 
@@ -581,6 +614,7 @@ server.registerTool(
           source: "manual",
           provider,
         });
+      invalidateCatalogColumnCache();
       return jsonResponse({
         ...refreshed,
         demo_mode: isDemoMode() ? true : undefined,
@@ -1480,6 +1514,13 @@ server.registerTool(
       if (error instanceof LocalDbUnavailableError) {
         return dbUnavailableResponse(error);
       }
+      if (error instanceof CatalogPublicTableError) {
+        return jsonResponse({
+          error: "Table is not a public SendLens surface.",
+          code: error.code,
+          table: error.tableName,
+        });
+      }
       throw error;
     } finally {
       if (db) closeDb(db);
@@ -1544,7 +1585,7 @@ server.registerTool(
         "Use this before writing custom SQL when the user's question matches a known analysis path.",
         "Do not run recipe SQL blindly; replace placeholders like campaign_id, tag_name, or payload_key and preserve the recipe exactness notes in the final answer.",
         "By default returns a compact recipe index without SQL; pass recipe_id for one full recipe or mode='full' with page/page_size for a bounded SQL page.",
-        "Returns recipe metadata, exact/sample/hybrid classification, output-shape metadata, and SQL on demand; it does not query the database.",
+        "Returns recipe metadata, route cards for common/high-risk routes, exact/sample/hybrid classification, output-shape metadata, and SQL on demand; it does not query the database.",
       ].join(" "),
     inputSchema: {
       topic: z
@@ -1623,6 +1664,7 @@ if (shouldExposeDemoSeedTool()) {
     },
     async () => {
       const seeded = await seedDemoWorkspace();
+      invalidateCatalogColumnCache();
       return jsonResponse({
         ...seeded,
         demo_mode: true,
@@ -1681,6 +1723,7 @@ server.registerTool(
     },
   },
   async ({ sql, rationale }) => {
+    const handlerStartedAt = performance.now();
     const readiness = await waitForSessionSnapshot();
     let db: Awaited<ReturnType<typeof getDb>> | null = null;
     let rewritten: string | null = null;
@@ -1692,17 +1735,27 @@ server.registerTool(
       if (!workspaceId) {
         return jsonResponse({
           error: "No active workspace is loaded. Run refresh_data() first.",
+          diagnostics: buildAnalyzeDataDiagnostics({
+            status: "cache_unavailable",
+            startedAt: handlerStartedAt,
+            refreshStatus: readiness.status,
+            sql,
+          }),
         });
       }
       try {
         rewritten = enforceLocalWorkspaceScope(sql, workspaceId);
       } catch (err) {
         if (err instanceof LocalSqlGuardError) {
-          return jsonResponse({
-            error: err.message,
-            hint:
-              "Use only SELECT/WITH queries against sendlens.* tables. Workspace filters are injected automatically.",
-          });
+          return jsonResponse(analyzeDataFailurePayload(
+            err.code,
+            buildAnalyzeDataDiagnostics({
+              status: "guard_rejected",
+              startedAt: handlerStartedAt,
+              refreshStatus: readiness.status,
+              sql,
+            }),
+          ));
         }
         throw err;
       }
@@ -1719,9 +1772,17 @@ server.registerTool(
       for (const row of returnedRows) {
         const rowWorkspace = row.workspace_id;
         if (rowWorkspace != null && rowWorkspace !== workspaceId) {
-          return jsonResponse({
-            error: "Workspace isolation check failed for this query result.",
-          });
+          return jsonResponse(analyzeDataFailurePayload(
+            "workspace_isolation",
+            buildAnalyzeDataDiagnostics({
+              status: "query_error",
+              startedAt: handlerStartedAt,
+              refreshStatus: readiness.status,
+              sql,
+              rowCount: 0,
+              resultTruncated: false,
+            }),
+          ));
         }
       }
 
@@ -1740,19 +1801,48 @@ server.registerTool(
             ...(cacheWarnings ?? []),
           ]
           : cacheWarnings,
+        diagnostics: buildAnalyzeDataDiagnostics({
+          status: returnedRows.length === 0 ? "zero_rows" : "ok",
+          startedAt: handlerStartedAt,
+          refreshStatus: readiness.status,
+          sql,
+          rowCount: returnedRows.length,
+          resultTruncated,
+        }),
         rows: returnedRows,
       });
     } catch (err) {
       if (err instanceof CacheReadinessError) {
-        return cacheReadinessResponse(err);
+        return jsonResponse(analyzeDataFailurePayload(
+          "cache_unavailable",
+          buildAnalyzeDataDiagnostics({
+            status: "cache_unavailable",
+            startedAt: handlerStartedAt,
+            refreshStatus: readiness.status,
+            sql,
+          }),
+        ));
       }
       if (err instanceof LocalDbUnavailableError) {
-        return dbUnavailableResponse(err);
+        return jsonResponse(analyzeDataFailurePayload(
+          "cache_unavailable",
+          buildAnalyzeDataDiagnostics({
+            status: "cache_unavailable",
+            startedAt: handlerStartedAt,
+            refreshStatus: readiness.status,
+            sql,
+          }),
+        ));
       }
-      return jsonResponse({
-        error: (err as Error).message,
-        sql: rewritten ?? sql,
-      });
+      return jsonResponse(analyzeDataFailurePayload(
+        "query_error",
+        buildAnalyzeDataDiagnostics({
+          status: "query_error",
+          startedAt: handlerStartedAt,
+          refreshStatus: readiness.status,
+          sql,
+        }),
+      ));
     } finally {
       if (db) closeDb(db);
     }

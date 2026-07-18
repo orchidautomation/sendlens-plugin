@@ -12,6 +12,7 @@ const {
   resetDbConnectionForTests,
 } = require("../build/plugin/local-db.js");
 const {
+  buildQueryRecipeResponse,
   getQueryRecipes,
   QUERY_RECIPE_TOPICS,
 } = require("../build/plugin/query-recipes.js");
@@ -22,9 +23,9 @@ const PLACEHOLDER_FIXTURES = new Map([
   ["account_tag_name", "Demo Sender Pool"],
   ["campaign_id", "demo-alpha"],
   ["campaign_name", "Demo - Healthcare Operators"],
-  ["campaign_tag_name", "Priority Demo"],
+  ["campaign_tag_name", "Founder's Demo"],
   ["payload_key", "segment"],
-  ["tag_name", "Priority Demo"],
+  ["tag_name", "Founder's Demo"],
 ]);
 const REGRESSION_RECIPE_IDS = new Set([
   "cross-provider-overlap-risk",
@@ -32,6 +33,14 @@ const REGRESSION_RECIPE_IDS = new Set([
   "personalization-leak-audit",
   "personalization-leak-raw-detail",
 ]);
+const REQUIRED_ROUTE_CARD_RECIPE_IDS = [
+  "workspace-overview",
+  "account-health",
+  "campaign-sender-inventory-by-tag",
+  "personalization-leak-audit",
+  "fetched-reply-text-by-campaign",
+  "tag-scope-audit",
+];
 
 process.env.SENDLENS_DB_PATH = path.join(
   os.tmpdir(),
@@ -61,6 +70,55 @@ try {
     );
   }
 
+  const routeCardRecipes = recipes.filter((recipe) => recipe.route_card);
+  assert.deepEqual(
+    routeCardRecipes.map((recipe) => recipe.id).sort(),
+    [...REQUIRED_ROUTE_CARD_RECIPE_IDS].sort(),
+    "the deliberate high-risk/common recipe-card set must stay explicit",
+  );
+  for (const recipe of routeCardRecipes) {
+    assertRouteCardComplete(recipe);
+  }
+
+  const exactSenderRisk = recipes.find((recipe) => recipe.id === "campaign-sender-inventory-by-tag");
+  assert.ok(exactSenderRisk?.route_card, "campaign sender inventory needs a route card");
+  assert.match(exactSenderRisk.route_card.preferred_intent, /campaign-tag sender/i);
+  assert.match(exactSenderRisk.route_card.tag_role, /campaign_tag_label/);
+  assert.match(exactSenderRisk.route_card.provider_scope, /campaign_source_id/);
+  assert.match(exactSenderRisk.route_card.time_basis, /30-day/);
+  assert.ok(
+    exactSenderRisk.route_card.forbidden_adaptations.some((adaptation) => /workspace_snapshot/.test(adaptation)),
+    "exact sender-risk route card must forbid broad snapshot before the recipe",
+  );
+  assert.ok(
+    exactSenderRisk.route_card.safe_adaptations.some((adaptation) => /single quotes/i.test(adaptation)),
+    "exact sender-risk route card must teach safe literal escaping",
+  );
+
+  const summaryResponse = buildQueryRecipeResponse({
+    topic: "workspace-health",
+    mode: "summary",
+    page_size: 5,
+  });
+  assert.equal(summaryResponse.output_shape, "compact_recipe_index");
+  assert.ok(summaryResponse.recipes.every((recipe) => recipe.sql === undefined), "summary mode must omit SQL");
+  assert.match(
+    summaryResponse.guidance,
+    /Route-card recipes are listed first.*not prompt-specific matching/i,
+    "summary ranking must explain why route-card recipes are promoted",
+  );
+  assert.ok(
+    summaryResponse.recipes.some((recipe) => recipe.id === "campaign-sender-inventory-by-tag" && recipe.route_card),
+    "route-card recipes should be ranked into bounded summary output",
+  );
+
+  const fullLookup = buildQueryRecipeResponse({
+    recipe_id: "campaign-sender-inventory-by-tag",
+  });
+  assert.equal(fullLookup.output_shape, "single_recipe");
+  assert.ok(fullLookup.recipes[0].sql.includes("campaign_tag_label"));
+  assert.ok(fullLookup.recipes[0].route_card);
+
   const failures = [];
   for (const recipe of recipes) {
     try {
@@ -78,6 +136,36 @@ try {
 }
 
 console.log("query recipe contract tests passed");
+
+function assertRouteCardComplete(recipe) {
+  for (const field of [
+    "preferred_intent",
+    "grain",
+    "time_basis",
+    "attribution",
+    "provider_scope",
+    "population_scope",
+    "tag_role",
+    "privacy",
+  ]) {
+    assert.equal(
+      typeof recipe.route_card[field],
+      "string",
+      `${recipe.id} route_card.${field} must be a string`,
+    );
+    assert.ok(
+      recipe.route_card[field].trim().length > 0,
+      `${recipe.id} route_card.${field} must be non-empty`,
+    );
+  }
+  for (const field of ["prerequisites", "safe_adaptations", "forbidden_adaptations"]) {
+    assert.ok(
+      Array.isArray(recipe.route_card[field]) && recipe.route_card[field].length > 0,
+      `${recipe.id} route_card.${field} must be a non-empty array`,
+    );
+  }
+  assert.ok(["low", "medium", "high"].includes(recipe.route_card.cost), `${recipe.id} route_card.cost must be bounded`);
+}
 
 function renderRecipeSql(recipe) {
   const missing = new Set();

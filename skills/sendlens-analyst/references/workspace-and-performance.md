@@ -2,12 +2,23 @@
 
 ## Broad Triage
 
-1. Start with `workspace_snapshot`, preserving campaign, provider, or tag scope.
+1. Start with `workspace_snapshot` only when the request is broad or ambiguous, preserving campaign, provider, or tag scope.
 2. Pull the matching `analysis_starters` topic before custom SQL.
 3. Rank exact risks and opportunities: reply efficiency, bounce risk, opportunity production, recent movement, sender coverage, capacity, tracking settings, and evidence gaps.
 4. Choose the single campaign and specialist lane that deserve depth.
 
 Default broad reads to active campaigns. Include inactive or historical campaigns only when requested.
+
+## Exact Routine Fast Path
+
+When the user supplies an exact campaign tag, provider, or campaign scope plus a known routine, do not begin with a workspace scan.
+
+- Campaign-tag sender risk, inbox assignment, or tag-scoped sender deliverability starts with `analysis_starters(recipe_id="campaign-sender-inventory-by-tag", mode="full")`, then one focused `analyze_data` execution.
+- When replacing a quoted recipe placeholder such as `{{tag_name}}`, escape every single quote in the value by doubling it. Keep the value inside the existing SQL literal and never append raw user text.
+- That route uses campaign tags through `campaign_tags`, active campaigns through `campaign_overview`, and stored sender aggregates through `campaign_accounts`; it does not require placement tables, schema discovery, or `account_daily_metrics`.
+- Treat campaign tags and assignment account tags as different roles. Use `campaign_tag_label` for the requested tag and `assignment_account_tag_label` only to explain tag-based sender assignments.
+- If the exact query returns zero rows, use at most one targeted provider/tag/case/trim/coverage check and one corrected retry. Do not broaden provider, campaign, tag, time, or active-population scope silently.
+- When native specialist delegation is unavailable, run the same lane inline and do not claim a specialist was spawned.
 
 ## Diagnostic Order
 

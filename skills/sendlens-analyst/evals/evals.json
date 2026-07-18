@@ -13,6 +13,18 @@
       ]
     },
     {
+      "id": "exact-campaign-tag-sender-risk-fast-path",
+      "prompt": "Show sender deliverability risk for the exact Priority Demo campaign tag.",
+      "expected_output": "A bounded exact-tag sender inventory that retrieves campaign-sender-inventory-by-tag first, executes it once, and answers from provider-qualified campaign assignments plus stored account 30-day aggregates.",
+      "assertions": [
+        "The first tool call is analysis_starters with recipe_id campaign-sender-inventory-by-tag",
+        "The second tool call executes that recipe with analyze_data after safely escaping the tag literal",
+        "workspace_snapshot, list_tables, list_columns, search_catalog, placement recipes, and account_daily_metrics are not used before the exact recipe result",
+        "The successful fast path uses at most two tool calls and does not silently broaden the campaign tag or provider scope",
+        "Campaign tags are distinguished from assignment account tags and stored 30-day account aggregates are described as sender-scoped"
+      ]
+    },
+    {
       "id": "direct-fast-path-no-spawn",
       "prompt": "Is my SendLens snapshot fresh, and how many active campaigns are in it?",
       "expected_output": "A direct workspace_snapshot and refresh_status answer that does not spawn a specialist or add orchestration overhead to a simple inventory and freshness request.",

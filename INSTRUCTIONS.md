@@ -23,7 +23,8 @@ SendLens is the reasoning layer over Instantly and Smartlead provider data. It r
 Treat this file as the host startup bias for SendLens. The user should not need to invoke `/sendlens-analyst`, `/using-sendlens`, or a legacy workflow command before campaign, reply, copy, ICP, deliverability, campaign-strategy, or provider workspace questions route through SendLens.
 
 - For simple inventory, freshness, and status questions, call `workspace_snapshot` and `refresh_status` directly, then answer without loading extra SendLens skills.
-- For diagnosis, use `sendlens-analyst`: start from `workspace_snapshot`, then use `analysis_starters` for the matching topic before custom SQL.
+- For exact routine questions with a known campaign, provider, campaign tag, or recipe-shaped intent, do not start broad. Use `analysis_starters` for the exact recipe first, then one focused `analyze_data` call.
+- For broad or ambiguous diagnosis, use `sendlens-analyst`: start from `workspace_snapshot`, then use `analysis_starters` for the matching topic before custom SQL.
 - For a focused campaign blueprint, copy draft, or launch/scale decision, route directly to the matching focused skill. If its required evidence is not validated, run the minimum analyst prerequisite and return to the requested workflow.
 - For a broad request that spans what is working through what to run, write, or launch next, let `sendlens-analyst` orchestrate strategist → copywriter → launch operator automatically. Do not make the user invoke each skill.
 - For winner, scale, kill, working, or client-safe claims, treat broad aggregates as triage only. Load the campaign with `load_campaign_data` before making the claim.
@@ -50,14 +51,14 @@ Treat this file as the host startup bias for SendLens. The user should not need 
 - In Codex, this `AGENTS.md` file is the always-on SendLens operating contract. For simple inventory and freshness questions, call `workspace_snapshot` and `refresh_status` directly. Use `sendlens-analyst` for diagnosis and broad orchestration, then the focused strategy, copywriter, or launch skill when that is the user's actual job. Use `sendlens-setup` only for setup and runtime health.
 - Session start already triggers a fresh local refresh of actively sending campaigns. That startup path is intentionally lean: exact analytics, templates, and a sampled lead evidence layer with reply-signal leads found during bounded lead scans plus bounded non-reply leads. Call `refresh_data` again only when the user explicitly asks for another fresh pull or switches clients.
 - Use SendLens MCP tools as the whole working surface for SendLens analysis. If those tools are missing or unavailable in the host session, stop and tell the user to reload or reinstall the SendLens plugin so the MCP server mounts correctly. Do not inspect local files, run shell setup checks such as `claude mcp list`, parse cached tool outputs with `jq`, query DuckDB through shell, read `refresh-status.json`, wait with shell commands such as `sleep`, or inspect repo source as a substitute for SendLens tool calls.
-- `workspace_snapshot`: First read after refresh or for broad workspace questions. This is the default first call for "pull my data", "what's happening?", "what's working?", and "give me the snapshot".
+- `workspace_snapshot`: First read after refresh or for broad workspace questions. This is the default first call for "pull my data", "what's happening?", "what's working?", and "give me the snapshot"; it is not the first call for exact campaign-tag sender-risk questions.
 - `refresh_status`: Use when the user asks what startup refresh is doing, whether the cache is current, or why data looks incomplete or stale.
 - `load_campaign_data`: Use when the user narrows to one campaign and wants copy analysis, ICP analysis, reply outcome analysis, or reconstructed outbound for that campaign. Prefer this over a workspace-wide `refresh_data` call.
 - For "what seems to be working", "winner", "scale", or client recommendation questions, broad aggregates only shortlist candidates. Before promoting a campaign as working, run `load_campaign_data` for the campaign and inspect reply quality plus the intended/reconstructed copy path.
-- `analysis_starters`: First stop for common workspace-health, campaign, copy, reply, ICP, or tag-filter questions before writing custom analysis.
+- `analysis_starters`: First stop for exact routine workspace-health, campaign, copy, reply, ICP, or tag-filter questions before writing custom analysis. For exact campaign-tag sender-risk or deliverability questions, fetch `campaign-sender-inventory-by-tag` and execute it before considering placement, daily-volume, broad snapshot, or schema discovery routes.
 - For AM operating workflows, use `analysis_starters(topic="account-manager-brief")`, `analysis_starters(topic="campaign-launch-qa")`, or `analysis_starters(topic="experiment-planner")` before custom analysis.
-- `list_tables`, `list_columns`, `search_catalog`: Use when the user asks for custom breakdowns and you need schema discovery.
-- `analyze_data`: Use for follow-up analysis once the schema and question are clear.
+- `list_tables`, `list_columns`, `search_catalog`: Use when the user asks for custom breakdowns and you need schema discovery. Do not use schema discovery before the exact recipe fast path.
+- `analyze_data`: Use for follow-up analysis once the schema and question are clear. When an exact recipe returns zero rows, use at most one targeted provider/tag/case/trim/coverage check and one corrected retry; never silently broaden provider, campaign, tag, time, or population scope.
 
 ## Agent Map
 

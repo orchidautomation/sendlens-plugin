@@ -32,7 +32,10 @@ const LOCK_ERROR_PATTERNS = [
   /WAL replay/i,
 ];
 export const BASELINE_SCHEMA_MIGRATION_ID = "202607160001_current_schema_baseline";
-export const CURRENT_SCHEMA_MIGRATION_ID = "202607160002_refresh_reply_context_views";
+export const PREVIOUS_SCHEMA_MIGRATION_IDS = [
+  "202607160002_refresh_reply_context_views",
+] as const;
+export const CURRENT_SCHEMA_MIGRATION_ID = "202607170001_tag_semantic_aliases";
 const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
 const cacheProviderModeContext = new AsyncLocalStorage<SourceProviderMode>();
 
@@ -565,7 +568,11 @@ async function appliedSchemaMigrationIds(conn: DuckDBConnection) {
 }
 
 function assertSupportedSchemaMigrations(appliedIds: string[]) {
-  const supportedIds = new Set([BASELINE_SCHEMA_MIGRATION_ID, CURRENT_SCHEMA_MIGRATION_ID]);
+  const supportedIds = new Set([
+    BASELINE_SCHEMA_MIGRATION_ID,
+    ...PREVIOUS_SCHEMA_MIGRATION_IDS,
+    CURRENT_SCHEMA_MIGRATION_ID,
+  ]);
   const unknownIds = appliedIds.filter((migrationId) => !supportedIds.has(migrationId));
   if (unknownIds.length === 0) return;
 
@@ -1231,6 +1238,7 @@ async function ensureSchema(conn: DuckDBConnection) {
         c.name AS campaign_name,
         m.tag_id,
         COALESCE(t.label, t.name) AS tag_label,
+        COALESCE(t.label, t.name) AS campaign_tag_label,
         t.color,
         t.description
       FROM sendlens.custom_tag_mappings m
@@ -1275,6 +1283,7 @@ async function ensureSchema(conn: DuckDBConnection) {
         'direct' AS assignment_source,
         NULL::VARCHAR AS tag_id,
         NULL::VARCHAR AS tag_label,
+        NULL::VARCHAR AS assignment_account_tag_label,
         a.status,
         a.warmup_status,
         a.warmup_score,
@@ -1311,6 +1320,7 @@ async function ensureSchema(conn: DuckDBConnection) {
         'tag' AS assignment_source,
         ca.tag_id,
         acct_tag.tag_label,
+        acct_tag.tag_label AS assignment_account_tag_label,
         a.status,
         a.warmup_status,
         a.warmup_score,
@@ -1597,6 +1607,7 @@ async function ensureSchema(conn: DuckDBConnection) {
     `CREATE OR REPLACE VIEW sendlens.tag_scope_audit AS
       SELECT
         t.workspace_id,
+        COALESCE(t.source_provider, m.source_provider, 'instantly') AS source_provider,
         t.id AS tag_id,
         COALESCE(t.label, t.name) AS tag_label,
         lower(trim(COALESCE(t.label, t.name))) AS normalized_tag_label,
@@ -1613,8 +1624,10 @@ async function ensureSchema(conn: DuckDBConnection) {
       LEFT JOIN sendlens.custom_tag_mappings m
         ON t.workspace_id = m.workspace_id
        AND t.id = m.tag_id
+       AND COALESCE(t.source_provider, 'instantly') = COALESCE(m.source_provider, 'instantly')
       GROUP BY
         t.workspace_id,
+        COALESCE(t.source_provider, m.source_provider, 'instantly'),
         t.id,
         COALESCE(t.label, t.name),
         lower(trim(COALESCE(t.label, t.name))),
