@@ -87,7 +87,6 @@ async function loadTypeScriptModule(entryPath, outputRoot) {
       compilerOptions: {
         module: ts.ModuleKind.ES2022,
         target: ts.ScriptTarget.ES2022,
-        importsNotUsedAsValues: ts.ImportsNotUsedAsValues.Remove,
       },
       fileName: resolvedSourcePath,
     });
