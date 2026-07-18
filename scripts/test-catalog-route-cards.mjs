@@ -26,15 +26,17 @@ const REQUIRED_CARD_FIELDS = [
   "forbidden_adaptations",
 ];
 const FORBIDDEN_SUMMARY_FRAGMENTS = [
-  "SELECT ",
-  "WITH ",
-  "sendlens.",
   "demo_workspace",
   "Priority Demo",
   "/Users/",
   "/home/",
   "\"rows\":",
   "\"sql\":",
+];
+const FORBIDDEN_SUMMARY_SQL_PATTERNS = [
+  /\bselect\s+/i,
+  /\bwith\s+(?:recursive\s+)?[\w"`]+\s+as\s*\(/i,
+  /\bsendlens\./i,
 ];
 
 const senderRiskQuery = "show sender account deliverability and bounce risk for an exact campaign tag";
@@ -118,6 +120,13 @@ assert.ok(
 );
 for (const fragment of FORBIDDEN_SUMMARY_FRAGMENTS) {
   assert.equal(encodedSuggestions.includes(fragment), false, `catalog summaries must not expose ${fragment}`);
+}
+for (const pattern of FORBIDDEN_SUMMARY_SQL_PATTERNS) {
+  assert.equal(
+    pattern.test(encodedSuggestions),
+    false,
+    `catalog summaries must not expose SQL/body fragment ${pattern}`,
+  );
 }
 
 const allCardIds = first.analysis_starter_suggestions

@@ -60,6 +60,21 @@ const { buildWorkspaceSummary } = require("../build/plugin/summary.js");
 
 const ANALYZE_DATA_ROW_LIMIT = 1_000;
 const ANALYZE_DATA_SAFE_ERROR = "Query could not be executed safely.";
+const REQUIRED_CATALOG_ROUTE_CARD_FIELDS = Object.freeze([
+  "recipe_id",
+  "intent",
+  "grain",
+  "time_basis",
+  "attribution",
+  "provider_scope",
+  "population_scope",
+  "tag_role",
+  "cost_class",
+  "privacy_class",
+  "prerequisites",
+  "safe_adaptations",
+  "forbidden_adaptations",
+]);
 const REVIEWED_BASELINE_RECIPE_IDS = Object.freeze([
   "account-health",
   "account-manager-client-brief",
@@ -150,6 +165,11 @@ const FORBIDDEN_REPORT_FRAGMENTS = [
   "sendlens.",
   root,
   os.tmpdir(),
+];
+const FORBIDDEN_CATALOG_BODY_PATTERNS = [
+  /\bselect\s+/i,
+  /\bwith\s+(?:recursive\s+)?[\w"`]+\s+as\s*\(/i,
+  /\bsendlens\./i,
 ];
 
 const PRIVATE_TABLE_NAME_FRAGMENTS = new Set([
@@ -426,6 +446,27 @@ function assertCatalogRouteCardContract(payload, hostText) {
     suggestion?.route_cards?.map((card) => card.recipe_id),
     ["campaign-sender-inventory-by-tag", "tag-scope-audit"],
   );
+  for (const card of suggestion.route_cards) {
+    assert.deepEqual(
+      Object.keys(card).sort(),
+      [...REQUIRED_CATALOG_ROUTE_CARD_FIELDS].sort(),
+      `${card.recipe_id} must preserve the compact route-card field set through MCP serialization`,
+    );
+    for (const field of REQUIRED_CATALOG_ROUTE_CARD_FIELDS.slice(0, 10)) {
+      assert.equal(typeof card[field], "string", `${card.recipe_id}.${field} must be a string`);
+      assert.ok(card[field].trim().length > 0, `${card.recipe_id}.${field} must be non-empty`);
+    }
+    for (const field of REQUIRED_CATALOG_ROUTE_CARD_FIELDS.slice(10)) {
+      assert.ok(
+        Array.isArray(card[field]) && card[field].length > 0,
+        `${card.recipe_id}.${field} must be a non-empty array`,
+      );
+      assert.ok(
+        card[field].every((value) => typeof value === "string" && value.trim().length > 0),
+        `${card.recipe_id}.${field} entries must be non-empty strings`,
+      );
+    }
+  }
   assert.deepEqual(suggestion?.correction_path, {
     from_recipe_id: "campaign-sender-inventory-by-tag",
     on_status: "zero_rows",
@@ -442,6 +483,13 @@ function assertCatalogRouteCardContract(payload, hostText) {
   );
   assertNoRawCanaries(suggestion, "catalog route-card suggestion");
   assertNoForbiddenFragments(hostText, "registered search_catalog host-visible text");
+  for (const pattern of FORBIDDEN_CATALOG_BODY_PATTERNS) {
+    assert.equal(
+      pattern.test(hostText),
+      false,
+      `registered search_catalog host-visible text must not expose SQL/body fragment ${pattern}`,
+    );
+  }
   assert.equal(/"rows"\s*:/.test(hostText), false, "registered search_catalog must not expose rows");
   assert.equal(/"sql"\s*:/.test(hostText), false, "registered search_catalog must not expose SQL fields");
 }
