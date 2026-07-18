@@ -209,6 +209,7 @@ assert.equal(
   recipeRegistry.length,
   "matrix agentic_proof baseline must match the reviewed executable registry baseline",
 );
+assertOutputCaptureDecodesByteViews();
 
 const setupReceipts = [];
 const caseResults = [];
@@ -901,5 +902,27 @@ function installOutputCapture() {
 function chunkToString(chunk, encoding) {
   if (typeof chunk === "string") return chunk;
   if (Buffer.isBuffer(chunk)) return chunk.toString(typeof encoding === "string" ? encoding : "utf8");
+  if (ArrayBuffer.isView(chunk)) {
+    return Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength).toString(
+      typeof encoding === "string" ? encoding : "utf8",
+    );
+  }
+  if (chunk instanceof ArrayBuffer) {
+    return Buffer.from(chunk).toString(typeof encoding === "string" ? encoding : "utf8");
+  }
   return String(chunk);
+}
+
+function assertOutputCaptureDecodesByteViews() {
+  const canary = FIXTURES["literal:success"];
+  const framed = Buffer.from(`!${canary}!`, "utf8");
+  const bytes = new Uint8Array(framed.buffer, framed.byteOffset + 1, framed.byteLength - 2);
+  const dataView = new DataView(framed.buffer, framed.byteOffset + 1, framed.byteLength - 2);
+  assert.equal(chunkToString(bytes, "utf8"), canary, "Uint8Array output capture must decode emitted text");
+  assert.equal(chunkToString(dataView, "utf8"), canary, "DataView output capture must decode emitted text");
+  assert.equal(
+    chunkToString(Uint8Array.from(Buffer.from(canary, "utf8")).buffer, "utf8"),
+    canary,
+    "ArrayBuffer output capture must decode emitted text",
+  );
 }
