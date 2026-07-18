@@ -139,6 +139,7 @@ await run(
    (workspace_id, tag_id, source_provider, resource_type, resource_id, synced_at)
    VALUES ('ws_test', 't1', 'instantly', '2', 'c1', CURRENT_TIMESTAMP),
           ('ws_test', 't1', 'instantly', '2', 'c3', CURRENT_TIMESTAMP),
+          ('ws_test', 't1', 'smartlead', '2', 'smartlead:cross-provider-only', CURRENT_TIMESTAMP),
           ('ws_test', 't2', 'instantly', '1', 'tagged@example.com', CURRENT_TIMESTAMP),
           ('ws_test', 't2', 'instantly', '1', 'direct@example.com', CURRENT_TIMESTAMP),
           ('ws_test', 't3', 'smartlead', '2', 'c1', CURRENT_TIMESTAMP)`,
@@ -147,7 +148,7 @@ await run(
   db,
   `INSERT OR REPLACE INTO sendlens.accounts
    (workspace_id, email, status, warmup_status, warmup_score, daily_limit, total_sent_30d, total_replies_30d, total_bounces_30d, synced_at)
-   VALUES ('ws_test', 'direct@example.com', 'active', 'healthy', 99, 30, 100, 5, 1, CURRENT_TIMESTAMP),
+   VALUES ('ws_test', 'direct@example.com', '1', 'healthy', 99, 30, 100, 5, 1, CURRENT_TIMESTAMP),
           ('ws_test', 'tagged@example.com', 'active', 'healthy', 98, 20, 200, 10, 4, CURRENT_TIMESTAMP)`,
 );
 await run(
@@ -170,6 +171,7 @@ await run(
    (workspace_id, campaign_id, assignment_type, assignment_key, account_email, tag_id, synced_at)
    VALUES ('ws_test', 'c1', 'email', 'direct@example.com', 'direct@example.com', NULL, CURRENT_TIMESTAMP),
           ('ws_test', 'c1', 'tag', 't2', NULL, 't2', CURRENT_TIMESTAMP),
+          ('ws_test', 'c2', 'email', 'direct@example.com', 'direct@example.com', NULL, CURRENT_TIMESTAMP),
           ('ws_test', 'c4', 'email', 'direct@example.com', 'direct@example.com', NULL, CURRENT_TIMESTAMP)`,
 );
 await run(
@@ -248,6 +250,19 @@ assert.equal(
 );
 assert.equal(
   tagDeliverabilityGuidance.analysis_starter_suggestions[0]?.recipe_ids[0],
+  "campaign-sender-inventory-by-tag",
+);
+const combinedSenderRiskGuidance = buildCatalogSearchGuidance(
+  "show sender deliverability risk for exact campaign tag Priority",
+  [],
+);
+assert.equal(
+  combinedSenderRiskGuidance.analysis_starter_suggestions[0]?.concept,
+  "campaign-tag sender risk",
+  "combined campaign-tag, sender, and deliverability intent should route independently of word order",
+);
+assert.equal(
+  combinedSenderRiskGuidance.analysis_starter_suggestions[0]?.recipe_ids[0],
   "campaign-sender-inventory-by-tag",
 );
 const runwayGuidance = buildCatalogSearchGuidance("runway", []);
@@ -964,16 +979,57 @@ assert.equal(
 );
 const senderLoadBalanceRecipe = workspaceHealthRecipes.find((recipe) => recipe.id === "sender-load-balance-by-campaign-tag");
 assert.ok(senderLoadBalanceRecipe);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.campaigns
+   (id, workspace_id, source_provider, provider_campaign_id, campaign_source_id, organization_id, name, status, daily_limit, synced_at)
+   VALUES ('smartlead:c1', 'ws_test', 'smartlead', 'c1', 'smartlead:c1', 'ws_test', 'Smartlead Alpha', 'active', 10, CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.accounts
+   (workspace_id, email, source_provider, provider_account_id, account_source_id, status, warmup_status, warmup_score, daily_limit, total_sent_30d, total_replies_30d, total_bounces_30d, synced_at)
+   VALUES ('ws_test', 'direct@example.com', 'smartlead', 'smart-acct-1', 'smartlead:smart-acct-1', 'active', 'healthy', 90, 10, 999, 99, 99, CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.custom_tag_mappings
+   (workspace_id, tag_id, source_provider, resource_type, resource_id, provider_resource_id, synced_at)
+   VALUES ('ws_test', 't3', 'smartlead', '2', 'smartlead:c1', 'c1', CURRENT_TIMESTAMP),
+          ('ws_test', 't1', 'instantly', '2', 'c2', 'c2', CURRENT_TIMESTAMP)`,
+);
+await run(
+  db,
+  `INSERT OR REPLACE INTO sendlens.campaign_account_assignments
+   (workspace_id, campaign_id, source_provider, provider_campaign_id, campaign_source_id, assignment_type, assignment_key, account_email, provider_account_id, tag_id, synced_at)
+   VALUES ('ws_test', 'smartlead:c1', 'smartlead', 'c1', 'smartlead:c1', 'email', 'direct@example.com', 'direct@example.com', 'smart-acct-1', NULL, CURRENT_TIMESTAMP)`,
+);
 const senderLoadBalanceRows = await runQuery(
   db,
   enforceLocalWorkspaceScope(
-    senderLoadBalanceRecipe.sql.replaceAll("{{tag_name}}", "Priority"),
+    senderLoadBalanceRecipe.sql
+      .replaceAll("{{tag_name}}", "Priority")
+      .replaceAll("CURRENT_DATE - INTERVAL 30 DAY", "'2026-05-03'::DATE - INTERVAL 30 DAY"),
     "ws_test",
   ),
 );
-assert.equal(senderLoadBalanceRows.length, 2);
+assert.equal(senderLoadBalanceRows.length, 3);
 assert.equal(senderLoadBalanceRows.some((row) => row.account_email === "direct@example.com"), true);
 assert.equal(senderLoadBalanceRows.some((row) => row.account_email === "tagged@example.com"), true);
+const directSenderLoadRow = senderLoadBalanceRows.find(
+  (row) => row.source_provider === "instantly" && row.account_email === "direct@example.com",
+);
+assert.equal(directSenderLoadRow.source_provider, "instantly");
+assert.equal(Number(directSenderLoadRow.account_sent_30d), 25, "sender load must not mix Smartlead daily metrics for the same email");
+assert.equal(Number(directSenderLoadRow.all_active_campaigns_using_sender), 2, "paused campaign assignments must not inflate active sharing");
+assert.equal(Number(directSenderLoadRow.tagged_campaign_count), 1);
+const smartleadSenderLoadRow = senderLoadBalanceRows.find(
+  (row) => row.source_provider === "smartlead" && row.account_email === "direct@example.com",
+);
+assert.ok(smartleadSenderLoadRow);
+assert.equal(Number(smartleadSenderLoadRow.account_sent_30d), 999);
+assert.equal(Number(smartleadSenderLoadRow.all_active_campaigns_using_sender), 1);
+assert.equal(Number(smartleadSenderLoadRow.tagged_campaign_count), 1);
 await run(
   db,
   `INSERT OR REPLACE INTO sendlens.accounts
@@ -1001,29 +1057,61 @@ const senderInventoryRows = await runQuery(
     "ws_test",
   ),
 );
-assert.equal(senderInventoryRows.length, 3);
+assert.equal(senderInventoryRows.length, 4);
 assert.equal(senderInventoryRows.some((row) => row.campaign_id === "c3"), false);
-assert.equal(
-  senderInventoryRows.some((row) => row.source_provider === "smartlead"),
-  false,
-  "campaign-tag sender inventory must not cross providers when provider-native campaign IDs collide",
-);
+assert.equal(senderInventoryRows.some((row) => row.campaign_id === "c2"), false);
 const disabledInventoryRow = senderInventoryRows.find((row) => row.account_email === "disabled@example.com");
 assert.ok(disabledInventoryRow);
 assert.equal(disabledInventoryRow.account_status, "disabled");
 assert.equal(disabledInventoryRow.sender_risk_signal, "disabled_or_inactive_sender");
 assert.equal(Number(disabledInventoryRow.stored_account_sent_30d), 333);
-const directInventoryRow = senderInventoryRows.find((row) => row.account_email === "direct@example.com");
+const directInventoryRow = senderInventoryRows.find(
+  (row) => row.source_provider === "instantly" && row.account_email === "direct@example.com",
+);
 assert.ok(directInventoryRow);
+assert.equal(directInventoryRow.account_status, "1");
+assert.notEqual(directInventoryRow.sender_risk_signal, "disabled_or_inactive_sender");
+assert.equal(directInventoryRow.sender_risk_signal, "shared_active_sender");
 assert.equal(Number(directInventoryRow.active_provider_campaigns_using_sender), 2);
 assert.equal(Number(directInventoryRow.stored_account_sent_30d), 100);
 assert.equal(directInventoryRow.assignment_source, "direct");
 assert.equal(directInventoryRow.assignment_account_tag_label, "Sender Pool");
+const smartleadInventoryRow = senderInventoryRows.find(
+  (row) => row.source_provider === "smartlead" && row.account_email === "direct@example.com",
+);
+assert.ok(smartleadInventoryRow);
+assert.equal(smartleadInventoryRow.campaign_id, "smartlead:c1");
+assert.equal(smartleadInventoryRow.campaign_source_id, "smartlead:c1");
+assert.equal(Number(smartleadInventoryRow.active_provider_campaigns_using_sender), 1);
+assert.equal(Number(smartleadInventoryRow.stored_account_sent_30d), 999);
+assert.equal(smartleadInventoryRow.sender_risk_signal, "high_bounce_risk");
 const taggedInventoryRow = senderInventoryRows.find((row) => row.account_email === "tagged@example.com");
 assert.ok(taggedInventoryRow);
 assert.equal(taggedInventoryRow.campaign_tag_label, "Priority");
 assert.equal(taggedInventoryRow.assignment_account_tag_label, "Sender Pool");
 assert.equal(Number(taggedInventoryRow.stored_account_sent_30d), 200);
+await run(
+  db,
+  `DELETE FROM sendlens.campaign_account_assignments
+   WHERE workspace_id = 'ws_test' AND source_provider = 'smartlead' AND campaign_id = 'smartlead:c1'`,
+);
+await run(
+  db,
+  `DELETE FROM sendlens.custom_tag_mappings
+   WHERE workspace_id = 'ws_test'
+     AND ((source_provider = 'smartlead' AND tag_id = 't3' AND resource_id = 'smartlead:c1')
+       OR (source_provider = 'instantly' AND tag_id = 't1' AND resource_id = 'c2'))`,
+);
+await run(
+  db,
+  `DELETE FROM sendlens.accounts
+   WHERE workspace_id = 'ws_test' AND source_provider = 'smartlead' AND email = 'direct@example.com'`,
+);
+await run(
+  db,
+  `DELETE FROM sendlens.campaigns
+   WHERE workspace_id = 'ws_test' AND source_provider = 'smartlead' AND id = 'smartlead:c1'`,
+);
 const negativeConcentrationRecipe = workspaceHealthRecipes.find((recipe) => recipe.id === "negative-unsubscribe-concentration");
 assert.ok(negativeConcentrationRecipe);
 assert.match(negativeConcentrationRecipe.sql, /unsubscribed_count/);

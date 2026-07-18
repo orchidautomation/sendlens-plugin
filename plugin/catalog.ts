@@ -379,13 +379,22 @@ function buildRawSearchTerms(needle: string): string[] {
 
 function matchingConceptHints(needle: string): ConceptHint[] {
   return CONCEPT_HINTS.filter((hint) =>
-    hint.triggers.some((trigger) => {
+    (hint.concept === "campaign-tag sender risk" && hasCampaignTagSenderRiskIntent(needle))
+    || hint.triggers.some((trigger) => {
       const normalizedTrigger = trigger.toLowerCase();
       return normalizedTrigger.includes(" ")
         ? needle.includes(normalizedTrigger)
         : new RegExp(`\\b${escapeRegExp(normalizedTrigger)}\\b`).test(needle);
     }),
   ).sort((left, right) => conceptHintPriority(left) - conceptHintPriority(right));
+}
+
+function hasCampaignTagSenderRiskIntent(needle: string) {
+  const hasCampaign = /\bcampaigns?\b/.test(needle);
+  const hasTag = /\btags?\b|\btagged\b/.test(needle);
+  const hasSender = /\bsenders?\b|\baccounts?\b|\binboxes?\b/.test(needle);
+  const hasRisk = /\bdeliverability\b|\brisks?\b|\bbounces?\b|\bhealth\b|\bspam\b|\bplacement\b/.test(needle);
+  return hasCampaign && hasTag && hasSender && hasRisk;
 }
 
 function conceptHintPriority(hint: ConceptHint) {

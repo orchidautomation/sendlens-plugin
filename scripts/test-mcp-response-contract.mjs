@@ -367,6 +367,16 @@ assertPattern(
 );
 assertPattern(
   source.server,
+  /server\.registerTool\(\s*"analyze_data"[\s\S]*?err instanceof CacheReadinessError[\s\S]*?analyzeDataFailurePayload\(\s*"cache_unavailable"[\s\S]*?status: "cache_unavailable"/,
+  "analyze_data cache-readiness errors use sanitized diagnostic payloads",
+);
+assertPattern(
+  source.server,
+  /server\.registerTool\(\s*"analyze_data"[\s\S]*?err instanceof LocalDbUnavailableError[\s\S]*?analyzeDataFailurePayload\(\s*"cache_unavailable"[\s\S]*?status: "cache_unavailable"/,
+  "analyze_data database-unavailable errors use sanitized diagnostic payloads",
+);
+assertPattern(
+  source.server,
   /status: returnedRows\.length === 0 \? "zero_rows" : "ok"/,
   "analyze_data success diagnostics distinguish zero-row results",
 );

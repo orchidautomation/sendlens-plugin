@@ -154,6 +154,7 @@ function stripTrailingSemicolon(sql: string) {
 function analyzeDataFailurePayload(
   code:
     | LocalSqlGuardError["code"]
+    | "cache_unavailable"
     | "query_error"
     | "workspace_isolation",
   diagnostics?: AnalyzeDataDiagnostics,
@@ -162,7 +163,9 @@ function analyzeDataFailurePayload(
     error: ANALYZE_DATA_SAFE_ERROR,
     code,
     hint:
-      "Use one focused read-only SELECT/WITH query against sendlens.* public views. Do not include private literals in retries.",
+      code === "cache_unavailable"
+        ? "Use refresh_status once to check local cache readiness, then refresh or reload the plugin before retrying. Do not include private literals in retries."
+        : "Use one focused read-only SELECT/WITH query against sendlens.* public views. Do not include private literals in retries.",
     diagnostics,
   };
 }
@@ -1810,24 +1813,26 @@ server.registerTool(
       });
     } catch (err) {
       if (err instanceof CacheReadinessError) {
-        return cacheReadinessResponse(err, {
-          diagnostics: buildAnalyzeDataDiagnostics({
+        return jsonResponse(analyzeDataFailurePayload(
+          "cache_unavailable",
+          buildAnalyzeDataDiagnostics({
             status: "cache_unavailable",
             startedAt: handlerStartedAt,
             refreshStatus: readiness.status,
             sql,
           }),
-        });
+        ));
       }
       if (err instanceof LocalDbUnavailableError) {
-        return dbUnavailableResponse(err, {
-          diagnostics: buildAnalyzeDataDiagnostics({
+        return jsonResponse(analyzeDataFailurePayload(
+          "cache_unavailable",
+          buildAnalyzeDataDiagnostics({
             status: "cache_unavailable",
             startedAt: handlerStartedAt,
             refreshStatus: readiness.status,
             sql,
           }),
-        });
+        ));
       }
       return jsonResponse(analyzeDataFailurePayload(
         "query_error",

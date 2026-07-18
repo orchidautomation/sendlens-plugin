@@ -1624,6 +1624,7 @@ async function ensureSchema(conn: DuckDBConnection) {
       LEFT JOIN sendlens.custom_tag_mappings m
         ON t.workspace_id = m.workspace_id
        AND t.id = m.tag_id
+       AND COALESCE(t.source_provider, 'instantly') = COALESCE(m.source_provider, 'instantly')
       GROUP BY
         t.workspace_id,
         COALESCE(t.source_provider, m.source_provider, 'instantly'),

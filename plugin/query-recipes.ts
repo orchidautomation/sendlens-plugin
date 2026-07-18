@@ -171,19 +171,33 @@ ORDER BY bounce_rate_30d_pct DESC NULLS LAST, warmup_score ASC NULLS LAST, total
    AND ct.source_provider = ca.source_provider
    AND ct.campaign_source_id = ca.campaign_source_id
    AND ct.campaign_id = ca.campaign_id
+  JOIN sendlens.campaign_overview co
+    ON ct.workspace_id = co.workspace_id
+   AND ct.source_provider = co.source_provider
+   AND ct.campaign_source_id = co.campaign_source_id
+   AND ct.campaign_id = co.campaign_id
   WHERE lower(trim(ct.campaign_tag_label)) = lower(trim('{{tag_name}}'))
+    AND lower(COALESCE(co.status, '')) = 'active'
 ),
 sender_campaign_counts AS (
   SELECT
-    workspace_id,
-    lower(account_email) AS account_email,
-    COUNT(DISTINCT campaign_id) AS active_campaigns_using_sender
-  FROM sendlens.campaign_accounts
-  GROUP BY 1, 2
+    ca.workspace_id,
+    ca.source_provider,
+    lower(ca.account_email) AS account_email,
+    COUNT(DISTINCT ca.campaign_source_id) AS active_campaigns_using_sender
+  FROM sendlens.campaign_accounts ca
+  JOIN sendlens.campaign_overview co
+    ON ca.workspace_id = co.workspace_id
+   AND ca.source_provider = co.source_provider
+   AND ca.campaign_source_id = co.campaign_source_id
+   AND ca.campaign_id = co.campaign_id
+  WHERE lower(COALESCE(co.status, '')) = 'active'
+  GROUP BY 1, 2, 3
 ),
 recent_account_daily AS (
   SELECT
     workspace_id,
+    COALESCE(source_provider, 'instantly') AS source_provider,
     lower(email) AS account_email,
     COUNT(*) FILTER (WHERE COALESCE(sent, 0) > 0) AS sending_days_30d,
     ROUND(AVG(sent) FILTER (WHERE COALESCE(sent, 0) > 0), 2) AS avg_sent_per_sending_day_30d,
@@ -193,14 +207,15 @@ recent_account_daily AS (
     SUM(COALESCE(bounced, 0)) AS account_bounces_30d
   FROM sendlens.account_daily_metrics
   WHERE date >= CURRENT_DATE - INTERVAL 30 DAY
-  GROUP BY 1, 2
+  GROUP BY 1, 2, 3
 )
 SELECT
   tcs.campaign_tag,
+  tcs.source_provider,
   tcs.account_email,
   tcs.sender_domain,
   MIN(tcs.campaign_name) AS tagged_campaign_example,
-  COUNT(DISTINCT tcs.campaign_id) AS tagged_campaign_count,
+  COUNT(DISTINCT tcs.campaign_source_id) AS tagged_campaign_count,
   COALESCE(scc.active_campaigns_using_sender, 0) AS all_active_campaigns_using_sender,
   tcs.account_daily_limit,
   rad.sending_days_30d,
@@ -227,12 +242,15 @@ SELECT
 FROM tagged_campaign_senders tcs
 LEFT JOIN sender_campaign_counts scc
   ON tcs.workspace_id = scc.workspace_id
+ AND tcs.source_provider = scc.source_provider
  AND lower(tcs.account_email) = scc.account_email
 LEFT JOIN recent_account_daily rad
   ON tcs.workspace_id = rad.workspace_id
+ AND tcs.source_provider = rad.source_provider
  AND lower(tcs.account_email) = rad.account_email
 GROUP BY
   tcs.campaign_tag,
+  tcs.source_provider,
   tcs.account_email,
   tcs.sender_domain,
   scc.active_campaigns_using_sender,
@@ -260,6 +278,7 @@ ORDER BY
     notes: [
       "Replace '{{tag_name}}' with a real campaign tag.",
       "Account daily metrics are sender-scoped, not campaign-attributed; shared inboxes can make campaign-level attribution ambiguous.",
+      "Sender sharing and daily metrics are provider-qualified; only active provider-qualified campaigns contribute to the sharing count.",
       "Use this before capacity or burn-rate claims that depend on sender availability.",
     ],
   },
@@ -281,7 +300,7 @@ ORDER BY
       prerequisites: ["known campaign tag", "resolved campaign_accounts sender inventory"],
       cost: "low",
       privacy: "returns sender account operational fields only; no leads, reply text, payloads, or row previews",
-      safe_adaptations: ["add an exact provider filter", "add a deterministic trim/case tag correction after a zero-row check"],
+      safe_adaptations: ["add an exact provider filter", "escape single quotes in the tag literal by doubling them", "add a deterministic trim/case tag correction after a zero-row check"],
       forbidden_adaptations: ["start with workspace_snapshot for this exact route", "scan placement or account_daily_metrics before the inventory result", "broaden provider, campaign, tag, time, or population after a miss"],
     },
     sql: `WITH tagged_active_campaign_senders_raw AS (
@@ -394,12 +413,26 @@ SELECT
   COALESCE(ascs.active_provider_campaigns_using_sender, 0) AS active_provider_campaigns_using_sender,
   CASE
     WHEN tacs.account_email IS NULL THEN 'missing_sender'
-    WHEN tacs.account_status IS NULL THEN 'missing_account_health'
-    WHEN lower(tacs.account_status) NOT IN ('active', 'connected') THEN 'disabled_or_inactive_sender'
-    WHEN COALESCE(tacs.stored_account_sent_30d, 0) = 0 THEN 'no_stored_30d_send_volume'
-    WHEN COALESCE(tacs.stored_account_bounce_rate_30d_pct, 0) >= 5 THEN 'high_bounce_risk'
-    WHEN COALESCE(ascs.active_provider_campaigns_using_sender, 0) > 1 THEN 'shared_active_sender'
-    ELSE 'monitor'
+    WHEN tacs.account_status IS NULL OR trim(tacs.account_status) = '' THEN 'missing_account_health'
+    WHEN lower(trim(tacs.account_status)) IN ('active', 'connected') THEN
+      CASE
+        WHEN COALESCE(tacs.stored_account_sent_30d, 0) = 0 THEN 'no_stored_30d_send_volume'
+        WHEN COALESCE(tacs.stored_account_bounce_rate_30d_pct, 0) >= 5 THEN 'high_bounce_risk'
+        WHEN COALESCE(ascs.active_provider_campaigns_using_sender, 0) > 1 THEN 'shared_active_sender'
+        ELSE 'monitor'
+      END
+    WHEN lower(COALESCE(tacs.source_provider, '')) = 'instantly'
+      AND trim(tacs.account_status) = '1' THEN
+      CASE
+        WHEN COALESCE(tacs.stored_account_sent_30d, 0) = 0 THEN 'no_stored_30d_send_volume'
+        WHEN COALESCE(tacs.stored_account_bounce_rate_30d_pct, 0) >= 5 THEN 'high_bounce_risk'
+        WHEN COALESCE(ascs.active_provider_campaigns_using_sender, 0) > 1 THEN 'shared_active_sender'
+        ELSE 'monitor'
+      END
+    WHEN lower(COALESCE(tacs.source_provider, '')) = 'instantly'
+      AND trim(tacs.account_status) IN ('2', '3', '-1', '-2', '-3') THEN 'disabled_or_inactive_sender'
+    WHEN lower(trim(tacs.account_status)) IN ('disabled', 'inactive', 'disconnected', 'paused', 'error') THEN 'disabled_or_inactive_sender'
+    ELSE 'unknown_account_status'
   END AS sender_risk_signal
 FROM tagged_active_campaign_senders tacs
 LEFT JOIN active_sender_campaign_counts ascs
@@ -412,8 +445,9 @@ ORDER BY
     WHEN 'disabled_or_inactive_sender' THEN 2
     WHEN 'shared_active_sender' THEN 3
     WHEN 'missing_account_health' THEN 4
-    WHEN 'no_stored_30d_send_volume' THEN 5
-    ELSE 6
+    WHEN 'unknown_account_status' THEN 5
+    WHEN 'no_stored_30d_send_volume' THEN 6
+    ELSE 7
   END,
   tacs.stored_account_bounce_rate_30d_pct DESC NULLS LAST,
   tacs.stored_account_sent_30d DESC NULLS LAST,
@@ -421,8 +455,10 @@ ORDER BY
   tacs.account_email;`,
     notes: [
       "Replace '{{tag_name}}' with a real campaign tag such as 'The Kiln'.",
+      "When inserting the tag literal manually, escape each single quote by doubling it before execution.",
       "This filters by campaign tag, not assignment account tag; `assignment_account_tag_label` is returned only to explain tag-based sender assignments.",
       "The route is provider-qualified through `source_provider` and `campaign_source_id`, and only active campaigns contribute to the sender-sharing count.",
+      "Instantly account status 1 is active; 2, 3, -1, -2, and -3 are paused or error states. Unmapped provider statuses are returned as unknown_account_status rather than guessed inactive.",
       "Disabled or inactive sender accounts remain visible because account status is risk evidence, not a population filter.",
       "Stored account 30-day aggregates come from `campaign_accounts`; do not recompute this route from `account_daily_metrics` unless the user asks for day-level history.",
       "If this returns no rows, use at most one targeted tag/provider/trim/case coverage check before retrying; do not broaden campaign, provider, tag, time, or population scope silently.",
@@ -3552,6 +3588,7 @@ FROM sendlens.custom_tags t
 LEFT JOIN sendlens.custom_tag_mappings m
   ON t.workspace_id = m.workspace_id
  AND t.id = m.tag_id
+ AND COALESCE(t.source_provider, 'instantly') = COALESCE(m.source_provider, 'instantly')
 WHERE lower(trim(COALESCE(t.label, t.name))) = lower(trim('{{tag_name}}'))
 GROUP BY 1, 2, 3, 4, 5
 ORDER BY tagged_resources DESC, inferred_resource_scope;`,
@@ -3694,7 +3731,7 @@ export function buildQueryRecipeResponse(options: QueryRecipeResponseOptions = {
     guidance:
       mode === "full"
         ? "Full SQL is included for this bounded page. Replace placeholders before calling analyze_data."
-        : "Compact summaries omit SQL. Pass recipe_id for one full recipe, mode='full' for a bounded SQL page, or next_page to continue.",
+        : "Compact summaries omit SQL. Route-card recipes are listed first because they expose bounded intent, scope, cost, privacy, and adaptation guidance; this is not prompt-specific matching. Pass recipe_id for one full recipe, mode='full' for a bounded SQL page, or next_page to continue.",
   };
 }
 

@@ -23,9 +23,9 @@ const PLACEHOLDER_FIXTURES = new Map([
   ["account_tag_name", "Demo Sender Pool"],
   ["campaign_id", "demo-alpha"],
   ["campaign_name", "Demo - Healthcare Operators"],
-  ["campaign_tag_name", "Priority Demo"],
+  ["campaign_tag_name", "Founder's Demo"],
   ["payload_key", "segment"],
-  ["tag_name", "Priority Demo"],
+  ["tag_name", "Founder's Demo"],
 ]);
 const REGRESSION_RECIPE_IDS = new Set([
   "cross-provider-overlap-risk",
@@ -90,6 +90,10 @@ try {
     exactSenderRisk.route_card.forbidden_adaptations.some((adaptation) => /workspace_snapshot/.test(adaptation)),
     "exact sender-risk route card must forbid broad snapshot before the recipe",
   );
+  assert.ok(
+    exactSenderRisk.route_card.safe_adaptations.some((adaptation) => /single quotes/i.test(adaptation)),
+    "exact sender-risk route card must teach safe literal escaping",
+  );
 
   const summaryResponse = buildQueryRecipeResponse({
     topic: "workspace-health",
@@ -98,6 +102,11 @@ try {
   });
   assert.equal(summaryResponse.output_shape, "compact_recipe_index");
   assert.ok(summaryResponse.recipes.every((recipe) => recipe.sql === undefined), "summary mode must omit SQL");
+  assert.match(
+    summaryResponse.guidance,
+    /Route-card recipes are listed first.*not prompt-specific matching/i,
+    "summary ranking must explain why route-card recipes are promoted",
+  );
   assert.ok(
     summaryResponse.recipes.some((recipe) => recipe.id === "campaign-sender-inventory-by-tag" && recipe.route_card),
     "route-card recipes should be ranked into bounded summary output",
