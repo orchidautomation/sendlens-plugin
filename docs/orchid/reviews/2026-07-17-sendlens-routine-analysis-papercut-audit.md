@@ -24,7 +24,7 @@ Implementation plan: `docs/orchid/plans/2026-07-17-sendlens-local-agentic-analyt
   - stored account 30-day aggregates remain the fast-path source, with no `account_daily_metrics` reference in the canonical inventory SQL;
   - public catalog hydration rejects private tables before `information_schema`, single-flights cold access, reuses warm caches, and invalidates by database path, demo mode, schema generation, and explicit refresh/test reset;
   - `analyze_data` success, zero-row, guard, and runtime-error MCP responses expose bounded diagnostics without SQL, literals, fixture identifiers, row previews, or private table names.
-- Open process gap: the implementation PR intentionally records that the plan requested separate Linear issue, branch, worktree, PR, and validation ownership for independently releasable U0-U5 slices, with U0 merged before U1. The current PR is an accumulated branch and should not be treated as satisfying that process requirement unless Brandon explicitly accepts the consolidation.
+- Consolidation waiver: on 2026-07-18, Brandon accepted the accumulated PR structure for this run. The original plan requested separate Linear issue, branch, worktree, PR, and validation ownership for independently releasable U0-U5 slices, with U0 merged before U1; that process requirement is intentionally waived for PR #73 rather than retroactively pretending it happened.
 
 ## Goal
 
