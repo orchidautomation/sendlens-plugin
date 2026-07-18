@@ -25,6 +25,7 @@ CI mode uses a fixed timestamp and zeroed receipt timings so the report is deter
 - Novel safe analysis uses `search_catalog` before one focused public-view `analyze_data` query.
 - Success, zero-row, guard, and query-error canaries validate that reportable proof output contains only route/tool/recipe/public-surface/status/timing metadata.
 - The recipe registry is derived from `getQueryRecipes()`, checked for zero/duplicate IDs, and compared to the reviewed v0.1.64 baseline of 58 IDs so unreviewed additions/removals fail loudly.
+- Exact sender-risk proof cases bind back to the shipped behavioral routing matrix case before executing the recipe, so the executable proof fails if that route card drifts.
 
 ## Proof limits
 
@@ -32,7 +33,7 @@ This is a demo/CI proof harness. It does not prove installed-host latency, runti
 
 ## 2026-07-18 validation evidence
 
-- `npm run test:agentic-routing-proof` — passed; sanitized JSON summary reported 6 cases, 15 user-analysis calls, 2 setup calls excluded, and 58 recipe IDs.
+- `npm run test:agentic-routing-proof` — passed; sanitized JSON summary reported 6 cases, 15 user-analysis calls, 2 setup calls excluded, and 58 recipe IDs. Captured stdout/stderr are scanned before the report asserts output canary absence.
 - `npm run test:skill-routing` — passed.
 - `npm run test:query-recipes` — passed.
 - `npm run test:mcp-response-contract` — passed.

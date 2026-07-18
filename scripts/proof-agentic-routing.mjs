@@ -168,6 +168,7 @@ const ALLOWED_REPORT_KEYS = new Set([
   "cases",
   "id",
   "prompt_handle",
+  "behavioral_case_id",
   "status",
   "analysis_calls",
   "max_analysis_calls",
@@ -187,6 +188,7 @@ const ALLOWED_REPORT_KEYS = new Set([
   "forbidden_path_status",
   "privacy",
   "report_canaries_absent",
+  "stdout_canaries_absent",
   "stderr_canaries_absent",
   "artifact_canaries_absent",
   "raw_sql_absent",
@@ -210,6 +212,7 @@ assert.equal(
 
 const setupReceipts = [];
 const caseResults = [];
+const outputCapture = installOutputCapture();
 
 await resetDbConnectionForTests();
 
@@ -236,6 +239,9 @@ for (const caseConfig of proofConfig.cases) {
 
 const privacyCase = await executeDiagnosticPrivacyCanaries();
 caseResults.push(privacyCase);
+const capturedOutput = outputCapture.stop();
+assertNoForbiddenFragments(capturedOutput.stdout, "captured stdout before report");
+assertNoForbiddenFragments(capturedOutput.stderr, "captured stderr before report");
 
 assert.ok(caseResults.length > 0, "agentic proof executed zero cases");
 assertSameRoute(caseResults, "proof-exact-campaign-tag-sender-risk", "proof-equivalent-campaign-tag-sender-risk");
@@ -288,11 +294,12 @@ async function executeBroadWorkspaceHealth(caseConfig) {
 }
 
 async function executeExactSenderRisk(caseConfig) {
+  const primaryRoute = resolveBehavioralRoute(caseConfig);
   const tagValue = resolveFixtureHandle(caseConfig.fixture_handles, "campaign_tag:primary");
   const recipeLookup = await callTool("analysis_starters", {
-    recipe_id: caseConfig.expected_route.recipe_id,
+    recipe_id: primaryRoute.recipe_id,
   });
-  const recipe = onlyRecipe(recipeLookup.payload, caseConfig.expected_route.recipe_id);
+  const recipe = onlyRecipe(recipeLookup.payload, primaryRoute.recipe_id);
   const sql = renderRecipeSql(recipe.sql, { tag_name: tagValue });
   const analyzed = await callTool("analyze_data", {
     sql,
@@ -309,11 +316,12 @@ async function executeExactSenderRisk(caseConfig) {
 }
 
 async function executeMissingTagCorrection(caseConfig) {
+  const primaryRoute = resolveBehavioralRoute(caseConfig);
   const missingTag = resolveFixtureHandle(caseConfig.fixture_handles, "campaign_tag:missing");
   const primaryLookup = await callTool("analysis_starters", {
-    recipe_id: caseConfig.expected_route.recipe_id,
+    recipe_id: primaryRoute.recipe_id,
   });
-  const primaryRecipe = onlyRecipe(primaryLookup.payload, caseConfig.expected_route.recipe_id);
+  const primaryRecipe = onlyRecipe(primaryLookup.payload, primaryRoute.recipe_id);
   const primarySql = renderRecipeSql(primaryRecipe.sql, { tag_name: missingTag });
   const primaryResult = await callTool("analyze_data", {
     sql: primarySql,
@@ -454,10 +462,18 @@ async function dispatchLocalTool(toolName, input) {
 
 async function withDb(callback) {
   const db = await getDb();
+  let callbackError = null;
   try {
     return await callback(db);
+  } catch (error) {
+    callbackError = error;
+    throw error;
   } finally {
-    closeDb(db);
+    try {
+      closeDb(db);
+    } catch (closeError) {
+      if (!callbackError) throw closeError;
+    }
   }
 }
 
@@ -594,6 +610,7 @@ function proofCaseResult(caseConfig, calls, extras = {}) {
   return {
     id: caseConfig.id,
     prompt_handle: caseConfig.prompt_handle,
+    behavioral_case_id: caseConfig.behavioral_case_id,
     status: "passed",
     analysis_calls: calls.length,
     max_analysis_calls: caseConfig.expected_route.max_analysis_calls,
@@ -639,6 +656,7 @@ function buildReport({ setupReceipts, caseResults, recipeCatalogCount }) {
     cases: caseResults,
     privacy: {
       report_canaries_absent: true,
+      stdout_canaries_absent: true,
       stderr_canaries_absent: true,
       artifact_canaries_absent: Boolean(artifactPath),
       raw_sql_absent: true,
@@ -732,6 +750,45 @@ function recipeIdForCall(call, caseConfig) {
   return caseConfig.expected_route.recipe_id ?? null;
 }
 
+function resolveBehavioralRoute(caseConfig) {
+  const behavioralCaseId = caseConfig.behavioral_case_id;
+  assert.equal(typeof behavioralCaseId, "string", `${caseConfig.id} must bind to a behavioral matrix case`);
+  const behavioralCase = (matrix.cases ?? []).find((entry) => entry.id === behavioralCaseId);
+  assert.ok(behavioralCase, `${caseConfig.id} references missing behavioral case ${behavioralCaseId}`);
+  assert.equal(
+    behavioralCase.expected_primary_owner,
+    "sendlens-analyst",
+    `${behavioralCaseId} must remain analyst-owned`,
+  );
+  assert.equal(
+    behavioralCase.expected_should_trigger?.["sendlens-analyst"],
+    true,
+    `${behavioralCaseId} must trigger sendlens-analyst`,
+  );
+  assert.equal(
+    behavioralCase.expected_route?.first_tool,
+    caseConfig.expected_route.tools[0],
+    `${behavioralCaseId} first tool drifted from proof route`,
+  );
+  assert.equal(
+    behavioralCase.expected_route?.recipe_id,
+    caseConfig.expected_route.recipe_id,
+    `${behavioralCaseId} recipe drifted from proof route`,
+  );
+  const expectedBudget = caseConfig.expected_route.correction_recipe_id
+    ? behavioralCase.expected_call_budget?.correction_max_calls
+    : behavioralCase.expected_call_budget?.fast_path_max_calls;
+  assert.equal(
+    expectedBudget,
+    caseConfig.expected_route.max_analysis_calls,
+    `${behavioralCaseId} call budget drifted from proof route`,
+  );
+  return {
+    recipe_id: behavioralCase.expected_route.recipe_id,
+    first_tool: behavioralCase.expected_route.first_tool,
+  };
+}
+
 function recipeIdFromPayload(payload) {
   if (payload.output_shape === "single_recipe") return payload.recipes?.[0]?.id ?? null;
   return payload.recipe_id ?? null;
@@ -814,4 +871,34 @@ function valueForArg(name) {
   if (prefixed) return prefixed.slice(prefix.length);
   if (args.has("--no-artifact")) return false;
   return undefined;
+}
+
+function installOutputCapture() {
+  const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+  const originalStderrWrite = process.stderr.write.bind(process.stderr);
+  const captured = {
+    stdout: "",
+    stderr: "",
+  };
+  process.stdout.write = function writeStdout(chunk, encoding, callback) {
+    captured.stdout += chunkToString(chunk, encoding);
+    return originalStdoutWrite(chunk, encoding, callback);
+  };
+  process.stderr.write = function writeStderr(chunk, encoding, callback) {
+    captured.stderr += chunkToString(chunk, encoding);
+    return originalStderrWrite(chunk, encoding, callback);
+  };
+  return {
+    stop() {
+      process.stdout.write = originalStdoutWrite;
+      process.stderr.write = originalStderrWrite;
+      return captured;
+    },
+  };
+}
+
+function chunkToString(chunk, encoding) {
+  if (typeof chunk === "string") return chunk;
+  if (Buffer.isBuffer(chunk)) return chunk.toString(typeof encoding === "string" ? encoding : "utf8");
+  return String(chunk);
 }

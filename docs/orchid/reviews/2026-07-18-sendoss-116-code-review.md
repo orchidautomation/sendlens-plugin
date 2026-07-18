@@ -13,7 +13,16 @@ Scope: SENDOSS-116-only deterministic agentic routing proof harness, behavioral 
 
 ## Findings
 
-Actionable findings: none.
+Actionable findings: none remaining.
+
+## External review follow-up
+
+Cubic reported four issues after PR creation. The valid concerns were resolved on the same branch:
+
+- Replaced an unrecognized inbox-placement surface name with the existing public placement surfaces.
+- Bound exact sender-risk proof execution to the shipped behavioral matrix route case instead of script-local recipe constants.
+- Preserved callback errors over cleanup errors in the harness DB helper.
+- Captured and scanned stdout/stderr before asserting captured-output canary absence.
 
 ## Notes
 
