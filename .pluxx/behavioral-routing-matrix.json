@@ -27,6 +27,86 @@
       "source": "mock"
     }
   },
+  "agentic_proof": {
+    "schema_version": 1,
+    "description": "Opaque prompt-to-route proof cases for the local deterministic SendLens proof harness. Fixture handles resolve only inside the harness; reports must never include prompt text, SQL, rows, local paths, or raw fixture values.",
+    "expected_recipe_catalog_count": 58,
+    "cases": [
+      {
+        "id": "proof-broad-workspace-health",
+        "prompt_handle": "workspace-health:broad",
+        "fixture_handles": [],
+        "expected_route": {
+          "tools": ["workspace_snapshot"],
+          "recipe_id": null,
+          "max_analysis_calls": 1,
+          "forbidden_tools": ["analysis_starters", "search_catalog", "list_tables", "list_columns"]
+        }
+      },
+      {
+        "id": "proof-exact-campaign-tag-sender-risk",
+        "prompt_handle": "campaign-tag-sender-risk:exact",
+        "behavioral_case_id": "analyst-exact-tag-sender-risk",
+        "fixture_handles": ["campaign_tag:primary"],
+        "expected_route": {
+          "tools": ["analysis_starters", "analyze_data"],
+          "recipe_id": "campaign-sender-inventory-by-tag",
+          "max_analysis_calls": 2,
+          "forbidden_tools": ["workspace_snapshot", "search_catalog", "list_tables", "list_columns"],
+          "forbidden_public_surfaces": ["account_daily_metrics", "inbox_placement_tests", "inbox_placement_analytics", "inbox_placement_analytics_labeled", "inbox_placement_test_overview"]
+        }
+      },
+      {
+        "id": "proof-equivalent-campaign-tag-sender-risk",
+        "prompt_handle": "campaign-tag-sender-risk:reversed-phrasing",
+        "behavioral_case_id": "analyst-reversed-tag-sender-risk",
+        "fixture_handles": ["campaign_tag:primary"],
+        "expected_route": {
+          "tools": ["analysis_starters", "analyze_data"],
+          "recipe_id": "campaign-sender-inventory-by-tag",
+          "same_route_as": "proof-exact-campaign-tag-sender-risk",
+          "max_analysis_calls": 2,
+          "forbidden_tools": ["workspace_snapshot", "search_catalog", "list_tables", "list_columns"],
+          "forbidden_public_surfaces": ["account_daily_metrics", "inbox_placement_tests", "inbox_placement_analytics", "inbox_placement_analytics_labeled", "inbox_placement_test_overview"]
+        }
+      },
+      {
+        "id": "proof-nonexistent-exact-tag-one-correction",
+        "prompt_handle": "campaign-tag-sender-risk:missing-exact-tag",
+        "behavioral_case_id": "analyst-exact-tag-sender-risk",
+        "fixture_handles": ["campaign_tag:missing"],
+        "expected_route": {
+          "tools": ["analysis_starters", "analyze_data", "analysis_starters", "analyze_data"],
+          "recipe_id": "campaign-sender-inventory-by-tag",
+          "correction_recipe_id": "tag-scope-audit",
+          "max_analysis_calls": 4,
+          "max_correction_checks": 1,
+          "forbidden_tools": ["workspace_snapshot", "search_catalog", "list_tables", "list_columns"],
+          "forbidden_public_surfaces": ["account_daily_metrics", "inbox_placement_tests", "inbox_placement_analytics", "inbox_placement_analytics_labeled", "inbox_placement_test_overview"]
+        }
+      },
+      {
+        "id": "proof-novel-catalog-first-sql",
+        "prompt_handle": "novel-safe-analysis:provider-opportunities",
+        "fixture_handles": [],
+        "expected_route": {
+          "tools": ["search_catalog", "analyze_data"],
+          "recipe_id": "custom_sql",
+          "max_analysis_calls": 3,
+          "max_repairs": 1,
+          "required_first_tool": "search_catalog",
+          "focused_public_surfaces": ["campaign_overview"],
+          "forbidden_tools": ["workspace_snapshot", "list_tables", "list_columns"]
+        }
+      }
+    ],
+    "privacy_canaries": [
+      "success",
+      "zero_rows",
+      "guard_rejected",
+      "query_error"
+    ]
+  },
   "cases": [
     {
       "id": "setup-first-run",
@@ -106,6 +186,33 @@
       "id": "analyst-exact-tag-sender-risk",
       "category": "analysis",
       "prompt": "For the Priority Demo campaign tag, which assigned sender inboxes look risky?",
+      "expected_primary_owner": "sendlens-analyst",
+      "expected_route": {
+        "first_tool": "analysis_starters",
+        "recipe_id": "campaign-sender-inventory-by-tag",
+        "forbidden_before_recipe": [
+          "workspace_snapshot",
+          "list_tables",
+          "list_columns",
+          "search_catalog"
+        ]
+      },
+      "expected_call_budget": {
+        "fast_path_max_calls": 2,
+        "correction_max_calls": 4
+      },
+      "expected_should_trigger": {
+        "sendlens-setup": false,
+        "sendlens-analyst": true,
+        "sendlens-campaign-strategist": false,
+        "sendlens-copywriter": false,
+        "sendlens-launch-operator": false
+      }
+    },
+    {
+      "id": "analyst-reversed-tag-sender-risk",
+      "category": "analysis",
+      "prompt": "Which assigned sender inboxes look risky for the Priority Demo campaign tag?",
       "expected_primary_owner": "sendlens-analyst",
       "expected_route": {
         "first_tool": "analysis_starters",

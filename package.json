@@ -1,6 +1,6 @@
 {
   "name": "sendlens",
-  "version": "0.1.64",
+  "version": "0.1.65",
   "private": true,
   "description": "Privacy-first outbound campaign analysis for AI workspaces.",
   "license": "MIT",
@@ -30,6 +30,8 @@
     "test:mcp-response-contract": "node scripts/test-mcp-response-contract.mjs",
     "test:prompt-contracts": "node scripts/test-prompt-contracts.mjs",
     "test:skill-routing": "node scripts/test-behavioral-routing.mjs",
+    "proof:agentic-routing": "npm run --silent build:plugin && node scripts/proof-agentic-routing.mjs",
+    "test:agentic-routing-proof": "npm run --silent build:plugin && node scripts/proof-agentic-routing.mjs --ci --json-out /tmp/sendlens-agentic-routing-proof.json",
     "test:host-bundles": "node scripts/test-host-bundle-inventory.mjs",
     "test:legacy-installer-compat": "node scripts/test-legacy-installer-compat.mjs",
     "test:runtime-bootstrap": "node scripts/test-bootstrap-runtime.mjs",

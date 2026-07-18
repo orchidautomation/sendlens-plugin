@@ -8,6 +8,7 @@
   {"query":"Tell me whether the local SendLens cache is fresh without analyzing campaign performance.","should_trigger":false},
   {"query":"what's working and not working in my outbound workspace?","should_trigger":false},
   {"query":"For the Priority Demo campaign tag, which assigned sender inboxes look risky?","should_trigger":false},
+  {"query":"Which assigned sender inboxes look risky for the Priority Demo campaign tag?","should_trigger":false},
   {"query":"analyze everything, recommend the next campaign, write it, and plan the launch","should_trigger":false},
   {"query":"diagnose the workspace, choose one campaign, audit its replies and ICP, then give me a client-safe recommendation","should_trigger":false},
   {"query":"recommend the next campaign from these validated findings","should_trigger":false},
