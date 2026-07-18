@@ -1,6 +1,6 @@
 {
   "name": "sendlens",
-  "version": "0.1.67",
+  "version": "0.1.68",
   "private": true,
   "description": "Privacy-first outbound campaign analysis for AI workspaces.",
   "license": "MIT",
@@ -65,7 +65,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@orchid-labs/pluxx": "^0.1.34",
+    "@orchid-labs/pluxx": "0.1.36",
     "@types/node": "^22.15.3",
     "typescript": "^5.8.3"
   }

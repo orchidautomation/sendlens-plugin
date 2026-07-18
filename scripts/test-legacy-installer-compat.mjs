@@ -15,7 +15,7 @@ import {
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -117,7 +117,7 @@ function installPaths(platform, runRoot) {
   }
 
   if (platform === "opencode") {
-    const installDir = path.join(runRoot, "installed-opencode");
+    const installDir = path.join(runRoot, pluginName);
     return {
       installDir,
       pluginInstallDir: installDir,
@@ -347,6 +347,68 @@ async function prepareTrustedOpenCodeCompanions(paths) {
   return { skillName, skillDir };
 }
 
+async function executeInstalledOpenCodeWrapper(paths, runRoot) {
+  const workspaceRoot = path.join(runRoot, "parent-launch", "selected-workspace");
+  await mkdir(workspaceRoot, { recursive: true });
+
+  const entryModule = await import(
+    pathToFileURL(paths.env.PLUXX_OPENCODE_ENTRY_PATH).href,
+  );
+  const pluginFactory = Object.values(entryModule).find(
+    (value) => typeof value === "function",
+  );
+  assert.ok(pluginFactory, "installed OpenCode wrapper should export a plugin function");
+
+  const shellCommands = [];
+  const shell = (strings, ...values) => {
+    shellCommands.push(
+      strings.reduce(
+        (command, segment, index) =>
+          `${command}${segment}${index < values.length ? String(values[index]) : ""}`,
+        "",
+      ),
+    );
+    return Promise.resolve({ stdout: "", stderr: "" });
+  };
+  const plugin = await pluginFactory({
+    project: {},
+    client: { app: { log: async () => {} } },
+    $: shell,
+    directory: workspaceRoot,
+  });
+
+  const config = {};
+  await plugin.config(config);
+  assert.ok(
+    config.command?.["sendlens-analyst"],
+    "installed OpenCode wrapper should preserve the SendLens analyst command",
+  );
+
+  const pluginRoot = await realpath(paths.pluginInstallDir);
+  const mcp = config.mcp?.sendlens;
+  assert.ok(mcp, "installed OpenCode wrapper should preserve SendLens MCP routing");
+  assert.equal(mcp.environment?.PLUXX_PLUGIN_ROOT, pluginRoot);
+  assert.equal(mcp.environment?.OPENCODE_PLUGIN_ROOT, pluginRoot);
+  assert.equal(mcp.environment?.PLUXX_WORKSPACE_ROOT, workspaceRoot);
+  assert.equal(mcp.environment?.PLUXX_MCP_WORKSPACE_ROOT, workspaceRoot);
+  assert.equal(mcp.environment?.OPENCODE_WORKSPACE_ROOT, workspaceRoot);
+  assert.equal(
+    mcp.command?.[1],
+    path.join(pluginRoot, "runtime", "pluxx-mcp-env.mjs"),
+  );
+
+  await plugin.event({ event: { type: "session.created" } });
+  assert.ok(
+    shellCommands.some(
+      (command) =>
+        command.includes(`PLUXX_PLUGIN_ROOT='${pluginRoot}'`) &&
+        command.includes(`PLUXX_HOOK_WORKSPACE_ROOT='${workspaceRoot}'`) &&
+        command.includes(path.join(pluginRoot, "scripts", "session-start.sh")),
+    ),
+    "installed OpenCode hook should keep plugin and selected workspace roots separate",
+  );
+}
+
 function installerEnv(platform, runRoot, releaseDir, paths, homeDir) {
   const tempDir = path.join(runRoot, "tmp");
   const archive = path.join(releaseDir, `${pluginName}-${platform}-latest.tar.gz`);
@@ -406,7 +468,7 @@ async function testTrustedLegacyUpgrades(releaseDir) {
   const sharedHomeDir = await tempDir("sendlens-shared-runtime-home-");
   const runtimeTargets = [];
   for (const platform of platforms) {
-    const { result, homeDir, paths, openCodeSkill } = await runInstaller(platform, releaseDir, {
+    const { result, runRoot, homeDir, paths, openCodeSkill } = await runInstaller(platform, releaseDir, {
       homeDir: sharedHomeDir,
     });
     assertRun(result, `${platform} trusted legacy upgrade`);
@@ -432,6 +494,7 @@ async function testTrustedLegacyUpgrades(releaseDir) {
       assert.ok(openCodeSkill, "OpenCode skill should be prepared");
       const skill = await readFile(path.join(openCodeSkill.skillDir, "SKILL.md"), "utf8");
       assert.match(skill, new RegExp(`name: ${pluginName}/${openCodeSkill.skillName}`));
+      await executeInstalledOpenCodeWrapper(paths, runRoot);
     }
   }
 
@@ -488,7 +551,7 @@ async function testOpenCodeUnrelatedSkillCollisionFailsClosed(releaseDir) {
 }
 
 try {
-  assert.equal(packageJson.devDependencies?.["@orchid-labs/pluxx"], "^0.1.34");
+  assert.equal(packageJson.devDependencies?.["@orchid-labs/pluxx"], "0.1.36");
 
   assertRun(run("npm", ["run", "--silent", "build:plugin"]), "build:plugin");
   assertRun(run("npm", ["run", "--silent", "build:hosts"]), "build:hosts");
