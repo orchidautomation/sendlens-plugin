@@ -125,6 +125,7 @@ async function testDependencyMetadataIsCurrent() {
   assert.equal(specs.status, 0, specs.stderr);
   assert.match(specs.stdout, /@duckdb\/node-api@1\.5\.1-r\.2/);
   assert.match(specs.stdout, /@modelcontextprotocol\/sdk@1\.29\.0/);
+  assert.match(specs.stdout, /express@5\.2\.1/);
   assert.match(specs.stdout, /node-sql-parser@5\.4\.0/);
   assert.match(specs.stdout, /zod@4\.4\.1/);
 }
@@ -133,6 +134,7 @@ async function testMissingGeneratedBundleDependenciesFailBeforeStartup() {
   const cases = [
     ["@duckdb/node-api", "1.5.1-r.2"],
     ["@modelcontextprotocol/sdk", "1.29.0"],
+    ["express", "5.2.1"],
     ["node-sql-parser", "5.4.0"],
     ["zod", "4.4.1"],
   ];
