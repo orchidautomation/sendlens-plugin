@@ -1,6 +1,7 @@
 import type { DuckDBConnection } from "@duckdb/node-api";
 import { CURRENT_SCHEMA_MIGRATION_ID, query, resolveDbPath } from "./local-db";
 import { PUBLIC_TABLES, TABLE_DESCRIPTIONS, type PublicTableName } from "./constants";
+import { getQueryRecipeById, type QueryRecipe } from "./query-recipes";
 
 export type TableInfo = {
   name: string;
@@ -34,6 +35,34 @@ export type CatalogStarterSuggestion = {
   topics: string[];
   recipe_ids: string[];
   reason: string;
+  route_cards?: CatalogRecipeRouteCard[];
+  correction_path?: CatalogCorrectionPath;
+};
+
+export type CatalogRecipeRouteCard = {
+  recipe_id: string;
+  intent: string;
+  grain: string;
+  time_basis: string;
+  attribution: string;
+  provider_scope: string;
+  population_scope: string;
+  tag_role: string;
+  cost_class: "low" | "medium" | "high";
+  privacy_class: string;
+  prerequisites: string[];
+  safe_adaptations: string[];
+  forbidden_adaptations: string[];
+};
+
+export type CatalogCorrectionPath = {
+  from_recipe_id: string;
+  on_status: "zero_rows";
+  correction_recipe_id: string;
+  after_correction: "stop";
+  max_follow_up_calls: 4;
+  follow_up_starts_at: "primary_recipe_lookup";
+  catalog_discovery_included: false;
 };
 
 export type CatalogSearchGuidance = {
@@ -53,6 +82,17 @@ type ConceptHint = {
 };
 
 type PublicColumnCache = Map<PublicTableName, ColumnInfo[]>;
+type CatalogRouteBundle = {
+  route_cards: CatalogRecipeRouteCard[];
+  correction_path?: CatalogCorrectionPath;
+};
+
+export const CATALOG_ROUTE_CARD_RESPONSE_BUDGET_BYTES = 8_192;
+
+const CATALOG_PRIMARY_ROUTE_CARD_IDS_BY_CONCEPT = new Map<string, string[]>([
+  ["campaign-tag sender risk", ["campaign-sender-inventory-by-tag"]],
+  ["tag", ["tag-scope-audit"]],
+]);
 
 const publicColumnCache = new Map<string, Promise<PublicColumnCache>>();
 let publicColumnHydrationCountForTests = 0;
@@ -347,18 +387,93 @@ export function buildCatalogSearchGuidance(search: string, matches: CatalogMatch
     .filter((term) => !matchedTerms.has(term) || matches.length === 0)
     .slice(0, 10);
 
-  const analysisStarterSuggestions = conceptHints.map((hint) => ({
+  const analysisStarterSuggestions: CatalogStarterSuggestion[] = conceptHints.map((hint) => ({
     concept: hint.concept,
     topics: hint.topics,
     recipe_ids: hint.recipeIds,
     reason: hint.reason,
   }));
+  addCatalogRouteCardsWithinBudget(conceptHints, analysisStarterSuggestions);
 
   return {
     search_terms: terms,
     suggested_narrower_terms: suggestedNarrowerTerms,
     analysis_starter_suggestions: analysisStarterSuggestions,
     message: buildGuidanceMessage(matches, analysisStarterSuggestions),
+  };
+}
+
+function addCatalogRouteCardsWithinBudget(
+  hints: ConceptHint[],
+  suggestions: CatalogStarterSuggestion[],
+) {
+  const emittedRouteCardIds = new Set<string>();
+  for (const [index, hint] of hints.entries()) {
+    const bundle = catalogRouteBundle(hint, emittedRouteCardIds);
+    if (!bundle) continue;
+    const candidate = {
+      ...suggestions[index],
+      ...bundle,
+    };
+    const candidateSuggestions = [...suggestions];
+    candidateSuggestions[index] = candidate;
+    if (Buffer.byteLength(JSON.stringify(candidateSuggestions), "utf8") > CATALOG_ROUTE_CARD_RESPONSE_BUDGET_BYTES) {
+      continue;
+    }
+    suggestions[index] = candidate;
+    for (const card of bundle.route_cards) emittedRouteCardIds.add(card.recipe_id);
+  }
+}
+
+function catalogRouteBundle(
+  hint: ConceptHint,
+  emittedRouteCardIds: Set<string>,
+): CatalogRouteBundle | undefined {
+  const routeCards: CatalogRecipeRouteCard[] = [];
+  let correctionPath: CatalogCorrectionPath | undefined;
+  for (const recipeId of CATALOG_PRIMARY_ROUTE_CARD_IDS_BY_CONCEPT.get(hint.concept) ?? []) {
+    const recipe = getQueryRecipeById(recipeId);
+    if (!recipe) continue;
+    if (!emittedRouteCardIds.has(recipe.id) && recipe.route_card) {
+      routeCards.push(compactCatalogRouteCard(recipe));
+    }
+    if (!recipe.zero_row_fallback) continue;
+    correctionPath ??= {
+      from_recipe_id: recipe.id,
+      ...recipe.zero_row_fallback,
+    };
+    const correctionRecipe = getQueryRecipeById(recipe.zero_row_fallback.correction_recipe_id);
+    if (correctionRecipe?.route_card && !emittedRouteCardIds.has(correctionRecipe.id)) {
+      const correctionCard = compactCatalogRouteCard(correctionRecipe);
+      if (recipe.zero_row_fallback.after_correction === "stop") {
+        correctionCard.safe_adaptations = ["report inferred tag scope and stop"];
+      }
+      routeCards.push(correctionCard);
+    }
+  }
+  if (routeCards.length === 0 && !correctionPath) return undefined;
+  return {
+    route_cards: routeCards,
+    correction_path: correctionPath,
+  };
+}
+
+function compactCatalogRouteCard(recipe: QueryRecipe): CatalogRecipeRouteCard {
+  const card = recipe.route_card!;
+  return {
+    recipe_id: recipe.id,
+    intent: card.preferred_intent,
+    grain: card.grain,
+    time_basis: card.time_basis,
+    attribution: card.attribution,
+    provider_scope: card.provider_scope,
+    population_scope: card.population_scope,
+    tag_role: card.tag_role,
+    cost_class: card.cost,
+    privacy_class: card.privacy_class,
+    prerequisites: card.prerequisites.slice(0, 3),
+    safe_adaptations: card.safe_adaptations.slice(0, 3),
+    forbidden_adaptations: card.forbidden_adaptations.slice(0, 3),
   };
 }
 
@@ -390,11 +505,10 @@ function matchingConceptHints(needle: string): ConceptHint[] {
 }
 
 function hasCampaignTagSenderRiskIntent(needle: string) {
-  const hasCampaign = /\bcampaigns?\b/.test(needle);
   const hasTag = /\btags?\b|\btagged\b/.test(needle);
-  const hasSender = /\bsenders?\b|\baccounts?\b|\binboxes?\b/.test(needle);
+  const hasSender = /\bsenders?\b|\baccounts?\b|\binbox(?:es)?\b/.test(needle);
   const hasRisk = /\bdeliverability\b|\brisks?\b|\bbounces?\b|\bhealth\b|\bspam\b|\bplacement\b/.test(needle);
-  return hasCampaign && hasTag && hasSender && hasRisk;
+  return hasTag && hasSender && hasRisk;
 }
 
 function conceptHintPriority(hint: ConceptHint) {
@@ -419,6 +533,12 @@ function scoreCatalogEntry(name: string, description: string, terms: string[], n
 }
 
 function buildGuidanceMessage(matches: CatalogMatch[], suggestions: CatalogStarterSuggestion[]) {
+  const hasRouteCards = suggestions.some((suggestion) => (suggestion.route_cards?.length ?? 0) > 0);
+  const hasCorrectionPath = suggestions.some((suggestion) => suggestion.correction_path);
+  if (hasRouteCards && hasCorrectionPath) {
+    const matchStatus = matches.length === 0 ? "No direct schema matches found." : "Schema matches were found.";
+    return `${matchStatus} Compact route cards name the exact analysis_starters route and its zero-row correction path. Catalog discovery reads no campaign evidence rows; the four-call follow-up budget starts at primary recipe lookup.`;
+  }
   if (matches.length === 0 && suggestions.length > 0) {
     return "No direct schema matches found. The query looks like a workflow concept, so use the suggested analysis_starters topics or retry one of the narrower schema terms.";
   }

@@ -1535,9 +1535,9 @@ server.registerTool(
       [
         "Search public SendLens table and column names when the user gives a concept like reply, bounce, tag, variant, opportunity, or payload.",
         "Use this before custom SQL when the exact schema surface is unclear.",
-        "For broad or workflow-style queries, it returns partial schema matches plus narrower search terms and analysis_starters suggestions.",
-        "Do not use it as a data read; it only returns schema matches.",
-        "Returns up to 25 table/column matches plus readiness metadata and does not read lead, reply, or campaign rows.",
+        "For broad or workflow-style queries, it returns partial schema matches, narrower search terms, analysis_starters suggestions, and compact route cards with a named zero-row correction path when available.",
+        "Do not use it as a data read; it returns routing and schema metadata only.",
+        "Returns up to 25 table/column matches plus readiness metadata and does not read lead, reply, or campaign evidence rows.",
       ].join(" "),
     inputSchema: {
       query: z.string().describe("Search string such as reply, bounce, variant, opportunity, runway, or rendered outbound."),

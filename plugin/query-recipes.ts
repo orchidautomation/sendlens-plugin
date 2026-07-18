@@ -20,6 +20,7 @@ export type QueryRecipe = {
   exactness: "exact" | "sampled" | "hybrid";
   rationale: string;
   route_card?: QueryRecipeRouteCard;
+  zero_row_fallback?: QueryRecipeZeroRowFallback;
   sql: string;
   notes: string[];
 };
@@ -35,11 +36,21 @@ export type QueryRecipeRouteCard = {
   prerequisites: string[];
   cost: "low" | "medium" | "high";
   privacy: string;
+  privacy_class: string;
   safe_adaptations: string[];
   forbidden_adaptations: string[];
 };
 
-export type QueryRecipeSummary = Omit<QueryRecipe, "sql" | "notes"> & {
+export type QueryRecipeZeroRowFallback = {
+  on_status: "zero_rows";
+  correction_recipe_id: string;
+  after_correction: "stop";
+  max_follow_up_calls: 4;
+  follow_up_starts_at: "primary_recipe_lookup";
+  catalog_discovery_included: false;
+};
+
+export type QueryRecipeSummary = Omit<QueryRecipe, "sql" | "notes" | "zero_row_fallback"> & {
   sql_available: true;
 };
 
@@ -75,6 +86,7 @@ const QUERY_RECIPES: QueryRecipe[] = [
       prerequisites: ["active local cache"],
       cost: "low",
       privacy: "aggregate rows only; no contact, reply body, or rendered body detail",
+      privacy_class: "aggregate_only",
       safe_adaptations: ["add a provider or campaign-name filter", "change ordering among returned aggregate fields"],
       forbidden_adaptations: ["use as proof a campaign is a winner without one-campaign reply/copy validation", "project sampled evidence to full-population totals"],
     },
@@ -119,6 +131,7 @@ ORDER BY unique_reply_rate_pct DESC NULLS LAST, bounce_rate_pct ASC NULLS LAST, 
       prerequisites: ["cached account health surface"],
       cost: "low",
       privacy: "sender account emails are returned as operational evidence; no lead or reply bodies",
+      privacy_class: "operational_identifiers",
       safe_adaptations: ["filter to one provider", "sort by warmup score or bounce rate"],
       forbidden_adaptations: ["attribute account totals to one campaign without campaign assignment evidence", "treat missing inbox-placement rows as healthy placement"],
     },
@@ -300,8 +313,17 @@ ORDER BY
       prerequisites: ["known campaign tag", "resolved campaign_accounts sender inventory"],
       cost: "low",
       privacy: "returns sender account operational fields only; no leads, reply text, payloads, or row previews",
-      safe_adaptations: ["add an exact provider filter", "escape single quotes in the tag literal by doubling them", "add a deterministic trim/case tag correction after a zero-row check"],
+      privacy_class: "operational_identifiers",
+      safe_adaptations: ["add an exact provider filter", "escape single quotes in the tag literal by doubling them", "run the declared tag-scope audit after a zero-row check"],
       forbidden_adaptations: ["start with workspace_snapshot for this exact route", "scan placement or account_daily_metrics before the inventory result", "broaden provider, campaign, tag, time, or population after a miss"],
+    },
+    zero_row_fallback: {
+      on_status: "zero_rows",
+      correction_recipe_id: "tag-scope-audit",
+      after_correction: "stop",
+      max_follow_up_calls: 4,
+      follow_up_starts_at: "primary_recipe_lookup",
+      catalog_discovery_included: false,
     },
     sql: `WITH tagged_active_campaign_senders_raw AS (
   SELECT
@@ -2512,6 +2534,7 @@ LIMIT 50;`,
       prerequisites: ["known campaign_id", "rendered outbound context available"],
       cost: "medium",
       privacy: "summary previews are bounded; raw recipient/body detail requires a separate raw-detail recipe and local authorization",
+      privacy_class: "sampled_content_summary",
       safe_adaptations: ["filter to one step or variant", "open raw detail only for locally authorized diagnosis"],
       forbidden_adaptations: ["paste raw bodies or contact fields into external artifacts", "claim exact delivered copy from reconstructed evidence"],
     },
@@ -3136,6 +3159,7 @@ LIMIT 100;`,
       prerequisites: ["known campaign_id", "fetch_reply_text or prepare_campaign_analysis when fresh bodies are needed"],
       cost: "medium",
       privacy: "returns bounded subject/content previews and counts, not full bodies or email addresses",
+      privacy_class: "bounded_content_previews",
       safe_adaptations: ["change selected reply statuses deliberately", "follow with raw-detail recipe only for local authorized inspection"],
       forbidden_adaptations: ["treat selected-status hydration as every aggregate reply", "export full reply bodies or addresses"],
     },
@@ -3568,7 +3592,8 @@ ORDER BY tag_name;`,
       prerequisites: ["known tag label"],
       cost: "low",
       privacy: "tag metadata and counts only; no lead, account email, reply, or payload detail",
-      safe_adaptations: ["use trim/case-insensitive matching", "follow with a campaign-tag or account-tag recipe based on inferred scope"],
+      privacy_class: "metadata_counts_only",
+      safe_adaptations: ["use trim/case-insensitive matching", "report inferred scope and stop when invoked by a packaged zero-row fallback"],
       forbidden_adaptations: ["assume a tag on accounts scopes campaigns", "broaden to all tags after an exact user tag miss without saying so"],
     },
     sql: `SELECT

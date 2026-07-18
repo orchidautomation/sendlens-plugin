@@ -84,6 +84,7 @@ try {
   assert.ok(exactSenderRisk?.route_card, "campaign sender inventory needs a route card");
   assert.match(exactSenderRisk.route_card.preferred_intent, /campaign-tag sender/i);
   assert.match(exactSenderRisk.route_card.tag_role, /campaign_tag_label/);
+  assert.match(exactSenderRisk.route_card.provider_scope, /source_provider/);
   assert.match(exactSenderRisk.route_card.provider_scope, /campaign_source_id/);
   assert.match(exactSenderRisk.route_card.time_basis, /30-day/);
   assert.ok(
@@ -93,6 +94,28 @@ try {
   assert.ok(
     exactSenderRisk.route_card.safe_adaptations.some((adaptation) => /single quotes/i.test(adaptation)),
     "exact sender-risk route card must teach safe literal escaping",
+  );
+  assert.equal(exactSenderRisk.route_card.privacy_class, "operational_identifiers");
+  assert.deepEqual(exactSenderRisk.zero_row_fallback, {
+    on_status: "zero_rows",
+    correction_recipe_id: "tag-scope-audit",
+    after_correction: "stop",
+    max_follow_up_calls: 4,
+    follow_up_starts_at: "primary_recipe_lookup",
+    catalog_discovery_included: false,
+  });
+
+  const exactTagScopeAudit = buildQueryRecipeResponse({
+    recipe_id: "tag-scope-audit",
+  }).recipes[0];
+  assert.ok(
+    exactTagScopeAudit.route_card.safe_adaptations.some((adaptation) => /packaged zero-row fallback/i.test(adaptation) && /stop/i.test(adaptation)),
+    "exact correction lookup must preserve the packaged fallback stop contract",
+  );
+  assert.equal(
+    exactTagScopeAudit.route_card.safe_adaptations.some((adaptation) => /follow with/i.test(adaptation)),
+    false,
+    "exact correction lookup must not authorize calls beyond the packaged four-call fallback",
   );
 
   const summaryResponse = buildQueryRecipeResponse({
@@ -147,6 +170,7 @@ function assertRouteCardComplete(recipe) {
     "population_scope",
     "tag_role",
     "privacy",
+    "privacy_class",
   ]) {
     assert.equal(
       typeof recipe.route_card[field],

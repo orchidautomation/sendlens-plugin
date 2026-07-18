@@ -84,6 +84,11 @@ Where relevant, SendLens responses should include:
 - returns `matches` for table and column hits, including partial matches for broad multi-token queries
 - returns `search_terms` and `suggested_narrower_terms` so operators can retry with schema-specific language
 - returns `analysis_starter_suggestions` for workflow concepts such as runway, scale, refill, deliverability, sender accounts, rendered outbound, reply body, payload, and tags
+- exact campaign-tag sender/account deliverability or bounce intent ranks `campaign-sender-inventory-by-tag` first and names `tag-scope-audit` as its zero-row correction
+- proof-corpus suggestions may include `route_cards` containing only recipe ID, intent, grain, time basis, attribution, provider/population scope, tag role, cost class, privacy class, prerequisites, and short safe/forbidden adaptations; linked correction recipes may also receive a card
+- `correction_path` is bounded metadata: zero rows lead to one named correction recipe and then stop, without scope broadening; `max_follow_up_calls: 4` begins at `primary_recipe_lookup`, and `catalog_discovery_included: false` keeps prior catalog discovery outside the four-call follow-up budget
+- catalog route cards are deterministic, deduplicated, omit SQL/notes/rows/private values, and keep the full `analysis_starter_suggestions` envelope within an 8 KiB response budget
+- returns routing and public-schema metadata only; it reads no campaign evidence rows
 - hydrates public columns in one bounded pass and reuses warm public-column context for follow-up searches
 - when schema search finds no direct match for a workflow concept, returns `guidance` that points to relevant `analysis_starters` topics instead of silently failing
 

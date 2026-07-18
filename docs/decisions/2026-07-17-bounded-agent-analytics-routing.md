@@ -10,6 +10,8 @@ Skills remain the workflow authority. Routine exact questions start with an exac
 
 Route cards add bounded intent, grain, time basis, scope, cost, privacy, and adaptation guidance to high-risk/common recipes. In compact topic listings, recipes with route cards appear first because they carry this safer execution context. This ordering is deterministic metadata prioritization, not free-form prompt ranking; the response guidance states that reason. Combined campaign-tag, sender, and deliverability catalog hints are deterministic and keep the canonical recipe first without replacing skill routing.
 
+Catalog suggestions expose a smaller route-card projection than exact recipe retrieval. SENDOSS-117 limits that projection to the proof-corpus sender-risk route and its directly linked `tag-scope-audit` correction, deduplicates cards deterministically, and caps the suggestion envelope at 8 KiB. The catalog projection contains no SQL, detailed notes, or campaign evidence rows. A zero-row sender-inventory result names `tag-scope-audit` and then stops; it never authorizes broadening, an impossible fifth-call retry, or an ad hoc schema aggregate. The four-call follow-up budget begins at the primary recipe lookup, so catalog discovery is outside that count. Focused public-view custom SQL remains the bounded escalation for novel supported questions after the recipe ladder is exhausted.
+
 `analyze_data` failures return stable, generic codes plus bounded diagnostics. They never return submitted or rewritten SQL, literal values, credentials, workspace/client identifiers, cache fingerprints, or local paths. Diagnostic elapsed time and row caps are observability only; they do not claim query timeout, interruption, or resource enforcement.
 
 ## Ownership
