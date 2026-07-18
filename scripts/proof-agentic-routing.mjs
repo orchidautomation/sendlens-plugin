@@ -6,6 +6,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -38,6 +40,7 @@ const {
   resetDbConnectionForTests,
 } = require("../build/plugin/local-db.js");
 const {
+  CATALOG_ROUTE_CARD_RESPONSE_BUDGET_BYTES,
   buildCatalogSearchGuidance,
   searchCatalog,
 } = require("../build/plugin/catalog.js");
@@ -57,6 +60,21 @@ const { buildWorkspaceSummary } = require("../build/plugin/summary.js");
 
 const ANALYZE_DATA_ROW_LIMIT = 1_000;
 const ANALYZE_DATA_SAFE_ERROR = "Query could not be executed safely.";
+const REQUIRED_CATALOG_ROUTE_CARD_FIELDS = Object.freeze([
+  "recipe_id",
+  "intent",
+  "grain",
+  "time_basis",
+  "attribution",
+  "provider_scope",
+  "population_scope",
+  "tag_role",
+  "cost_class",
+  "privacy_class",
+  "prerequisites",
+  "safe_adaptations",
+  "forbidden_adaptations",
+]);
 const REVIEWED_BASELINE_RECIPE_IDS = Object.freeze([
   "account-health",
   "account-manager-client-brief",
@@ -148,6 +166,11 @@ const FORBIDDEN_REPORT_FRAGMENTS = [
   root,
   os.tmpdir(),
 ];
+const FORBIDDEN_CATALOG_BODY_PATTERNS = [
+  /\bselect\s+/i,
+  /\bwith\s+(?:recursive\s+)?[\w"`]+\s+as\s*\(/i,
+  /\bsendlens\./i,
+];
 
 const PRIVATE_TABLE_NAME_FRAGMENTS = new Set([
   "schema_migrations",
@@ -234,6 +257,16 @@ assert.equal(
   recipeRegistry.length,
   "recipe catalog count must remain compatible",
 );
+
+const registeredCatalogSetup = await callRegisteredCatalogRouteCardSetup();
+setupReceipts.push(sanitizedToolReceipt("search_catalog", registeredCatalogSetup, {
+  recipe_id: null,
+}));
+
+const accountOnlyCorrectionSetup = await executeAccountOnlyCorrectionSetupInvariant();
+setupReceipts.push(...accountOnlyCorrectionSetup.map(({ call, recipeId }) =>
+  sanitizedToolReceipt(call.toolName, call, { recipe_id: recipeId })
+));
 
 for (const caseConfig of proofConfig.cases) {
   caseResults.push(await executeProofCase(caseConfig));
@@ -324,6 +357,14 @@ async function executeMissingTagCorrection(caseConfig) {
     recipe_id: primaryRoute.recipe_id,
   });
   const primaryRecipe = onlyRecipe(primaryLookup.payload, primaryRoute.recipe_id);
+  assert.deepEqual(primaryRecipe.zero_row_fallback, {
+    on_status: "zero_rows",
+    correction_recipe_id: caseConfig.expected_route.correction_recipe_id,
+    after_correction: "stop",
+    max_follow_up_calls: caseConfig.expected_route.max_analysis_calls,
+    follow_up_starts_at: "primary_recipe_lookup",
+    catalog_discovery_included: false,
+  });
   const primarySql = renderRecipeSql(primaryRecipe.sql, { tag_name: missingTag });
   const primaryResult = await callTool("analyze_data", {
     sql: primarySql,
@@ -343,12 +384,174 @@ async function executeMissingTagCorrection(caseConfig) {
   assert.equal(correctionResult.payload.diagnostics?.status, "zero_rows");
 
   const calls = [primaryLookup, primaryResult, correctionLookup, correctionResult];
+  assert.deepEqual(
+    calls.filter((call) => call.toolName === "analysis_starters").map((call) => recipeIdFromPayload(call.payload)),
+    [primaryRoute.recipe_id, caseConfig.expected_route.correction_recipe_id],
+    "zero-row correction must follow the packaged primary-to-correction recipe sequence",
+  );
   assertForbiddenRoute(caseConfig, calls);
   return proofCaseResult(caseConfig, calls, {
     correction_checks: 1,
     max_correction_checks: caseConfig.expected_route.max_correction_checks,
     result_class: "zero_rows_stop",
   });
+}
+
+async function callRegisteredCatalogRouteCardSetup() {
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [path.join(root, "build/plugin/server.js")],
+    env: {
+      ...process.env,
+      SENDLENS_DEMO_MODE: "1",
+    },
+    stderr: "pipe",
+  });
+  const stderrChunks = [];
+  transport.stderr?.on("data", (chunk) => stderrChunks.push(chunkToString(chunk)));
+  const client = new Client({
+    name: "sendlens-agentic-routing-proof",
+    version: "0.0.0",
+  });
+  const started = performance.now();
+
+  try {
+    await client.connect(transport);
+    const result = await client.callTool({
+      name: "search_catalog",
+      arguments: {
+        query: "show sender account deliverability and bounce risk for an exact campaign tag",
+      },
+    });
+    assert.equal(result.content?.[0]?.type, "text", "registered search_catalog must return host-visible text");
+    const hostText = result.content[0].text;
+    const payload = JSON.parse(hostText);
+    assertCatalogRouteCardContract(payload, hostText);
+    assertNoForbiddenFragments(stderrChunks.join(""), "registered search_catalog stderr");
+    return {
+      toolName: "search_catalog",
+      elapsedMs: Math.max(0, Math.round(performance.now() - started)),
+      payload,
+    };
+  } finally {
+    await client.close();
+  }
+}
+
+function assertCatalogRouteCardContract(payload, hostText) {
+  const suggestion = payload.analysis_starter_suggestions?.[0];
+  assert.equal(suggestion?.concept, "campaign-tag sender risk");
+  assert.equal(suggestion?.recipe_ids[0], "campaign-sender-inventory-by-tag");
+  assert.deepEqual(
+    suggestion?.route_cards?.map((card) => card.recipe_id),
+    ["campaign-sender-inventory-by-tag", "tag-scope-audit"],
+  );
+  for (const card of suggestion.route_cards) {
+    assert.deepEqual(
+      Object.keys(card).sort(),
+      [...REQUIRED_CATALOG_ROUTE_CARD_FIELDS].sort(),
+      `${card.recipe_id} must preserve the compact route-card field set through MCP serialization`,
+    );
+    for (const field of REQUIRED_CATALOG_ROUTE_CARD_FIELDS.slice(0, 10)) {
+      assert.equal(typeof card[field], "string", `${card.recipe_id}.${field} must be a string`);
+      assert.ok(card[field].trim().length > 0, `${card.recipe_id}.${field} must be non-empty`);
+    }
+    for (const field of REQUIRED_CATALOG_ROUTE_CARD_FIELDS.slice(10)) {
+      assert.ok(
+        Array.isArray(card[field]) && card[field].length > 0,
+        `${card.recipe_id}.${field} must be a non-empty array`,
+      );
+      assert.ok(
+        card[field].every((value) => typeof value === "string" && value.trim().length > 0),
+        `${card.recipe_id}.${field} entries must be non-empty strings`,
+      );
+    }
+  }
+  assert.deepEqual(suggestion?.correction_path, {
+    from_recipe_id: "campaign-sender-inventory-by-tag",
+    on_status: "zero_rows",
+    correction_recipe_id: "tag-scope-audit",
+    after_correction: "stop",
+    max_follow_up_calls: 4,
+    follow_up_starts_at: "primary_recipe_lookup",
+    catalog_discovery_included: false,
+  });
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(payload.analysis_starter_suggestions), "utf8")
+      <= CATALOG_ROUTE_CARD_RESPONSE_BUDGET_BYTES,
+    "registered search_catalog route-card suggestions must stay within the response-size budget",
+  );
+  assertNoRawCanaries(suggestion, "catalog route-card suggestion");
+  assertNoForbiddenFragments(hostText, "registered search_catalog host-visible text");
+  for (const pattern of FORBIDDEN_CATALOG_BODY_PATTERNS) {
+    assert.equal(
+      pattern.test(hostText),
+      false,
+      `registered search_catalog host-visible text must not expose SQL/body fragment ${pattern}`,
+    );
+  }
+  assert.equal(/"rows"\s*:/.test(hostText), false, "registered search_catalog must not expose rows");
+  assert.equal(/"sql"\s*:/.test(hostText), false, "registered search_catalog must not expose SQL fields");
+}
+
+async function executeAccountOnlyCorrectionSetupInvariant() {
+  const primaryRecipeId = "campaign-sender-inventory-by-tag";
+  const correctionRecipeId = "tag-scope-audit";
+  const accountOnlyTag = "Demo Sender Pool";
+
+  const primaryLookup = await callTool("analysis_starters", {
+    recipe_id: primaryRecipeId,
+  });
+  const primaryRecipe = onlyRecipe(primaryLookup.payload, primaryRecipeId);
+  assert.deepEqual(primaryRecipe.zero_row_fallback, {
+    on_status: "zero_rows",
+    correction_recipe_id: correctionRecipeId,
+    after_correction: "stop",
+    max_follow_up_calls: 4,
+    follow_up_starts_at: "primary_recipe_lookup",
+    catalog_discovery_included: false,
+  });
+  const primaryResult = await callTool("analyze_data", {
+    sql: renderRecipeSql(primaryRecipe.sql, { tag_name: accountOnlyTag }),
+    rationale: "agentic proof account-only tag primary campaign route",
+  });
+  assert.equal(primaryResult.payload.diagnostics?.status, "zero_rows");
+  assert.equal(primaryResult.payload.row_count, 0);
+  assert.deepEqual(primaryResult.payload.rows, []);
+
+  const correctionLookup = await callTool("analysis_starters", {
+    recipe_id: correctionRecipeId,
+  });
+  const correctionRecipe = onlyRecipe(correctionLookup.payload, correctionRecipeId);
+  const correctionResult = await callTool("analyze_data", {
+    sql: renderRecipeSql(correctionRecipe.sql, { tag_name: accountOnlyTag }),
+    rationale: "agentic proof account-only tag scope correction",
+  });
+  assert.equal(correctionResult.payload.diagnostics?.status, "ok");
+  assert.ok(Array.isArray(correctionResult.payload.rows) && correctionResult.payload.rows.length > 0);
+  assert.deepEqual(
+    [...new Set(correctionResult.payload.rows.map((row) => row.inferred_resource_scope))],
+    ["account"],
+    "account-only correction must identify account scope without broadening to campaign scope",
+  );
+
+  const calls = [primaryLookup, primaryResult, correctionLookup, correctionResult];
+  assert.equal(calls.length, 4, "account-only correction must stop after exactly four calls");
+  assert.deepEqual(
+    calls.map((call) => call.toolName),
+    ["analysis_starters", "analyze_data", "analysis_starters", "analyze_data"],
+    "account-only correction must use only the declared primary and correction sequence",
+  );
+  assert.deepEqual(
+    calls.filter((call) => call.toolName === "analysis_starters").map((call) => recipeIdFromPayload(call.payload)),
+    [primaryRecipeId, correctionRecipeId],
+    "account-only correction must not broaden beyond the declared correction recipe",
+  );
+
+  return calls.map((call, index) => ({
+    call,
+    recipeId: index < 2 ? primaryRecipeId : correctionRecipeId,
+  }));
 }
 
 async function executeNovelCatalogFirstSql(caseConfig) {
@@ -667,9 +870,11 @@ function buildReport({ setupReceipts, caseResults, recipeCatalogCount }) {
     proof_limits: {
       does_prove: [
         "demo/CI prompt handles route to the expected tool sequence",
-        "setup calls are excluded from per-case user-analysis budgets",
+        "registered stdio search_catalog route cards are host-visible, bounded, and privacy-safe",
+        "setup calls and account-only correction semantics are excluded from per-case user-analysis budgets",
         "exact and equivalent campaign-tag sender-risk handles use the canonical recipe before execution",
         "a missing exact tag uses one declared correction check and stops without broadening",
+        "an account-only tag yields zero campaign rows, resolves to account scope, and stops after four calls",
         "a novel supported handle uses catalog context before one focused public-view query",
         "sanitized reportable surfaces omit raw SQL, literals, rows, local paths, identifiers, and private table names",
       ],
