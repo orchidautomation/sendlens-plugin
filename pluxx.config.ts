@@ -1,6 +1,8 @@
 import { definePlugin } from "pluxx";
 import {
   existsSync,
+  copyFileSync,
+  mkdirSync,
   readFileSync,
   readdirSync,
   writeFileSync,
@@ -60,7 +62,31 @@ function enforceCodexAgentContracts() {
   }
 }
 
-process.once("beforeExit", enforceCodexAgentContracts);
+function copyAgenticProofFixture() {
+  const sourcePath = resolve(
+    __dirname,
+    ".pluxx",
+    "behavioral-routing-matrix.json",
+  );
+  if (!existsSync(sourcePath)) return;
+
+  for (const host of ["claude-code", "cursor", "codex", "opencode"]) {
+    const hostDirectory = resolve(__dirname, "dist", host);
+    if (!existsSync(hostDirectory)) continue;
+
+    const targetDirectory = resolve(hostDirectory, ".pluxx");
+    mkdirSync(targetDirectory, { recursive: true });
+    copyFileSync(
+      sourcePath,
+      resolve(targetDirectory, "behavioral-routing-matrix.json"),
+    );
+  }
+}
+
+process.once("beforeExit", () => {
+  enforceCodexAgentContracts();
+  copyAgenticProofFixture();
+});
 
 export default definePlugin({
   name: "sendlens",

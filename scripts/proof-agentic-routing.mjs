@@ -26,6 +26,8 @@ process.env.SENDLENS_DB_PATH = path.join(tempRoot, "sendlens-proof-cache.duckdb"
 process.env.SENDLENS_STATE_DIR = stateDir;
 process.env.SENDLENS_CONTEXT_ROOT = path.join(tempRoot, "context-root-canary");
 
+const matrix = await readProofMatrix();
+
 const require = createRequire(import.meta.url);
 const { seedDemoWorkspace } = require("../build/plugin/demo-workspace.js");
 const {
@@ -198,7 +200,6 @@ const ALLOWED_REPORT_KEYS = new Set([
   "does_not_prove",
 ]);
 
-const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
 const proofConfig = matrix.agentic_proof;
 assert.ok(proofConfig, "matrix must define agentic_proof");
 assert.ok(Array.isArray(proofConfig.cases), "agentic_proof.cases must be an array");
@@ -873,6 +874,16 @@ function valueForArg(name) {
   if (prefixed) return prefixed.slice(prefix.length);
   if (args.has("--no-artifact")) return false;
   return undefined;
+}
+
+async function readProofMatrix() {
+  try {
+    return JSON.parse(await readFile(matrixPath, "utf8"));
+  } catch (error) {
+    const reason = error instanceof SyntaxError ? "invalid_json" : "missing_or_unreadable";
+    console.error(`agentic proof matrix unavailable: ${reason}`);
+    process.exit(1);
+  }
 }
 
 function installOutputCapture() {
