@@ -186,6 +186,7 @@ async function assertHostFiles({ skills, commands, agents }) {
   const commonAgentFiles = agents.map((name) => `agents/${name}.md`);
   const commonCommandFiles = commands.map((name) => `commands/${name}.md`);
   const commonRuntimeFiles = [
+    ".pluxx/behavioral-routing-matrix.json",
     ".pluxx-runtime.json",
     "scripts/runtime-dependencies.cjs",
     "scripts/runtime-dependencies.lock.json",
@@ -1035,6 +1036,29 @@ async function assertFreshGeneratedBundleBootstrap() {
     } catch {
       fail("fresh dist/codex bundle: expected build/plugin/server.js startup entry");
     }
+
+    const proof = spawnSync(
+      "node",
+      [
+        "scripts/proof-agentic-routing.mjs",
+        "--ci",
+        "--json-out",
+        path.join(harnessRoot, "installed-agentic-routing-proof.json"),
+      ],
+      {
+        cwd: bundleRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          HOME: path.join(harnessRoot, "home"),
+          PLUGIN_ROOT: bundleRoot,
+        },
+      },
+    );
+    assert(
+      proof.status === 0,
+      `fresh dist/codex installed agentic routing proof failed\n${proof.stdout}${proof.stderr}`,
+    );
   } finally {
     await rm(harnessRoot, { recursive: true, force: true });
   }
