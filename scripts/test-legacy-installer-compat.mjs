@@ -16,6 +16,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import ts from "typescript";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -58,6 +59,53 @@ async function readJson(filepath) {
 async function writeJson(filepath, value) {
   await mkdir(path.dirname(filepath), { recursive: true });
   await writeFile(filepath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+async function loadTypeScriptModule(entryPath, outputRoot) {
+  const emitted = new Map();
+
+  async function emitModule(sourcePath) {
+    const resolvedSourcePath = path.resolve(sourcePath);
+    const cached = emitted.get(resolvedSourcePath);
+    if (cached) return cached;
+
+    const relativeSourcePath = path.relative(outputRoot, resolvedSourcePath);
+    assert.ok(
+      relativeSourcePath && !relativeSourcePath.startsWith("..") && !path.isAbsolute(relativeSourcePath),
+      `TypeScript test module should be within ${outputRoot}: ${resolvedSourcePath}`,
+    );
+
+    const outputPath = resolvedSourcePath.replace(/\.ts$/, ".mjs");
+    emitted.set(resolvedSourcePath, outputPath);
+
+    const source = await readFile(resolvedSourcePath, "utf8");
+    const rewrittenSource = source.replace(
+      /((?:from\s*|import\s*\()\s*["'])(\.{1,2}\/[^"']+)\.ts(["'])/g,
+      "$1$2.mjs$3",
+    );
+    const transpiled = ts.transpileModule(rewrittenSource, {
+      compilerOptions: {
+        module: ts.ModuleKind.ES2022,
+        target: ts.ScriptTarget.ES2022,
+        importsNotUsedAsValues: ts.ImportsNotUsedAsValues.Remove,
+      },
+      fileName: resolvedSourcePath,
+    });
+
+    await mkdir(path.dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, transpiled.outputText);
+
+    const importMatches = source.matchAll(
+      /(?:from\s*|import\s*\(\s*)["'](\.{1,2}\/[^"']+\.ts)["']/g,
+    );
+    for (const match of importMatches) {
+      await emitModule(path.resolve(path.dirname(resolvedSourcePath), match[1]));
+    }
+
+    return outputPath;
+  }
+
+  return import(pathToFileURL(await emitModule(entryPath)).href);
 }
 
 async function pathExists(filepath) {
@@ -351,8 +399,9 @@ async function executeInstalledOpenCodeWrapper(paths, runRoot) {
   const workspaceRoot = path.join(runRoot, "parent-launch", "selected-workspace");
   await mkdir(workspaceRoot, { recursive: true });
 
-  const entryModule = await import(
-    pathToFileURL(paths.env.PLUXX_OPENCODE_ENTRY_PATH).href,
+  const entryModule = await loadTypeScriptModule(
+    paths.env.PLUXX_OPENCODE_ENTRY_PATH,
+    runRoot,
   );
   const pluginFactory = Object.values(entryModule).find(
     (value) => typeof value === "function",
