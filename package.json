@@ -1,6 +1,6 @@
 {
   "name": "sendlens",
-  "version": "0.1.68",
+  "version": "0.1.69",
   "private": true,
   "description": "Privacy-first outbound campaign analysis for AI workspaces.",
   "license": "MIT",
@@ -28,6 +28,7 @@
     "start:plugin-mcp": "npm run --silent build:plugin && node ./build/plugin/server.js",
     "test:demo": "npm run --silent build:plugin && node scripts/test-demo-workspace.mjs",
     "test:mcp-response-contract": "node scripts/test-mcp-response-contract.mjs",
+    "test:http-transport": "npm run --silent build:plugin && node scripts/test-http-transport.mjs",
     "test:prompt-contracts": "node scripts/test-prompt-contracts.mjs",
     "test:skill-routing": "node scripts/test-behavioral-routing.mjs",
     "proof:agentic-routing": "npm run --silent build:plugin && node scripts/proof-agentic-routing.mjs",
@@ -49,7 +50,7 @@
     "test:catalog-route-cards": "npm run --silent build:plugin && node scripts/test-catalog-route-cards.mjs",
     "test:db-lock": "npm run --silent build:plugin && node scripts/test-db-lock-retry.mjs",
     "test:templates": "npm run --silent build:plugin && node scripts/test-ingest-template-fixtures.mjs",
-    "test:plugin:smoke": "npm run --silent build:plugin && node scripts/test-provider-config-setup-doctor.mjs && node scripts/test-sql-guard.mjs && node scripts/test-schema-migrations.mjs && node scripts/test-prompt-contracts.mjs && node scripts/test-behavioral-routing.mjs",
+    "test:plugin:smoke": "npm run --silent build:plugin && node scripts/test-http-transport.mjs && node scripts/test-provider-config-setup-doctor.mjs && node scripts/test-sql-guard.mjs && node scripts/test-schema-migrations.mjs && node scripts/test-prompt-contracts.mjs && node scripts/test-behavioral-routing.mjs",
     "test:plugin:fast": "npm run test:plugin:smoke && node scripts/test-query-recipes-contract.mjs && node scripts/test-catalog-route-cards.mjs && node scripts/test-smartlead-client.mjs && node scripts/test-smartlead-ingest.mjs && node scripts/test-provider-workspace-views.mjs && node scripts/test-refresh-status-scoped-miss.mjs && node scripts/test-campaign-analysis-depth.mjs && node scripts/test-campaign-analysis-response.mjs && node scripts/test-reply-fetch-contract.mjs && node scripts/test-reply-context-grain.mjs",
     "test:plugin": "npm run test:plugin:fast && node scripts/test-db-lock-retry.mjs && node scripts/test-refresh-launch-lock.mjs && node scripts/test-ingest-template-fixtures.mjs && node scripts/test-instantly-client-pagination.mjs && node scripts/test-local-plugin-sampling.mjs && node scripts/test-local-plugin-runtime.mjs && node scripts/test-cache-identity.mjs && node scripts/test-reply-hydration-db-reuse.mjs && node scripts/test-demo-workspace.mjs && node scripts/test-load-campaign-data-runtime.mjs && node scripts/test-analyze-data-runtime.mjs && node scripts/test-mcp-response-contract.mjs && node scripts/test-mcp-version-sync.mjs && node scripts/proof-agentic-routing.mjs --ci --json-out /tmp/sendlens-agentic-routing-proof.json && npm run test:runtime-bootstrap",
     "site:ci": "npm --prefix site ci && npm --prefix site run lint && npm --prefix site run typecheck && npm --prefix site run test && npm --prefix site run build && npm --prefix site run audit:prod",
@@ -61,11 +62,13 @@
   "dependencies": {
     "@duckdb/node-api": "^1.5.1-r.1",
     "@modelcontextprotocol/sdk": "^1.26.0",
+    "express": "^5.2.1",
     "node-sql-parser": "^5.4.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@orchid-labs/pluxx": "0.1.36",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.15.3",
     "typescript": "^5.8.3"
   }

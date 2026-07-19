@@ -10,6 +10,7 @@ This page is intentionally precise. It describes the OSS plugin's data handling 
 - The core cache is local DuckDB, defaulting to `~/.sendlens/workspace-cache.duckdb`.
 - SendLens does not require an Orchid-hosted cloud warehouse for the core workflow.
 - Tool results are returned to the user's AI host. The host/model provider may process that context according to its own settings and policies.
+- Stdio is the default transport. Opt-in Streamable HTTP returns tool results to any remote MCP client that holds the deployment credential and passes the configured Host/Origin policy.
 - Exact reply body text is not fetched during the normal startup refresh. It is fetched only when `prepare_campaign_analysis` or `fetch_reply_text` is used for one campaign.
 
 ## Provider Access
@@ -63,6 +64,10 @@ Optional overrides:
 | `SENDLENS_DEMO_MODE` | Enables synthetic demo-mode setup paths when supported by the installed bundle |
 | `SENDLENS_PROVIDER` | Optionally overrides the inferred source provider mode with `instantly`, `smartlead`, or `all` |
 | `SENDLENS_SMARTLEAD_API_KEY` | Dedicated Smartlead setup credential; suppress from URLs, traces, logs, setup output, errors, fixtures, and tests |
+| `SENDLENS_TRANSPORT` | Selects default `stdio` or opt-in `http` transport |
+| `SENDLENS_HTTP_BEARER_TOKEN` | Required deployment credential for HTTP mode; never returned or logged |
+| `SENDLENS_HTTP_ALLOWED_HOSTS` | Exact hostname allowlist for HTTP DNS-rebinding protection |
+| `SENDLENS_HTTP_ALLOWED_ORIGINS` | Exact optional browser-origin allowlist; empty by default |
 
 ## What Gets Stored Locally
 
@@ -82,9 +87,25 @@ The local DuckDB cache can contain:
 
 Sampled and reconstructed surfaces are analysis evidence, not a complete warehouse export.
 
-## What Does Not Leave The Machine By SendLens Itself
+## Transport Boundary
 
-SendLens does not need to upload the DuckDB cache to an Orchid service for the core workflow. The default MCP runtime reads local files and Instantly API responses, writes local cache files, and returns bounded JSON payloads to the local host process.
+The default `SENDLENS_TRANSPORT=stdio` path communicates with a local AI host process over stdin/stdout and preserves the existing local-first boundary.
+
+Opt-in `SENDLENS_TRANSPORT=http` exposes the same read-only MCP tools through authenticated Streamable HTTP. In that mode:
+
+- the DuckDB cache and provider configuration belong to the machine/container running the SendLens process;
+- one process serves one configured workspace, not separate users or tenants;
+- every MCP `POST`, `GET`, and `DELETE` requires a deployment-scoped bearer credential; browser preflight is limited by Host/Origin policy;
+- exact Host and optional Origin allowlists constrain the network boundary;
+- public deployments require HTTPS termination outside SendLens;
+- connection state is in memory and is lost on restart; and
+- tool results leave the server for the authenticated MCP client and may then enter that client's AI/model context.
+
+The unauthenticated `/health` route exposes only a static status, plugin version, and transport name. It does not read provider data or reveal credential, workspace, cache, or connection state. See [Streamable HTTP transport](./HTTP_TRANSPORT.md) for the complete operator contract.
+
+## What Does Not Leave The Runtime By SendLens Itself
+
+SendLens does not need to upload the DuckDB cache to an Orchid service for the core workflow. The stdio runtime returns bounded JSON payloads to the local host process; an explicitly enabled HTTP runtime returns them to its authenticated remote MCP client.
 
 Important boundary: when an AI host calls a SendLens MCP tool, the returned data becomes context for that host. Depending on the host, that context may be sent to a configured model provider. That transfer is controlled by the host and provider, not by the SendLens repository.
 

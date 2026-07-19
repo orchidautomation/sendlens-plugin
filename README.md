@@ -231,7 +231,8 @@ Demo results are synthetic. They are useful for seeing the experience, not for j
 ## Privacy in plain English
 
 - SendLens is read-only. It never sends emails or changes campaigns, leads, accounts, webhooks, or provider settings.
-- Your data stays on your computer. Nothing is uploaded to a server we run.
+- The default stdio deployment keeps the cache on the machine running your AI host. SendLens does not upload it to an Orchid-operated service.
+- If you explicitly enable Streamable HTTP, the cache lives on that server and tool results are returned to authenticated remote MCP clients.
 - Demo mode works without connecting any real account.
 - Whatever question you ask, the answer becomes part of the conversation in your AI tool — same as anything else you type there.
 
@@ -254,6 +255,7 @@ SendLens is built by **Orchid Labs**, the product division of **Orchid Automatio
 
 - [Install guide](./docs/INSTALL.md)
 - [Trust and privacy](./docs/TRUST_AND_PRIVACY.md)
+- [Streamable HTTP deployment](./docs/HTTP_TRANSPORT.md)
 - [Example outputs](./docs/examples/SYNTHETIC_OUTPUTS.md)
 - [What's in the box](./docs/CATALOG.md)
 - [Plays you can run](./docs/skills/README.md)

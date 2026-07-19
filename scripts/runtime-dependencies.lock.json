@@ -3,6 +3,7 @@
   "dependencies": {
     "@duckdb/node-api": "1.5.1-r.2",
     "@modelcontextprotocol/sdk": "1.29.0",
+    "express": "5.2.1",
     "node-sql-parser": "5.4.0",
     "zod": "4.4.1"
   }

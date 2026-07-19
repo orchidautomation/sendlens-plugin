@@ -55,11 +55,6 @@ import { PLUGIN_VERSION } from "./version";
 
 loadSendLensEnv();
 
-const server = new McpServer({
-  name: "sendlens",
-  version: PLUGIN_VERSION,
-});
-
 const SESSION_REFRESH_WAIT_TIMEOUT_MS = 15_000;
 const SESSION_REFRESH_POLL_MS = 500;
 const MCP_TEXT_RESPONSE_MAX_CHARS = 120_000;
@@ -579,6 +574,12 @@ async function ensureCacheReadable(db: Awaited<ReturnType<typeof getDb>>) {
   const readiness = await assertCacheReadableForCurrentEnv(db);
   return readiness.warning ? [readiness.warning] : undefined;
 }
+
+export function createSendLensServer() {
+const server = new McpServer({
+  name: "sendlens",
+  version: PLUGIN_VERSION,
+});
 
 server.registerTool(
   "refresh_data",
@@ -1849,9 +1850,46 @@ server.registerTool(
   },
 );
 
+return server;
+}
+
 async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  const transportMode = resolveTransportMode();
+  if (transportMode === "stdio") {
+    const transport = new StdioServerTransport();
+    await createSendLensServer().connect(transport);
+    return;
+  }
+
+  const { startSendLensHttpServer } = await import("./http-transport");
+  const controller = await startSendLensHttpServer({
+    createServer: createSendLensServer,
+  });
+  console.error(`[sendlens] Streamable HTTP transport listening on ${controller.url.origin}`);
+
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.error("[sendlens] Streamable HTTP transport shutting down");
+    await controller.close();
+  };
+  const handleSignal = () => {
+    void shutdown().catch(() => {
+      console.error("[sendlens] Streamable HTTP transport shutdown failed");
+      process.exitCode = 1;
+    });
+  };
+  process.once("SIGINT", handleSignal);
+  process.once("SIGTERM", handleSignal);
+}
+
+export function resolveTransportMode(env: NodeJS.ProcessEnv = process.env): "stdio" | "http" {
+  const value = env.SENDLENS_TRANSPORT?.trim() || "stdio";
+  if (value !== "stdio" && value !== "http") {
+    throw new Error("SENDLENS_TRANSPORT must be either stdio or http.");
+  }
+  return value;
 }
 
 function stratifyHumanReplies(
@@ -2226,7 +2264,9 @@ async function buildScopedWorkspaceSnapshot(
   };
 }
 
-main().catch((error) => {
-  console.error("[sendlens] MCP server failed:", error);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error("[sendlens] MCP server failed:", error);
+    process.exit(1);
+  });
+}
