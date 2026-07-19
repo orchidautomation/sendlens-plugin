@@ -2,6 +2,8 @@
 
 SendLens uses stdio by default for local AI hosts. Streamable HTTP is an opt-in deployment mode for a generic remote MCP client. It exposes the same read-only tools and the same single configured workspace; it does not add multi-tenancy, user accounts, OAuth, or provider mutation paths.
 
+For the portable container image and persistent `/data` mount contract, see [Single-Tenant Container Deployment](./CONTAINER_DEPLOYMENT.md).
+
 ## Security prerequisites
 
 - Put any publicly reachable deployment behind HTTPS. SendLens serves plain HTTP and expects a trusted reverse proxy or platform edge to terminate TLS.

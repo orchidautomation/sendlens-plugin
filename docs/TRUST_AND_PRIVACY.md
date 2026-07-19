@@ -41,6 +41,8 @@ These tools read from configured providers or from the local cache. They do not 
 
 `analyze_data` diagnostics are additive and bounded. They may report elapsed handler time, a small status enum, cache timestamp/generation, row/truncation counts, and referenced public SendLens surfaces parsed from `sendlens.<table>` names. They do not store route history or return SQL, private literals, raw row content, customer identifiers, email addresses, reply text, or non-public table names.
 
+The single-tenant container image uses the same read-only MCP surface and privacy contract. One container owns one configured workspace and one persistent `/data` directory; provider credentials and HTTP bearer credentials are injected only at runtime. See [Single-Tenant Container Deployment](./CONTAINER_DEPLOYMENT.md).
+
 ## Local Storage
 
 Default local state:

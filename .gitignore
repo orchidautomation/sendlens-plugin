@@ -31,3 +31,4 @@ dist.stale.*/
 
 # Agent scratch artifacts
 .agent-artifacts/
+.worktrees/
