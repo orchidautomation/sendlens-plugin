@@ -51,6 +51,20 @@ function isDemoMode() {
   return raw === "1" || raw === "true" || raw === "yes";
 }
 
+function isContainerRuntime() {
+  const raw = process.env.SENDLENS_CONTAINER?.trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
+function configuredList(value: string | undefined) {
+  return value?.split(",").map((entry) => entry.trim()).filter(Boolean) ?? [];
+}
+
+function isPathWithin(root: string, candidate: string) {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
 async function exists(filePath: string) {
   return fs.stat(filePath).then(() => true).catch(() => false);
 }
@@ -172,6 +186,15 @@ export async function buildSetupDoctorReport() {
     : path.dirname(dbPath);
   const shadowDbPath = path.join(stateDir, `.${path.basename(dbPath)}.refreshing`);
   const demoMode = isDemoMode();
+  const containerRuntime = isContainerRuntime();
+  const dataRoot = process.env.SENDLENS_DATA_DIR?.trim() || "/data";
+  const contextRoot = process.env.SENDLENS_CONTEXT_ROOT?.trim() || process.cwd();
+  const clientsDir = process.env.SENDLENS_CLIENTS_DIR?.trim()
+    ? path.resolve(process.env.SENDLENS_CLIENTS_DIR)
+    : path.resolve(process.cwd(), ".env.clients");
+  const containerPathsUnderDataRoot = containerRuntime
+    ? [dbPath, stateDir, contextRoot, clientsDir].every((candidate) => isPathWithin(dataRoot, candidate))
+    : null;
   const providerMode = resolveSourceProviderMode();
   const sourceProviders = providerMode.valid ? providersForMode(providerMode.mode) : [];
   const instantlySelected = providerMode.valid
@@ -266,6 +289,19 @@ export async function buildSetupDoctorReport() {
       ? `Configured source providers: ${sourceProviders.join(", ")}. Use source_provider for data-source identity; sendlens.accounts.provider remains mailbox/email-service provider.`
       : `Received SENDLENS_PROVIDER=${providerMode.raw ?? "(empty)"}.`,
   });
+
+  if (containerRuntime) {
+    checks.push({
+      name: "Container deployment",
+      status: containerPathsUnderDataRoot ? "pass" : "warn",
+      message: containerPathsUnderDataRoot
+        ? "Container runtime paths resolve under the configured persistent data root."
+        : "One or more container runtime paths resolve outside the configured data root.",
+      detail: containerPathsUnderDataRoot
+        ? "The database, refresh state, client overlays, and context root are mounted under persistent storage."
+        : "Verify every path outside SENDLENS_DATA_DIR is backed by its own persistent mount before restart or upgrade.",
+    });
+  }
 
   if (demoMode) {
     checks.push({
@@ -585,6 +621,24 @@ export async function buildSetupDoctorReport() {
       smartlead_key_validated: smartleadCredentialValidation?.status === "valid",
     },
     cache_freshness: cacheFreshness,
+    deployment: {
+      runtime: containerRuntime ? "container" : "local",
+      transport: process.env.SENDLENS_TRANSPORT?.trim() || "stdio",
+      container: containerRuntime
+        ? {
+          data_root: path.resolve(dataRoot),
+          persistent_paths_under_data_root: containerPathsUnderDataRoot,
+          http: {
+            bind_host: process.env.SENDLENS_HTTP_HOST?.trim() || "0.0.0.0",
+            port: process.env.SENDLENS_HTTP_PORT?.trim() || "3000",
+            bearer_credential_configured: Boolean(process.env.SENDLENS_HTTP_BEARER_TOKEN?.trim()),
+            allowed_hosts: configuredList(process.env.SENDLENS_HTTP_ALLOWED_HOSTS),
+            allowed_origins: configuredList(process.env.SENDLENS_HTTP_ALLOWED_ORIGINS),
+            max_sessions: process.env.SENDLENS_HTTP_MAX_SESSIONS?.trim() || "100",
+          },
+        }
+        : null,
+    },
     paths: {
       plugin_root: root,
       context_root: envLoad?.contextRoot ?? process.env.SENDLENS_CONTEXT_ROOT ?? process.cwd(),
@@ -602,6 +656,7 @@ export async function buildSetupDoctorReport() {
       install: "docs/INSTALL.md",
       troubleshooting: "docs/TROUBLESHOOTING.md",
       trust_and_privacy: "docs/TRUST_AND_PRIVACY.md",
+      container_deployment: "docs/CONTAINER_DEPLOYMENT.md",
     },
   };
 }

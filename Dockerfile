@@ -25,18 +25,21 @@ RUN apt-get update \
   && groupadd --system --gid 10001 sendlens \
   && useradd --system --uid 10001 --gid sendlens --home-dir /app --shell /usr/sbin/nologin sendlens \
   && mkdir -p /data /app/scripts \
-  && chown -R sendlens:sendlens /data /app
+  && chown -R sendlens:sendlens /data
 
-COPY --from=build --chown=sendlens:sendlens /app/package.json /app/package-lock.json ./
-COPY --from=build --chown=sendlens:sendlens /app/node_modules ./node_modules
-COPY --from=build --chown=sendlens:sendlens /app/build ./build
-COPY --chown=sendlens:sendlens scripts/start-container.sh ./scripts/start-container.sh
+COPY --from=build /app/package.json /app/package-lock.json ./
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/build ./build
+COPY scripts/start-container.sh ./scripts/start-container.sh
+COPY scripts/container-healthcheck.mjs ./scripts/container-healthcheck.mjs
+RUN chmod -R a-w /app \
+  && chmod 0555 /app/scripts/start-container.sh /app/scripts/container-healthcheck.mjs
 
 USER sendlens
 VOLUME ["/data"]
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:' + (process.env.SENDLENS_HTTP_PORT || '3000') + '/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+  CMD ["node", "/app/scripts/container-healthcheck.mjs"]
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/app/scripts/start-container.sh"]

@@ -70,6 +70,9 @@ jobs:
       - name: Run release checks
         run: npm run release:check
 
+      - name: Run container lifecycle release gate
+        run: npm run test:container
+
       - name: Run full Pluxx target release gate
         run: npx pluxx test --target claude-code cursor codex opencode
 
