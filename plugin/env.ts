@@ -32,16 +32,46 @@ const SENDLENS_CLIENT_LOCKED_KEYS = new Set([
   "SENDLENS_CLIENTS_DIR",
   "SENDLENS_CONTEXT_ROOT",
 ]);
+const SENDLENS_CONTAINER_LOCKED_KEYS = new Set([
+  "SENDLENS_CONTAINER",
+  "SENDLENS_TRANSPORT",
+  "SENDLENS_DATA_DIR",
+  "SENDLENS_DB_PATH",
+  "SENDLENS_STATE_DIR",
+  "SENDLENS_CLIENTS_DIR",
+  "SENDLENS_CONTEXT_ROOT",
+  "SENDLENS_HTTP_HOST",
+  "SENDLENS_HTTP_PORT",
+  "SENDLENS_HTTP_BEARER_TOKEN",
+  "SENDLENS_HTTP_ALLOWED_HOSTS",
+  "SENDLENS_HTTP_ALLOWED_ORIGINS",
+  "SENDLENS_HTTP_MAX_SESSIONS",
+  "SENDLENS_DEMO_MODE",
+]);
 const SENDLENS_PROVIDER_SECRET_KEYS = [
   "SENDLENS_INSTANTLY_API_KEY",
   "SENDLENS_SMARTLEAD_API_KEY",
 ] as const;
 
 function isSendLensClientOverrideKey(key: string) {
-  return key.startsWith("SENDLENS_") && !SENDLENS_CLIENT_LOCKED_KEYS.has(key);
+  if (!key.startsWith("SENDLENS_") || SENDLENS_CLIENT_LOCKED_KEYS.has(key)) {
+    return false;
+  }
+  if (isEnabledEnvValue(process.env.SENDLENS_CONTAINER) && SENDLENS_CONTAINER_LOCKED_KEYS.has(key)) {
+    return false;
+  }
+  return true;
 }
 
-function parseEnvFile(filePath: string): EnvMap {
+function isEnabledEnvValue(value: string | undefined) {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+function parseEnvFile(
+  filePath: string,
+  expandValues = !isEnabledEnvValue(process.env.SENDLENS_CONTAINER),
+): EnvMap {
   const content = fs.readFileSync(filePath, "utf8");
   const values: EnvMap = {};
 
@@ -60,7 +90,9 @@ function parseEnvFile(filePath: string): EnvMap {
       value = value.slice(1, -1);
     }
     value = value.replace(/\\n/g, "\n");
-    value = expandEnvValue(value);
+    if (expandValues) {
+      value = expandEnvValue(value);
+    }
     values[key] = value;
   }
 
@@ -146,6 +178,9 @@ export function loadClientEnv(rootDir = process.cwd()) {
       .filter(([, value]) => value != null)
       .map(([key]) => key),
   );
+  if (isEnabledEnvValue(process.env.SENDLENS_CONTAINER)) {
+    for (const key of SENDLENS_CONTAINER_LOCKED_KEYS) lockedKeys.add(key);
+  }
 
   for (const filePath of initial.basePaths) {
     if (!fs.existsSync(filePath)) continue;
@@ -181,6 +216,32 @@ export function loadSendLensEnv() {
     ? path.resolve(process.env.SENDLENS_CONTEXT_ROOT)
     : process.cwd();
   return loadClientEnv(rootDir);
+}
+
+export function assertContainerStartupReady(env: NodeJS.ProcessEnv = process.env) {
+  if (!isEnabledEnvValue(env.SENDLENS_CONTAINER) || isEnabledEnvValue(env.SENDLENS_DEMO_MODE)) {
+    return;
+  }
+
+  const providerMode = env.SENDLENS_PROVIDER?.trim().toLowerCase();
+  const instantlyConfigured = Boolean(env.SENDLENS_INSTANTLY_API_KEY?.trim());
+  const smartleadConfigured = Boolean(env.SENDLENS_SMARTLEAD_API_KEY?.trim());
+  const hasProviderCredential = providerMode === "instantly"
+    ? instantlyConfigured
+    : providerMode === "smartlead"
+      ? smartleadConfigured
+      : providerMode === "all" || !providerMode
+        ? instantlyConfigured || smartleadConfigured
+        : false;
+  const dbPath = env.SENDLENS_DB_PATH?.trim();
+  if (hasProviderCredential || (dbPath && fs.existsSync(dbPath))) {
+    return;
+  }
+
+  throw new Error(
+    "Set a provider API key, enable SENDLENS_DEMO_MODE=1 for synthetic proof data, "
+    + "or mount an existing SendLens DuckDB cache at SENDLENS_DB_PATH.",
+  );
 }
 
 export function getLastLoadedSendLensEnv() {

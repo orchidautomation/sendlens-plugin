@@ -6,7 +6,9 @@
 .git/
 .github/
 .next/
+.npmrc
 .playwright-mcp/
+.pypirc
 .private/
 .sendlens/
 .sendlens-local/
@@ -24,8 +26,14 @@ site/passthrough/
 passthrough/runtime/state/
 *.duckdb
 *.duckdb.*
+*.key
 *.log
+*.p12
+*.pfx
+*.pem
 *.tmp
+id_ed25519*
+id_rsa*
 *10K_MRR*.md
 *10k*mrr*.md
 TODO.md

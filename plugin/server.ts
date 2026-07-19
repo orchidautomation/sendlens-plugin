@@ -10,7 +10,7 @@ import {
   searchCatalog,
 } from "./catalog";
 import { isDemoMode, seedDemoWorkspace } from "./demo-workspace";
-import { loadSendLensEnv } from "./env";
+import { assertContainerStartupReady, loadSendLensEnv } from "./env";
 import {
   assertCacheReadableForCurrentEnv,
   CacheReadinessError,
@@ -54,6 +54,7 @@ import { buildWorkspaceSummary, providerEvidenceWarnings } from "./summary";
 import { PLUGIN_VERSION } from "./version";
 
 loadSendLensEnv();
+assertContainerStartupReady();
 
 const SESSION_REFRESH_WAIT_TIMEOUT_MS = 15_000;
 const SESSION_REFRESH_POLL_MS = 500;
