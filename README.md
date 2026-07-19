@@ -256,6 +256,7 @@ SendLens is built by **Orchid Labs**, the product division of **Orchid Automatio
 - [Install guide](./docs/INSTALL.md)
 - [Trust and privacy](./docs/TRUST_AND_PRIVACY.md)
 - [Streamable HTTP deployment](./docs/HTTP_TRANSPORT.md)
+- [Single-tenant container deployment](./docs/CONTAINER_DEPLOYMENT.md)
 - [Example outputs](./docs/examples/SYNTHETIC_OUTPUTS.md)
 - [What's in the box](./docs/CATALOG.md)
 - [Plays you can run](./docs/skills/README.md)
