@@ -189,6 +189,12 @@ try {
   assert.equal(report.capabilities.source_providers.join(","), "instantly");
   assert.equal(report.capabilities.local_cache_read, false);
   assert.equal(report.capabilities.demo_seed, true);
+  assert.deepEqual(report.docs, {
+    install: "https://github.com/orchidautomation/sendlens-plugin/blob/main/docs/INSTALL.md",
+    troubleshooting: "https://github.com/orchidautomation/sendlens-plugin/blob/main/docs/TROUBLESHOOTING.md",
+    trust_and_privacy: "https://github.com/orchidautomation/sendlens-plugin/blob/main/docs/TRUST_AND_PRIVACY.md",
+    container_deployment: "https://github.com/orchidautomation/sendlens-plugin/blob/main/docs/CONTAINER_DEPLOYMENT.md",
+  });
   assert.equal(findCheck(report, "Credentials")?.status, "fail");
   assert.ok(report.next_steps.some((step) => step.includes("seed_demo_workspace")));
 
@@ -264,8 +270,10 @@ try {
   assert.equal(report.capabilities.instantly_key_validated, true);
   assert.equal(report.capabilities.smartlead_key_validated, true);
   assert.equal(report.capabilities.live_refresh, false);
+  assert.equal(report.setup_status, "blocked");
   assert.equal(findCheck(report, "Instantly credentials")?.status, "pass");
   assert.equal(findCheck(report, "Smartlead credentials")?.status, "pass");
+  assert.equal(findCheck(report, "Client env identity")?.status, "fail");
   assert.ok(report.next_steps.some((step) => step.includes("SENDLENS_CLIENT")));
   assert.ok(!report.next_steps.some((step) => step.includes("follow-up")));
   assertNoSensitiveValue(report, smartleadValue);

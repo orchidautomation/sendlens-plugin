@@ -33,7 +33,7 @@ Treat this file as the host startup bias for SendLens. The user should not need 
 - Keep provider operations read-only. Recommend actions; never create, edit, send, or mutate provider resources.
 - Preserve `source_provider`, `provider_campaign_id`, and `campaign_source_id` when present; these provider labels disambiguate mixed Instantly/Smartlead workspaces.
 - Smartlead V1 support is read-only and provider-qualified where implemented; keep Instantly-specific evidence language only on Instantly-only fields or tools.
-- Treat Smartlead inbox placement as `unsupported` in V1. Do not treat empty Smartlead inbox-placement rows as healthy placement or stale data.
+- Treat Smartlead Smart Delivery as support-gated: use exact placement and diagnostic evidence when authorized, record absent access as `unsupported`, and never treat missing or empty rows as healthy placement or stale data.
 - Do not expose internal routing, skill-selection, or setup mechanics in the final answer unless the user asks. Show the evidence and answer the business question.
 
 ## Linear Planning
@@ -46,6 +46,7 @@ Treat this file as the host startup bias for SendLens. The user should not need 
 
 ## Tool Routing
 
+- The missing-MCP stop rule applies to analysis. For an explicit setup or recovery request, `sendlens-setup` may use only its documented Pluxx or official-installer recovery ladder, then reload the host and rerun `setup_doctor`; this exception never permits repo, cache, or local-data inspection.
 - Treat the five public skills as the SendLens behavior contract. `sendlens-analyst` owns shared evidence and broad orchestration; the focused skills own strategy, drafting, launch operations, and setup. Cross-platform delivery belongs in Pluxx.
 - If the user mentions `SendLens`, the plugin name, the Instantly workspace, campaign performance, replies, copy health, or asks to "pull my data", do not freeform first. Start with SendLens tools immediately.
 - In Codex, this `AGENTS.md` file is the always-on SendLens operating contract. For simple inventory and freshness questions, call `workspace_snapshot` and `refresh_status` directly. Use `sendlens-analyst` for diagnosis and broad orchestration, then the focused strategy, copywriter, or launch skill when that is the user's actual job. Use `sendlens-setup` only for setup and runtime health.

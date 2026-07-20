@@ -4,34 +4,136 @@
     {
       "id": "launch-gate",
       "prompt": "Can we turn on the Healthcare Operators campaign tomorrow? Give me a go or no-go and exactly what blocks it.",
-      "expected_output": "A campaign-specific readiness verdict with blockers first, then warnings, passed checks, evidence basis, required fixes, and measurement setup.",
+      "input": "Synthetic proposed campaign package: identity=Healthcare Operators v2; 4 assigned senders each have stored 30-day bounce below 1.5%; all 20 sampled templates render; tracking domain is verified; schedule is 09:00-15:00 America/New_York; daily cap is 30 per sender; exact unsent lead supply is 360; required first_name and company_name are complete. Threshold provenance: Launch Runbook v3 approved by the account owner says block when any sender bounce exceeds 5%, when template rendering is below 100%, or when exact runway is under 7 send days.",
+      "expected_output": "A campaign-specific ready, ready_with_warnings, or blocked verdict with blockers first, warnings, a passed_checks section, threshold provenance, required fixes, and measurement setup.",
       "assertions": [
         "The verdict is ready, ready_with_warnings, or blocked",
         "Sender inventory, templates, tracking, guardrails, schedule, and lead supply are checked",
         "Unknown lead supply is not presented as exact runway",
-        "Blockers and fixes are prioritized"
-      ]
+        "Blockers and fixes are prioritized",
+        "The output names threshold provenance and includes passed_checks"
+      ],
+      "objective_checks": [
+        {
+          "id": "returns-verdict",
+          "description": "Returns the blocked verdict required by the three-day runway against a seven-day gate.",
+          "pattern": "\\bblocked\\b"
+        },
+        {
+          "id": "forbids-blocked-negation",
+          "description": "Rejects a claim that the campaign is not blocked.",
+          "pattern": "(?:not|isn't|is not)\\s+blocked",
+          "mode": "forbidden"
+        },
+        {
+          "id": "includes-passed-checks",
+          "description": "Includes an explicit passed_checks section for satisfied gates.",
+          "pattern": "passed_checks|passed checks"
+        },
+        {
+          "id": "cites-threshold-provenance",
+          "description": "Cites Launch Runbook v3 as the source of the launch thresholds.",
+          "pattern": "(?:threshold[_ ]provenance|source)[\\s\\S]{0,600}Launch Runbook v3|Launch Runbook v3[\\s\\S]{0,600}(?:threshold[_ ]provenance|source|approved)"
+        },
+        {
+          "id": "forbids-negated-threshold-provenance",
+          "description": "Rejects claims that Launch Runbook v3 is missing, unavailable, or unapproved as the threshold source.",
+          "pattern": "Launch Runbook v3[^.\\n]{0,160}(?:(?:is not|isn't)[ \\t]+(?:the|an?)?[ \\t]*(?:approved[ \\t]+)?source|(?:does not|doesn't)[ \\t]+(?:establish|define|provide|support|govern)|(?:is[ \\t]+)?unapproved|(?:is[ \\t]+)?not[ \\t]+approved)|Launch Runbook v3[ \\t,;:\\-]{0,12}(?!(?:[^.\\n]{0,200}\\bbut\\b(?!(?:[^.\\n]{0,160}\\b(?:uncertain|unclear|unknown|whether|not sure)\\b))[^.\\n]{0,160}\\b(?:it|the runbook|Launch Runbook v3)\\b[ \\t,;:\\-]{0,12}\\b(?:is|remains)\\b[ \\t]+(?:the[ \\t]+)?(?:supplied[ \\t]+and[ \\t]+)?(?:approved|governing)[ \\t]+source\\b))(?:(?:cannot[ \\t]+be[ \\t]+(?:verified|confirmed))|(?:(?:was|is)[ \\t]+)?not[ \\t]+(?:provided|available)|(?:is[ \\t]+)?(?:unavailable|missing))|(?:(?:was|is)?[ \\t]*not[ \\t]+(?:provided|available|approved)|unavailable|missing|unapproved|(?:does not|doesn't)[ \\t]+include|cannot[ \\t]+be[ \\t]+(?:verified|confirmed))[^.\\n]{0,160}Launch Runbook v3",
+          "mode": "forbidden"
+        },
+        {
+          "id": "checks-runway",
+          "description": "Calculates the three-day runway and compares it with the seven-day gate.",
+          "pattern": "(?:3|three)[- ](?:send )?days?[\\s\\S]{0,5000}(?:7|seven)[- ](?:send )?days?|(?:7|seven)[- ](?:send )?days?[\\s\\S]{0,5000}(?:3|three)[- ](?:send )?days?"
+        },
+        {
+          "id": "names-supply-blocker",
+          "description": "Names lead supply or runway as the launch blocker.",
+          "pattern": "(?:blocker|blocked)[\\s\\S]{0,240}(?:lead supply|runway)|(?:lead supply|runway)[\\s\\S]{0,240}(?:blocker|blocked)"
+        },
+        {
+          "id": "provides-supply-fix",
+          "description": "Provides a concrete fix for the insufficient lead-supply runway.",
+          "pattern": "(?:required fix|fix|remediation)[\\s\\S]{0,300}(?:lead supply|runway|480|840)|(?:lead supply|runway|480|840)[\\s\\S]{0,300}(?:increase|reduce|add|fix)"
+        },
+        {
+          "id": "defines-measurement",
+          "description": "Defines primary metric, guardrails, and a read window for launch measurement.",
+          "pattern": "primary metric[\\s\\S]{0,500}guardrails?[\\s\\S]{0,500}(?:read window|review point)|(?:read window|review point)[\\s\\S]{0,500}guardrails?[\\s\\S]{0,500}primary metric"
+        }
+      ],
+      "host_case": true
     },
     {
       "id": "scale-stop-rules",
       "prompt": "This campaign is live. Define the exact monitoring, stop, iterate, and scale rules for the experiment.",
-      "expected_output": "An operational measurement contract with a primary metric, guardrails, bounded read window, fixed variables, and explicit stop, iterate, and scale thresholds.",
+      "input": "Synthetic live experiment: 80 delivered, 2 positive replies, 1.1% bounce, no rendering failures, and audience role is the only changed variable. Threshold provenance: the approved Experiment Plan EP-17 defines stop at 0 positive replies after 200 delivered, pause immediately above 5% sender bounce, iterate at 1-3% positive reply rate after 250 delivered, and scale at or above 4% positive reply rate after 250 delivered while bounce stays below 2%. Review daily and make the first decision at 250 delivered.",
+      "expected_output": "An operational measurement contract that cites EP-17 threshold provenance, separates the primary metric from guardrails, lists passed_checks, preserves the read window, and states exact stop, iterate, and scale rules.",
       "assertions": [
         "The primary metric and guardrails are distinct",
         "The minimum read window and review point are explicit",
         "Operational invalidation conditions are included",
-        "Scale is not based on aggregate rank alone"
-      ]
+        "Scale is not based on aggregate rank alone",
+        "The output names threshold provenance and includes passed_checks"
+      ],
+      "objective_checks": [
+        {
+          "id": "cites-experiment-plan",
+          "description": "Cites EP-17 as threshold provenance rather than presenting arbitrary thresholds.",
+          "pattern": "(?:threshold provenance|source|approved).{0,120}EP-17|EP-17.{0,120}(?:threshold provenance|source|approved)"
+        },
+        {
+          "id": "includes-passed-checks",
+          "description": "Includes an explicit passed_checks section for current operational checks.",
+          "pattern": "passed_checks|passed checks"
+        },
+        {
+          "id": "states-stop-rule",
+          "description": "States the zero-positive-after-200-delivered stop rule.",
+          "pattern": "(?:0|zero) positive repl(?:y|ies).{0,100}200 delivered|200 delivered.{0,100}(?:0|zero) positive repl(?:y|ies)"
+        },
+        {
+          "id": "states-scale-rule",
+          "description": "States the four-percent-after-250 scale rule with the bounce guardrail.",
+          "pattern": "(?:4%|four percent).{0,140}250 delivered[\\s\\S]{0,240}(?:2%|two percent).{0,80}bounce|250 delivered.{0,140}(?:4%|four percent)[\\s\\S]{0,240}(?:2%|two percent).{0,80}bounce"
+        }
+      ],
+      "host_case": false
     },
     {
       "id": "learning-handoff",
       "prompt": "Close out this campaign test and give me the learning handoff plus a client-safe update.",
-      "expected_output": "A learning record that preserves hypothesis, changed and fixed variables, results, decision, and next owner, plus a separate client-safe summary.",
+      "input": "Synthetic closed experiment EP-17: hypothesis=Finance Operations targeting improves positive reply quality; changed variable=target role; fixed variables=offer, CTA, sequence, sender pool, and schedule; final result=14 positive replies from 280 delivered (5.0%), bounce=1.2%, zero rendering failures. Threshold provenance: approved EP-17 scale gate was at least 4% positive replies after 250 delivered with bounce below 2%. Passed integrity checks are fixed variables preserved, minimum read window reached, and no operational invalidation.",
+      "expected_output": "A learning record and separate client-safe update that preserve the hypothesis and fixed variables, cite EP-17 threshold provenance, include passed_checks, compare results with the approved gate, and name the next owner and action.",
       "assertions": [
         "The original hypothesis and experiment integrity are preserved",
         "Internal operational detail is separated from client-safe language",
-        "New evidence is routed back to the appropriate SendLens skill"
-      ]
+        "New evidence is routed back to the appropriate SendLens skill",
+        "The output names threshold provenance and includes passed_checks"
+      ],
+      "objective_checks": [
+        {
+          "id": "records-result",
+          "description": "Records the exact synthetic positive-reply and bounce results.",
+          "pattern": "(?:14 positive repl(?:y|ies)|5\\.0?%)[\\s\\S]{0,260}1\\.2%|1\\.2%[\\s\\S]{0,260}(?:14 positive repl(?:y|ies)|5\\.0?%)"
+        },
+        {
+          "id": "cites-threshold-provenance",
+          "description": "Cites EP-17 as the source of the scale decision threshold.",
+          "pattern": "(?:threshold provenance|source|approved).{0,120}EP-17|EP-17.{0,120}(?:threshold provenance|source|approved)"
+        },
+        {
+          "id": "includes-passed-checks",
+          "description": "Includes an explicit passed_checks section for experiment integrity.",
+          "pattern": "passed_checks|passed checks"
+        },
+        {
+          "id": "separates-client-update",
+          "description": "Provides a separately labeled client-safe update.",
+          "pattern": "client[- ]safe (?:update|summary)"
+        }
+      ],
+      "host_case": false
     }
   ]
 }

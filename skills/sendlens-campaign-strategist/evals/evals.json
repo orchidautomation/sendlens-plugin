@@ -4,33 +4,95 @@
     {
       "id": "next-campaign-blueprint",
       "prompt": "Use these validated reply and segment findings to recommend the next campaign. I need the audience, exclusions, offer, angle, sequence, CTA, and experiment hypothesis, but not the email copy yet.",
-      "expected_output": "A campaign blueprint derived from the validated findings, with an explicit audience, exclusions, proof boundary, sequence architecture, and experiment contract but no full email bodies.",
+      "input": "Synthetic analyst handoff: exact finding—RevOps directors produced 6 positive replies from 180 contacted leads; hydrated finding—3 wrong-person replies referred to finance operations; sampled finding—companies with 200-1000 employees were 5 of the 6 positives. Primary constraint is audience focus. Allowed proof is limited to these counts.",
+      "expected_output": "An evidence-backed campaign blueprint with explicit audience and exclusions, offer, angle, proof boundary, CTA, sequence architecture, and a one-variable experiment, while deferring email bodies.",
       "assertions": [
         "The opportunity cites validated evidence",
         "Audience inclusion and exclusion criteria are explicit",
         "Problem, offer, angle, proof boundary, and CTA are coherent",
         "Full email bodies are deferred to sendlens-copywriter"
-      ]
+      ],
+      "objective_checks": [
+        {
+          "id": "defines-audience-and-exclusions",
+          "description": "Defines both the target audience and explicit exclusions.",
+          "pattern": "audience[\\s\\S]{0,900}exclusions?|exclusions?[\\s\\S]{0,900}audience"
+        },
+        {
+          "id": "preserves-proof-boundary",
+          "description": "Limits allowed proof to the supplied synthetic counts.",
+          "pattern": "(?:proof boundary|allowed proof|proof)[\\s\\S]{0,400}(?:6 positive|180|three|3 wrong[- ]person)"
+        },
+        {
+          "id": "defines-experiment",
+          "description": "Defines an experiment with a cohort and one changed strategic variable.",
+          "pattern": "(?:experiment|hypothesis)[\\s\\S]{0,600}cohort[\\s\\S]{0,600}(?:one|single|changed) (?:strategic )?variable"
+        },
+        {
+          "id": "defers-copy",
+          "description": "Defers full email bodies to the copywriting stage.",
+          "pattern": "copy_handoff|(?:defer|deferred|hand off|handoff).{0,120}(?:copy|email bodies|copywriter)"
+        }
+      ],
+      "host_case": true
     },
     {
       "id": "constraint-gate",
       "prompt": "Our best campaign has weak replies and several unhealthy senders. Design a new message campaign to fix it.",
-      "expected_output": "A strategy-gate decision that prioritizes the stronger operational constraint when sender or deliverability evidence makes a message test invalid.",
+      "input": "Synthetic analyst handoff: the campaign has 900 sends, 7 human replies, and 1 positive reply; four of six assigned senders have stored 30-day bounce rates above the operator's documented 5% block threshold. No hydrated replies or copy-path evidence exists. The primary constraint is sender health.",
+      "expected_output": "A constrained strategy decision that refuses to disguise sender risk as a messaging problem, prioritizes sender remediation, and conditions any later message experiment on validated evidence.",
       "assertions": [
         "Sender or deliverability risk is not disguised as a message problem",
         "The campaign test is deferred or conditioned on remediation",
         "Unknowns that could change the strategy are explicit"
-      ]
+      ],
+      "objective_checks": [
+        {
+          "id": "names-sender-constraint",
+          "description": "Names sender health or deliverability as the primary constraint.",
+          "pattern": "(?:primary constraint|blocker).{0,120}(?:sender|deliverability)|(?:sender|deliverability).{0,120}(?:primary constraint|blocker)"
+        },
+        {
+          "id": "defers-message-test",
+          "description": "Defers the message campaign until sender remediation is complete.",
+          "pattern": "(?:defer|do not|shouldn't|cannot|can't).{0,140}(?:message|campaign|test)|(?:message|campaign|test).{0,140}(?:after|until|conditioned)"
+        },
+        {
+          "id": "states-missing-evidence",
+          "description": "Names missing hydrated reply or copy-path evidence as an unresolved unknown.",
+          "pattern": "(?:missing|unknown|unvalidated|no).{0,120}(?:hydrated repl|reply bod|copy[- ]path|copy evidence)"
+        }
+      ],
+      "host_case": false
     },
     {
       "id": "meaningful-experiment",
       "prompt": "Turn the validated wrong-person reply pattern into a campaign experiment for a better role segment.",
-      "expected_output": "A strategy that converts reply evidence into a testable audience shift with exclusions, fixed variables, intended learning, and a primary outcome signal for launch-operator handoff.",
+      "input": "Synthetic validated evidence: 8 of 20 hydrated human replies from a broad operations cohort say the recipient is the wrong owner, and 6 explicitly refer the sender to Finance Operations. Keep the audit offer, proof, CTA, sequence length, and sender pool fixed; only the target role segment may change.",
+      "expected_output": "A one-variable campaign experiment that changes the target role to Finance Operations, holds the offer and execution variables fixed, and defines cohort, learning goal, and outcome signal.",
       "assertions": [
         "The audience shift is tied to reply evidence",
         "The experiment changes one strategic variable",
         "The cohort, changed and fixed variables, intended learning, and outcome signal are explicit"
-      ]
+      ],
+      "objective_checks": [
+        {
+          "id": "targets-referred-role",
+          "description": "Uses Finance Operations as the evidence-backed role segment.",
+          "pattern": "Finance Operations"
+        },
+        {
+          "id": "names-fixed-variables",
+          "description": "Keeps the supplied offer, CTA, sequence, and sender variables fixed.",
+          "pattern": "(?:fixed|held constant)[\\s\\S]{0,500}(?:offer|CTA)[\\s\\S]{0,500}(?:sender|sequence)|(?:offer|CTA)[\\s\\S]{0,500}(?:sender|sequence)[\\s\\S]{0,500}(?:fixed|held constant)"
+        },
+        {
+          "id": "names-outcome-signal",
+          "description": "Defines a primary outcome signal for the new cohort.",
+          "pattern": "(?:primary )?(?:outcome signal|metric).{0,160}(?:positive repl|qualified repl|wrong[- ]person)"
+        }
+      ],
+      "host_case": false
     }
   ]
 }

@@ -114,7 +114,7 @@ export default definePlugin({
     shortDescription:
       "Privacy-first outbound campaign analysis inside your AI workspace.",
     longDescription:
-      "Use SendLens to understand what is landing with prospects, which campaigns and segments are driving positive replies, and what to change next. The open-source release currently connects to Instantly, stores analysis state locally, and keeps campaign-specific enrichment data on the user's machine.",
+      "Use SendLens to understand what is landing with prospects, which campaigns and segments are driving positive replies, and what to change next. The open-source release connects read-only to Instantly and Smartlead, stores analysis state locally, and keeps campaign-specific enrichment data on the user's machine.",
     category: "Analytics",
     websiteURL: "https://github.com/orchidautomation/sendlens-plugin",
     privacyPolicyURL:
@@ -214,7 +214,7 @@ export default definePlugin({
       key: "sendlens-demo-mode",
       title: "Demo Mode",
       description:
-        "Optional synthetic demo workspace mode. Set to 1 to seed and analyze public-safe fixture data without Instantly credentials.",
+        "Optional synthetic demo workspace mode. Set to 1 to seed and analyze public-safe fixture data without provider credentials.",
       type: "string",
       required: false,
       envVar: "SENDLENS_DEMO_MODE",

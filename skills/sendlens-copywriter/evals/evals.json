@@ -4,33 +4,111 @@
     {
       "id": "strategy-to-sequence",
       "prompt": "Use the approved campaign strategy to write a concise three-email sequence with subjects, bodies, CTAs, delays, and required personalization fields.",
-      "expected_output": "A complete text-only sequence that follows the approved audience, angle, proof boundary, and CTA while documenting personalization and claim requirements.",
+      "input": "Synthetic approved brief: audience=Finance Operations directors at US SaaS companies with 200-1000 employees; exclude consultants and companies under 200 employees; problem=manual reconciliation creates unclear handoffs; offer=a free two-minute reconciliation checklist; angle=spot one avoidable handoff; allowed proof=6 positive replies from 180 comparable synthetic leads; CTA='Worth sending the checklist?'; required fields=first_name, company_name, role. Do not claim revenue lift or customer outcomes.",
+      "expected_output": "A concise three-email sequence with a subject, body, single CTA, delay, and purpose for each step, plus a claim ledger and rendering requirements tied to the supplied approved brief.",
       "assertions": [
         "Every step has one strategic job and one CTA",
         "Claims stay inside the approved proof boundary",
         "Personalization variables and required fields are explicit",
         "The copy is not padded with generic analysis"
-      ]
+      ],
+      "objective_checks": [
+        {
+          "id": "writes-three-steps",
+          "description": "Returns three distinct sequence steps or emails.",
+          "pattern": "(?:(?:^|\\n)\\s*(?:#{1,6}[ \\t]+)?(?:(?:Email|Step)\\s*)?1[.):\\-]?[ \\t]+\\S[\\s\\S]{0,1800}(?:^|\\n)\\s*(?:#{1,6}[ \\t]+)?(?:(?:Email|Step)\\s*)?2[.):\\-]?[ \\t]+\\S[\\s\\S]{0,1800}(?:^|\\n)\\s*(?:#{1,6}[ \\t]+)?(?:(?:Email|Step)\\s*)?3[.):\\-]?[ \\t]+\\S|(?:^|\\n)\\s*(?:#{1,6}[ \\t]+)?(?:Email|Step)\\s*0[.):\\-]?[ \\t]+\\S[\\s\\S]{0,1800}(?:^|\\n)\\s*(?:#{1,6}[ \\t]+)?(?:Email|Step)\\s*1[.):\\-]?[ \\t]+\\S[\\s\\S]{0,1800}(?:^|\\n)\\s*(?:#{1,6}[ \\t]+)?(?:Email|Step)\\s*2[.):\\-]?[ \\t]+\\S)"
+        },
+        {
+          "id": "uses-approved-cta",
+          "description": "Uses the approved low-friction checklist CTA.",
+          "pattern": "Worth sending (?:the )?checklist\\?"
+        },
+        {
+          "id": "lists-rendering-fields",
+          "description": "Lists all required personalization fields from the brief.",
+          "pattern": "first_name[\\s\\S]{0,300}company_name[\\s\\S]{0,300}role|role[\\s\\S]{0,300}company_name[\\s\\S]{0,300}first_name"
+        },
+        {
+          "id": "includes-claim-ledger",
+          "description": "Includes a compact claim ledger for the allowed proof.",
+          "pattern": "claim ledger|claim_ledger"
+        },
+        {
+          "id": "forbids-fabricated-outcomes",
+          "description": "Rejects affirmative revenue-lift or customer-outcome claims outside the approved proof.",
+          "pattern": "(?:customers?|clients?).{0,80}(?:see|achieve|get|report|realize|improve|increase).{0,80}(?:revenue|outcomes?)|(?:\\d+%|percent).{0,40}revenue lift",
+          "mode": "forbidden"
+        }
+      ],
+      "host_case": true
     },
     {
       "id": "meaningful-copy-variants",
       "prompt": "Write two meaningful variants for step zero: one should test problem framing and one should test offer framing. Keep everything else fixed.",
-      "expected_output": "Two variants that differ on the named strategic variable, with the fixed elements and learning hypothesis clearly stated.",
+      "input": "Synthetic current step 0: subject='Quick reconciliation question'; body='Hi {{first_name}} — finance operations teams at companies like {{company_name}} often lose context during manual reconciliation handoffs. I can send a free two-minute checklist for spotting one avoidable handoff. Worth sending it?'; approved proof=none beyond the supplied problem observation; required fields=first_name, company_name. Produce one problem-framing variant and one offer-framing variant while keeping audience, CTA, proof boundary, and personalization fixed.",
+      "expected_output": "Two complete step-zero variants that change the named strategic framing, preserve the current CTA and variables, and state each variant's learning hypothesis and fixed elements.",
       "assertions": [
         "Variants are not cosmetic synonym changes",
         "Only the intended strategic variable changes",
         "The learning goal for each variant is explicit"
-      ]
+      ],
+      "objective_checks": [
+        {
+          "id": "labels-problem-variant",
+          "description": "Labels a variant that tests problem framing.",
+          "pattern": "(?:Variant\\s*A|problem[- ]framing variant)[\\s\\S]{0,800}(?:problem framing|manual reconciliation|handoff)"
+        },
+        {
+          "id": "labels-offer-variant",
+          "description": "Labels a variant that tests offer framing.",
+          "pattern": "(?:Variant\\s*B|offer[- ]framing variant)[\\s\\S]{0,800}(?:offer framing|two[- ]minute checklist|checklist)"
+        },
+        {
+          "id": "preserves-cta",
+          "description": "Keeps the approved checklist CTA fixed across both variants.",
+          "pattern": "Worth sending it\\?"
+        },
+        {
+          "id": "states-learning",
+          "description": "States a learning hypothesis or goal for the variants.",
+          "pattern": "(?:learning|hypothesis).{0,220}(?:problem|offer|framing)"
+        }
+      ],
+      "host_case": false
     },
     {
       "id": "reply-backed-rewrite",
       "prompt": "Rewrite this campaign sequence using the validated mismatch objections, but do not invent any proof or capabilities.",
-      "expected_output": "A rewrite that addresses the validated objection evidence without fabricating proof, product capabilities, reply wording, urgency, or quantified outcomes.",
+      "input": "Synthetic current copy: subject='Compliance review'; body='Hi {{first_name}}, healthcare compliance teams use our platform to automate policy audits. Want a demo?'; validated hydrated replies for the Finance RevOps audience say 'We are not a healthcare compliance team' and 'This sounds like the wrong product.' Approved offer=a two-minute reconciliation checklist; allowed proof=none; required fields=first_name, company_name. Rewrite the current email for Finance RevOps without fabricated outcomes, customers, or capabilities.",
+      "expected_output": "A complete rewrite that removes the healthcare compliance mismatch, uses the approved reconciliation-checklist offer, and includes a claim ledger and rendering requirements without unsupported proof.",
       "assertions": [
         "The rewrite is tied to validated reply evidence",
         "Unsupported claims are removed or labeled outside send-ready copy",
         "The output includes a claim ledger and rendering requirements"
-      ]
+      ],
+      "objective_checks": [
+        {
+          "id": "uses-approved-offer",
+          "description": "Uses the approved reconciliation checklist offer in the rewritten copy.",
+          "pattern": "reconciliation checklist"
+        },
+        {
+          "id": "acknowledges-mismatch",
+          "description": "Explains that the healthcare compliance framing was removed as a validated mismatch.",
+          "pattern": "(?:healthcare compliance|wrong product).{0,160}(?:remove|removed|mismatch|validated)|(?:remove|removed|mismatch|validated).{0,160}(?:healthcare compliance|wrong product)"
+        },
+        {
+          "id": "includes-claim-ledger",
+          "description": "Includes the required claim ledger and keeps proof unsupported.",
+          "pattern": "claim ledger|claim_ledger"
+        },
+        {
+          "id": "includes-rendering-requirements",
+          "description": "Includes rendering requirements for first_name and company_name.",
+          "pattern": "(?:rendering requirements|rendering_requirements)[\\s\\S]{0,400}first_name[\\s\\S]{0,300}company_name"
+        }
+      ],
+      "host_case": false
     }
   ]
 }

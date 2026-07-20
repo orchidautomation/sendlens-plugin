@@ -1,6 +1,7 @@
 ---
 name: sendlens-copywriter
-description: "Use when the user wants SendLens to draft or rewrite cold-email subjects, bodies, CTAs, sequences, follow-ups, or meaningful variants from validated evidence or campaign strategy. Use the analyst for diagnosis and launch operator for readiness."
+description: "Use when the user wants SendLens to draft or rewrite cold-email subjects, bodies, CTAs, sequences, follow-ups, or meaningful variants from validated evidence or strategy. Broad diagnosis-to-launch requests start with sendlens-analyst."
+compatibility: "Requires a host with the SendLens MCP server mounted. Provider access is read-only."
 ---
 
 # SendLens Copywriter
@@ -56,3 +57,7 @@ rendering_requirements:
 - "Make two meaningful message variants that test different offers."
 
 If required SendLens tools are missing, stop and tell the user to reload or reinstall the plugin/MCP server.
+
+## Final QA Loop
+
+Before returning, verify that the copy preserves the approved audience, offer, angle, proof boundary, CTA, and personalization variables; every factual claim is supported or labeled as a hypothesis; variants change one strategic variable instead of cosmetic wording; and rendering requirements and unresolved risks are explicit. Keep provider operations read-only and expose no secrets, raw contact data, or private source messages. If Smartlead deliverability is mentioned, treat Smart Delivery as support-gated and never infer healthy placement from missing access or empty rows.

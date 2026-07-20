@@ -4,17 +4,68 @@
     {
       "id": "workspace-diagnosis",
       "prompt": "what's actually going wrong in this outbound workspace? rank the biggest problems and tell me what to fix first",
+      "input": "Synthetic SendLens workspace: 4 active campaigns, 2,400 contacted leads, 31 human replies, 8 positive replies, sender bounce rates of 1.2%, 5.8%, and 7.1%, and one campaign with 18 replies but only 1 positive reply. Diagnose the evidence without inventing reply text.",
       "expected_output": "A workspace diagnosis grounded in exact campaign, sender, and deliverability evidence, followed by ranked actions and the single best campaign for deeper analysis.",
       "assertions": [
         "The answer starts from SendLens workspace evidence rather than generic advice",
         "Exact findings are distinguished from sampled or inferred findings",
         "Sender or deliverability evidence is checked before blaming copy",
         "The primary constraint and ranked actions are explicit"
-      ]
+      ],
+      "objective_checks": [
+        {
+          "id": "names-primary-constraint",
+          "description": "Names a primary constraint or verdict instead of returning an unranked metric dump.",
+          "pattern": "(?:primary constraint|verdict|fix first)"
+        },
+        {
+          "id": "states-evidence-class",
+          "description": "Distinguishes exact, sampled, or inferred evidence in the diagnosis.",
+          "pattern": "(?:exact|sampled|inferred|inference)"
+        },
+        {
+          "id": "checks-sender-risk",
+          "description": "Surfaces sender or deliverability risk before attributing the problem to copy.",
+          "pattern": "(?:sender|deliverability).{0,100}(?:bounce|risk|unhealthy)|(?:bounce|risk|unhealthy).{0,100}(?:sender|deliverability)"
+        },
+        {
+          "id": "cites-high-bounce-senders",
+          "description": "Grounds the sender-risk diagnosis in both supplied high-bounce rates.",
+          "pattern": "5\\.8%[\\s\\S]{0,160}7\\.1%|7\\.1%[\\s\\S]{0,160}5\\.8%"
+        },
+        {
+          "id": "cites-reply-outcomes",
+          "description": "Grounds reply quality in the supplied human and positive reply counts.",
+          "pattern": "31[ \\t]+(?:human[ \\t]+)?repl(?:y|ies)[\\s\\S]{0,160}(?:8|eight)[ \\t]+positive|(?:8|eight)[ \\t]+positive[\\s\\S]{0,160}31[ \\t]+(?:human[ \\t]+)?repl(?:y|ies)"
+        },
+        {
+          "id": "selects-deep-dive-campaign",
+          "description": "Grounds the selected low-quality campaign in its supplied reply outcomes.",
+          "pattern": "18[ \\t]+(?:human[ \\t]+)?repl(?:y|ies)[\\s\\S]{0,160}(?:only[ \\t]+)?(?:1|one)[ \\t]+positive|(?:only[ \\t]+)?(?:1|one)[ \\t]+positive[\\s\\S]{0,160}18[ \\t]+(?:human[ \\t]+)?repl(?:y|ies)|(?:only[ \\t]+)?(?:1|one)[ \\t]+of(?:[ \\t]+its)?[ \\t]+18[ \\t]+(?:human[ \\t]+)?repl(?:y|ies)[\\s\\S]{0,120}positive"
+        },
+        {
+          "id": "names-deep-dive-action",
+          "description": "Explicitly names the 18-reply campaign for review or deeper inspection.",
+          "pattern": "(?:deep[- ]?review|review|inspect)[\\s\\S]{0,240}18[- ](?:reply|human[ \\t]+repl(?:y|ies))|18[- ](?:reply|human[ \\t]+repl(?:y|ies))[\\s\\S]{0,240}(?:deep[- ]?review|review|inspect)"
+        },
+        {
+          "id": "forbids-negated-deep-dive-action",
+          "description": "Rejects advice not to review or inspect the supplied low-quality campaign.",
+          "pattern": "(?:(?:(?:do not|don't|must not|should not|never|avoid)[ \\t]+(?:bother[ \\t]+)?|skip[ \\t]+|(?:there[ \\t]+is[ \\t]+)?no[ \\t]+need[ \\t]+to[ \\t]+)(?:deep[- ]?)?(?:review(?:ing)?|inspect(?:ing)?)|(?:should|must|will|may|can)(?:[ \\t]+not|n't)[ \\t]+be[ \\t]+(?:reviewed|inspected)|(?:is|was)[ \\t]+not[ \\t]+to[ \\t]+be[ \\t]+(?:reviewed|inspected))[\\s\\S]{0,160}18[- ](?:reply|human[ \\t]+repl(?:y|ies))|18[- ](?:reply|human[ \\t]+repl(?:y|ies))[\\s\\S]{0,160}(?:(?:(?:do not|don't|must not|should not|never|avoid)[ \\t]+(?:bother[ \\t]+)?|skip[ \\t]+|(?:there[ \\t]+is[ \\t]+)?no[ \\t]+need[ \\t]+to[ \\t]+)(?:deep[- ]?)?(?:review(?:ing)?|inspect(?:ing)?)|(?:should|must|will|may|can)(?:[ \\t]+not|n't)[ \\t]+be[ \\t]+(?:reviewed|inspected)|(?:is|was)[ \\t]+not[ \\t]+to[ \\t]+be[ \\t]+(?:reviewed|inspected))",
+          "mode": "forbidden"
+        },
+        {
+          "id": "ranks-next-actions",
+          "description": "Returns at least two explicitly ranked remediation actions.",
+          "pattern": "(?:ranked[ \\t]+actions?|fix[ \\t]+order)[\\s\\S]{0,500}(?:1[.)]|first)[\\s\\S]{0,500}(?:2[.)]|second)|(?:^|\\n)[ \\t]*1[.)][\\s\\S]{0,500}(?:^|\\n)[ \\t]*2[.)]"
+        }
+      ],
+      "host_case": true
     },
     {
       "id": "exact-campaign-tag-sender-risk-fast-path",
       "prompt": "Show sender deliverability risk for the exact Priority Demo campaign tag.",
+      "input": "Synthetic exact scope: provider is Instantly, campaign tag is Priority Demo, and assigned sender aggregates are sender-a@example.test at 1.0% bounce and sender-b@example.test at 6.4% bounce over the stored 30-day sender window. Do not broaden the provider or tag.",
       "expected_output": "A bounded exact-tag sender inventory that retrieves campaign-sender-inventory-by-tag first, executes it once, and answers from provider-qualified campaign assignments plus stored account 30-day aggregates.",
       "assertions": [
         "The first tool call is analysis_starters with recipe_id campaign-sender-inventory-by-tag",
@@ -22,44 +73,120 @@
         "workspace_snapshot, list_tables, list_columns, search_catalog, placement recipes, and account_daily_metrics are not used before the exact recipe result",
         "The successful fast path uses at most two tool calls and does not silently broaden the campaign tag or provider scope",
         "Campaign tags are distinguished from assignment account tags and stored 30-day account aggregates are described as sender-scoped"
-      ]
+      ],
+      "objective_checks": [
+        {
+          "id": "uses-exact-recipe",
+          "description": "Names the exact tag-scoped sender inventory recipe.",
+          "pattern": "campaign-sender-inventory-by-tag"
+        },
+        {
+          "id": "preserves-provider-tag",
+          "description": "Preserves both the Instantly provider and Priority Demo tag scope.",
+          "pattern": "Instantly.{0,120}Priority Demo|Priority Demo.{0,120}Instantly"
+        },
+        {
+          "id": "describes-sender-window",
+          "description": "Describes the aggregate as sender scoped and tied to the stored 30-day window.",
+          "pattern": "(?:sender[- ]scoped|assigned sender).{0,120}(?:30[- ]day|stored)|(?:30[- ]day|stored).{0,120}(?:sender[- ]scoped|assigned sender)"
+        }
+      ],
+      "host_case": false
     },
     {
       "id": "direct-fast-path-no-spawn",
       "prompt": "Is my SendLens snapshot fresh, and how many active campaigns are in it?",
+      "input": "Synthetic direct-tool responses: refresh_status reports freshness=stale with last successful refresh 47 minutes ago, and workspace_snapshot reports active_campaign_count=7 for provider=instantly. Return only the requested status and count.",
       "expected_output": "A direct workspace_snapshot and refresh_status answer that does not spawn a specialist or add orchestration overhead to a simple inventory and freshness request.",
       "assertions": [
         "The request stays on the direct MCP fast path",
         "No specialist agent is spawned",
         "The answer reports only the requested freshness and inventory facts",
         "Internal routing mechanics are not exposed"
-      ]
+      ],
+      "objective_checks": [
+        {
+          "id": "reports-stale",
+          "description": "Reports the fixture's stale freshness state.",
+          "pattern": "\\bstale\\b"
+        },
+        {
+          "id": "reports-active-count",
+          "description": "Reports seven active campaigns.",
+          "pattern": "(?:7|seven) active campaigns?"
+        },
+        {
+          "id": "reports-refresh-age",
+          "description": "Uses the exact fixture refresh age instead of vague timing.",
+          "pattern": "47 minutes?"
+        }
+      ],
+      "host_case": false
     },
     {
       "id": "triage-before-campaign-depth",
       "prompt": "Diagnose the whole workspace, pick the campaign that deserves a deeper reply and ICP review, and explain the priority.",
+      "input": "Synthetic triage set: Alpha has 500 sends, 22 human replies, 3 positive replies, and healthy senders; Beta has 120 sends, 9 human replies, 6 positive replies, and healthy senders; Gamma has 800 sends, 4 replies, and a 6.9% sender bounce rate. Select one campaign before depth work.",
       "expected_output": "A bounded delegated diagnosis in which workspace-triager selects one campaign before only the needed reply-auditor and icp-auditor depth lanes run.",
       "assertions": [
         "workspace-triager is delegated first on a host with native subagents",
         "Exactly one campaign is selected before campaign-depth delegation",
         "Only the reply and ICP specialist lanes needed by the decision run",
         "synthesis-reviewer pressure-tests the client-safe recommendation before the coordinator synthesizes the evidence and final answer"
-      ]
+      ],
+      "objective_checks": [
+        {
+          "id": "selects-one-campaign",
+          "description": "Selects exactly one named synthetic campaign for depth.",
+          "pattern": "(?:select|prioriti[sz]e|choose|deeper).{0,80}\\b(?:Alpha|Beta|Gamma)\\b"
+        },
+        {
+          "id": "names-reply-depth",
+          "description": "Includes a bounded reply-quality review for the chosen campaign.",
+          "pattern": "(?:reply quality|reply review|replies)"
+        },
+        {
+          "id": "names-icp-depth",
+          "description": "Includes a bounded ICP or audience review for the chosen campaign.",
+          "pattern": "(?:\\bICP\\b|audience|segment)"
+        }
+      ],
+      "host_case": false
     },
     {
       "id": "winner-promotion-guard",
       "prompt": "The campaign with the highest reply rate is obviously our winner. Tell me to scale it and explain why.",
+      "input": "Synthetic aggregates: Alpha has 10 replies from 100 sends, but 7 are automatic or wrong-person replies and only 1 is positive; Beta has 8 replies from 300 sends, with 5 positive replies. Reply bodies for neither campaign have been hydrated yet.",
       "expected_output": "A guarded decision that treats aggregate rank as triage, validates reply quality and intended copy, and refuses to call the campaign a winner until the evidence supports it.",
       "assertions": [
         "Highest reply rate is not equated with a proven winner",
         "One-campaign evidence and reply-quality validation are required",
         "Metric basis and denominator risk are explicit",
         "Mismatch complaints, wrong-person replies, and auto-replies are not treated as success"
-      ]
+      ],
+      "objective_checks": [
+        {
+          "id": "rejects-obvious-winner",
+          "description": "Does not call Alpha a proven winner from aggregate reply rate alone.",
+          "pattern": "(?:not|isn't|cannot|can't).{0,80}(?:proven )?winner|insufficient.{0,80}(?:winner|scale)"
+        },
+        {
+          "id": "requires-reply-quality",
+          "description": "Requires reply-quality validation or hydration before promotion.",
+          "pattern": "(?:reply quality|hydrate|hydrated reply|reply bodies)"
+        },
+        {
+          "id": "excludes-noise",
+          "description": "Treats automatic or wrong-person replies as non-success evidence.",
+          "pattern": "(?:automatic|auto[- ]repl(?:y|ies)|wrong[- ]person)"
+        }
+      ],
+      "host_case": false
     },
     {
       "id": "broad-full-chain-orchestration",
       "prompt": "Analyze what is working, identify the best new campaign opportunity, write the sequence, and tell me exactly how to launch and judge it.",
+      "input": "Synthetic evidence: a 240-lead RevOps cohort produced 12 human replies and 6 positives to an audit offer; healthy senders have a 1.1% bounce rate; mismatch replies cluster in non-RevOps roles. Allowed proof is only the observed reply counts. Produce strategy, copy, and launch rules without mutating a provider.",
       "expected_output": "One coherent end-to-end answer that diagnoses first, then automatically applies campaign strategy, copywriting, and launch-operation stages without making the user invoke each skill.",
       "assertions": [
         "Diagnosis and the primary constraint come before campaign design",
@@ -69,40 +196,116 @@
         "The copy follows the approved strategy and proof boundary",
         "The launch plan includes blockers, measurement, guardrails, and stop or scale rules",
         "synthesis-reviewer pressure-tests the broad recommendation before the coordinator answers"
-      ]
+      ],
+      "objective_checks": [
+        {
+          "id": "orders-diagnosis-first",
+          "description": "Presents a diagnosis or primary constraint before the campaign plan.",
+          "pattern": "(?:diagnosis|verdict|primary constraint)[\\s\\S]{0,1200}(?:campaign|audience|strategy)"
+        },
+        {
+          "id": "includes-sendable-sequence",
+          "description": "Includes a multi-step email sequence grounded in the approved audit offer.",
+          "pattern": "(?:Email|Step)\\s*(?:1|0)[\\s\\S]{0,1200}(?:Email|Step)\\s*(?:2|1)"
+        },
+        {
+          "id": "includes-decision-rules",
+          "description": "Includes explicit stop and scale rules in the launch stage.",
+          "pattern": "stop.{0,160}scale|scale.{0,160}stop"
+        }
+      ],
+      "host_case": false
     },
     {
       "id": "inline-delegation-fallback",
       "prompt": "My host cannot run subagents. Analyze one campaign, recommend the next strategy, write the copy, and define launch rules anyway.",
-      "expected_output": "An inline execution that preserves the same analyst, strategy, copy, launch, and synthesis lane boundaries and handoffs without claiming that any specialist was spawned.",
+      "input": "Synthetic single-campaign evidence: 400 sends, 14 human replies, 7 positive replies, healthy sender bounce at 0.9%, and a validated objection that prospects want a shorter proof step. The host explicitly has no native delegation capability.",
+      "expected_output": "The same bounded analysis, strategy, copy, and launch lanes executed inline and sequentially without claiming that subagents were spawned.",
       "assertions": [
         "The same bounded specialist lanes are executed inline",
         "Strategy, copy, and launch remain sequential and handoff-driven",
         "The answer does not claim or imply that a subagent was spawned",
         "Evidence, privacy, and read-only boundaries remain unchanged"
-      ]
+      ],
+      "objective_checks": [
+        {
+          "id": "uses-inline-fallback",
+          "description": "States that the work is performed inline because native delegation is unavailable.",
+          "pattern": "(?:inline|without (?:native )?(?:delegation|subagents))"
+        },
+        {
+          "id": "retains-stage-order",
+          "description": "Keeps strategy, copy, and launch as distinct ordered stages.",
+          "pattern": "strategy[\\s\\S]{0,1600}copy[\\s\\S]{0,1600}launch"
+        },
+        {
+          "id": "retains-read-only",
+          "description": "Preserves the provider read-only boundary.",
+          "pattern": "read[- ]only|does not (?:send|mutate|edit)"
+        }
+      ],
+      "host_case": false
     },
     {
       "id": "reply-objection-intelligence",
       "prompt": "Pull the real replies for the Finance RevOps campaign and tell me what prospects are objecting to. Ignore OOO noise.",
-      "expected_output": "A one-campaign reply diagnosis that hydrates exact reply wording, excludes out-of-office responses, separates outcome cohorts, and identifies the constraint without prematurely drafting copy.",
+      "input": "Synthetic hydrated replies for one campaign: status 1 says 'We already reconcile this in our ERP'; status 1 says 'Wrong team, finance ops owns this'; status 0 says 'Out until Monday'; status 2 says 'Send the two-minute audit checklist.' Treat only these supplied fixture bodies as exact wording.",
+      "expected_output": "A one-campaign objection analysis based only on the supplied hydrated reply wording, excluding the out-of-office reply and identifying the message or audience implication.",
       "assertions": [
         "The analysis stays scoped to one campaign",
         "Actual wording is attributed only to fetched reply-body evidence",
         "Out-of-office replies are excluded",
         "The answer identifies a specific message, audience, or setup implication"
-      ]
+      ],
+      "objective_checks": [
+        {
+          "id": "excludes-ooo",
+          "description": "Explicitly excludes the status-0 out-of-office reply.",
+          "pattern": "(?:exclude|excluded|ignore|ignored).{0,80}(?:OOO|out[- ]of[- ]office|status 0)"
+        },
+        {
+          "id": "identifies-erp-objection",
+          "description": "Identifies the existing ERP process objection from exact fixture wording.",
+          "pattern": "(?:already|existing).{0,80}ERP|ERP.{0,80}(?:already|existing)"
+        },
+        {
+          "id": "identifies-role-signal",
+          "description": "Identifies finance ops as a wrong-person referral or audience signal.",
+          "pattern": "finance ops.{0,120}(?:audience|role|referral|segment|target)|(?:audience|role|referral|segment|target).{0,120}finance ops"
+        }
+      ],
+      "host_case": false
     },
     {
       "id": "sampled-icp-hypothesis",
       "prompt": "Which job titles and custom lead fields look strongest in this campaign? Tell me what the evidence supports.",
-      "expected_output": "A campaign-scoped sampled segment hypothesis, not an exact ICP declaration, with a testable cohort and metadata-coverage caveats.",
+      "input": "Synthetic sample of 24 uploaded leads: role and company_size are present for all 24, source_system='RB2B' is present for 9, and visitor_page_url is absent for all 24. No RB2B ingestion receipt, template render result, or hydrated reply evidence establishes whether visitor intent reached the message.",
+      "expected_output": "A sampled ICP hypothesis that treats visitor_page_url absence as source-specific absence, does not relabel it as thin uploaded metadata, and says visitor-source provenance and message use cannot be verified from this evidence.",
       "assertions": [
         "A definitive ICP is not declared from sampled evidence",
         "Payload fields are inventoried before value-level claims unless named",
-        "Missing metadata is described as thin uploaded lead data",
+        "Missing external-source keys are described as source-specific absence rather than automatically as thin uploaded lead metadata",
+        "The answer does not claim visitor intent was absent or failed to reach the message without provenance and rendering evidence",
         "The result is ready for strategist handoff if a campaign is requested"
-      ]
+      ],
+      "objective_checks": [
+        {
+          "id": "states-sampled-boundary",
+          "description": "Labels the ICP finding as sampled or a hypothesis rather than definitive.",
+          "pattern": "(?:sampled|sample|hypothesis|not definitive)"
+        },
+        {
+          "id": "uses-source-specific-absence",
+          "description": "Uses the required source-specific-absence semantics for the external field.",
+          "pattern": "source[- ]specific absence"
+        },
+        {
+          "id": "does-not-overclaim-provenance",
+          "description": "Says visitor-source provenance or message use cannot be verified.",
+          "pattern": "(?:visitor[- ]source provenance|visitor intent).{0,120}(?:cannot|can't|could not|is not) (?:be )?verif|cannot verify.{0,120}(?:visitor[- ]source provenance|visitor intent)"
+        }
+      ],
+      "host_case": false
     }
   ]
 }
