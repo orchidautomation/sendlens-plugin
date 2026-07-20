@@ -4,32 +4,238 @@
     {
       "id": "first-run-doctor",
       "prompt": "I just installed SendLens. Check whether it is ready and tell me the next step.",
-      "expected_output": "A setup-doctor result with readiness, failures, warnings, freshness, demo availability, and a safe next action.",
+      "input": "Synthetic setup_doctor result: ready=ready_with_warnings; failures=[]; warnings=['SENDLENS_INSTANTLY_API_KEY is not set']; cache_freshness.label='47 minutes old'; demo_mode=false; local_cache_readable=true; next_step='Use cached read-only analysis or configure provider credentials outside chat.'",
+      "expected_output": "A doctor-backed ready_with_warnings result with the exact cache freshness label, warning, cache-safe next action, and demo status.",
       "assertions": [
         "The setup doctor is the source of truth",
         "The output includes ready, ready_with_warnings, or blocked",
         "The next action is explicit"
-      ]
+      ],
+      "objective_checks": [
+        {
+          "id": "reports-doctor-status",
+          "description": "Reports the exact ready_with_warnings doctor status.",
+          "pattern": "ready_with_warnings"
+        },
+        {
+          "id": "reports-exact-freshness",
+          "description": "Reports the exact cache freshness label.",
+          "pattern": "47 minutes old"
+        },
+        {
+          "id": "offers-cached-analysis",
+          "description": "Explains that read-only cached analysis remains available.",
+          "pattern": "(?:cached|local cache).{0,100}read[- ]only|read[- ]only.{0,100}(?:cached|local cache)"
+        }
+      ],
+      "host_case": false
     },
     {
       "id": "synthetic-demo",
       "prompt": "Let me try SendLens with fake data before I connect a real workspace.",
-      "expected_output": "A synthetic demo workspace is seeded and clearly labeled as synthetic evidence.",
+      "input": "Synthetic setup state: setup_doctor reports no provider API keys, no readable local cache, compiled demo runtime available, and writable state paths. The user explicitly wants fake data and has not requested production provider access.",
+      "expected_output": "A seed_demo_workspace quick-start response that clearly labels the resulting local workspace and all downstream evidence as synthetic and avoids provider mutation.",
       "assertions": [
         "The demo seed path is used",
         "The output clearly labels all downstream evidence as synthetic",
         "No real provider mutation is attempted"
-      ]
+      ],
+      "objective_checks": [
+        {
+          "id": "uses-demo-tool",
+          "description": "Uses the supported synthetic demo seed tool.",
+          "pattern": "seed_demo_workspace"
+        },
+        {
+          "id": "labels-synthetic",
+          "description": "Labels the seeded workspace evidence as synthetic.",
+          "pattern": "synthetic (?:demo )?(?:workspace|evidence|data)"
+        },
+        {
+          "id": "names-next-question",
+          "description": "Directs the user to the workspace-health demo next step.",
+          "pattern": "workspace-health"
+        }
+      ],
+      "host_case": false
     },
     {
-      "id": "missing-tools",
-      "prompt": "I installed SendLens but its tools are not showing up in this host.",
-      "expected_output": "A doctor-backed explanation of the host or runtime problem and the exact safe next step.",
+      "id": "missing-tools-pluxx-available",
+      "prompt": "I installed SendLens but its tools are not showing up in Codex, and the pluxx command is available.",
+      "input": "Synthetic host state: SendLens MCP tools are absent, the global Pluxx CLI is available, the target host is Codex, and an earlier SendLens install is recorded. The user wants diagnosis and commands only; do not inspect campaign data or mutate provider resources.",
+      "expected_output": "A setup-owned Codex recovery that verifies the installed bundle with Pluxx, reruns the supported installer if verification fails, and restarts Codex without manual agent-file copying.",
       "assertions": [
         "The response stays in the setup workflow",
         "The response gives the exact safe next step",
-        "The response does not attempt campaign analysis"
-      ]
+        "The response does not attempt campaign analysis",
+        "The Pluxx-present branch uses verify-install and never recommends manually scattering agent or MCP files"
+      ],
+      "objective_checks": [
+        {
+          "id": "verifies-codex-install",
+          "description": "Uses the Pluxx verification command for Codex.",
+          "pattern": "pluxx verify-install --target codex"
+        },
+        {
+          "id": "uses-supported-reinstall",
+          "description": "Names the supported SendLens release installer as the repair if verification fails.",
+          "pattern": "sendlens\\.app/install\\.sh.{0,120}--codex.{0,40}-y"
+        },
+        {
+          "id": "requires-restart",
+          "description": "Tells the user to restart Codex after repair.",
+          "pattern": "restart Codex"
+        }
+      ],
+      "host_case": false
+    },
+    {
+      "id": "missing-tools-no-pluxx-release-recovery",
+      "prompt": "SendLens and Pluxx are both missing in Codex. Give me the ordinary-user recovery path.",
+      "input": "Synthetic host state: no SendLens MCP tools, no global Pluxx CLI, target host=Codex, and the prerequisites curl, bash, mktemp, node, and network access are all available. Return guidance only. Do not require installing Pluxx separately and do not recommend manually copying agent, skill, or MCP files.",
+      "expected_output": "A setup-owned recovery that downloads the official SendLens release installer with bounded, fail-closed curl options, runs it for Codex without global Pluxx, and restarts Codex before rechecking tools.",
+      "assertions": [
+        "The response uses the official release installer path when both SendLens MCP and Pluxx are absent",
+        "A failed or hanging initial download cannot silently continue into Bash",
+        "The ordinary-user path does not require a global Pluxx CLI",
+        "The response never recommends manually scattering agent, skill, or MCP files",
+        "The response restarts or reloads the target host before rechecking tools"
+      ],
+      "objective_checks": [
+        {
+          "id": "uses-official-installer",
+          "description": "Provides the official Codex release installer command.",
+          "pattern": "sendlens\\.app/install\\.sh[\\s\\S]{0,500}--(?:\\$install_target|codex)[\\s\\S]{0,80}-y"
+        },
+        {
+          "id": "bounds-installer-download",
+          "description": "Bounds the initial installer download before invoking Bash.",
+          "pattern": "--connect-timeout\\s+10[\\s\\S]{0,180}--max-time\\s+120|--max-time\\s+120[\\s\\S]{0,180}--connect-timeout\\s+10"
+        },
+        {
+          "id": "states-no-pluxx-prerequisite",
+          "description": "States that a preinstalled global Pluxx CLI is not required.",
+          "pattern": "(?:do not|don't)[ \\t]+need[ \\t]+to[ \\t]+(?:install|use|have)[ \\t]+(?:a[ \\t]+|the[ \\t]+)?(?:(?:separate|preinstalled|global)[ \\t]+)*Pluxx|(?:does not|doesn't|no need to|without).{0,100}(?:install(?:ing)?|preinstall(?:ed)?|global)?\\s*Pluxx|no[ \\t]+(?:(?:separate|preinstalled|global)[ \\t]+)*Pluxx(?: installation| CLI)?[ \\t]+is[ \\t]+(?:required|needed)|(?:preinstalled |global )?Pluxx(?: CLI)?.{0,100}(?:not[ \\t]+(?:a[ \\t]+)?required[ \\t]+prerequisite|not required|isn't required|unnecessary)"
+        },
+        {
+          "id": "restarts-codex",
+          "description": "Requires a Codex restart after the release install.",
+          "pattern": "restart Codex"
+        },
+        {
+          "id": "forbids-manual-scattering",
+          "description": "Rejects advice that affirmatively recommends manual host-file scattering.",
+          "pattern": "(?:^|\\n)\\s*(?:please\\s+)?(?:manually\\s+)?(?:copy|scatter|distribute)\\b|\\b(?:should|can|must|need to)\\s+(?:manually\\s+)?(?:copy|scatter|distribute)\\b",
+          "mode": "forbidden"
+        },
+        {
+          "id": "forbids-installer-negation",
+          "description": "Rejects advice that tells the user not to run the official installer.",
+          "pattern": "(?:do not|don't|must not|never).{0,80}(?:run|use).{0,120}sendlens\\.app/install\\.sh",
+          "mode": "forbidden"
+        },
+        {
+          "id": "forbids-pluxx-required",
+          "description": "Rejects advice that makes global Pluxx a prerequisite for this recovery path.",
+          "pattern": "(?:^|[.!?\\n])[ \\t]*(?:[-*][ \\t]+)?(?!no\\b|without\\b)(?:a[ \\t]+|the[ \\t]+)?(?:(?:global|preinstalled|separate)[ \\t]+)*Pluxx(?: CLI| installation)?[ \\t]+(?:is[ \\t]+(?:required|needed|necessary|a[ \\t]+required[ \\t]+prerequisite)|will[ \\t]+be[ \\t]+required|must[ \\t]+be[ \\t]+installed|required[ \\t]+prerequisite)|(?:^|[.!?\\n])[ \\t]*(?:[-*][ \\t]+)?(?:please[ \\t]+)?(?:install|use)[ \\t]+(?:a[ \\t]+|the[ \\t]+)?(?:(?:global|preinstalled|separate)[ \\t]+)*Pluxx(?: CLI| installation)?|(?:^|[.!?\\n])[ \\t]*(?:[-*][ \\t]+)?(?:(?:you|we|users?)[ \\t]+)?(?:must|need(?:[ \\t]+to)?)[ \\t]+(?:(?:install|use|have)[ \\t]+)?(?:a[ \\t]+|the[ \\t]+)?(?:(?:global|preinstalled|separate)[ \\t]+)*Pluxx(?: CLI| installation)?|(?:^|[.!?\\n])[ \\t]*(?:[-*][ \\t]+)?(?:(?:however|but|still|instead|yet|nevertheless)[,;:]?[ \\t]+)?(?:the[ \\t]+|this[ \\t]+)?(?:recovery|installer|setup)[ \\t]+(?:(?:will[ \\t]+)?(?:require|need)|requires|needs)[ \\t]+(?:a[ \\t]+|the[ \\t]+)?(?:(?:global|preinstalled|separate)[ \\t]+)*Pluxx(?: CLI| installation)?",
+          "mode": "forbidden"
+        },
+        {
+          "id": "forbids-restart-negation",
+          "description": "Rejects advice that tells the user not to restart Codex.",
+          "pattern": "(?:do not|don't|must not|never).{0,50}restart Codex",
+          "mode": "forbidden"
+        }
+      ],
+      "host_case": true
+    },
+    {
+      "id": "missing-installer-node-prerequisite",
+      "prompt": "SendLens and Pluxx are missing, and this machine does not have Node. What should I do?",
+      "input": "Synthetic host state: no SendLens MCP tools, no global Pluxx CLI, target host=Cursor, curl is available, bash is available, mktemp is available, network access is available, but node is unavailable. Identify the exact blocker and do not suggest partial or manual file installation.",
+      "expected_output": "A blocked setup result that names node as the exact missing release-installer prerequisite and stops before installation or manual file copying.",
+      "assertions": [
+        "The response reports blocked when an official installer prerequisite is unavailable",
+        "The response names node as the exact missing prerequisite",
+        "The response does not attempt campaign analysis or recommend manually scattering files"
+      ],
+      "objective_checks": [
+        {
+          "id": "reports-blocked",
+          "description": "Returns the blocked setup status.",
+          "pattern": "\\bblocked\\b"
+        },
+        {
+          "id": "names-node",
+          "description": "Names node as the exact missing prerequisite.",
+          "pattern": "(?:missing|unavailable|required).{0,80}\\bnode\\b|\\bnode\\b.{0,80}(?:missing|unavailable|required)"
+        },
+        {
+          "id": "stops-before-install",
+          "description": "Explains that installation cannot continue until node is available.",
+          "pattern": "(?:cannot|can't|do not|won't).{0,120}(?:install|continue|proceed)|(?:install|continue|proceed).{0,120}(?:until|requires?)"
+        }
+      ],
+      "host_case": false
+    },
+    {
+      "id": "missing-installer-network-and-mktemp-prerequisites",
+      "prompt": "Can you recover SendLens if this locked-down host has no mktemp and no network access?",
+      "input": "Synthetic host state: no SendLens MCP tools, no global Pluxx CLI, target host=OpenCode, curl, bash, and node are available, but mktemp is unavailable and outbound network access is blocked. Report every exact missing official-installer prerequisite; never propose manually copying plugin files from another machine.",
+      "expected_output": "A blocked setup result that names both mktemp and network access as unavailable release-installer prerequisites and stops without an unsupported manual-install workaround.",
+      "assertions": [
+        "The response reports blocked when official installer prerequisites are unavailable",
+        "The response names both mktemp and network access as exact missing prerequisites",
+        "The response never recommends manually scattering agent, skill, plugin, or MCP files"
+      ],
+      "objective_checks": [
+        {
+          "id": "reports-blocked",
+          "description": "Returns the blocked setup status.",
+          "pattern": "\\bblocked\\b"
+        },
+        {
+          "id": "names-mktemp",
+          "description": "Names mktemp as an unavailable prerequisite.",
+          "pattern": "(?:missing|unavailable|required).{0,80}\\bmktemp\\b|\\bmktemp\\b.{0,80}(?:missing|unavailable|required)"
+        },
+        {
+          "id": "names-network",
+          "description": "Names network access as an unavailable prerequisite.",
+          "pattern": "(?:missing|unavailable|blocked|required).{0,100}network access|network access.{0,100}(?:missing|unavailable|blocked|required)"
+        }
+      ],
+      "host_case": false
+    },
+    {
+      "id": "installed-host-reload-recovery",
+      "prompt": "The SendLens install completed in Claude Code, but specialists and MCP tools still are not visible.",
+      "input": "Synthetic host state: the official installer completed successfully for Claude Code, pluxx verify-install reports success, SendLens MCP tools and specialist agents remain absent in the current pre-install session, and no setup_doctor tool can be called until the host reloads.",
+      "expected_output": "A host-session recovery that runs /reload-plugins, confirms specialists through /agents, then retries setup_doctor after tool discovery without reinstalling or manually copying files.",
+      "assertions": [
+        "The response distinguishes a stale host session from an install failure",
+        "The response uses the host-native reload and discovery checks",
+        "The response calls setup_doctor only after MCP tools become visible",
+        "The response never recommends manual agent or MCP file copying"
+      ],
+      "objective_checks": [
+        {
+          "id": "reloads-plugins",
+          "description": "Uses Claude Code's host-native plugin reload command.",
+          "pattern": "/reload-plugins"
+        },
+        {
+          "id": "checks-agents",
+          "description": "Uses Claude Code's agent discovery surface.",
+          "pattern": "/agents"
+        },
+        {
+          "id": "retries-doctor",
+          "description": "Retries setup_doctor after the reload makes tools visible.",
+          "pattern": "setup_doctor"
+        }
+      ],
+      "host_case": false
     }
   ]
 }

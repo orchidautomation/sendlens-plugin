@@ -46,6 +46,13 @@ type CacheFreshness = {
   label: string;
 };
 
+const PUBLIC_DOC_URLS = {
+  install: "https://github.com/orchidautomation/sendlens-plugin/blob/main/docs/INSTALL.md",
+  troubleshooting: "https://github.com/orchidautomation/sendlens-plugin/blob/main/docs/TROUBLESHOOTING.md",
+  trust_and_privacy: "https://github.com/orchidautomation/sendlens-plugin/blob/main/docs/TRUST_AND_PRIVACY.md",
+  container_deployment: "https://github.com/orchidautomation/sendlens-plugin/blob/main/docs/CONTAINER_DEPLOYMENT.md",
+} as const;
+
 function isDemoMode() {
   const raw = process.env.SENDLENS_DEMO_MODE?.trim().toLowerCase();
   return raw === "1" || raw === "true" || raw === "yes";
@@ -403,16 +410,20 @@ export async function buildSetupDoctorReport() {
   });
   checks.push({
     name: "Client env identity",
-    status: !selectedClient || selectedClientEnv?.apiKeyFingerprint === currentApiKeyFingerprint()
-      ? "pass"
-      : "fail",
+    status: providerMode.mode === "all" && !selectedClient
+      ? "fail"
+      : !selectedClient || selectedClientEnv?.apiKeyFingerprint === currentApiKeyFingerprint()
+        ? "pass"
+        : "fail",
     message: selectedClient
       ? selectedClientEnv
         ? selectedClientEnv.apiKeyFingerprint === currentApiKeyFingerprint()
           ? "Selected client env fingerprint matches the active process provider fingerprint."
           : "Selected client env fingerprint does not match the active process provider fingerprint."
         : "SENDLENS_CLIENT is set, but no matching client env file was loaded."
-      : "No SENDLENS_CLIENT selected.",
+      : providerMode.mode === "all"
+        ? "SENDLENS_PROVIDER=all requires SENDLENS_CLIENT so both providers share one named workspace."
+        : "No SENDLENS_CLIENT selected.",
     detail: JSON.stringify({
       selected_client: selectedClient,
       loaded_env_files: selectedClientEnv?.loaded ?? [],
@@ -653,10 +664,7 @@ export async function buildSetupDoctorReport() {
     warnings: warnings.map((check) => check.message),
     next_steps: nextSteps,
     docs: {
-      install: "docs/INSTALL.md",
-      troubleshooting: "docs/TROUBLESHOOTING.md",
-      trust_and_privacy: "docs/TRUST_AND_PRIVACY.md",
-      container_deployment: "docs/CONTAINER_DEPLOYMENT.md",
+      ...PUBLIC_DOC_URLS,
     },
   };
 }

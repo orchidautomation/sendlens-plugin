@@ -236,8 +236,8 @@ if [[ "${ISSUES}" -eq 0 ]]; then
   fi
 else
   fail "SendLens setup has blocking issues"
-  detail "Install guide: docs/INSTALL.md"
-  detail "Troubleshooting: docs/TROUBLESHOOTING.md"
+  detail "Install guide: https://github.com/orchidautomation/sendlens-plugin/blob/main/docs/INSTALL.md"
+  detail "Troubleshooting: https://github.com/orchidautomation/sendlens-plugin/blob/main/docs/TROUBLESHOOTING.md"
 fi
 
 echo ""

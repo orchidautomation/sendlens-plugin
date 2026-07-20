@@ -1,6 +1,7 @@
 ---
 name: sendlens-campaign-strategist
-description: "Use when SendLens should turn validated findings into campaign strategy: audience, exclusions, problem, offer, angle, sequence, personalization, CTA, or experiment hypothesis. Use the copywriter for email bodies and launch operator for readiness."
+description: "Use when SendLens should turn validated findings into focused campaign strategy: audience, exclusions, problem, offer, angle, sequence, personalization, CTA, or experiment hypothesis. Broad diagnosis-to-launch requests start with sendlens-analyst."
+compatibility: "Requires a host with the SendLens MCP server mounted. Provider access is read-only."
 ---
 
 # SendLens Campaign Strategist
@@ -52,6 +53,9 @@ sequence_architecture:
 experiment:
 - hypothesis, cohort, strategic variable, variables held fixed, intended learning, primary outcome signal
 
+copy_handoff:
+- defer drafting to sendlens-copywriter with the audience, offer, angle, proof boundary, CTA, and personalization inputs
+
 evidence_ledger:
 - exact findings
 - hydrated reply findings
@@ -66,6 +70,10 @@ unknowns:
 
 - "Recommend the next campaign from these validated findings."
 - "Define the audience, exclusions, offer, and angle for our next outbound test."
-- "Turn these reply insights into a campaign sequence strategy."
+- "Synthetic brief: an exact 1,200-send campaign has a 0.7% bounce rate and 18 human replies; hydrated replies show five pricing objections, while the sampled operations-manager segment has the strongest positive-reply signal. Design one campaign blueprint with explicit exclusions, allowed proof, a low-friction CTA, and one test variable."
 
 If required SendLens tools are missing, stop and tell the user to reload or reinstall the plugin/MCP server.
+
+## Final QA Loop
+
+Before returning, verify that the blueprint traces to the validated findings; unsupported assumptions remain labeled as hypotheses; the audience, exclusions, proof boundary, CTA, fixed variables, and single strategic test variable are explicit; and no full email bodies, provider mutations, secrets, raw contact data, or private message bodies appear. If Smartlead deliverability affects the design, treat Smart Delivery as support-gated and never infer healthy placement from missing access or empty rows.

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   chmod,
+  cp,
   mkdir,
   mkdtemp,
   readFile,
@@ -17,6 +18,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
+import { inspectPublicInstaller } from "./verify-public-installer-contract.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -346,6 +348,18 @@ exec /usr/bin/git "$@"
     assert.ok(await pathExists(path.join(releaseDir, expected)), `missing fake release asset ${expected}`);
   }
 
+  const publicInstaller = inspectPublicInstaller(
+    await readFile(path.join(releaseDir, "install.sh"), "utf8"),
+  );
+  assert.equal(
+    publicInstaller.passed,
+    true,
+    `generated public installer contract failed: ${publicInstaller.checks
+      .filter((check) => !check.pass)
+      .map((check) => check.id)
+      .join(", ")}`,
+  );
+
   const cursorInstaller = await readFile(path.join(releaseDir, "install-cursor.sh"), "utf8");
   assert.match(cursorInstaller, /installed host manifest identity does not match candidate bundle/);
   assert.match(cursorInstaller, /Refusing to replace unowned install/);
@@ -598,6 +612,79 @@ async function testOpenCodeUnrelatedSkillCollisionFailsClosed(releaseDir) {
   );
 }
 
+async function runTopLevelCodexInstaller(releaseDir, label, runtimeFixture) {
+  const runRoot = await tempDir(`sendlens-top-level-${label}-`);
+  const homeDir = path.join(runRoot, "home");
+  const fakeBin = path.join(runRoot, "bin");
+  const marker = path.join(runRoot, "global-pluxx-was-called");
+  await mkdir(homeDir, { recursive: true });
+  await mkdir(path.join(runRoot, "tmp"), { recursive: true });
+  await mkdir(fakeBin, { recursive: true });
+  const pluxxPath = path.join(fakeBin, "pluxx");
+  await writeFile(
+    pluxxPath,
+    `#!/usr/bin/env bash\nprintf 'called\\n' > "$PLUXX_TEST_MARKER"\nexit 97\n`,
+  );
+  await chmod(pluxxPath, 0o755);
+  const npmPath = path.join(fakeBin, "npm");
+  await writeFile(
+    npmPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p "$PWD/node_modules"
+cp -R "$SENDLENS_TEST_NODE_MODULES/." "$PWD/node_modules/"
+`,
+  );
+  await chmod(npmPath, 0o755);
+  const paths = installPaths("codex", runRoot);
+  const result = run(
+    "bash",
+    [path.join(releaseDir, "install.sh"), "--codex", "-y", "--base-url", pathToFileURL(releaseDir).href],
+    {
+      env: {
+        ...installerEnv("codex", runRoot, releaseDir, paths, homeDir),
+        PATH: `${fakeBin}:${process.env.PATH}`,
+        PLUXX_TEST_MARKER: marker,
+        SENDLENS_TEST_NODE_MODULES: runtimeFixture,
+      },
+    },
+  );
+  return { result, marker, paths };
+}
+
+async function testTopLevelInstallerContract(releaseDir) {
+  const fixtureRoot = await tempDir("sendlens-runtime-fixture-");
+  const runtimeFixture = path.join(fixtureRoot, "node_modules");
+  const productionTree = run("npm", ["ls", "--omit=dev", "--parseable", "--all"]);
+  assertRun(productionTree, "enumerate installed production runtime dependencies");
+  const sourceModules = path.join(root, "node_modules");
+  for (const sourcePath of productionTree.stdout.trim().split("\n").slice(1)) {
+    const relativePath = path.relative(sourceModules, sourcePath);
+    assert.ok(
+      relativePath && !relativePath.startsWith("..") && !path.isAbsolute(relativePath),
+      `production dependency escaped node_modules: ${sourcePath}`,
+    );
+    const fixturePath = path.join(runtimeFixture, relativePath);
+    await mkdir(path.dirname(fixturePath), { recursive: true });
+    await cp(sourcePath, fixturePath, { recursive: true });
+  }
+
+  const successful = await runTopLevelCodexInstaller(releaseDir, "success", runtimeFixture);
+  assertRun(successful.result, "top-level Codex installer without global Pluxx");
+  assert.equal(await pathExists(successful.marker), false, "top-level installer must not execute global Pluxx");
+  assert.ok(await pathExists(successful.paths.pluginInstallDir), "top-level installer should install the Codex bundle");
+
+  const corruptRoot = await tempDir("sendlens-top-level-corrupt-");
+  const corruptRelease = path.join(corruptRoot, "release-assets");
+  await cp(releaseDir, corruptRelease, { recursive: true });
+  const corruptInstaller = path.join(corruptRelease, "install-codex.sh");
+  await writeFile(corruptInstaller, `${await readFile(corruptInstaller, "utf8")}\n# checksum corruption\n`);
+  const corrupted = await runTopLevelCodexInstaller(corruptRelease, "corrupt", runtimeFixture);
+  assert.notEqual(corrupted.result.status, 0, "top-level installer must fail on a corrupted downstream installer");
+  assert.match(corrupted.result.stderr, /Checksum mismatch/);
+  assert.equal(await pathExists(corrupted.marker), false, "corruption failure must not fall back to global Pluxx");
+}
+
 try {
   assert.equal(packageJson.devDependencies?.["@orchid-labs/pluxx"], "0.1.36");
 
@@ -605,11 +692,12 @@ try {
   assertRun(run("npm", ["run", "--silent", "build:hosts"]), "build:hosts");
 
   const releaseDir = await createFakeReleaseAssets();
+  await testTopLevelInstallerContract(releaseDir);
   await testTrustedLegacyUpgrades(releaseDir);
   await testMismatchedIdentitiesFailClosed(releaseDir);
   await testOpenCodeUnrelatedSkillCollisionFailsClosed(releaseDir);
 
-  console.log("OK: generated SendLens installers adopt trusted legacy installs and reject mismatches");
+  console.log("OK: generated SendLens installers run without global Pluxx, reject corruption, adopt trusted legacy installs, and reject mismatches");
 } finally {
   for (const directory of tempRoots) {
     run("chmod", ["-R", "u+w", directory]);

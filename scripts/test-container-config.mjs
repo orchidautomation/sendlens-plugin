@@ -79,7 +79,10 @@ try {
   assert.equal(doctor.deployment.container.persistent_paths_under_data_root, true);
   assert.equal(doctor.deployment.container.http.bearer_credential_configured, true);
   assert.deepEqual(doctor.deployment.container.http.allowed_hosts, ["sendlens.example.com"]);
-  assert.equal(doctor.docs.container_deployment, "docs/CONTAINER_DEPLOYMENT.md");
+  assert.equal(
+    doctor.docs.container_deployment,
+    "https://github.com/orchidautomation/sendlens-plugin/blob/main/docs/CONTAINER_DEPLOYMENT.md",
+  );
   assert.equal(JSON.stringify(doctor).includes(operatorCredential), false);
   assert.equal(JSON.stringify(doctor).includes("synthetic-overlay-provider-key"), false);
 

@@ -182,7 +182,12 @@ async function sourceInventory() {
 }
 
 async function assertHostFiles({ skills, commands, agents }) {
-  const commonSkillFiles = skills.map((name) => `skills/${name}/SKILL.md`);
+  const setupRecoveryReference =
+    "skills/sendlens-setup/references/recovery-and-clients.md";
+  const commonSkillFiles = [
+    ...skills.map((name) => `skills/${name}/SKILL.md`),
+    setupRecoveryReference,
+  ];
   const commonAgentFiles = agents.map((name) => `agents/${name}.md`);
   const commonCommandFiles = commands.map((name) => `commands/${name}.md`);
   const commonRuntimeFiles = [
@@ -258,6 +263,77 @@ async function assertHostFiles({ skills, commands, agents }) {
     await assertExists(`dist/${host}`);
     for (const file of files) {
       await assertExists(`dist/${host}/${file}`);
+    }
+  }
+}
+
+function markdownTargets(text) {
+  return [...text.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)].map((match) =>
+    match[1].trim(),
+  );
+}
+
+async function markdownFiles(relativeDirectory) {
+  const files = [];
+  for (const entry of await readdir(path.join(root, relativeDirectory), { withFileTypes: true })) {
+    const relativePath = path.posix.join(relativeDirectory, entry.name);
+    if (entry.isDirectory()) files.push(...await markdownFiles(relativePath));
+    else if (entry.isFile() && entry.name.endsWith(".md")) files.push(relativePath);
+  }
+  return files;
+}
+
+async function assertHostSkillReferences() {
+  for (const host of ["claude-code", "cursor", "codex", "opencode"]) {
+    for (const skill of PUBLIC_SKILLS) {
+      const skillRoot = `dist/${host}/skills/${skill}`;
+      for (const markdownPath of await markdownFiles(skillRoot)) {
+        const markdown = await readText(markdownPath);
+        for (const target of markdownTargets(markdown)) {
+          if (/^(?:https?:|mailto:|#)/i.test(target)) continue;
+          const resolved = path.posix.normalize(
+            path.posix.join(path.posix.dirname(markdownPath), target.split("#", 1)[0]),
+          );
+          assert(
+            await exists(resolved),
+            `${markdownPath}: bundled relative link points to missing ${resolved}`,
+          );
+        }
+      }
+    }
+
+    const setupSkillPath = `dist/${host}/skills/sendlens-setup/SKILL.md`;
+    const setupSkill = await readText(setupSkillPath);
+    const setupReference = await readText(
+      `dist/${host}/skills/sendlens-setup/references/recovery-and-clients.md`,
+    );
+    const installedSetupDoctor = await readText(
+      `dist/${host}/build/plugin/setup-doctor.js`,
+    );
+    const setupSurface = `${setupSkill}\n${setupReference}`;
+    assert(
+      /https:\/\/sendlens\.app\/install\.sh/.test(setupSurface),
+      `${setupSkillPath}: no-Pluxx recovery must carry the durable public installer URL`,
+    );
+    assert(
+      /curl[\s\S]*bash[\s\S]*mktemp[\s\S]*node[\s\S]*network/i.test(setupSurface),
+      `${setupSkillPath}: no-Pluxx recovery must name all official installer prerequisites`,
+    );
+    assert(
+      /set -e[\s\S]*--connect-timeout 10[\s\S]*--max-time 120[\s\S]*--retry 3/i.test(setupReference)
+        && /trap 'rm -f "\$installer_file"' EXIT[\s\S]*bash "\$installer_file"/i.test(setupReference)
+        && !/bash\s+<\(curl/i.test(setupReference),
+      `${setupSkillPath}: bundled installer recovery must fail closed on an initial download error`,
+    );
+    assert(
+      !/\]\((?:\.\.\/)*docs\//.test(setupSkill),
+      `${setupSkillPath}: shipped setup guidance must not point only to bundle-absent repo docs`,
+    );
+    for (const documentName of ["INSTALL", "TROUBLESHOOTING", "TRUST_AND_PRIVACY", "CONTAINER_DEPLOYMENT"]) {
+      assert(
+        new RegExp(`https://github\\.com/orchidautomation/sendlens-plugin/blob/main/docs/${documentName}\\.md`).test(installedSetupDoctor),
+        `${setupSkillPath}: installed setup_doctor must return a public ${documentName} docs URL`,
+      );
     }
   }
 }
@@ -1094,6 +1170,7 @@ if (shouldBuild) {
 }
 
 await assertHostFiles(inventory);
+await assertHostSkillReferences();
 await assertManifestMetadata();
 await assertHostCommandInventory(inventory.commands);
 await assertGeneratedSubagentRouting();

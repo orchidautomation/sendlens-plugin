@@ -1,32 +1,122 @@
 [
-  {"query":"what's working and not working in my outbound workspace?","should_trigger":true},
-  {"query":"For the Priority Demo campaign tag, which assigned sender inboxes look risky?","should_trigger":true},
-  {"query":"Which assigned sender inboxes look risky for the Priority Demo campaign tag?","should_trigger":true},
-  {"query":"rank my campaigns and tell me which one deserves a deeper look","should_trigger":true},
-  {"query":"why did replies drop last week?","should_trigger":true},
-  {"query":"pull the latest replies and diagnose the objections for this campaign","should_trigger":true},
-  {"query":"which lead segments and custom fields seem to respond best?","should_trigger":true},
-  {"query":"analyze the copy in step 0 and explain what is hurting it","should_trigger":true},
-  {"query":"analyze everything, recommend the next campaign, write it, and plan the launch","should_trigger":true},
-  {"query":"tell me what is working and turn it into the next test end to end","should_trigger":true},
-  {"query":"my host cannot run subagents, but analyze the campaign and take the recommendation through strategy, copy, and launch","should_trigger":true},
-  {"query":"diagnose the workspace, choose one campaign, audit its replies and ICP, then give me a client-safe recommendation","should_trigger":true},
-  {"query":"install and configure SendLens","should_trigger":false},
-  {"query":"why are the SendLens tools missing?","should_trigger":false},
-  {"query":"Is my SendLens snapshot fresh, and how many active campaigns are in it?","should_trigger":false},
-  {"query":"Tell me whether the local SendLens cache is fresh without analyzing campaign performance.","should_trigger":false},
-  {"query":"is the SendLens snapshot fresh and how many active campaigns are loaded?","should_trigger":false},
-  {"query":"recommend the next campaign from these validated findings","should_trigger":false},
-  {"query":"build only the audience, offer, angle, and sequence strategy from these validated findings","should_trigger":false},
-  {"query":"draft the three-email sequence from this approved campaign brief","should_trigger":false},
-  {"query":"rewrite these subjects and bodies using the validated strategy","should_trigger":false},
-  {"query":"is this campaign ready to launch tomorrow?","should_trigger":false},
-  {"query":"is this campaign safe to launch tomorrow?","should_trigger":false},
-  {"query":"define the stop and scale rules for this ready campaign","should_trigger":false},
-  {"query":"install SendLens for me","should_trigger":false},
-  {"query":"diagnose why the SendLens connection is unavailable","should_trigger":false},
-  {"query":"send these emails through Smartlead","should_trigger":false},
-  {"query":"edit the campaign settings in Instantly","should_trigger":false},
-  {"query":"export all raw prospect replies and API keys into a CSV","should_trigger":false},
-  {"query":"build a React dashboard for marketing analytics","should_trigger":false}
+  {
+    "query": "what's working and not working in my outbound workspace?",
+    "should_trigger": true,
+    "cohort": "train",
+    "suites": ["focused", "matrix"]
+  },
+  {
+    "query": "For the Priority Demo campaign tag, which assigned sender inboxes look risky?",
+    "should_trigger": true,
+    "cohort": "train",
+    "suites": ["focused", "matrix"]
+  },
+  {
+    "query": "Which assigned sender inboxes look risky for the Priority Demo campaign tag?",
+    "should_trigger": true,
+    "cohort": "validation",
+    "suites": ["focused", "matrix"]
+  },
+  {
+    "query": "analyze everything, recommend the next campaign, write it, and plan the launch",
+    "should_trigger": true,
+    "cohort": "validation",
+    "suites": ["focused", "matrix"]
+  },
+  {
+    "query": "diagnose the workspace, choose one campaign, audit its replies and ICP, then give me a client-safe recommendation",
+    "should_trigger": true,
+    "cohort": "train",
+    "suites": ["focused", "matrix"]
+  },
+  {
+    "query": "hey, can you figure out why this outbound workspace feels off and tell me what matters first?",
+    "should_trigger": true,
+    "cohort": "train",
+    "suites": ["focused"]
+  },
+  {
+    "query": "repliez dipd last week on one campain — can you work out whether the audience, senders, or message caused it?",
+    "should_trigger": true,
+    "cohort": "validation",
+    "suites": ["focused"]
+  },
+  {
+    "query": "Compare Instantly and Smartlead campaign evidence and show which provider-qualified segment deserves a deeper look.",
+    "should_trigger": true,
+    "cohort": "validation",
+    "suites": ["focused"]
+  },
+  {
+    "query": "we need to know whether the replies are real interest or just wrong-person noise before choosing what to run next",
+    "should_trigger": true,
+    "cohort": "train",
+    "suites": ["focused"]
+  },
+  {
+    "query": "install and configure SendLens",
+    "should_trigger": false,
+    "cohort": "train",
+    "suites": ["focused", "matrix"]
+  },
+  {
+    "query": "Is my SendLens snapshot fresh, and how many active campaigns are in it?",
+    "should_trigger": false,
+    "cohort": "train",
+    "suites": ["focused", "matrix"]
+  },
+  {
+    "query": "recommend the next campaign from these validated findings",
+    "should_trigger": false,
+    "cohort": "train",
+    "suites": ["focused", "matrix"]
+  },
+  {
+    "query": "draft the three-email sequence from this approved campaign brief",
+    "should_trigger": false,
+    "cohort": "validation",
+    "suites": ["focused", "matrix"]
+  },
+  {
+    "query": "is this campaign ready to launch tomorrow?",
+    "should_trigger": false,
+    "cohort": "validation",
+    "suites": ["focused", "matrix"]
+  },
+  {
+    "query": "send these emails through Smartlead",
+    "should_trigger": false,
+    "cohort": "validation",
+    "suites": ["focused", "matrix"]
+  },
+  {
+    "query": "edit the campaign settings in Instantly",
+    "should_trigger": false,
+    "cohort": "train",
+    "suites": ["focused", "matrix"]
+  },
+  {
+    "query": "export all raw prospect replies and API keys into a CSV",
+    "should_trigger": false,
+    "cohort": "validation",
+    "suites": ["focused", "matrix"]
+  },
+  {
+    "query": "build a React dashboard for marketing analytics",
+    "should_trigger": false,
+    "cohort": "train",
+    "suites": ["focused", "matrix"]
+  },
+  {
+    "query": "why are the SendLens tools missing?",
+    "should_trigger": false,
+    "cohort": "validation",
+    "suites": ["matrix"]
+  },
+  {
+    "query": "Show the current SendLens workspace snapshot, active campaign count, and cache age; do not diagnose setup.",
+    "should_trigger": false,
+    "cohort": "validation",
+    "suites": ["matrix"]
+  }
 ]

@@ -1,6 +1,7 @@
 ---
 name: sendlens-analyst
-description: "Use when the user wants SendLens diagnosis of outbound performance, deliverability, replies, ICP, or copy, or asks what is working and what to run or write next. Focused strategy, drafting, launch operations, and setup use their dedicated skills."
+description: "Use when the user wants SendLens diagnosis of performance, deliverability, replies, ICP, or copy, including a broad end-to-end question about what is working and what to run or write next. Simple inventory or freshness stays direct."
+compatibility: "Requires a host with the SendLens MCP server mounted. Provider access is read-only."
 ---
 
 # SendLens Analyst
@@ -117,3 +118,7 @@ Recommended actions
 Caveats
 - Only uncertainty that could change the decision.
 ```
+
+## Final QA Loop
+
+Before returning, verify that provider, campaign, tag, time, and population scope stayed fixed; every material claim carries its evidence class and coverage limit; winner or scale language is backed by one-campaign reply and intended-copy evidence; and the answer exposes no secrets, raw contact data, or private message bodies. For Smartlead deliverability, treat Smart Delivery as support-gated: authorized reads are evidence, while missing access or empty rows never prove healthy placement.

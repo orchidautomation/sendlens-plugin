@@ -14,6 +14,7 @@ import {
   REQUIRED_PROVIDER_PATTERNS,
   REQUIRED_READ_ONLY_PATTERNS,
 } from "./sendlens-contract.mjs";
+import { inspectOutputCases, inspectTriggerCases } from "./skill-eval-contract.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -795,7 +796,7 @@ async function assertSendLensAnalystContract(skillNames) {
     {
       name: "sendlens-campaign-strategist",
       references: ["references/campaign-design.md"],
-      patterns: [/validated SendLens findings/i, /Do not draft full email bodies/i, /sendlens-copywriter/i],
+      patterns: [/validated SendLens findings/i, /Do not draft full email bodies/i, /copy_handoff/i, /sendlens-copywriter/i],
     },
     {
       name: "sendlens-copywriter",
@@ -879,17 +880,9 @@ async function assertSkillEvalContracts(skillNames) {
       continue;
     }
 
-    assert(evalPayload.skill_name === skillName, `${evalPath}: skill_name must equal ${skillName}`);
+    const outputInspection = inspectOutputCases(skillName, evalPath, evalPayload);
+    for (const error of outputInspection.errors) fail(error);
     assert(Array.isArray(evalPayload.evals) && evalPayload.evals.length >= 3, `${evalPath}: expected at least three realistic output evals`);
-    for (const testCase of evalPayload.evals ?? []) {
-      assert(typeof testCase.id === "string" && testCase.id.length > 0, `${evalPath}: every eval needs a stable id`);
-      assert(typeof testCase.prompt === "string" && testCase.prompt.length >= 20, `${evalPath}: every eval needs a realistic prompt`);
-      assert(typeof testCase.expected_output === "string" && testCase.expected_output.length >= 40, `${evalPath}: every eval needs a substantive expected_output`);
-      assert(Array.isArray(testCase.assertions) && testCase.assertions.length >= 3, `${evalPath}: every eval needs at least three objective assertions`);
-      for (const assertion of testCase.assertions ?? []) {
-        assert(typeof assertion === "string" && assertion.trim().length > 0, `${evalPath}: every assertion must be non-empty text`);
-      }
-    }
 
     if (skillName === "sendlens-analyst") {
       const evalsById = new Map((evalPayload.evals ?? []).map((testCase) => [testCase.id, testCase]));
@@ -909,16 +902,106 @@ async function assertSkillEvalContracts(skillNames) {
       }
     }
 
+    const triggerInspection = inspectTriggerCases(skillName, triggerPath, triggerQueries);
+    for (const error of triggerInspection.errors) fail(error);
     assert(Array.isArray(triggerQueries) && triggerQueries.length >= 10, `${triggerPath}: expected at least ten trigger queries`);
-    for (const entry of triggerQueries ?? []) {
-      assert(typeof entry?.query === "string" && entry.query.trim().length > 0, `${triggerPath}: every query must be non-empty text`);
-      assert(typeof entry?.should_trigger === "boolean", `${triggerPath}: every should_trigger value must be boolean`);
+    const focused = triggerQueries.filter((entry) => entry.suites?.includes("focused"));
+    const positive = focused.filter((entry) => entry.should_trigger === true);
+    const negative = focused.filter((entry) => entry.should_trigger === false);
+    assert(positive.length >= 8 && positive.length <= 10, `${triggerPath}: expected 8-10 focused should-trigger queries`);
+    assert(negative.length >= 8 && negative.length <= 10, `${triggerPath}: expected 8-10 focused near-miss should-not-trigger queries`);
+    for (const cohort of ["train", "validation"]) {
+      const cohortCases = focused.filter((entry) => entry.cohort === cohort);
+      assert(cohortCases.filter((entry) => entry.should_trigger).length >= 3, `${triggerPath}: ${cohort} cohort needs at least three focused positives`);
+      assert(cohortCases.filter((entry) => !entry.should_trigger).length >= 3, `${triggerPath}: ${cohort} cohort needs at least three focused negatives`);
     }
-    const positive = triggerQueries.filter((entry) => entry.should_trigger === true);
-    const negative = triggerQueries.filter((entry) => entry.should_trigger === false);
-    assert(positive.length >= 5, `${triggerPath}: expected at least five should-trigger queries`);
-    assert(negative.length >= 5, `${triggerPath}: expected at least five near-miss should-not-trigger queries`);
-    assert(new Set(triggerQueries.map((entry) => entry.query)).size === triggerQueries.length, `${triggerPath}: trigger queries must be unique`);
+  }
+}
+
+async function assertSkillQualityHardeningContracts(skillNames) {
+  assert(skillNames.size === 5, `skills/: expected exactly five public skills, found ${skillNames.size}`);
+  for (const skillName of skillNames) {
+    const skillPath = `skills/${skillName}/SKILL.md`;
+    const skillText = await readText(skillPath);
+    assert(
+      /^## Final QA Loop$/m.test(skillText),
+      `${skillPath}: every public skill needs an explicit final QA loop`,
+    );
+    assert(
+      /^## Example Requests$/m.test(skillText),
+      `${skillPath}: every public skill needs realistic request examples`,
+    );
+    assert(
+      /provider (?:operations|actions) (?:remain |are |keep )?read-only|keep provider operations read-only/i.test(skillText),
+      `${skillPath}: every public skill must preserve the provider read-only boundary`,
+    );
+    assert(
+      /secret|credential/i.test(skillText) && /raw customer data|raw contact data/i.test(skillText),
+      `${skillPath}: every public skill final check must preserve credential and customer-data privacy`,
+    );
+  }
+
+  const setupSkill = await readText("skills/sendlens-setup/SKILL.md");
+  const setupReference = await readText(
+    "skills/sendlens-setup/references/recovery-and-clients.md",
+  );
+  const setupSurface = `${setupSkill}\n${setupReference}`;
+  for (const pattern of [
+    /setup_doctor[\s\S]*Pluxx[\s\S]*https:\/\/sendlens\.app\/install\.sh/i,
+    /curl[\s\S]*bash[\s\S]*mktemp[\s\S]*node[\s\S]*network access/i,
+    /does not require a global Pluxx CLI|not a preinstalled global Pluxx CLI/i,
+    /blocked: missing installer prerequisite: <exact prerequisite>/i,
+    /Never repair an install by manually scattering|never scatter agent, skill, command, or MCP files/i,
+    /reload or restart[\s\S]*rerun `setup_doctor`/i,
+    /Both keys infer `all`[\s\S]*requires `SENDLENS_CLIENT`/i,
+    /distinct `SENDLENS_DB_PATH` and `SENDLENS_STATE_DIR`/i,
+    /set -e[\s\S]*--connect-timeout 10[\s\S]*--max-time 120[\s\S]*--retry 3/i,
+    /trap 'rm -f "\$installer_file"' EXIT[\s\S]*bash "\$installer_file"/i,
+  ]) {
+    assert(pattern.test(setupSurface), `sendlens-setup recovery contract missing ${pattern}`);
+  }
+  assert(
+    !/bash\s+<\(curl/i.test(setupReference),
+    "sendlens-setup recovery must not lose initial curl failures through process substitution",
+  );
+
+  const instructions = await readText("INSTRUCTIONS.md");
+  assert(
+    /Smartlead Smart Delivery as support-gated/i.test(instructions),
+    "INSTRUCTIONS.md: Smart Delivery must remain support-gated",
+  );
+  assert(
+    !/Treat Smartlead inbox placement as `unsupported` in V1/i.test(instructions),
+    "INSTRUCTIONS.md: must not restore the stale universally-unsupported Smartlead claim",
+  );
+
+  const pluxxConfig = await readText("pluxx.config.ts");
+  assert(
+    /open-source release connects read-only to Instantly and Smartlead/i.test(pluxxConfig),
+    "pluxx.config.ts: public product copy must name both read-only providers",
+  );
+  assert(
+    !/open-source release currently connects to Instantly,/i.test(pluxxConfig),
+    "pluxx.config.ts: must not restore the stale Instantly-only product claim",
+  );
+
+  const launchSkill = await readText("skills/sendlens-launch-operator/SKILL.md");
+  const launchAgent = await readText("agents/launch-operator.md");
+  for (const pattern of [
+    /passed_checks/i,
+    /evidence_coverage/i,
+    /threshold[^.\n]*provenance/i,
+    /load_campaign_data[\s\S]*prepare_campaign_analysis/i,
+    /Smart Delivery[\s\S]*support-gated[\s\S]*missing or empty placement rows as healthy/i,
+  ]) {
+    assert(
+      pattern.test(launchSkill),
+      `skills/sendlens-launch-operator/SKILL.md: missing executable closeout contract ${pattern}`,
+    );
+    assert(
+      pattern.test(launchAgent),
+      `agents/launch-operator.md: delegated launch contract drifted from the public skill at ${pattern}`,
+    );
   }
 }
 
@@ -992,6 +1075,7 @@ const agentNames = await collectAgentContracts();
 await collectCommandContracts(skillNames, agentNames);
 await assertSendLensAnalystContract(skillNames);
 await assertSkillEvalContracts(skillNames);
+await assertSkillQualityHardeningContracts(skillNames);
 await assertPromotionGuardContracts();
 await assertContributionAndDecisionGates();
 await assertDocumentationOwnershipContracts();

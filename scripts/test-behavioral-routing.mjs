@@ -55,10 +55,18 @@ function triggerMapFor(triggerEntries, skillName) {
       fail(`${skillName}: trigger "${entry.query}" must have boolean should_trigger`);
       continue;
     }
+    if (!["train", "validation"].includes(entry.cohort)) {
+      fail(`${skillName}: trigger "${entry.query}" must declare a stable train or validation cohort`);
+      continue;
+    }
+    if (!Array.isArray(entry.suites) || entry.suites.length === 0) {
+      fail(`${skillName}: trigger "${entry.query}" must declare at least one suite`);
+      continue;
+    }
     if (map.has(entry.query)) {
       fail(`${skillName}: duplicate trigger query "${entry.query}"`);
     }
-    map.set(entry.query, entry.should_trigger);
+    map.set(entry.query, entry);
   }
   return map;
 }
@@ -83,6 +91,7 @@ function assertCaseShape(caseEntry, skillNames, index) {
   assert(typeof caseEntry?.id === "string" && caseEntry.id.length > 0, `${label} must have an id`);
   assert(typeof caseEntry?.category === "string" && caseEntry.category.length > 0, `${label} must have a category`);
   assert(typeof caseEntry?.prompt === "string" && caseEntry.prompt.trim().length >= 12, `${label} must have a realistic prompt`);
+  assert(["train", "validation"].includes(caseEntry?.cohort), `${label} must declare a stable train or validation cohort`);
   assert(
     [...skillNames, directOwner].includes(caseEntry?.expected_primary_owner),
     `${label} has unknown expected_primary_owner "${caseEntry?.expected_primary_owner}"`,
@@ -206,17 +215,26 @@ function assertTriggerFilesMatchMatrix(matrix, triggerMaps, skillNames) {
         fail(`skills/${skillName}/evals/trigger-queries.json: missing matrix prompt "${caseEntry.prompt}"`);
         continue;
       }
-      const actual = triggerMap.get(caseEntry.prompt);
+      const triggerEntry = triggerMap.get(caseEntry.prompt);
+      const actual = triggerEntry?.should_trigger;
       executedAssertions += 1;
       assert(
         actual === expected,
         `${caseEntry.id}: ${skillName} should_trigger expected ${expected} but got ${actual}`,
       );
+      assert(
+        triggerEntry?.cohort === caseEntry.cohort,
+        `${caseEntry.id}: ${skillName} cohort expected ${caseEntry.cohort} but got ${triggerEntry?.cohort}`,
+      );
+      assert(
+        triggerEntry?.suites?.includes("matrix"),
+        `${caseEntry.id}: ${skillName} trigger entry must belong to the matrix suite`,
+      );
     }
 
     const primarySkill = expectedPrimarySkill(caseEntry, skillNames);
     const actualOwners = skillNames.filter(
-      (skillName) => triggerMaps.get(skillName)?.get(caseEntry.prompt) === true,
+      (skillName) => triggerMaps.get(skillName)?.get(caseEntry.prompt)?.should_trigger === true,
     );
     if (primarySkill) {
       assert(

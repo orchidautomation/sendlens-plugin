@@ -53,3 +53,23 @@ When adding or debugging a routing case:
 - Use `direct-mcp` for freshness, setup-status, unsupported mutation, privacy-sensitive refusal, or non-SendLens prompts that should not load a specialist skill.
 - Use `expected_staged_handoff` only when one primary owner is allowed to orchestrate later skills, such as analyst-owned strategy → copy → launch workflows.
 - Run `npm run test:skill-routing`; zero cases, missing matrix prompts, missing mock MCP responses, or multiple primary owners are hard failures.
+
+## Executable Skill Evaluations
+
+Run the deterministic, offline contract check before using a paid host runner:
+
+```bash
+npm run test:skill-evals
+```
+
+The contract check validates all five skills, their trigger cohorts, self-contained synthetic output fixtures, host-case coverage, and executable regex checks. A selector that discovers or selects zero cases is a hard failure.
+
+Use the Codex host benchmark only when live model execution is intended:
+
+```bash
+npm run eval:skills:host -- --trigger-cohort validation --runs 3
+```
+
+This command runs the designated one-per-skill smoke cases. Use `npm run eval:skills:host:all -- --trigger-cohort validation --runs 3` when every output case must execute. The trigger cohort filters routing queries only; output fixtures are selected by the smoke/all command and optional case selectors. Host mode evaluates synthetic prompts against embedded `origin/main` and current skill snapshots in ephemeral, read-only Codex invocations. It writes per-run messages and runner events only to the ignored artifact workspace. Summarize only aggregate, public-safe pass rates, deltas, duration, and usage availability in the durable `docs/orchid/qa/` closeout.
+
+Use `--skill`, `--case`, or `--trigger-cohort` for focused runs. `--skill` and `--case` may be repeated or receive comma-separated values; case selectors accept `case-id`, `skill-name/case-id`, or `skill-name:case-id`.
