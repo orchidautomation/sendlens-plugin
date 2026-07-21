@@ -153,6 +153,18 @@ const HARD_UNSAFE_COLUMN_GUIDANCE = new Map<string, {
     ],
     rawJson: true,
   }],
+  ["payload_value", {
+    reason: "raw campaign-scoped payload values may contain arbitrary nested provider or customer-defined data when the payload is non-scalar.",
+    prefer: "typed scalar payload fields",
+    alternatives: [
+      "sendlens.lead_payload_kv.payload_key",
+      "sendlens.lead_payload_kv.payload_value_normalized for scalar values only",
+      "sendlens.lead_payload_kv.payload_value_type",
+      "sendlens.lead_payload_kv.payload_is_scalar",
+      "analysis_starters(recipe_id=\"campaign-payload-key-signals\")",
+    ],
+    rawJson: true,
+  }],
   ["source_raw_json", {
     reason: "raw provider payload JSON may contain fields outside the public semantic contract.",
     prefer: "public semantic columns",
@@ -303,7 +315,7 @@ const TABLE_HARD_UNSAFE_COLUMNS = new Map<PublicTableName, Set<string>>([
   ["sampled_leads", new Set(["personalization", "status_summary", "custom_payload", "source_raw_json"])],
   ["sampled_outbound_emails", new Set(["body_text"])],
   ["lead_evidence", new Set(["personalization", "status_summary", "custom_payload"])],
-  ["lead_payload_kv", new Set(["payload_value_json"])],
+  ["lead_payload_kv", new Set(["payload_value", "payload_value_json"])],
   ["reply_context", new Set(["custom_payload", "reply_body_text", "reply_body_html", "template_body_text", "rendered_body_text"])],
   ["reply_email_context", new Set(["reply_body_text", "reply_body_html", "template_body_text"])],
   ["rendered_outbound_context", new Set(["rendered_body_text", "template_body_text"])],
@@ -389,7 +401,7 @@ export function highCardinalityResultPrivacyReport(
 ): AnalyzeDataPrivacyGuardReport | null {
   if (rows.length < 6) return null;
   const context = options.sql ? highCardinalitySqlContext(options.sql) : null;
-  if (context?.hasOnlySafeRecommendedGroupBy) return null;
+  if (context?.hasOnlySafeRecommendedGroupBy && context.hasOnlySafeRecommendedProjection) return null;
 
   const countFields = countLikeFields(rows);
   if (countFields.length === 0 && context?.hasCountAggregate) {
@@ -683,7 +695,56 @@ function highCardinalitySqlContext(sql: string) {
     hasOnlySafeRecommendedGroupBy:
       groupColumns.length > 0
       && groupColumns.every((column) => column.known && column.safety?.recommended_cohort_field === true),
+    hasOnlySafeRecommendedProjection: selectedProjectionSafety(statement),
   };
+}
+
+function selectedProjectionSafety(node: SelectNode) {
+  for (const columnNode of Array.isArray(node.columns) ? node.columns : []) {
+    const refs = columnRefsOutsideCountAggregate(columnNode);
+    if (refs.length === 0) continue;
+    const visibleCtes = new Set<string>();
+    if (Array.isArray(node.with)) {
+      for (const cte of node.with) {
+        const name = cte?.name?.value;
+        if (name) visibleCtes.add(normalizeIdentifier(name));
+      }
+    }
+    const scope = sourceScope(node, visibleCtes);
+    for (const ref of refs) {
+      const column = normalizeIdentifier(columnName(ref.column));
+      const tables = resolveColumnTables(scope, ref.table, column);
+      if (tables.length === 0) return false;
+      for (const table of tables) {
+        if (columnSafetyMetadata(table, column, "VARCHAR").recommended_cohort_field !== true) {
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
+function columnRefsOutsideCountAggregate(
+  expr: unknown,
+  refs: ColumnRef[] = [],
+  seen = new Set<object>(),
+  insideCountAggregate = false,
+) {
+  if (!expr || typeof expr !== "object") return refs;
+  if (seen.has(expr)) return refs;
+  seen.add(expr);
+  const node = expr as Record<string, unknown>;
+  const childInsideCountAggregate = insideCountAggregate || isCountAggregate(node);
+  if (node.type === "column_ref" && !childInsideCountAggregate) refs.push(node as ColumnRef);
+  for (const value of Object.values(node)) {
+    if (Array.isArray(value)) {
+      for (const item of value) columnRefsOutsideCountAggregate(item, refs, seen, childInsideCountAggregate);
+      continue;
+    }
+    columnRefsOutsideCountAggregate(value, refs, seen, childInsideCountAggregate);
+  }
+  return refs;
 }
 
 function groupBySafety(node: SelectNode) {
