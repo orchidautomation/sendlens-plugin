@@ -292,11 +292,15 @@ contract tests in the same implementation PR.
 | `email_reply_count` | `1` or null from `email_stats.is_replied`; exact counts only if message history/statistics returns counts. |
 | `email_click_count` | `1` or null from `email_stats.is_clicked`; exact counts only if counts are present. |
 | `lt_interest_status` | Do not reuse Instantly numeric status values. Add provider-aware outcome mapping or keep null and use `reply_outcome_label` views from category fields. |
-| `timestamp_last_contact` | `last_sent_time`. |
+| `timestamp_last_contact` | `last_contacted_at`, then documented `last_sent_time`, then legacy `timestamp_last_contact`. |
 | `timestamp_last_reply` | Message history latest inbound `received_at` or statistics reply event when available. |
-| `job_title`, `website`, `phone`, `personalization` | `custom_fields` keys only when present. |
-| `custom_payload` | Full `custom_fields` object, after redaction. |
+| `job_title`, `personalization` | Direct field when returned, else the matching `custom_fields` key. |
+| `website` | Documented native `website`, else the matching `custom_fields` key. |
+| `phone` | Documented native `phone_number` (including camel-case/legacy variants), else `custom_fields.phone_number` or `custom_fields.phone`. |
+| `custom_payload` | Full `custom_fields` object plus documented native `phone_number`, `website`, `location`, `linkedin_profile`, and `company_url` when present. If a native value conflicts with the same custom key, keep the custom value under its original key and expose the native value as `smartlead_native_<key>`. If that fallback key is occupied, append a numeric suffix rather than overwriting either value. Smartlead status/category context is also retained. |
 | `sample_source` | `smartlead_campaign_leads`, `smartlead_replied_leads`, or `smartlead_message_history_backfill`. |
+
+`lead_payload_kv` expands this payload without discarding original keys or JSON values. Additive normalized-key, metadata-family, value-type, scalar, and normalized-scalar columns support discovery; exact source keys remain authoritative for grouping and template interpretation.
 
 ### `reply_emails`, Reconstructed Outbound, And Exact Outbound History
 

@@ -7,13 +7,28 @@
       "id": 1001,
       "email": "lead-1001@example.com",
       "first_name": "Ada",
+      "phone_number": "+15551234567",
+      "website": "https://example.com",
+      "location": "San Francisco, CA",
+      "linkedin_profile": "https://linkedin.com/in/ada-example",
+      "company_url": "https://example.com/about",
       "status": "STARTED",
       "email_stats": {
         "is_opened": true,
         "is_replied": false
       },
       "custom_fields": {
-        "company_domain": "example.com"
+        "company_domain": "example.com",
+        "persona": "VP Operations",
+        "segment": "Enterprise Healthcare",
+        "headcount": "1001-5000",
+        "industry": "Healthcare",
+        "tech_stack": "Epic; Salesforce",
+        "location": "West Coast territory",
+        "smartlead_native_location": "Custom reserved-looking field",
+        "smartlead_status": "Clay qualified",
+        "enrichment_score": 92,
+        "intent_flags": ["hiring", "expansion"]
       }
     },
     {

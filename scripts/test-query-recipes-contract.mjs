@@ -28,6 +28,7 @@ const PLACEHOLDER_FIXTURES = new Map([
   ["tag_name", "Founder's Demo"],
 ]);
 const REGRESSION_RECIPE_IDS = new Set([
+  "campaign-metadata-coverage",
   "cross-provider-overlap-risk",
   "duplicate-contact-company-exposure",
   "personalization-leak-audit",
@@ -36,6 +37,7 @@ const REGRESSION_RECIPE_IDS = new Set([
 const REQUIRED_ROUTE_CARD_RECIPE_IDS = [
   "workspace-overview",
   "account-health",
+  "campaign-metadata-coverage",
   "campaign-sender-inventory-by-tag",
   "personalization-leak-audit",
   "fetched-reply-text-by-campaign",
@@ -69,6 +71,12 @@ try {
       `${regressionId} must stay covered by the exhaustive recipe contract`,
     );
   }
+
+  const metadataCoverageRecipe = recipes.find((recipe) => recipe.id === "campaign-metadata-coverage");
+  assert.match(metadataCoverageRecipe.sql, /COALESCE\(NULLIF\(email, ''\), provider_lead_id\)/);
+  const payloadSignalRecipe = recipes.find((recipe) => recipe.id === "campaign-payload-key-signals");
+  assert.match(payloadSignalRecipe.sql, /payload_is_scalar = TRUE/);
+  assert.match(payloadSignalRecipe.sql, /payload_value_normalized/);
 
   const routeCardRecipes = recipes.filter((recipe) => recipe.route_card);
   assert.deepEqual(

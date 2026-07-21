@@ -23,7 +23,8 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 2. Pull `analysis_starters(topic="icp-signals")`.
 3. Use exact campaign aggregates for the performance baseline.
 4. Use `lead_evidence` and `lead_payload_kv` for sampled segment hypotheses.
-5. Inventory payload keys before value-level analysis when no key is named.
+5. Run `campaign-metadata-coverage` before value-level analysis when no exact key is named.
+6. Use normalized keys and metadata families to discover aliases, then group by the original exact payload key. Report sparse and non-scalar coverage rather than silently excluding it.
 
 ## Output Shape
 
@@ -35,4 +36,4 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 ## Evidence Boundaries
 
-`lead_payload_kv` is campaign-scoped. Do not assume payload keys are shared across campaigns or customers. Frame findings as hypotheses when they come from sampled lead evidence, even if the directional pattern is useful.
+`lead_payload_kv` is campaign-scoped. It preserves exact provider keys and values while adding normalized-key, metadata-family, scalar/type, and JSON columns for discovery. Do not assume payload keys are shared across campaigns or customers, silently merge aliases, or treat arrays/objects as scalar cohorts. Frame findings as hypotheses when they come from sampled lead evidence, even if the directional pattern is useful.

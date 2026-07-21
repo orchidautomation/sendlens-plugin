@@ -56,6 +56,7 @@ These are the kinds of questions SendLens can answer today:
 - "Audit my sent-email samples for unfilled personalization tokens, blank rendered bodies, and the affected step/variant."
 - "Pull the latest replies for this campaign and summarize positive vs. negative themes. Quote representative replies."
 - "Which custom lead fields show up more often on prospects who reply positively? Treat it as a hypothesis."
+- "Before profiling this campaign's ICP, show which persona, segment, headcount, industry, and technology metadata exists, its sampled coverage, and which values are too sparse to compare safely."
 - "Which senders are landing in spam or categories in inbox-placement tests, and is the issue authentication, warmup, or content?"
 - "For every campaign, show whether open tracking, link tracking, ESP matching, bounce protection, risky contacts, and unsubscribe headers are on."
 - "Build this week's account-manager brief: wins, risks, current actions, client asks, and next review date."
@@ -66,6 +67,10 @@ These are the kinds of questions SendLens can answer today:
 Most of these are not dashboard questions. They require campaign totals, daily pacing, sender assignments, account health, tag scopes, step and variant analytics, live templates, fetched reply text, lead outcomes, lead custom fields, sampled reconstructed outbound copy, and inbox-placement seed-test rows when available.
 
 SendLens keeps those surfaces in one local DuckDB cache and labels the evidence as exact, sampled, or hybrid. Exact totals stay exact. Lead-field and rendered-copy analysis is treated as sample evidence when the cache only has a bounded slice. That is the point: you can ask senior-analyst questions without losing track of what is proven, what is directional, and what needs a follow-up pull.
+
+### Arbitrary lead metadata
+
+Instantly custom variables return in each lead's `payload`; Smartlead custom enrichment returns in `custom_fields`. SendLens preserves those provider objects locally in `sampled_leads.custom_payload` and expands every top-level key through `lead_payload_kv`, so Clay enrichment such as persona, segment, industry, headcount, technology stack, source, and campaign-specific triggers remains queryable without adding fixed schema columns. Exact provider keys and JSON values are retained. Normalized keys and metadata families help agents discover aliases, but never silently replace or merge the original fields. Arrays and objects remain available as typed JSON evidence rather than being treated as ordinary scalar cohorts.
 
 - **Sentence-level reply attribution:** "Which sentence in my Step 0 email is prospects actually reacting to, and which one is triggering objections?"
 - **Meeting-booked field fingerprint:** "Which sampled custom-field values show up disproportionately in booked or won leads?"

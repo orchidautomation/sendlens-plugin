@@ -33,14 +33,16 @@ Use only SendLens MCP tools for SendLens analysis.
 3. Pull `analysis_starters(topic="icp-signals")`.
 4. Use exact campaign aggregates for the baseline.
 5. Inspect payload keys with `lead_payload_kv` and curated ICP recipes before grouping by variables.
-6. Run key inventory before value-level analysis unless the prompt names an exact payload key.
+6. Run `campaign-metadata-coverage` before value-level analysis unless the prompt names an exact payload key. Use normalized keys and metadata families only to discover candidate exact keys; group and report by the original exact payload key.
 7. Treat payload keys and values as sampled, campaign-scoped evidence.
-8. Treat blank `job_title`, role, segment, visitor, or payload fields as source-specific absence in the sampled canonical fields, not automatically as missing intent, failed enrichment, or failed upload. Inspect campaign-scoped payload keys first when the campaign may be sourced through RB2B, Clay, or another external source.
+8. Report scalar coverage, non-scalar rows, and sparse-value counts before claiming a field is usable for cohort analysis. Arrays and objects remain JSON evidence and require an explicit interpretation before grouping.
+9. Treat blank `job_title`, role, segment, visitor, or payload fields as source-specific absence in the sampled canonical fields, not automatically as missing intent, failed enrichment, or failed upload. Inspect campaign-scoped payload keys first when the campaign may be sourced through RB2B, Clay, or another external source.
 
 ## Suppression Rules
 
 - Do not say "the ICP is" from sampled payload evidence.
 - Do not assume payload keys are shared across campaigns or customers.
+- Do not silently merge aliases. Raw payload keys remain authoritative; `payload_key_normalized` and `payload_key_family` are discovery aids only.
 - Do not write "Instantly enrichment did not load" or similar phrasing for blank fields. If the upstream source or mapping is not evidenced, say visitor-source provenance cannot be verified from cached evidence. Recommend richer future-upload fields only when the decision actually requires them.
 - Do not paste raw contact data, full reply bodies, or raw reconstructed bodies into external artifacts.
 - Do not use raw JSON table functions when `lead_payload_kv` can answer the question.

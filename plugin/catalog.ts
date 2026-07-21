@@ -210,8 +210,8 @@ const CONCEPT_HINTS: ConceptHint[] = [
     triggers: ["payload", "lead payload", "variables"],
     searchTerms: ["lead_payload_kv", "lead_evidence", "sampled_leads", "payload"],
     topics: ["icp-signals"],
-    recipeIds: ["campaign-payload-key-inventory", "campaign-payload-key-signals", "campaign-payload-presence-signals"],
-    reason: "Payload discovery maps to sampled lead evidence and ICP starter recipes.",
+    recipeIds: ["campaign-metadata-coverage", "campaign-payload-key-inventory", "campaign-payload-key-signals", "campaign-payload-presence-signals"],
+    reason: "Payload discovery maps to sampled lead evidence, metadata coverage, and exact-key ICP starter recipes.",
   },
   {
     concept: "tag",

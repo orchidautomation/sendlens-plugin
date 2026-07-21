@@ -3401,6 +3401,120 @@ LIMIT 100;`,
     ],
   },
   {
+    id: "campaign-metadata-coverage",
+    topic: "icp-signals",
+    title: "Campaign lead-metadata coverage",
+    question: "Which arbitrary lead metadata fields are available, how complete are they, and which fields have enough scalar values for cohort analysis?",
+    exactness: "sampled",
+    rationale: "Inspect campaign-scoped metadata coverage, type, and sparse-value counts before selecting exact payload keys for ICP or reply-outcome analysis.",
+    route_card: {
+      preferred_intent: "safe campaign metadata discovery before ICP or reply cohort analysis",
+      grain: "one aggregate row per exact provider payload key",
+      time_basis: "current cached sampled lead evidence",
+      attribution: "provider lead payload/custom-field presence and type only; no value-level outcome claim",
+      provider_scope: "provider-qualified through the selected campaign",
+      population_scope: "sampled cached leads in exactly one campaign",
+      tag_role: "none; resolve the campaign before metadata analysis",
+      prerequisites: ["load the selected campaign", "replace {{campaign_id}} with one exact campaign ID"],
+      cost: "low",
+      privacy: "aggregate coverage/cardinality/type counts only; no contact identifiers or raw payload values",
+      privacy_class: "metadata_counts_only",
+      safe_adaptations: ["filter to one exact payload key", "filter to one metadata family", "change aggregate ordering"],
+      forbidden_adaptations: ["remove the campaign boundary", "expose raw contact or payload values", "merge metadata-family aliases as if they were semantically identical"],
+    },
+    sql: `WITH campaign_totals AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    campaign_name,
+    COUNT(DISTINCT COALESCE(NULLIF(email, ''), provider_lead_id)) AS sampled_leads
+  FROM sendlens.lead_evidence
+  WHERE campaign_id = '{{campaign_id}}'
+  GROUP BY 1, 2, 3
+),
+value_counts AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    payload_key,
+    payload_value_normalized,
+    COUNT(DISTINCT COALESCE(NULLIF(email, ''), provider_lead_id)) AS leads_with_value
+  FROM sendlens.lead_payload_kv
+  WHERE campaign_id = '{{campaign_id}}'
+    AND payload_is_scalar = TRUE
+    AND COALESCE(trim(payload_value_normalized), '') <> ''
+  GROUP BY 1, 2, 3, 4
+),
+value_coverage AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    payload_key,
+    COUNT(*) FILTER (WHERE leads_with_value < 5) AS sparse_value_count,
+    COUNT(*) FILTER (WHERE leads_with_value >= 5) AS values_meeting_min_cohort
+  FROM value_counts
+  GROUP BY 1, 2, 3
+),
+key_coverage AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    campaign_name,
+    payload_key,
+    payload_key_normalized,
+    payload_key_family,
+    COUNT(DISTINCT email) AS leads_with_key,
+    COUNT(DISTINCT payload_value_normalized) FILTER (
+      WHERE payload_is_scalar = TRUE
+        AND COALESCE(trim(payload_value_normalized), '') <> ''
+    ) AS distinct_scalar_values,
+    SUM(CASE WHEN payload_is_scalar THEN 1 ELSE 0 END) AS scalar_rows,
+    SUM(CASE WHEN payload_is_scalar = FALSE THEN 1 ELSE 0 END) AS non_scalar_rows,
+    SUM(CASE
+      WHEN payload_is_scalar = TRUE
+       AND COALESCE(trim(payload_value), '') = '' THEN 1
+      ELSE 0
+    END) AS blank_scalar_rows
+  FROM sendlens.lead_payload_kv
+  WHERE campaign_id = '{{campaign_id}}'
+  GROUP BY 1, 2, 3, 4, 5, 6
+)
+SELECT
+  kc.campaign_id,
+  kc.campaign_name,
+  kc.payload_key,
+  kc.payload_key_normalized,
+  kc.payload_key_family,
+  ct.sampled_leads,
+  kc.leads_with_key,
+  ROUND(100.0 * kc.leads_with_key / NULLIF(ct.sampled_leads, 0), 2) AS key_coverage_pct,
+  kc.distinct_scalar_values,
+  kc.scalar_rows,
+  kc.non_scalar_rows,
+  kc.blank_scalar_rows,
+  COALESCE(vc.sparse_value_count, 0) AS sparse_value_count,
+  COALESCE(vc.values_meeting_min_cohort, 0) AS values_meeting_min_cohort
+FROM key_coverage kc
+JOIN campaign_totals ct
+  ON kc.workspace_id = ct.workspace_id
+ AND kc.campaign_id = ct.campaign_id
+LEFT JOIN value_coverage vc
+  ON kc.workspace_id = vc.workspace_id
+ AND kc.campaign_id = vc.campaign_id
+ AND kc.payload_key = vc.payload_key
+ORDER BY
+  CASE WHEN kc.payload_key_family IS NULL THEN 1 ELSE 0 END,
+  key_coverage_pct DESC,
+  kc.payload_key;`,
+    notes: [
+      "Replace '{{campaign_id}}' with one campaign ID and run this before value-level analysis unless the exact payload key is already named.",
+      "Raw payload keys remain authoritative. `payload_key_normalized` and `payload_key_family` are discovery aids and must not silently merge different source fields.",
+      "`sparse_value_count` includes populated scalar values represented by fewer than five sampled leads; those values remain visible as a count even though the value-signal recipe suppresses their cohorts.",
+      "Arrays and objects remain preserved in `payload_value_json` and appear as non-scalar rows; do not group them as ordinary scalar ICP values without an explicit interpretation.",
+      "Coverage is sampled and campaign-scoped, not proof of full lead-population completeness.",
+    ],
+  },
+  {
     id: "campaign-payload-key-inventory",
     topic: "icp-signals",
     title: "Campaign payload-key inventory",
@@ -3507,13 +3621,16 @@ ORDER BY reply_share_with_key_pct DESC NULLS LAST, leads_with_key DESC, payload_
 FROM sendlens.lead_payload_kv
 WHERE campaign_id = '{{campaign_id}}'
   AND payload_key = '{{payload_key}}'
+  AND payload_is_scalar = TRUE
+  AND COALESCE(trim(payload_value_normalized), '') <> ''
 GROUP BY 1, 2, 3
 HAVING COUNT(DISTINCT email) >= 5
 ORDER BY sampled_reply_share_pct DESC NULLS LAST, sampled_lead_count DESC;`,
     notes: [
       "This is sampled evidence only and should stay scoped to one campaign.",
       "Replace '{{payload_key}}' with the exact payload key for that campaign, such as region, existing_customer, or recent_grant_or_initiative.",
-      "If the key has too few populated values, recommend collecting that field in future uploaded lead lists rather than blaming Instantly enrichment.",
+      "Use `campaign-metadata-coverage` first to see sparse-value counts. If the intended key has too few populated values, describe the observed source-specific coverage and recommend collecting it in future uploaded lead lists only when the decision requires it.",
+      "Use scalar values for this recipe. Arrays and objects remain available as JSON evidence but require an explicit interpretation before grouping.",
       "Use it to form hypotheses, not final population claims.",
     ],
   },
