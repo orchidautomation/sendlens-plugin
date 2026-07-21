@@ -70,6 +70,7 @@ try {
   assert.equal(payloadValueColumn.safety?.safe_to_select, false);
   assert.equal(payloadValueColumn.safety?.safe_to_group_by, false);
   assert.equal(payloadValueColumn.safety?.raw_json, true);
+
   const payloadValueJsonColumn = findColumn(payloadColumns, "payload_value_json");
   assert.equal(payloadValueJsonColumn.safety?.safe_to_select, false);
   assert.equal(payloadValueJsonColumn.safety?.safe_to_group_by, false);
@@ -238,6 +239,16 @@ try {
   assert.equal(highCardinalityResultPrivacyReport(unsafeProjectionInSafeGroupRows, {
     sql: "SELECT status, MIN(company_name) AS sample_company, COUNT(*) AS metric FROM sendlens.sampled_leads GROUP BY status",
   })?.reason, "high_cardinality_result");
+
+  const unsafeProjectedRows = Array.from({ length: 6 }, (_, index) => ({
+    status: "sent",
+    company_name: `rare-company-${index}`,
+    metric: 1,
+  }));
+  const unsafeProjectedReport = highCardinalityResultPrivacyReport(unsafeProjectedRows, {
+    sql: "SELECT status, ANY_VALUE(company_name) AS company_name, COUNT(*) AS metric FROM sendlens.sampled_leads GROUP BY status",
+  });
+  assert.equal(unsafeProjectedReport?.reason, "high_cardinality_result");
 
   const highCardinalityRows = Array.from({ length: 8 }, (_, index) => ({
     cohort: `rare-cohort-${index}`,

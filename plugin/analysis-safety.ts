@@ -154,7 +154,7 @@ const HARD_UNSAFE_COLUMN_GUIDANCE = new Map<string, {
     rawJson: true,
   }],
   ["payload_value", {
-    reason: "raw campaign-scoped payload values may contain arbitrary nested provider or customer-defined JSON.",
+    reason: "raw campaign-scoped payload values may contain arbitrary nested provider or customer-defined data when the payload is non-scalar.",
     prefer: "typed scalar payload fields",
     alternatives: [
       "sendlens.lead_payload_kv.payload_key",
