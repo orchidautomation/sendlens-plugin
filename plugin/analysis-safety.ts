@@ -141,6 +141,18 @@ const HARD_UNSAFE_COLUMN_GUIDANCE = new Map<string, {
     ],
     rawJson: true,
   }],
+  ["payload_value_json", {
+    reason: "raw campaign-scoped payload values may contain arbitrary nested provider or customer-defined JSON.",
+    prefer: "typed scalar payload fields",
+    alternatives: [
+      "sendlens.lead_payload_kv.payload_key",
+      "sendlens.lead_payload_kv.payload_value_normalized for scalar values only",
+      "sendlens.lead_payload_kv.payload_value_type",
+      "sendlens.lead_payload_kv.payload_is_scalar",
+      "analysis_starters(recipe_id=\"campaign-payload-key-signals\")",
+    ],
+    rawJson: true,
+  }],
   ["source_raw_json", {
     reason: "raw provider payload JSON may contain fields outside the public semantic contract.",
     prefer: "public semantic columns",
@@ -291,6 +303,7 @@ const TABLE_HARD_UNSAFE_COLUMNS = new Map<PublicTableName, Set<string>>([
   ["sampled_leads", new Set(["personalization", "status_summary", "custom_payload", "source_raw_json"])],
   ["sampled_outbound_emails", new Set(["body_text"])],
   ["lead_evidence", new Set(["personalization", "status_summary", "custom_payload"])],
+  ["lead_payload_kv", new Set(["payload_value_json"])],
   ["reply_context", new Set(["custom_payload", "reply_body_text", "reply_body_html", "template_body_text", "rendered_body_text"])],
   ["reply_email_context", new Set(["reply_body_text", "reply_body_html", "template_body_text"])],
   ["rendered_outbound_context", new Set(["rendered_body_text", "template_body_text"])],
@@ -372,9 +385,16 @@ export function enforceAnalyzeDataPrivacy(sql: string) {
 
 export function highCardinalityResultPrivacyReport(
   rows: Array<Record<string, unknown>>,
+  options: { sql?: string | null } = {},
 ): AnalyzeDataPrivacyGuardReport | null {
   if (rows.length < 6) return null;
+  const context = options.sql ? highCardinalitySqlContext(options.sql) : null;
+  if (context?.hasOnlySafeRecommendedGroupBy) return null;
+
   const countFields = countLikeFields(rows);
+  if (countFields.length === 0 && context?.hasCountAggregate) {
+    countFields.push(...singletonNumericMeasureFields(rows));
+  }
   if (countFields.length === 0) return null;
 
   const singletonRows = rows.filter((row) =>
@@ -437,7 +457,10 @@ export function redactAnalyzeDataText(input: string) {
   return input
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]")
     .replace(/\b(?:instly|sk|sl)_[A-Za-z0-9_-]{8,}\b/g, "[redacted-secret]")
-    .replace(/(api[_-]?key|authorization|bearer|access[_-]?token)(\s*[:=]\s*|\s+)[^\s"',;{}]+/gi, "$1$2[redacted-secret]");
+    .replace(/"((?:api[_-]?key|authorization|access[_-]?token))"\s*:\s*"[^"]*"/gi, "\"$1\":\"[redacted-secret]\"")
+    .replace(/'((?:api[_-]?key|authorization|access[_-]?token))'\s*:\s*'[^']*'/gi, "'$1':'[redacted-secret]'")
+    .replace(/\b(api[_-]?key|authorization|access[_-]?token)(\s*[:=]\s*)(?:"[^"]*"|'[^']*'|bearer\s+[^\s"',;{}]+|[^\s"',;{}]+)/gi, "$1$2[redacted-secret]")
+    .replace(/\b(bearer)(\s+)(?:"[^"]*"|'[^']*'|[^\s"',;{}]+)/gi, "$1$2[redacted-secret]");
 }
 
 function unsafeColumnUsages(sql: string): AnalyzeDataPrivacyColumnUsage[] {
@@ -628,6 +651,91 @@ function countLikeFields(rows: Array<Record<string, unknown>>) {
   return [...fields];
 }
 
+function singletonNumericMeasureFields(rows: Array<Record<string, unknown>>) {
+  const fields = new Set<string>();
+  const rowCount = rows.length || 1;
+  const candidateFields = Object.keys(rows[0] ?? {});
+  for (const field of candidateFields) {
+    const numericValues = rows
+      .map((row) => Number(row[field]))
+      .filter((value) => Number.isFinite(value));
+    if (numericValues.length < rows.length) continue;
+    const singletonValues = numericValues.filter((value) => value === 1).length;
+    if (singletonValues / rowCount >= 0.75) fields.add(field);
+  }
+  return [...fields];
+}
+
+function highCardinalitySqlContext(sql: string) {
+  let ast: unknown;
+  try {
+    ast = new Parser().astify(stripTrailingSemicolon(sql), DIALECT);
+  } catch (error) {
+    void error;
+    return null;
+  }
+  const statements = Array.isArray(ast) ? ast : [ast];
+  const statement = statements.find(isSelectNode);
+  if (!statement) return null;
+  const groupColumns = groupBySafety(statement);
+  return {
+    hasCountAggregate: expressionContainsCountAggregate(statement),
+    hasOnlySafeRecommendedGroupBy:
+      groupColumns.length > 0
+      && groupColumns.every((column) => column.known && column.safety?.recommended_cohort_field === true),
+  };
+}
+
+function groupBySafety(node: SelectNode) {
+  const visibleCtes = new Set<string>();
+  if (Array.isArray(node.with)) {
+    for (const cte of node.with) {
+      const name = cte?.name?.value;
+      if (name) visibleCtes.add(normalizeIdentifier(name));
+    }
+  }
+  const scope = sourceScope(node, visibleCtes);
+  const columns: Array<{ known: boolean; safety?: ColumnSafetyMetadata }> = [];
+  for (const groupNode of groupByColumns(node.groupby)) {
+    const refs = columnRefs(groupNode);
+    if (refs.length === 0) {
+      columns.push({ known: false });
+      continue;
+    }
+    for (const ref of refs) {
+      const column = normalizeIdentifier(columnName(ref.column));
+      const tables = resolveColumnTables(scope, ref.table, column);
+      if (tables.length === 0) {
+        columns.push({ known: false });
+        continue;
+      }
+      for (const table of tables) {
+        columns.push({
+          known: true,
+          safety: columnSafetyMetadata(table, column, "VARCHAR"),
+        });
+      }
+    }
+  }
+  return columns;
+}
+
+function columnRefs(expr: unknown, refs: ColumnRef[] = [], seen = new Set<object>()) {
+  if (!expr || typeof expr !== "object") return refs;
+  if (seen.has(expr)) return refs;
+  seen.add(expr);
+  const node = expr as Record<string, unknown>;
+  if (node.type === "column_ref") refs.push(node as ColumnRef);
+  for (const value of Object.values(node)) {
+    if (Array.isArray(value)) {
+      for (const item of value) columnRefs(item, refs, seen);
+      continue;
+    }
+    columnRefs(value, refs, seen);
+  }
+  return refs;
+}
+
 function groupByColumns(groupby: SelectNode["groupby"]): unknown[] {
   if (!groupby) return [];
   if (Array.isArray(groupby)) return groupby;
@@ -675,6 +783,22 @@ function isDirectPersonalIdentifierColumn(column: string) {
 
 function isCountAggregate(node: Record<string, unknown>) {
   return node.type === "aggr_func" && normalizeIdentifier(String(node.name ?? "")) === "count";
+}
+
+function expressionContainsCountAggregate(expr: unknown, seen = new Set<object>()): boolean {
+  if (!expr || typeof expr !== "object") return false;
+  if (seen.has(expr)) return false;
+  seen.add(expr);
+  const node = expr as Record<string, unknown>;
+  if (isCountAggregate(node)) return true;
+  for (const value of Object.values(node)) {
+    if (Array.isArray(value)) {
+      if (value.some((item) => expressionContainsCountAggregate(item, seen))) return true;
+      continue;
+    }
+    if (expressionContainsCountAggregate(value, seen)) return true;
+  }
+  return false;
 }
 
 function dedupeViolations(violations: AnalyzeDataPrivacyColumnUsage[]) {

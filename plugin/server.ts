@@ -1823,7 +1823,7 @@ server.registerTool(
           ));
         }
       }
-      const highCardinalityReport = highCardinalityResultPrivacyReport(returnedRows);
+      const highCardinalityReport = highCardinalityResultPrivacyReport(returnedRows, { sql });
       if (highCardinalityReport) {
         return jsonResponse(analyzeDataFailurePayload(
           "privacy_guard",

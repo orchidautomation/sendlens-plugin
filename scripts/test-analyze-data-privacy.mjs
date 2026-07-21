@@ -65,6 +65,12 @@ try {
   assert.equal(statusSummaryColumn.safety?.high_cardinality, true);
   assert.equal(statusSummaryColumn.safety?.prefer_derived_field, "status");
 
+  const payloadColumns = await listColumns(db, "lead_payload_kv");
+  const payloadValueJsonColumn = findColumn(payloadColumns, "payload_value_json");
+  assert.equal(payloadValueJsonColumn.safety?.safe_to_select, false);
+  assert.equal(payloadValueJsonColumn.safety?.safe_to_group_by, false);
+  assert.equal(payloadValueJsonColumn.safety?.raw_json, true);
+
   const catalogMatches = await searchCatalog(db, "status_summary cohort");
   const statusSummaryMatch = catalogMatches.find(
     (match) => match.kind === "column" && match.table === "sampled_leads" && match.column === "status_summary",
@@ -154,6 +160,14 @@ try {
     },
   );
   assert.throws(
+    () => enforceAnalyzeDataPrivacy("SELECT payload_value_json FROM sendlens.lead_payload_kv LIMIT 5"),
+    (error) => {
+      assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
+      assert.equal(error.report.blocked_columns?.[0]?.column, "payload_value_json");
+      return true;
+    },
+  );
+  assert.throws(
     () => enforceAnalyzeDataPrivacy("SELECT email, phone, first_name FROM sendlens.sampled_leads LIMIT 5"),
     (error) => {
       assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
@@ -189,11 +203,21 @@ try {
     },
   );
 
+  const safeSingletonStatusRows = Array.from({ length: 6 }, (_, index) => ({
+    status: `safe-status-${index}`,
+    metric: 1,
+  }));
+  assert.equal(highCardinalityResultPrivacyReport(safeSingletonStatusRows, {
+    sql: "SELECT status, COUNT(*) AS metric FROM sendlens.sampled_leads GROUP BY status",
+  }), null);
+
   const highCardinalityRows = Array.from({ length: 8 }, (_, index) => ({
     cohort: `rare-cohort-${index}`,
-    c: 1,
+    metric: 1,
   }));
-  const highCardinalityReport = highCardinalityResultPrivacyReport(highCardinalityRows);
+  const highCardinalityReport = highCardinalityResultPrivacyReport(highCardinalityRows, {
+    sql: "SELECT company_name AS cohort, COUNT(*) AS metric FROM sendlens.sampled_leads GROUP BY company_name",
+  });
   assert.equal(highCardinalityReport?.reason, "high_cardinality_result");
   assert.match(highCardinalityReport?.guidance ?? "", /high-cardinality|row-level/i);
   assertNoCanaries(highCardinalityReport);
@@ -202,10 +226,14 @@ try {
     {
       synthetic_note: canaries[0],
       nested_json: '{"sender":"ops@example.invalid"}',
+      authorization_json: '{"authorization":"Bearer synthetic-redaction-token"}',
+      bearer_header: "Bearer synthetic-redaction-token",
     },
   ]);
   assert.equal(redactedRows[0].synthetic_note, "[redacted-email]");
   assert.equal(redactedRows[0].nested_json, '{"sender":"[redacted-email]"}');
+  assert.equal(redactedRows[0].authorization_json, '{"authorization":"[redacted-secret]"}');
+  assert.equal(redactedRows[0].bearer_header, "Bearer [redacted-secret]");
   assertNoCanaries(redactedRows);
 
   console.log("analyze_data privacy tests passed");
