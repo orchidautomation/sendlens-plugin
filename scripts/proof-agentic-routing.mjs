@@ -83,6 +83,7 @@ const REVIEWED_BASELINE_RECIPE_IDS = Object.freeze([
   "campaign-funnel-quality",
   "campaign-launch-qa-checklist",
   "campaign-lead-state-sample-by-step",
+  "campaign-metadata-coverage",
   "campaign-payload-key-inventory",
   "campaign-payload-key-signals",
   "campaign-payload-presence-signals",
@@ -773,9 +774,9 @@ function assertReviewedRecipeRegistry() {
   assert.deepEqual(
     recipeIds,
     [...REVIEWED_BASELINE_RECIPE_IDS].sort(),
-    "getQueryRecipes() registry drifted from the reviewed v0.1.64 baseline; update this harness only with a reviewed recipe change",
+    "getQueryRecipes() registry drifted from the reviewed v0.1.72 baseline; update this harness only with a reviewed recipe change",
   );
-  assert.equal(recipeIds.length, 58, "reviewed v0.1.64 recipe baseline is 58");
+  assert.equal(recipeIds.length, 59, "reviewed v0.1.72 recipe baseline is 59");
   return recipeIds;
 }
 

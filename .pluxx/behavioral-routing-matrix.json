@@ -30,7 +30,7 @@
   "agentic_proof": {
     "schema_version": 1,
     "description": "Opaque prompt-to-route proof cases for the local deterministic SendLens proof harness. Fixture handles resolve only inside the harness; reports must never include prompt text, SQL, rows, local paths, or raw fixture values.",
-    "expected_recipe_catalog_count": 58,
+    "expected_recipe_catalog_count": 59,
     "cases": [
       {
         "id": "proof-broad-workspace-health",
