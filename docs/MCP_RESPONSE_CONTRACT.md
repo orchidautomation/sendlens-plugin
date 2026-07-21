@@ -28,6 +28,7 @@ Where relevant, SendLens responses should include:
 `workspace_snapshot`
 
 - `schema_version: "workspace_snapshot.v1"`
+- `active_data_state` declaring whether the active data is unavailable, synthetic demo fixtures, cached data without refresh credentials, or refresh-configured local workspace data
 - exact workspace/campaign/account metrics
 - optional `provider` input: `all`, `instantly`, or `smartlead`
 - `source_provider_scope`, `provider_breakdown`, and `provider_capabilities` for mixed-provider workspaces
@@ -40,6 +41,7 @@ Where relevant, SendLens responses should include:
 `setup_doctor`
 
 - `schema_version: "sendlens_setup_doctor.v1"`
+- `active_data_state` with secret-safe first-run/demo/cache state, user-facing notice, missing provider key names, and recommended action
 - setup status, demo mode, and local-cache/live-refresh/demo-seed capabilities
 - provider setup metadata in `capabilities`: `source_provider_mode`, `source_providers`, `source_provider_config_valid`, provider key configured flags, and provider key validated flags
 - `cache_freshness` with the refresh timestamp, relative age in seconds, and display label
@@ -130,7 +132,7 @@ Where relevant, SendLens responses should include:
 
 Run `npm run test:mcp-response-contract` when changing MCP tools, response field names, warnings, caps, or this document. The test pins the response-contract terms that agents rely on for:
 
-- `workspace_snapshot` exact metrics, campaign rows, coverage, warnings, output limits, and readiness
+- `workspace_snapshot` active data state, exact metrics, campaign rows, coverage, warnings, output limits, and readiness
 - `workspace_snapshot` provider-scoped/all-provider outputs, provider capability rows, cross-provider rate caveats, and support-gated Smart Delivery coverage
 - `load_campaign_data` provider-qualified/native campaign handling, the `SENDLENS_PROVIDER=all` provider-qualified ID requirement, structured selector errors, campaign overview, reply samples, rendered outbound reconstruction caveats, and output limits
 - campaign selector ambiguity responses with provider-qualified matches

@@ -189,6 +189,9 @@ try {
   assert.equal(report.capabilities.source_providers.join(","), "instantly");
   assert.equal(report.capabilities.local_cache_read, false);
   assert.equal(report.capabilities.demo_seed, true);
+  assert.equal(report.active_data_state.status, "no_workspace");
+  assert.match(report.active_data_state.analysis_notice, /no real or demo SendLens workspace/i);
+  assert.match(report.active_data_state.recommended_action, /seed_demo_workspace/i);
   assert.deepEqual(report.docs, {
     install: "https://github.com/orchidautomation/sendlens-plugin/blob/main/docs/INSTALL.md",
     troubleshooting: "https://github.com/orchidautomation/sendlens-plugin/blob/main/docs/TROUBLESHOOTING.md",
@@ -237,6 +240,8 @@ try {
   assert.equal(report.capabilities.local_cache_read, false);
   assert.equal(report.capabilities.live_refresh, true);
   assert.equal(report.capabilities.demo_seed, true);
+  assert.equal(report.active_data_state.status, "no_workspace");
+  assert.match(report.active_data_state.recommended_action, /refresh_data/i);
   assert.equal(report.capabilities.smartlead_key_validated, true);
   assert.match(
     findCheck(report, "Source provider mode")?.message ?? "",

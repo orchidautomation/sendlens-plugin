@@ -13,6 +13,7 @@ const {
 } = require("../build/plugin/local-db.js");
 const { PUBLIC_TABLES } = require("../build/plugin/constants.js");
 const { buildWorkspaceSummary } = require("../build/plugin/summary.js");
+const { buildSetupDoctorReport } = require("../build/plugin/setup-doctor.js");
 const { readRefreshStatus } = require("../build/plugin/refresh-status.js");
 
 process.env.SENDLENS_DB_PATH = path.join(
@@ -33,6 +34,10 @@ const db = await getDb();
 try {
   const summary = await buildWorkspaceSummary(db);
   assert.equal(summary.workspaceId, "demo_workspace");
+  assert.equal(summary.active_data_state.status, "demo_workspace");
+  assert.equal(summary.active_data_state.is_demo_workspace, true);
+  assert.match(summary.summary, /synthetic demo fixtures|synthetic demo workspace/i);
+  assert.match(summary.warnings.join("\n"), /synthetic demo fixture data/i);
   assert.equal(summary.exact_metrics.active_campaign_count, 4);
   assert.ok(summary.exact_metrics.total_sent > 0);
   assert.ok(summary.summary.includes("Sampled raw tables are evidence support only"));
@@ -112,6 +117,14 @@ try {
   assert.equal(status.status, "succeeded");
   assert.equal(status.workspaceId, "demo_workspace");
   assert.match(String(status.message), /Synthetic SendLens demo workspace/);
+  const doctor = await buildSetupDoctorReport();
+  assert.equal(doctor.active_data_state.status, "demo_workspace");
+  assert.match(doctor.active_data_state.message, /No live provider workspace is configured/i);
+  assert.ok(
+    doctor.checks.some(
+      (check) => check.name === "Active data state" && check.status === "warn",
+    ),
+  );
 
   const ambiguousNameRows = await query(
     db,
