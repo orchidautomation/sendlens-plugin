@@ -85,7 +85,7 @@ await run(
   db,
   `INSERT OR REPLACE INTO sendlens.sampled_leads
    (workspace_id, campaign_id, id, email, first_name, last_name, company_name, company_domain, status, email_reply_count, lt_interest_status, email_replied_step, email_replied_variant, timestamp_last_reply, job_title, custom_payload, sample_source, sampled_at)
-   VALUES ('ws_test', 'c1', 'l1', 'a@example.com', 'Alex', 'Avery', 'Acme Health', 'acme.test', 'active', 1, 1, 0, 0, CURRENT_TIMESTAMP, 'VP Operations', '{"campaign":"c1","Country":"United States","Category":"Healthcare","firstName":"Alex"}', 'reply_full', CURRENT_TIMESTAMP),
+   VALUES ('ws_test', 'c1', 'l1', 'a@example.com', 'Alex', 'Avery', 'Acme Health', 'acme.test', 'active', 1, 1, 0, 0, CURRENT_TIMESTAMP, 'VP Operations', '{"campaign":"c1","Country":"United States","Category":"Healthcare","firstName":"Alex","Buyer Persona":"VP Operations","employee-band":"1001-5000","tech.stack":"Epic; Salesforce","enrichment_score":92,"is_priority":true,"intent_flags":["hiring","expansion"],"account_context":{"source":"Clay"}}', 'reply_full', CURRENT_TIMESTAMP),
           ('ws_test', 'c1', 'l2', 'b@example.com', 'Blake', 'Baker', 'Beta Health', 'beta.test', 'active', 0, NULL, NULL, NULL, NULL, 'Director', '{"campaign":"c1","Country":"Canada","Category":"Healthcare"}', 'nonreply_sample', CURRENT_TIMESTAMP),
           ('ws_test', 'c1', 'l3', 'ooo@example.com', 'Olive', 'Out', 'OOO Co', 'ooo.test', 'active', 1, 0, 0, 0, CURRENT_TIMESTAMP, 'Manager', '{"campaign":"c1","Country":"United States"}', 'reply_full', CURRENT_TIMESTAMP),
           ('ws_test', 'c1', 'l4', 'won@example.com', 'Wynn', 'Won', 'Won Co', 'won.test', 'active', 1, 4, 0, 0, CURRENT_TIMESTAMP, 'CRO', '{"campaign":"c1","stage":"won"}', 'reply_full', CURRENT_TIMESTAMP),
@@ -640,10 +640,27 @@ assert.equal(Number(trueTrendRows[0].cached_sending_days), 2);
 
 const leadPayloadKv = await runQuery(
   db,
-  "SELECT payload_key, payload_value FROM sendlens.lead_payload_kv WHERE campaign_id = 'c1' AND email = 'a@example.com' ORDER BY payload_key",
+  "SELECT payload_key, payload_key_normalized, payload_key_family, payload_value, payload_value_normalized, payload_value_type, payload_is_scalar, payload_value_json FROM sendlens.lead_payload_kv WHERE campaign_id = 'c1' AND email = 'a@example.com' ORDER BY payload_key",
 );
 assert.equal(leadPayloadKv.some((row) => row.payload_key === "Country" && row.payload_value === "United States"), true);
 assert.equal(leadPayloadKv.some((row) => row.payload_key === "firstName" && row.payload_value === "Alex"), true);
+const payloadByKey = new Map(leadPayloadKv.map((row) => [row.payload_key, row]));
+assert.equal(payloadByKey.get("Buyer Persona").payload_key_normalized, "buyer_persona");
+assert.equal(payloadByKey.get("Buyer Persona").payload_key_family, "persona");
+assert.equal(payloadByKey.get("Buyer Persona").payload_value_normalized, "vp operations");
+assert.equal(payloadByKey.get("Buyer Persona").payload_value_type, "VARCHAR");
+assert.equal(Boolean(payloadByKey.get("Buyer Persona").payload_is_scalar), true);
+assert.equal(payloadByKey.get("employee-band").payload_key_family, "company_size");
+assert.equal(payloadByKey.get("tech.stack").payload_key_family, "technology_stack");
+assert.equal(payloadByKey.get("enrichment_score").payload_value_type, "UBIGINT");
+assert.equal(Boolean(payloadByKey.get("enrichment_score").payload_is_scalar), true);
+assert.equal(payloadByKey.get("is_priority").payload_value_type, "BOOLEAN");
+assert.equal(Boolean(payloadByKey.get("is_priority").payload_is_scalar), true);
+assert.equal(payloadByKey.get("intent_flags").payload_value_type, "ARRAY");
+assert.equal(Boolean(payloadByKey.get("intent_flags").payload_is_scalar), false);
+assert.match(String(payloadByKey.get("intent_flags").payload_value_json), /hiring/);
+assert.equal(payloadByKey.get("account_context").payload_value_type, "OBJECT");
+assert.equal(Boolean(payloadByKey.get("account_context").payload_is_scalar), false);
 
 const inboxPlacementOverview = await runQuery(
   db,
@@ -750,6 +767,23 @@ assert.equal(stepFatigueLookup.returned_count, 1);
 assert.equal(stepFatigueLookup.recipes[0].id, "step-fatigue-by-campaign");
 assert.equal(stepFatigueLookup.recipes[0].sql.includes("{{campaign_id}}"), true);
 const icpRecipes = getQueryRecipes("icp-signals");
+const metadataCoverageRecipe = icpRecipes.find((recipe) => recipe.id === "campaign-metadata-coverage");
+assert.ok(metadataCoverageRecipe);
+assert.match(metadataCoverageRecipe.sql, /payload_key_family/);
+assert.match(metadataCoverageRecipe.sql, /sparse_value_count/);
+const metadataCoverageRows = await runQuery(
+  db,
+  enforceLocalWorkspaceScope(metadataCoverageRecipe.sql.replaceAll("{{campaign_id}}", "c1"), "ws_test"),
+);
+const personaCoverage = metadataCoverageRows.find((row) => row.payload_key === "Buyer Persona");
+assert.ok(personaCoverage);
+assert.equal(personaCoverage.payload_key_family, "persona");
+assert.equal(Number(personaCoverage.sampled_leads), 12);
+assert.equal(Number(personaCoverage.leads_with_key), 1);
+assert.equal(Number(personaCoverage.sparse_value_count), 1);
+const intentCoverage = metadataCoverageRows.find((row) => row.payload_key === "intent_flags");
+assert.ok(intentCoverage);
+assert.equal(Number(intentCoverage.non_scalar_rows), 1);
 const leadListSourceRecipe = icpRecipes.find((recipe) => recipe.id === "lead-list-source-quality");
 assert.ok(leadListSourceRecipe);
 const leadListSourceRows = await runQuery(

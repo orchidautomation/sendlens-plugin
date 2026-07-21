@@ -162,6 +162,9 @@ const PROMOTION_GUARD_CONTRACTS = [
       /visitor-source provenance cannot be verified/i,
       /does not explicitly reference visitor behavior/i,
       /Do not (?:say|claim)[^.]*signal never reached the message/i,
+      /campaign-metadata-coverage/i,
+      /Raw payload keys remain authoritative/i,
+      /Arrays and objects/i,
     ],
   },
   {
@@ -172,6 +175,9 @@ const PROMOTION_GUARD_CONTRACTS = [
       /not proof that metadata coverage is thin, visitor intent is missing/i,
       /not automatically as a lead-list metadata coverage issue/i,
       /intended template tokens and available payload keys first/i,
+      /campaign-metadata-coverage/i,
+      /payload_key_family/i,
+      /sparse_value_count/i,
     ],
   },
   {
@@ -228,6 +234,8 @@ const PROMOTION_GUARD_CONTRACTS = [
       /source-specific absence/i,
       /RB2B, Clay, or another external source/i,
       /visitor-source provenance cannot be verified/i,
+      /campaign-metadata-coverage/i,
+      /exact payload key/i,
     ],
   },
   {

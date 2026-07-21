@@ -157,7 +157,7 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
   lead_evidence:
     "Semantic lead evidence view with provider-qualified campaign and lead fields, reply signals, provider event time, local observed/sample time, and preserved campaign-scoped payload JSON.",
   lead_payload_kv:
-    "Campaign-scoped sampled lead payload key/value view for ICP analysis without using raw JSON table functions in agent-authored SQL.",
+    "Campaign-scoped sampled lead payload key/value view for ICP analysis, preserving exact provider keys/values while adding normalized discovery keys, metadata families, scalar/type markers, and JSON values without agent-authored raw JSON table functions.",
   provider_overlap_risk:
     "Sampled cross-provider overlap-risk rollup for the same normalized email, domain, company domain, or company name, scored by closest provider-event contact window when timing is available.",
   provider_overlap_risk_details:

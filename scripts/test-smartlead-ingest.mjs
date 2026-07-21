@@ -492,23 +492,27 @@ assert.equal(accountDaily[0].unique_clicks, null);
 const leadEvidence = await query(
   db,
   `SELECT source_provider, provider_lead_id, normalized_email, normalized_domain,
-          company_domain, email_reply_count, lt_interest_status, reply_outcome_label,
+          company_domain, phone, email_reply_count, lt_interest_status, reply_outcome_label,
           custom_payload, has_reply_signal
    FROM sendlens.lead_evidence
-   WHERE workspace_id = '501' AND email = 'lead-1002@example.com'`,
+   WHERE workspace_id = '501' AND email = 'lead-1001@example.com'`,
 );
 assert.equal(leadEvidence.length, 1);
 assert.equal(leadEvidence[0].source_provider, "smartlead");
-assert.equal(leadEvidence[0].provider_lead_id, "1002");
-assert.equal(leadEvidence[0].normalized_email, "lead-1002@example.com");
+assert.equal(leadEvidence[0].provider_lead_id, "1001");
+assert.equal(leadEvidence[0].normalized_email, "lead-1001@example.com");
 assert.equal(leadEvidence[0].normalized_domain, "example.com");
-assert.equal(leadEvidence[0].company_domain, "example.org");
-assert.equal(Number(leadEvidence[0].email_reply_count), 1);
-assert.equal(Number(leadEvidence[0].lt_interest_status), 1);
-assert.equal(leadEvidence[0].reply_outcome_label, "positive");
-assert.equal(Boolean(leadEvidence[0].has_reply_signal), true);
+assert.equal(leadEvidence[0].company_domain, "example.com");
+assert.equal(leadEvidence[0].phone, "+15551234567");
+assert.equal(Number(leadEvidence[0].email_reply_count), 0);
+assert.equal(leadEvidence[0].lt_interest_status, null);
+assert.equal(leadEvidence[0].reply_outcome_label, "no_reply");
+assert.equal(Boolean(leadEvidence[0].has_reply_signal), false);
 assert.match(String(leadEvidence[0].custom_payload), /company_domain/);
-assert.match(String(leadEvidence[0].custom_payload), /smartlead_category_name/);
+assert.match(String(leadEvidence[0].custom_payload), /"persona":"VP Operations"/);
+assert.match(String(leadEvidence[0].custom_payload), /"segment":"Enterprise Healthcare"/);
+assert.match(String(leadEvidence[0].custom_payload), /"smartlead_native_location":"Custom reserved-looking field"/);
+assert.match(String(leadEvidence[0].custom_payload), /"smartlead_native_location_2":"San Francisco, CA"/);
 
 const replyContext = await query(
   db,
@@ -547,16 +551,35 @@ assert.equal(replyEmailContext[0].context_gap_reason, "covered");
 
 const payloadKv = await query(
   db,
-  `SELECT source_provider, normalized_email, normalized_domain, payload_key, payload_value
+  `SELECT source_provider, normalized_email, normalized_domain, payload_key, payload_value, payload_value_json
    FROM sendlens.lead_payload_kv
    WHERE workspace_id = '501'
      AND email = 'lead-1001@example.com'
-     AND payload_key = 'company_domain'`,
+   ORDER BY payload_key`,
 );
-assert.equal(payloadKv.length, 1);
-assert.equal(payloadKv[0].source_provider, "smartlead");
-assert.equal(payloadKv[0].normalized_email, "lead-1001@example.com");
-assert.equal(payloadKv[0].payload_value, "example.com");
+const smartleadPayload = new Map(payloadKv.map((row) => [row.payload_key, row]));
+assert.equal(smartleadPayload.get("company_domain").source_provider, "smartlead");
+assert.equal(smartleadPayload.get("company_domain").normalized_email, "lead-1001@example.com");
+assert.equal(smartleadPayload.get("company_domain").payload_value, "example.com");
+for (const [key, value] of [
+  ["persona", "VP Operations"],
+  ["segment", "Enterprise Healthcare"],
+  ["headcount", "1001-5000"],
+  ["industry", "Healthcare"],
+  ["tech_stack", "Epic; Salesforce"],
+  ["phone_number", "+15551234567"],
+  ["website", "https://example.com"],
+  ["linkedin_profile", "https://linkedin.com/in/ada-example"],
+  ["company_url", "https://example.com/about"],
+  ["location", "West Coast territory"],
+  ["smartlead_native_location", "Custom reserved-looking field"],
+  ["smartlead_native_location_2", "San Francisco, CA"],
+  ["smartlead_status", "Clay qualified"],
+  ["smartlead_native_status", "STARTED"],
+]) {
+  assert.equal(smartleadPayload.get(key)?.payload_value, value, `missing Smartlead metadata ${key}`);
+}
+assert.match(String(smartleadPayload.get("intent_flags")?.payload_value_json), /hiring/);
 
 const campaignTags = await query(
   db,

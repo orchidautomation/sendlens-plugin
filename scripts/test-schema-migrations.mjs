@@ -153,6 +153,32 @@ await withTempDb("sendlens-schema-historical-", async (dbPath) => {
       migratedRows.map((row) => row.name),
       ["normalized_email", "source_provider"],
     );
+    const metadataViewColumns = await query(
+      db,
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'sendlens'
+         AND table_name = 'lead_payload_kv'
+         AND column_name IN (
+           'payload_key_normalized',
+           'payload_key_family',
+           'payload_value_normalized',
+           'payload_value_type',
+           'payload_is_scalar'
+         )
+       ORDER BY column_name`,
+    );
+    assert.deepEqual(
+      metadataViewColumns.map((row) => row.column_name),
+      [
+        "payload_is_scalar",
+        "payload_key_family",
+        "payload_key_normalized",
+        "payload_value_normalized",
+        "payload_value_type",
+      ],
+      "historical caches must receive the additive lead metadata semantics view",
+    );
     const campaignRows = await query(
       db,
       "SELECT id, workspace_id, name FROM sendlens.campaigns WHERE workspace_id = 'ws_legacy'",

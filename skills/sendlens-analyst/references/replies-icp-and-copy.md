@@ -29,7 +29,9 @@ Exhausted selected status buckets mean the queried buckets exposed no further ro
 ## ICP And Payload Evidence
 
 - Use exact campaign aggregates for the baseline and sampled lead/payload evidence for hypotheses.
-- Inventory payload keys before value-level analysis unless the user names a key.
+- Run `campaign-metadata-coverage` before value-level analysis unless the user names an exact key. Report key coverage, sparse-value counts, and non-scalar rows before deciding that a field is suitable for cohort analysis.
+- Raw payload keys remain authoritative. `payload_key_normalized` and `payload_key_family` help discover aliases such as persona, segment, company size, and technology stack, but they must not silently merge source fields or conflicting values.
+- Arrays and objects remain preserved in `payload_value_json`; do not treat them as ordinary scalar cohorts without an explicit interpretation. Use `payload_is_scalar` and `payload_value_type` to keep that boundary visible.
 - Keep every payload finding campaign-scoped.
 - Treat blank title, role, segment, source, or trigger fields as source-specific absence, not automatically as missing uploaded metadata or provider enrichment failure. Inspect campaign-scoped payload keys first; only call metadata missing when an intended template variable is demonstrably expected and remains unresolved or blank.
 - Convert strong sampled signals into a test cohort, not a permanent targeting rule.

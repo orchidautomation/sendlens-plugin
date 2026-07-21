@@ -202,6 +202,7 @@ function smartleadSampleIdentity(lead: SmartleadRow) {
 function smartleadEventTimestamp(lead: SmartleadRow) {
   return String(
     lead.last_contacted_at ??
+    lead.last_sent_time ??
     lead.timestamp_last_contact ??
     lead.last_replied_at ??
     lead.timestamp_last_reply ??
@@ -1053,12 +1054,46 @@ function normalizeDailyRows(payload: unknown): SmartleadRow[] {
 
 function customPayloadForLead(lead: SmartleadRow) {
   const customFields = asRecord(lead.custom_fields ?? lead.customFields);
-  const payload = {
-    ...customFields,
-    smartlead_status: lead.status ?? null,
-    smartlead_category_id: lead.lead_category_id ?? lead.category_id ?? null,
-    smartlead_category_name: lead.lead_category_name ?? lead.category_name ?? null,
+  const payload: Record<string, unknown> = { ...customFields };
+
+  const addProviderField = (key: string, value: unknown, conflictKey = `smartlead_native_${key}`) => {
+    if (value == null || value === "") return;
+    const current = payload[key];
+    if (current == null || current === "") {
+      payload[key] = value;
+      return;
+    }
+    if (JSON.stringify(current) === JSON.stringify(value)) return;
+    let availableConflictKey = conflictKey;
+    let suffix = 2;
+    while (
+      payload[availableConflictKey] != null
+      && payload[availableConflictKey] !== ""
+      && JSON.stringify(payload[availableConflictKey]) !== JSON.stringify(value)
+    ) {
+      availableConflictKey = `${conflictKey}_${suffix}`;
+      suffix += 1;
+    }
+    payload[availableConflictKey] = value;
   };
+
+  addProviderField("smartlead_status", lead.status, "smartlead_native_status");
+  addProviderField(
+    "smartlead_category_id",
+    lead.lead_category_id ?? lead.category_id,
+    "smartlead_native_category_id",
+  );
+  addProviderField(
+    "smartlead_category_name",
+    lead.lead_category_name ?? lead.category_name,
+    "smartlead_native_category_name",
+  );
+  addProviderField("phone_number", lead.phone_number ?? lead.phoneNumber ?? lead.phone);
+  addProviderField("website", lead.website);
+  addProviderField("location", lead.location);
+  addProviderField("linkedin_profile", lead.linkedin_profile ?? lead.linkedinProfile);
+  addProviderField("company_url", lead.company_url ?? lead.companyUrl);
+
   return Object.fromEntries(
     Object.entries(payload).filter(([, value]) => value != null && value !== ""),
   );
@@ -1248,7 +1283,7 @@ function smartleadLeadRecord(lead: SmartleadRow) {
     company_domain: leadCompanyDomain(lead, email),
     job_title: lead.job_title ?? lead.jobTitle ?? customFields.job_title,
     website: lead.website ?? customFields.website,
-    phone: lead.phone ?? customFields.phone,
+    phone: lead.phone_number ?? lead.phoneNumber ?? lead.phone ?? customFields.phone_number ?? customFields.phone,
     personalization: lead.personalization ?? customFields.personalization,
     custom_payload: customPayloadForLead(lead),
     email_replied_step: emailStats.replied_step ?? lead.email_replied_step,
@@ -2316,11 +2351,11 @@ async function storeCampaignFacts(
           ${sqlInt(lead.esp_code)},
           ${sqlInt(lead.verification_status)},
           ${sqlInt(lead.enrichment_status)},
-          ${sqlTimestamp(lead.last_contacted_at ?? lead.timestamp_last_contact)},
+          ${sqlTimestamp(lead.last_contacted_at ?? lead.last_sent_time ?? lead.timestamp_last_contact)},
           ${sqlTimestamp(emailStats.replied_at ?? lead.last_replied_at ?? lead.timestamp_last_reply)},
           ${sqlString(lead.job_title ?? lead.jobTitle ?? payload.job_title)},
           ${sqlString(lead.website ?? payload.website)},
-          ${sqlString(lead.phone ?? payload.phone)},
+          ${sqlString(lead.phone_number ?? lead.phoneNumber ?? lead.phone ?? payload.phone_number ?? payload.phone)},
           ${sqlString(lead.personalization ?? payload.personalization)},
           ${sqlJson({
             smartlead_status: lead.status ?? null,

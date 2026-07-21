@@ -140,7 +140,11 @@ const lead = {
   job_title: "VP Operations",
   personalization: "your CHNA cycle",
   custom_payload: JSON.stringify({
-    segment: "Healthcare",
+    segment: "Enterprise Healthcare",
+    persona: "VP Operations",
+    headcount: "1001-5000",
+    industry: "Healthcare",
+    tech_stack: "Epic; Salesforce",
     customHook: "patient access",
   }),
 };
@@ -151,6 +155,13 @@ assert.equal(
     lead,
   ),
   "Hi Alex at Acme Health — patient access / {{missing_key}}",
+);
+assert.equal(
+  renderTemplateValue(
+    "{{persona}} / {{segment}} / {{headcount}} / {{industry}} / {{tech_stack}}",
+    lead,
+  ),
+  "VP Operations / Enterprise Healthcare / 1001-5000 / Healthcare / Epic; Salesforce",
 );
 assert.equal(renderTemplateValue(null, lead), null);
 

@@ -34,8 +34,9 @@ const LOCK_ERROR_PATTERNS = [
 export const BASELINE_SCHEMA_MIGRATION_ID = "202607160001_current_schema_baseline";
 export const PREVIOUS_SCHEMA_MIGRATION_IDS = [
   "202607160002_refresh_reply_context_views",
+  "202607170001_tag_semantic_aliases",
 ] as const;
-export const CURRENT_SCHEMA_MIGRATION_ID = "202607170001_tag_semantic_aliases";
+export const CURRENT_SCHEMA_MIGRATION_ID = "202607200001_lead_metadata_semantics";
 const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
 const cacheProviderModeContext = new AsyncLocalStorage<SourceProviderMode>();
 
@@ -2009,6 +2010,26 @@ async function ensureSchema(conn: DuckDBConnection) {
        AND sl.campaign_id = c.id
        AND COALESCE(sl.source_provider, 'instantly') = COALESCE(c.source_provider, 'instantly')`,
     `CREATE OR REPLACE VIEW sendlens.lead_payload_kv AS
+      WITH payload_rows AS (
+        SELECT
+          le.*,
+          kv.key AS payload_key,
+          kv.value AS payload_json_value,
+          trim(
+            regexp_replace(
+              lower(trim(kv.key)),
+              '[^a-z0-9]+',
+              '_',
+              'g'
+            ),
+            '_'
+          ) AS payload_key_normalized
+        FROM sendlens.lead_evidence le,
+             json_each(le.custom_payload) AS kv
+        WHERE le.custom_payload IS NOT NULL
+          AND le.custom_payload <> ''
+          AND json_valid(le.custom_payload)
+      )
       SELECT
         le.workspace_id,
         le.campaign_id,
@@ -2027,14 +2048,40 @@ async function ensureSchema(conn: DuckDBConnection) {
         le.lt_interest_label,
         le.reply_outcome_label,
         le.has_reply_signal,
-        kv.key AS payload_key,
-        json_extract_string(kv.value, '$') AS payload_value,
-        CAST(kv.value AS VARCHAR) AS payload_value_json
-      FROM sendlens.lead_evidence le,
-           json_each(le.custom_payload) AS kv
-      WHERE le.custom_payload IS NOT NULL
-        AND le.custom_payload <> ''
-        AND json_valid(le.custom_payload)`,
+        le.payload_key,
+        le.payload_key_normalized,
+        CASE
+          WHEN le.payload_key_normalized IN ('persona', 'buyer_persona', 'persona_name', 'icp_persona') THEN 'persona'
+          WHEN le.payload_key_normalized IN ('segment', 'audience_segment', 'lead_segment', 'icp_segment') THEN 'segment'
+          WHEN le.payload_key_normalized IN ('job_title', 'title', 'role', 'job_role', 'position') THEN 'role'
+          WHEN le.payload_key_normalized IN ('seniority', 'seniority_level', 'job_seniority') THEN 'seniority'
+          WHEN le.payload_key_normalized IN ('industry', 'company_industry', 'vertical') THEN 'industry'
+          WHEN le.payload_key_normalized IN ('company_size', 'headcount', 'employee_count', 'employee_band', 'employees') THEN 'company_size'
+          WHEN le.payload_key_normalized IN ('country', 'region', 'geography', 'geo', 'state', 'territory') THEN 'geography'
+          WHEN le.payload_key_normalized IN ('source', 'lead_source', 'list_source', 'source_system', 'clay_source') THEN 'source'
+          WHEN le.payload_key_normalized IN ('trigger', 'intent', 'intent_signal', 'buying_signal', 'reason_now') THEN 'trigger_intent'
+          WHEN le.payload_key_normalized IN ('tech_stack', 'technology_stack', 'technologies', 'technology', 'software_stack') THEN 'technology_stack'
+          ELSE NULL
+        END AS payload_key_family,
+        json_extract_string(le.payload_json_value, '$') AS payload_value,
+        CASE
+          WHEN json_type(le.payload_json_value) IN (
+            'VARCHAR', 'BOOLEAN', 'TINYINT', 'SMALLINT', 'INTEGER', 'BIGINT',
+            'UTINYINT', 'USMALLINT', 'UINTEGER', 'UBIGINT', 'FLOAT', 'DOUBLE', 'DECIMAL'
+          )
+            THEN lower(trim(json_extract_string(le.payload_json_value, '$')))
+          ELSE NULL
+        END AS payload_value_normalized,
+        json_type(le.payload_json_value) AS payload_value_type,
+        CASE
+          WHEN json_type(le.payload_json_value) IN (
+            'VARCHAR', 'BOOLEAN', 'TINYINT', 'SMALLINT', 'INTEGER', 'BIGINT',
+            'UTINYINT', 'USMALLINT', 'UINTEGER', 'UBIGINT', 'FLOAT', 'DOUBLE', 'DECIMAL'
+          ) THEN TRUE
+          ELSE FALSE
+        END AS payload_is_scalar,
+        CAST(le.payload_json_value AS VARCHAR) AS payload_value_json
+      FROM payload_rows le`,
     `CREATE OR REPLACE VIEW sendlens.provider_overlap_risk AS
       WITH identity_rows AS (
         SELECT
