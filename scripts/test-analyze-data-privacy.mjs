@@ -181,6 +181,52 @@ try {
     },
   );
   assert.throws(
+    () => enforceAnalyzeDataPrivacy("SELECT raw_json FROM sendlens.smartlead_sender_delivery_health LIMIT 5"),
+    (error) => {
+      assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
+      assert.ok(error.report.blocked_columns?.some((column) =>
+        column.table === "smartlead_sender_delivery_health" && column.column === "raw_json"
+      ));
+      return true;
+    },
+  );
+  assert.throws(
+    () => enforceAnalyzeDataPrivacy("SELECT diagnostic_json, raw_json FROM sendlens.smartlead_delivery_authentication_health LIMIT 5"),
+    (error) => {
+      assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
+      assert.ok(error.report.blocked_columns?.some((column) =>
+        column.table === "smartlead_delivery_authentication_health" && column.column === "diagnostic_json"
+      ));
+      assert.ok(error.report.blocked_columns?.some((column) =>
+        column.table === "smartlead_delivery_authentication_health" && column.column === "raw_json"
+      ));
+      return true;
+    },
+  );
+  assert.throws(
+    () => enforceAnalyzeDataPrivacy("SELECT raw_json FROM sendlens.inbox_placement_analytics_labeled LIMIT 5"),
+    (error) => {
+      assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
+      assert.ok(error.report.blocked_columns?.some((column) =>
+        column.table === "inbox_placement_analytics_labeled" && column.column === "raw_json"
+      ));
+      return true;
+    },
+  );
+  assert.throws(
+    () => enforceAnalyzeDataPrivacy("SELECT custom_payload, rendered_body_text FROM sendlens.reply_email_context LIMIT 5"),
+    (error) => {
+      assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
+      assert.ok(error.report.blocked_columns?.some((column) =>
+        column.table === "reply_email_context" && column.column === "custom_payload"
+      ));
+      assert.ok(error.report.blocked_columns?.some((column) =>
+        column.table === "reply_email_context" && column.column === "rendered_body_text"
+      ));
+      return true;
+    },
+  );
+  assert.throws(
     () => enforceAnalyzeDataPrivacy("SELECT email, phone, first_name FROM sendlens.sampled_leads LIMIT 5"),
     (error) => {
       assert.ok(error instanceof AnalyzeDataPrivacyGuardError);

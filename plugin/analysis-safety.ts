@@ -309,15 +309,22 @@ const TABLE_HARD_UNSAFE_COLUMNS = new Map<PublicTableName, Set<string>>([
     "authentication_failure_results_json",
     "raw_json",
   ])],
+  ["inbox_placement_analytics_labeled", new Set([
+    "smtp_ip_blacklist_report_json",
+    "authentication_failure_results_json",
+    "raw_json",
+  ])],
   ["smartlead_delivery_tests", new Set(["raw_json"])],
   ["smartlead_delivery_evidence", new Set(["diagnostic_json", "raw_json"])],
+  ["smartlead_sender_delivery_health", new Set(["raw_json"])],
+  ["smartlead_delivery_authentication_health", new Set(["diagnostic_json", "raw_json"])],
   ["reply_emails", new Set(["body_text", "body_html"])],
   ["sampled_leads", new Set(["personalization", "status_summary", "custom_payload", "source_raw_json"])],
   ["sampled_outbound_emails", new Set(["body_text"])],
   ["lead_evidence", new Set(["personalization", "status_summary", "custom_payload"])],
   ["lead_payload_kv", new Set(["payload_value", "payload_value_json"])],
   ["reply_context", new Set(["custom_payload", "reply_body_text", "reply_body_html", "template_body_text", "rendered_body_text"])],
-  ["reply_email_context", new Set(["reply_body_text", "reply_body_html", "template_body_text"])],
+  ["reply_email_context", new Set(["custom_payload", "reply_body_text", "reply_body_html", "template_body_text", "rendered_body_text"])],
   ["rendered_outbound_context", new Set(["rendered_body_text", "template_body_text"])],
 ]);
 
@@ -600,9 +607,6 @@ function addColumnViolation(
 ) {
   const unsafe = HARD_UNSAFE_COLUMN_GUIDANCE.get(column);
   if (unsafe) {
-    if (isPublicTableName(table) && !(TABLE_HARD_UNSAFE_COLUMNS.get(table)?.has(column))) {
-      return;
-    }
     violations.push({
       table,
       column,
@@ -643,6 +647,7 @@ function resolveColumnTables(
   }
   if (scope.publicTables.length === 1) return [scope.publicTables[0]];
   if (isDirectPersonalIdentifierColumn(column)) return scope.publicTables;
+  if (HARD_UNSAFE_COLUMN_GUIDANCE.has(column)) return scope.publicTables;
   const possibleUnsafeTables = scope.publicTables.filter((publicTable) =>
     TABLE_HARD_UNSAFE_COLUMNS.get(publicTable)?.has(column),
   );
