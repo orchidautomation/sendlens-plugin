@@ -250,6 +250,15 @@ try {
   });
   assert.equal(unsafeProjectedReport?.reason, "high_cardinality_result");
 
+  const sumSingletonRows = Array.from({ length: 8 }, (_, index) => ({
+    cohort: `rare-company-${index}`,
+    metric: 1,
+  }));
+  const sumSingletonReport = highCardinalityResultPrivacyReport(sumSingletonRows, {
+    sql: "SELECT company_name AS cohort, SUM(1) AS metric FROM sendlens.sampled_leads GROUP BY company_name",
+  });
+  assert.equal(sumSingletonReport?.reason, "high_cardinality_result");
+
   const highCardinalityRows = Array.from({ length: 8 }, (_, index) => ({
     cohort: `rare-cohort-${index}`,
     metric: 1,

@@ -403,7 +403,7 @@ export function highCardinalityResultPrivacyReport(
   const context = options.sql ? highCardinalitySqlContext(options.sql) : null;
 
   const countFields = countLikeFields(rows);
-  if (countFields.length === 0 && context?.hasCountAggregate) {
+  if (countFields.length === 0 && context?.hasAggregate) {
     countFields.push(...singletonNumericMeasureFields(rows));
   }
   if (countFields.length === 0) return null;
@@ -697,7 +697,7 @@ function highCardinalitySqlContext(sql: string) {
     }
   }
   return {
-    hasCountAggregate: expressionContainsCountAggregate(statement),
+    hasAggregate: expressionContainsAggregate(statement),
     safeRecommendedGroupOutputFields:
       projectedSafeRecommendedGroupOutputFields(statement, safeRecommendedGroupColumnNames),
   };
@@ -824,18 +824,22 @@ function isCountAggregate(node: Record<string, unknown>) {
   return node.type === "aggr_func" && normalizeIdentifier(String(node.name ?? "")) === "count";
 }
 
-function expressionContainsCountAggregate(expr: unknown, seen = new Set<object>()): boolean {
+function isAggregateFunction(node: Record<string, unknown>) {
+  return node.type === "aggr_func";
+}
+
+function expressionContainsAggregate(expr: unknown, seen = new Set<object>()): boolean {
   if (!expr || typeof expr !== "object") return false;
   if (seen.has(expr)) return false;
   seen.add(expr);
   const node = expr as Record<string, unknown>;
-  if (isCountAggregate(node)) return true;
+  if (isAggregateFunction(node)) return true;
   for (const value of Object.values(node)) {
     if (Array.isArray(value)) {
-      if (value.some((item) => expressionContainsCountAggregate(item, seen))) return true;
+      if (value.some((item) => expressionContainsAggregate(item, seen))) return true;
       continue;
     }
-    if (expressionContainsCountAggregate(value, seen)) return true;
+    if (expressionContainsAggregate(value, seen)) return true;
   }
   return false;
 }
