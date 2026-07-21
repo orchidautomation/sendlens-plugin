@@ -66,6 +66,10 @@ try {
   assert.equal(statusSummaryColumn.safety?.prefer_derived_field, "status");
 
   const payloadColumns = await listColumns(db, "lead_payload_kv");
+  const payloadValueColumn = findColumn(payloadColumns, "payload_value");
+  assert.equal(payloadValueColumn.safety?.safe_to_select, false);
+  assert.equal(payloadValueColumn.safety?.safe_to_group_by, false);
+  assert.equal(payloadValueColumn.safety?.raw_json, true);
   const payloadValueJsonColumn = findColumn(payloadColumns, "payload_value_json");
   assert.equal(payloadValueJsonColumn.safety?.safe_to_select, false);
   assert.equal(payloadValueJsonColumn.safety?.safe_to_group_by, false);
@@ -168,6 +172,14 @@ try {
     },
   );
   assert.throws(
+    () => enforceAnalyzeDataPrivacy("SELECT payload_value FROM sendlens.lead_payload_kv LIMIT 5"),
+    (error) => {
+      assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
+      assert.equal(error.report.blocked_columns?.[0]?.column, "payload_value");
+      return true;
+    },
+  );
+  assert.throws(
     () => enforceAnalyzeDataPrivacy("SELECT email, phone, first_name FROM sendlens.sampled_leads LIMIT 5"),
     (error) => {
       assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
@@ -210,6 +222,22 @@ try {
   assert.equal(highCardinalityResultPrivacyReport(safeSingletonStatusRows, {
     sql: "SELECT status, COUNT(*) AS metric FROM sendlens.sampled_leads GROUP BY status",
   }), null);
+  const safeSingletonStatusAliasRows = Array.from({ length: 6 }, (_, index) => ({
+    lead_state: `safe-status-${index}`,
+    metric: 1,
+  }));
+  assert.equal(highCardinalityResultPrivacyReport(safeSingletonStatusAliasRows, {
+    sql: "SELECT status AS lead_state, COUNT(*) AS metric FROM sendlens.sampled_leads GROUP BY status",
+  }), null);
+
+  const unsafeProjectionInSafeGroupRows = Array.from({ length: 8 }, (_, index) => ({
+    status: `safe-status-${index}`,
+    sample_company: `rare-company-${index}`,
+    metric: 1,
+  }));
+  assert.equal(highCardinalityResultPrivacyReport(unsafeProjectionInSafeGroupRows, {
+    sql: "SELECT status, MIN(company_name) AS sample_company, COUNT(*) AS metric FROM sendlens.sampled_leads GROUP BY status",
+  })?.reason, "high_cardinality_result");
 
   const highCardinalityRows = Array.from({ length: 8 }, (_, index) => ({
     cohort: `rare-cohort-${index}`,

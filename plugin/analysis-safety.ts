@@ -153,6 +153,18 @@ const HARD_UNSAFE_COLUMN_GUIDANCE = new Map<string, {
     ],
     rawJson: true,
   }],
+  ["payload_value", {
+    reason: "raw campaign-scoped payload values may contain arbitrary nested provider or customer-defined JSON.",
+    prefer: "typed scalar payload fields",
+    alternatives: [
+      "sendlens.lead_payload_kv.payload_key",
+      "sendlens.lead_payload_kv.payload_value_normalized for scalar values only",
+      "sendlens.lead_payload_kv.payload_value_type",
+      "sendlens.lead_payload_kv.payload_is_scalar",
+      "analysis_starters(recipe_id=\"campaign-payload-key-signals\")",
+    ],
+    rawJson: true,
+  }],
   ["source_raw_json", {
     reason: "raw provider payload JSON may contain fields outside the public semantic contract.",
     prefer: "public semantic columns",
@@ -303,7 +315,7 @@ const TABLE_HARD_UNSAFE_COLUMNS = new Map<PublicTableName, Set<string>>([
   ["sampled_leads", new Set(["personalization", "status_summary", "custom_payload", "source_raw_json"])],
   ["sampled_outbound_emails", new Set(["body_text"])],
   ["lead_evidence", new Set(["personalization", "status_summary", "custom_payload"])],
-  ["lead_payload_kv", new Set(["payload_value_json"])],
+  ["lead_payload_kv", new Set(["payload_value", "payload_value_json"])],
   ["reply_context", new Set(["custom_payload", "reply_body_text", "reply_body_html", "template_body_text", "rendered_body_text"])],
   ["reply_email_context", new Set(["reply_body_text", "reply_body_html", "template_body_text"])],
   ["rendered_outbound_context", new Set(["rendered_body_text", "template_body_text"])],
@@ -389,7 +401,6 @@ export function highCardinalityResultPrivacyReport(
 ): AnalyzeDataPrivacyGuardReport | null {
   if (rows.length < 6) return null;
   const context = options.sql ? highCardinalitySqlContext(options.sql) : null;
-  if (context?.hasOnlySafeRecommendedGroupBy) return null;
 
   const countFields = countLikeFields(rows);
   if (countFields.length === 0 && context?.hasCountAggregate) {
@@ -403,7 +414,8 @@ export function highCardinalityResultPrivacyReport(
   if (singletonRows / rows.length < 0.75) return null;
 
   const textFields = Object.keys(rows[0] ?? {}).filter((field) =>
-    rows.some((row) => typeof row[field] === "string" && String(row[field]).trim().length > 0),
+    !(context?.safeRecommendedGroupOutputFields.has(normalizeIdentifier(field)))
+    && rows.some((row) => typeof row[field] === "string" && String(row[field]).trim().length > 0),
   );
   const rowLevelField = textFields.find((field) => {
     const values = rows
@@ -678,11 +690,16 @@ function highCardinalitySqlContext(sql: string) {
   const statement = statements.find(isSelectNode);
   if (!statement) return null;
   const groupColumns = groupBySafety(statement);
+  const safeRecommendedGroupColumnNames = new Set<string>();
+  for (const column of groupColumns) {
+    if (column.known && column.safety?.recommended_cohort_field === true && column.column) {
+      safeRecommendedGroupColumnNames.add(column.column);
+    }
+  }
   return {
     hasCountAggregate: expressionContainsCountAggregate(statement),
-    hasOnlySafeRecommendedGroupBy:
-      groupColumns.length > 0
-      && groupColumns.every((column) => column.known && column.safety?.recommended_cohort_field === true),
+    safeRecommendedGroupOutputFields:
+      projectedSafeRecommendedGroupOutputFields(statement, safeRecommendedGroupColumnNames),
   };
 }
 
@@ -695,7 +712,7 @@ function groupBySafety(node: SelectNode) {
     }
   }
   const scope = sourceScope(node, visibleCtes);
-  const columns: Array<{ known: boolean; safety?: ColumnSafetyMetadata }> = [];
+  const columns: Array<{ known: boolean; column?: string; safety?: ColumnSafetyMetadata }> = [];
   for (const groupNode of groupByColumns(node.groupby)) {
     const refs = columnRefs(groupNode);
     if (refs.length === 0) {
@@ -712,12 +729,34 @@ function groupBySafety(node: SelectNode) {
       for (const table of tables) {
         columns.push({
           known: true,
+          column,
           safety: columnSafetyMetadata(table, column, "VARCHAR"),
         });
       }
     }
   }
   return columns;
+}
+
+function projectedSafeRecommendedGroupOutputFields(
+  node: SelectNode,
+  safeRecommendedGroupColumnNames: Set<string>,
+) {
+  const fields = new Set<string>(safeRecommendedGroupColumnNames);
+  for (const columnNode of Array.isArray(node.columns) ? node.columns : []) {
+    if (!columnNode || typeof columnNode !== "object") continue;
+    const columnExpr = columnNode as { expr?: unknown; as?: unknown };
+    if (!columnExpr.expr || typeof columnExpr.expr !== "object") continue;
+    const expr = columnExpr.expr as ColumnRef;
+    if (expr.type !== "column_ref") continue;
+    const column = normalizeIdentifier(columnName(expr.column));
+    if (!safeRecommendedGroupColumnNames.has(column)) continue;
+    const outputField = typeof columnExpr.as === "string" && columnExpr.as.trim()
+      ? columnExpr.as
+      : column;
+    fields.add(normalizeIdentifier(outputField));
+  }
+  return fields;
 }
 
 function columnRefs(expr: unknown, refs: ColumnRef[] = [], seen = new Set<object>()) {
