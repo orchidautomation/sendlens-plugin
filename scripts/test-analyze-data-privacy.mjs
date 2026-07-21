@@ -157,6 +157,22 @@ try {
     },
   );
   assert.throws(
+    () => enforceAnalyzeDataPrivacy("SELECT COLUMNS('status_summary') FROM sendlens.sampled_leads LIMIT 3"),
+    (error) => {
+      assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
+      assert.ok(error.report.blocked_columns?.some((column) => column.column === "COLUMNS(...)"));
+      return true;
+    },
+  );
+  assert.throws(
+    () => enforceAnalyzeDataPrivacy("SELECT COLUMNS('email|phone') FROM sendlens.sampled_leads LIMIT 3"),
+    (error) => {
+      assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
+      assert.ok(error.report.blocked_columns?.some((column) => column.column === "COLUMNS(...)"));
+      return true;
+    },
+  );
+  assert.throws(
     () => enforceAnalyzeDataPrivacy("SELECT reply_body_html FROM sendlens.reply_context LIMIT 5"),
     (error) => {
       assert.ok(error instanceof AnalyzeDataPrivacyGuardError);

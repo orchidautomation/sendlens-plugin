@@ -571,6 +571,10 @@ function inspectExpressionForUnsafeColumns(
     inspectSelectForUnsafeColumns(node, violations);
     return;
   }
+  if (isColumnsSelectorFunction(node)) {
+    addColumnsSelectorViolation(scope, usage, violations);
+    return;
+  }
   if (node.type === "column_ref") {
     const columnRef = node as ColumnRef;
     const column = normalizeIdentifier(columnName(columnRef.column));
@@ -601,6 +605,28 @@ function addStarViolations(
 ) {
   for (const column of TABLE_HARD_UNSAFE_COLUMNS.get(table) ?? []) {
     addColumnViolation(table, column, usage, violations);
+  }
+}
+
+function addColumnsSelectorViolation(
+  scope: SourceScope,
+  usage: AnalyzeDataPrivacyColumnUsage["usage"],
+  violations: AnalyzeDataPrivacyColumnUsage[],
+) {
+  const tables = scope.publicTables.length > 0 ? scope.publicTables : ["query"];
+  for (const table of tables) {
+    violations.push({
+      table,
+      column: "COLUMNS(...)",
+      usage,
+      reason:
+        "DuckDB COLUMNS(...) expands selected fields dynamically and can include raw or high-cardinality provider columns.",
+      safe_alternatives: [
+        "list_columns for explicit safe column names",
+        "search_catalog for semantic public columns",
+        "analysis_starters for curated public views",
+      ],
+    });
   }
 }
 
@@ -833,6 +859,13 @@ function isDirectPersonalIdentifierColumn(column: string) {
 
 function isCountAggregate(node: Record<string, unknown>) {
   return node.type === "aggr_func" && normalizeIdentifier(String(node.name ?? "")) === "count";
+}
+
+function isColumnsSelectorFunction(node: Record<string, unknown>) {
+  if (node.type !== "function") return false;
+  const names = (node.name as { name?: Array<{ value?: unknown }> } | undefined)?.name;
+  if (!Array.isArray(names)) return false;
+  return names.some((name) => normalizeIdentifier(String(name.value ?? "")) === "columns");
 }
 
 function isAggregateFunction(node: Record<string, unknown>) {
