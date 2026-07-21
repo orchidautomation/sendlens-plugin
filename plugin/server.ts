@@ -52,6 +52,7 @@ import {
   buildAnalyzeDataDiagnostics,
   type AnalyzeDataDiagnostics,
 } from "./analyze-data-diagnostics";
+import { buildActiveDataState } from "./active-data-state";
 import { buildQueryRecipeResponse, QUERY_RECIPE_TOPICS } from "./query-recipes";
 import { toReplyTextFetchResult } from "./reply-text-contract";
 import { readRefreshStatus } from "./refresh-status";
@@ -2015,11 +2016,17 @@ async function buildScopedWorkspaceSnapshot(
 ) {
   const workspaceId = await getActiveWorkspaceId(db);
   if (!workspaceId) {
+    const activeDataState = buildActiveDataState({
+      workspaceId: null,
+      localCacheReadable: false,
+      sourceProviderMode: scope.provider ?? "all",
+    });
     return {
       schema_version: "workspace_snapshot.v1",
       workspaceId: null,
+      active_data_state: activeDataState,
       summary:
-        "No active workspace is loaded. Run refresh_data() before asking for analysis.",
+        `${activeDataState.analysis_notice}\n${activeDataState.recommended_action}`,
       exact_metrics: {},
       source_provider_scope: scope.provider ?? "all",
       provider_breakdown: [],
@@ -2027,13 +2034,20 @@ async function buildScopedWorkspaceSnapshot(
       rate_caveats: [],
       coverage: [],
       campaigns: [],
-      warnings: ["No workspace has been refreshed locally yet."],
+      warnings: [
+        activeDataState.message,
+        "No workspace has been refreshed locally yet.",
+      ],
       last_refreshed_at: null,
     };
   }
 
   const workspace = workspaceId.replace(/'/g, "''");
   const providerScope = scope.provider ?? "all";
+  const activeDataState = buildActiveDataState({
+    workspaceId,
+    sourceProviderMode: providerScope,
+  });
   const whereClauses = [
     `co.workspace_id = '${workspace}'`,
     `co.status = 'active'`,
@@ -2157,6 +2171,12 @@ async function buildScopedWorkspaceSnapshot(
 
   if (campaignRows.length === 0) {
     const warnings = providerEvidenceWarnings(providerScope, 0, providerCapabilities);
+    if (
+      activeDataState.status === "demo_workspace" ||
+      activeDataState.status === "cached_workspace_refresh_disabled"
+    ) {
+      warnings.unshift(activeDataState.analysis_notice);
+    }
     if (warnings.length === 0) {
       warnings.push("No campaigns matched the requested scoped filter in the local cache.");
     }
@@ -2164,8 +2184,15 @@ async function buildScopedWorkspaceSnapshot(
     return {
       schema_version: "workspace_snapshot.v1",
       workspaceId,
+      active_data_state: activeDataState,
       scope: scopeNotes,
-      summary: `No campaigns matched ${scopeNotes.join(" and ")} in the active cached workspace.`,
+      summary: [
+        activeDataState.status === "demo_workspace" ||
+          activeDataState.status === "cached_workspace_refresh_disabled"
+          ? activeDataState.message
+          : null,
+        `No campaigns matched ${scopeNotes.join(" and ")} in the active cached workspace.`,
+      ].filter(Boolean).join("\n"),
       exact_metrics: {},
       source_provider_scope: providerScope,
       provider_breakdown: [],
@@ -2218,6 +2245,12 @@ async function buildScopedWorkspaceSnapshot(
   if (totalSent > 0 && replyRate < 1) {
     warnings.push("Scoped unique reply rate is below 1%, so copy and targeting need attention.");
   }
+  if (
+    activeDataState.status === "demo_workspace" ||
+    activeDataState.status === "cached_workspace_refresh_disabled"
+  ) {
+    warnings.unshift(activeDataState.analysis_notice);
+  }
   warnings.push(
     ...providerEvidenceWarnings(
       providerScope,
@@ -2255,8 +2288,13 @@ async function buildScopedWorkspaceSnapshot(
   return {
     schema_version: "workspace_snapshot.v1",
     workspaceId,
+    active_data_state: activeDataState,
     scope: scopeNotes,
     summary: [
+      activeDataState.status === "demo_workspace" ||
+        activeDataState.status === "cached_workspace_refresh_disabled"
+        ? activeDataState.message
+        : null,
       `Scoped cached snapshot for ${scopeNotes.join(" and ")}.`,
       `${Number(metrics.campaign_count ?? 0)} active campaigns, ${totalSent} sends, ${totalUniqueReplies} unique human replies, ${totalBounces} bounces, ${totalOpportunities} opportunities, and $${totalPipeline} pipeline.`,
       `Configured campaign daily limit in scope: ${configuredDailyLimitTotal} emails/day.`,
@@ -2266,7 +2304,7 @@ async function buildScopedWorkspaceSnapshot(
         : "No leading campaign available.",
       "This read comes from the current local cache and does not trigger another workspace refresh.",
       "By default, scoped snapshots only include active campaigns. Ask explicitly for inactive or historical campaigns if you want them included.",
-    ].join("\n"),
+    ].filter(Boolean).join("\n"),
     exact_metrics: {
       campaign_count: Number(metrics.campaign_count ?? 0) || 0,
       active_campaign_count: Number(metrics.active_campaign_count ?? 0) || 0,

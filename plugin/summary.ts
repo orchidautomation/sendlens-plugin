@@ -1,4 +1,5 @@
 import type { DuckDBConnection } from "@duckdb/node-api";
+import { buildActiveDataState } from "./active-data-state";
 import { getActiveWorkspaceId, getPluginState, query } from "./local-db";
 import {
   providerModeIncludes,
@@ -80,15 +81,24 @@ export async function buildWorkspaceSummary(
 ) {
   const activeWorkspaceId = workspaceId ?? (await getActiveWorkspaceId(conn));
   if (!activeWorkspaceId) {
+    const activeDataState = buildActiveDataState({
+      workspaceId: null,
+      localCacheReadable: false,
+      sourceProviderMode: providerScope,
+    });
     return {
       schema_version: "workspace_snapshot.v1",
       workspaceId: null,
+      active_data_state: activeDataState,
       summary:
-        "No active workspace is loaded. Run refresh_data() before asking for analysis.",
+        `${activeDataState.analysis_notice}\n${activeDataState.recommended_action}`,
       exact_metrics: {},
       coverage: [],
       campaigns: [],
-      warnings: ["No workspace has been refreshed locally yet."],
+      warnings: [
+        activeDataState.message,
+        "No workspace has been refreshed locally yet.",
+      ],
       source_provider_scope: providerScope,
       provider_breakdown: [],
       provider_capabilities: [],
@@ -98,6 +108,10 @@ export async function buildWorkspaceSummary(
   }
 
   const workspace = activeWorkspaceId.replace(/'/g, "''");
+  const activeDataState = buildActiveDataState({
+    workspaceId: activeWorkspaceId,
+    sourceProviderMode: providerScope,
+  });
   const campaignProviderFilter = providerScopeWhere("c", providerScope);
   const overviewProviderFilter = providerScope === "all"
     ? "TRUE"
@@ -312,6 +326,12 @@ export async function buildWorkspaceSummary(
     warnings.push("Workspace bounce rate is above 2%, which deserves list-quality review.");
   }
 
+  if (activeDataState.status === "demo_workspace") {
+    warnings.unshift(activeDataState.analysis_notice);
+  } else if (activeDataState.status === "cached_workspace_refresh_disabled") {
+    warnings.unshift(activeDataState.analysis_notice);
+  }
+
   if (activeCampaignCount > 0 && totalSent > 0 && replyRate < 1) {
     warnings.push("Workspace unique reply rate is below 1%, so copy and targeting need attention.");
   }
@@ -367,7 +387,12 @@ export async function buildWorkspaceSummary(
   return {
     schema_version: "workspace_snapshot.v1",
     workspaceId: activeWorkspaceId,
+    active_data_state: activeDataState,
     summary: [
+      activeDataState.status === "demo_workspace" ||
+        activeDataState.status === "cached_workspace_refresh_disabled"
+        ? activeDataState.message
+        : null,
       `Workspace ${activeWorkspaceId} has ${num(metrics.active_campaign_count)} active campaigns in the current SendLens snapshot for ${providerScopeLabel(providerScope)}.`,
       `Exact totals: ${totalSent} sends, ${totalUniqueReplies} unique human replies, ${num(metrics.total_auto_replies)} auto-replies, ${num(metrics.total_opportunities)} opportunities.`,
       `Exact headline rates: ${replyRate.toFixed(2)}% unique reply rate and ${bounceRate.toFixed(2)}% bounce rate.`,
@@ -379,7 +404,7 @@ export async function buildWorkspaceSummary(
       `Deliverability evidence: ${inboxPlacementTestCount} Instantly inbox-placement tests, ${inboxPlacementAnalyticsCount} Instantly per-email analytics rows, ${smartDeliveryTestCount} Smart Delivery tests, and ${smartDeliveryEvidenceCount} Smart Delivery aggregate/diagnostic rows stored locally.`,
       "Inactive or purely historical campaigns are excluded from this default workspace read unless you explicitly ask for them.",
       "Reply analysis uses lead reply outcomes plus locally reconstructed template copy. Sampled raw tables are evidence support only and should not be treated as population totals.",
-    ].join("\n"),
+    ].filter(Boolean).join("\n"),
     exact_metrics: {
       active_campaign_count: activeCampaignCount,
       campaign_count: activeCampaignCount,

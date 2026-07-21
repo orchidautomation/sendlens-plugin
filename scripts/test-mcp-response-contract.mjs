@@ -10,6 +10,8 @@ const failures = [];
 
 const files = {
   server: "plugin/server.ts",
+  setupDoctor: "plugin/setup-doctor.ts",
+  activeDataState: "plugin/active-data-state.ts",
   summary: "plugin/summary.ts",
   localDb: "plugin/local-db.ts",
   recipes: "plugin/query-recipes.ts",
@@ -82,6 +84,7 @@ assertPattern(
 
 for (const term of [
   'schema_version: "workspace_snapshot.v1"',
+  "`active_data_state`",
   "exact workspace/campaign/account metrics",
   "optional `provider` input",
   "`source_provider_scope`, `provider_breakdown`, and `provider_capabilities`",
@@ -94,6 +97,7 @@ for (const term of [
 }
 for (const term of [
   'schema_version: "workspace_snapshot.v1"',
+  "active_data_state",
   "exact_metrics",
   "source_provider_scope",
   "provider_breakdown",
@@ -109,6 +113,7 @@ for (const term of [
 }
 for (const term of [
   "readiness: readinessPayload(readiness)",
+  "active_data_state: activeDataState",
   "provider: z",
   "buildWorkspaceSummary(db, undefined, provider)",
   "provider_breakdown: []",
@@ -123,6 +128,18 @@ for (const term of [
     `${source.server}\n${source.summary}`,
     term,
     "workspace_snapshot runtime delivery",
+  );
+}
+
+for (const term of [
+  'schema_version: "sendlens_setup_doctor.v1"',
+  "active_data_state",
+  "sendlens_active_data_state.v1",
+]) {
+  assertIncludes(
+    `${source.docs}\n${source.setupDoctor}\n${source.activeDataState}`,
+    term,
+    "setup_doctor active data state contract",
   );
 }
 
