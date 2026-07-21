@@ -494,8 +494,10 @@ function sourceScope(node: SelectNode, cteNames: Set<string>): SourceScope {
   const publicTables: PublicTableName[] = [];
   for (const entry of Array.isArray(node.from) ? node.from : []) {
     const table = normalizeIdentifier(entry?.table ?? "");
-    if (!table || cteNames.has(table)) continue;
-    if (entry?.db && normalizeIdentifier(entry.db) !== "sendlens") continue;
+    if (!table) continue;
+    const db = normalizeIdentifier(entry?.db ?? "");
+    if (!db && cteNames.has(table)) continue;
+    if (db && db !== "sendlens") continue;
     if (!isPublicTableName(table)) continue;
     publicTables.push(table);
     aliasToPublicTable.set(table, table);

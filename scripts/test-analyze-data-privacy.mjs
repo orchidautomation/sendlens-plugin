@@ -123,6 +123,21 @@ try {
     },
   );
   assert.throws(
+    () => enforceAnalyzeDataPrivacy([
+      "WITH sampled_leads AS (SELECT status_summary FROM sendlens.sampled_leads)",
+      "SELECT status_summary, COUNT(*) AS c",
+      "FROM sampled_leads",
+      "GROUP BY status_summary",
+    ].join(" ")),
+    (error) => {
+      assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
+      assert.ok(error.report.blocked_columns?.some((column) =>
+        column.table === "sampled_leads" && column.column === "status_summary"
+      ));
+      return true;
+    },
+  );
+  assert.throws(
     () => enforceAnalyzeDataPrivacy("SELECT * FROM sendlens.sampled_leads LIMIT 5"),
     (error) => {
       assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
