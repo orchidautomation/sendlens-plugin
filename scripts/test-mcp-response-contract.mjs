@@ -14,6 +14,7 @@ const files = {
   localDb: "plugin/local-db.ts",
   recipes: "plugin/query-recipes.ts",
   catalog: "plugin/catalog.ts",
+  analysisSafety: "plugin/analysis-safety.ts",
   analyzeDataDiagnostics: "plugin/analyze-data-diagnostics.ts",
   constants: "plugin/constants.ts",
   replyTextContract: "plugin/reply-text-contract.ts",
@@ -286,6 +287,9 @@ for (const term of [
 
 for (const term of [
   "partial matches for broad multi-token queries",
+  "`safe_to_select`, `safe_to_group_by`",
+  "`contains_pii`, `raw_json`, `high_cardinality`",
+  "`prefer_derived_field` and `recommended_cohort_field`",
   "`search_terms` and `suggested_narrower_terms`",
   "`analysis_starter_suggestions`",
   "workflow concepts such as runway, scale, refill, deliverability, sender accounts, rendered outbound, reply body, payload, and tags",
@@ -297,6 +301,7 @@ for (const term of [
 for (const term of [
   "buildCatalogSearchGuidance",
   "CatalogPublicTableError",
+  "columnSafetyMetadata",
   "invalidateCatalogColumnCache",
   "publicColumnsForConnection",
   "hydratePublicColumns",
@@ -316,6 +321,9 @@ for (const term of [
 
 for (const term of [
   "caller rationale",
+  "privacy_guard",
+  "redacts email-like identifiers inside arbitrary string/JSON result cells",
+  "singleton-heavy grouped outputs",
   "`row_count`, `result_truncated`, and output limits",
   "warnings when caps are hit",
   "failure responses include a stable `error`, sanitized `code`, and safe `hint`",
@@ -332,14 +340,33 @@ for (const term of [
   "row_limit",
   "response_max_chars",
   "Result set was truncated",
-  "rows: returnedRows",
+  "rows: redactedRows",
   "ANALYZE_DATA_SAFE_ERROR",
   "analyzeDataFailurePayload",
+  "enforceAnalyzeDataPrivacy",
+  "redactAnalyzeDataRows",
+  "highCardinalityResultPrivacyReport",
   "buildAnalyzeDataDiagnostics",
   "AnalyzeDataDiagnostics",
   "workspace_isolation",
 ]) {
   assertIncludes(source.server, term, "analyze_data runtime");
+}
+for (const term of [
+  "AnalyzeDataPrivacyGuardError",
+  "columnSafetyMetadata",
+  "safe_to_select",
+  "safe_to_group_by",
+  "contains_pii",
+  "raw_json",
+  "high_cardinality",
+  "recommended_cohort_field",
+  "prefer_derived_field",
+  "status_summary",
+  "highCardinalityResultPrivacyReport",
+  "redactAnalyzeDataRows",
+]) {
+  assertIncludes(source.analysisSafety, term, "analyze_data privacy safety runtime");
 }
 for (const term of [
   "ANALYZE_DATA_DIAGNOSTICS_SCHEMA_VERSION",
@@ -377,7 +404,7 @@ assertPattern(
 );
 assertPattern(
   source.server,
-  /status: returnedRows\.length === 0 \? "zero_rows" : "ok"/,
+  /status: redactedRows\.length === 0 \? "zero_rows" : "ok"/,
   "analyze_data success diagnostics distinguish zero-row results",
 );
 assert(

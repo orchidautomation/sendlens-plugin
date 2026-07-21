@@ -82,11 +82,11 @@ MCP tools are registered by the local `sendlens` stdio server. Responses are JSO
 | `fetch_reply_text` | Fetch exact inbound reply body text for one campaign into local DuckDB | Only when actual reply wording is needed |
 | `analysis_starters` | Return curated SQL recipes, exactness notes, and compact route cards for common/high-risk recipes | Before custom analysis for common questions; exact recipe routes before schema discovery |
 | `list_tables` | List public SendLens tables/views and descriptions | Schema orientation |
-| `list_columns` | List columns and DuckDB types for one table/view | Before custom SQL |
-| `search_catalog` | Search public schema names by concept, with partial matches, compact proof-route cards, and a named exact-tag miss correction path; reads no campaign evidence rows | When the right table, column, or starter recipe is unclear; bounded public-view custom SQL remains available after the recipe ladder |
-| `analyze_data` | Run guarded read-only DuckDB `SELECT`/`WITH` analysis | Focused questions after schema and filters are clear |
+| `list_columns` | List columns, DuckDB types, and privacy safety metadata for one table/view | Before custom SQL |
+| `search_catalog` | Search public schema names by concept, with column safety metadata, partial matches, compact proof-route cards, and a named exact-tag miss correction path; reads no campaign evidence rows | When the right table, column, or starter recipe is unclear; bounded public-view custom SQL remains available after the recipe ladder |
+| `analyze_data` | Run guarded read-only DuckDB `SELECT`/`WITH` analysis with privacy guards, result redaction, and high-cardinality aggregate checks | Focused questions after schema and filters are clear |
 
-`list_columns` and `search_catalog` only expose the `PUBLIC_TABLES` surfaces. Private names are rejected before schema reads, and catalog search hydrates all public columns with one bounded `information_schema` pass per cache/schema generation so follow-up searches reuse warm context instead of rediscovering one table at a time.
+`list_columns` and `search_catalog` only expose the `PUBLIC_TABLES` surfaces. Private names are rejected before schema reads, and catalog search hydrates all public columns with one bounded `information_schema` pass per cache/schema generation so follow-up searches reuse warm context instead of rediscovering one table at a time. Column metadata includes `safe_to_select`, `safe_to_group_by`, `contains_pii`, `raw_json`, `high_cardinality`, `prefer_derived_field`, and `recommended_cohort_field` so agents avoid raw provider metadata such as `status_summary` and prefer derived cohort fields such as `status`, reply/bounce/contact labels, step/variant positions, and scalar payload-key views.
 
 ## Public Data Surfaces
 
