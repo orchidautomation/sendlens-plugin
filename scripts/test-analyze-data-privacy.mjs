@@ -108,6 +108,21 @@ try {
     },
   );
   assert.throws(
+    () => enforceAnalyzeDataPrivacy([
+      "SELECT status_summary, c.name, COUNT(*) AS c",
+      "FROM sendlens.sampled_leads sl",
+      "JOIN sendlens.campaigns c ON sl.campaign_id = c.id",
+      "GROUP BY status_summary, c.name",
+    ].join(" ")),
+    (error) => {
+      assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
+      assert.ok(error.report.blocked_columns?.some((column) =>
+        column.table === "sampled_leads" && column.column === "status_summary"
+      ));
+      return true;
+    },
+  );
+  assert.throws(
     () => enforceAnalyzeDataPrivacy("SELECT * FROM sendlens.sampled_leads LIMIT 5"),
     (error) => {
       assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
@@ -123,15 +138,22 @@ try {
       return true;
     },
   );
+  assert.throws(
+    () => enforceAnalyzeDataPrivacy("SELECT email, phone, first_name FROM sendlens.sampled_leads LIMIT 5"),
+    (error) => {
+      assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
+      assert.ok(error.report.blocked_columns?.some((column) => column.column === "email"));
+      assert.ok(error.report.blocked_columns?.some((column) => column.column === "phone"));
+      assert.ok(error.report.blocked_columns?.some((column) => column.column === "first_name"));
+      return true;
+    },
+  );
+  enforceAnalyzeDataPrivacy("SELECT COUNT(DISTINCT email) AS sampled_leads FROM sendlens.sampled_leads");
 
-  const highCardinalitySql = [
-    "SELECT email AS cohort, COUNT(*) AS sampled_count",
-    "FROM sendlens.sampled_leads",
-    "GROUP BY email",
-    "ORDER BY sampled_count DESC",
-  ].join(" ");
-  enforceAnalyzeDataPrivacy(highCardinalitySql);
-  const highCardinalityRows = await query(db, enforceLocalWorkspaceScope(highCardinalitySql, workspaceId));
+  const highCardinalityRows = Array.from({ length: 8 }, (_, index) => ({
+    cohort: `rare-cohort-${index}`,
+    c: 1,
+  }));
   const highCardinalityReport = highCardinalityResultPrivacyReport(highCardinalityRows);
   assert.equal(highCardinalityReport?.reason, "high_cardinality_result");
   assert.match(highCardinalityReport?.guidance ?? "", /high-cardinality|row-level/i);

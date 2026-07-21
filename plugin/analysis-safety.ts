@@ -510,6 +510,7 @@ function inspectExpressionForUnsafeColumns(
   usage: AnalyzeDataPrivacyColumnUsage["usage"],
   violations: AnalyzeDataPrivacyColumnUsage[],
   seen = new Set<object>(),
+  insideAggregate = false,
 ) {
   if (!expr || typeof expr !== "object") return;
   if (seen.has(expr)) return;
@@ -523,22 +524,23 @@ function inspectExpressionForUnsafeColumns(
   if (node.type === "column_ref") {
     const columnRef = node as ColumnRef;
     const column = normalizeIdentifier(columnName(columnRef.column));
-    const tables = resolveColumnTables(scope, columnRef.table);
+    const tables = resolveColumnTables(scope, columnRef.table, column);
     if (column === "*") {
       for (const table of tables) addStarViolations(table, usage, violations);
     } else {
-      for (const table of tables) addColumnViolation(table, column, usage, violations);
+      for (const table of tables) addColumnViolation(table, column, usage, violations, { insideAggregate });
     }
   }
 
+  const childInsideAggregate = insideAggregate || node.type === "aggr_func";
   for (const value of Object.values(node)) {
     if (Array.isArray(value)) {
       for (const item of value) {
-        inspectExpressionForUnsafeColumns(item, scope, usage, violations, seen);
+        inspectExpressionForUnsafeColumns(item, scope, usage, violations, seen, childInsideAggregate);
       }
       continue;
     }
-    inspectExpressionForUnsafeColumns(value, scope, usage, violations, seen);
+    inspectExpressionForUnsafeColumns(value, scope, usage, violations, seen, childInsideAggregate);
   }
 }
 
@@ -557,35 +559,64 @@ function addColumnViolation(
   column: string,
   usage: AnalyzeDataPrivacyColumnUsage["usage"],
   violations: AnalyzeDataPrivacyColumnUsage[],
+  options: { insideAggregate?: boolean } = {},
 ) {
   const unsafe = HARD_UNSAFE_COLUMN_GUIDANCE.get(column);
-  if (!unsafe) return;
-  if (isPublicTableName(table) && !(TABLE_HARD_UNSAFE_COLUMNS.get(table)?.has(column))) {
+  if (unsafe) {
+    if (isPublicTableName(table) && !(TABLE_HARD_UNSAFE_COLUMNS.get(table)?.has(column))) {
+      return;
+    }
+    violations.push({
+      table,
+      column,
+      usage,
+      reason: unsafe.reason,
+      safe_alternatives: unsafe.alternatives,
+    });
     return;
   }
+
+  if (!isDirectPersonalIdentifierColumn(column)) return;
+  if (usage === "select" && options.insideAggregate) return;
   violations.push({
     table,
     column,
     usage,
-    reason: unsafe.reason,
-    safe_alternatives: unsafe.alternatives,
+    reason: "direct personal identifiers can expose contact-level data in analyze_data output.",
+    safe_alternatives: [
+      "COUNT(*)",
+      "COUNT(DISTINCT email)",
+      "status",
+      "reply_outcome_label",
+      "sample_source",
+      "prepare_campaign_analysis for bounded redacted evidence",
+    ],
   });
 }
 
-function resolveColumnTables(scope: SourceScope, rawTable: string | null | undefined): PublicTableName[] {
+function resolveColumnTables(
+  scope: SourceScope,
+  rawTable: string | null | undefined,
+  column: string,
+): PublicTableName[] {
   const table = normalizeIdentifier(rawTable ?? "");
   if (table) {
     const resolved = scope.aliasToPublicTable.get(table);
     return resolved ? [resolved] : [];
   }
-  return scope.publicTables.length === 1 ? [scope.publicTables[0]] : [];
+  if (scope.publicTables.length === 1) return [scope.publicTables[0]];
+  if (isDirectPersonalIdentifierColumn(column)) return scope.publicTables;
+  const possibleUnsafeTables = scope.publicTables.filter((publicTable) =>
+    TABLE_HARD_UNSAFE_COLUMNS.get(publicTable)?.has(column),
+  );
+  return possibleUnsafeTables.length > 0 ? possibleUnsafeTables : [];
 }
 
 function countLikeFields(rows: Array<Record<string, unknown>>) {
   const fields = new Set<string>();
   for (const row of rows) {
     for (const [field, value] of Object.entries(row)) {
-      if (!/(^|_)(count|total|sampled_leads|lead_count|sampled_count|row_count)(_|$)/i.test(field)) {
+      if (!/(^|_)(count|total|sampled_leads|lead_count|sampled_count|row_count)(_|$)|^(c|n)$/i.test(field)) {
         continue;
       }
       const parsed = Number(value);
@@ -634,6 +665,10 @@ function stripTrailingSemicolon(sql: string) {
 
 function normalizeIdentifier(value: string) {
   return value.replace(/^"|"$/g, "").trim().toLowerCase();
+}
+
+function isDirectPersonalIdentifierColumn(column: string) {
+  return EMAIL_OR_PHONE_COLUMN_PATTERN.test(column) || PERSON_NAME_COLUMN_PATTERN.test(column);
 }
 
 function dedupeViolations(violations: AnalyzeDataPrivacyColumnUsage[]) {
