@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { DEMO_WORKSPACE_ID } from "./demo-workspace";
+import { buildActiveDataState } from "./active-data-state";
 import {
   getLastLoadedSendLensEnv,
   getSelectedClientEnvIdentity,
@@ -257,7 +257,6 @@ export async function buildSetupDoctorReport() {
     smartleadApiKeyConfigured && !demoMode && smartleadSelected
       ? await validateSmartleadApiKey(smartleadApiKey!)
       : null;
-  const activeCacheIsDemo = refreshStatus.workspaceId === DEMO_WORKSPACE_ID;
   const envLoad = getLastLoadedSendLensEnv();
   const selectedClientEnv = getSelectedClientEnvIdentity(
     envLoad?.contextRoot ?? process.env.SENDLENS_CONTEXT_ROOT ?? process.cwd(),
@@ -279,6 +278,24 @@ export async function buildSetupDoctorReport() {
       if (db) closeDb(db);
     }
   }
+
+  const liveRefreshReady = credentialValidation?.status === "valid";
+  const smartleadConfigReady = smartleadCredentialValidation?.status === "valid";
+  const dualProviderClientMissing =
+    providerMode.mode === "all" && liveRefreshReady && smartleadConfigReady && !selectedClient;
+  const providerCredentialRefreshReady =
+    providerMode.mode === "all"
+      ? liveRefreshReady && smartleadConfigReady && Boolean(selectedClient)
+      : (instantlySelected && liveRefreshReady) || (smartleadSelected && smartleadConfigReady);
+  const providerLiveRefreshReady = demoMode || providerCredentialRefreshReady;
+  const activeWorkspaceId = cacheOwner?.workspaceId ?? refreshStatus.workspaceId ?? null;
+  const activeDataState = buildActiveDataState({
+    workspaceId: dbExists ? activeWorkspaceId : null,
+    dbExists,
+    localCacheReadable: dbExists && !cacheReadinessError && Boolean(activeWorkspaceId),
+    sourceProviderMode: providerMode.mode,
+    liveRefreshReady: providerCredentialRefreshReady,
+  });
 
   const checks: DoctorCheck[] = [];
 
@@ -460,12 +477,25 @@ export async function buildSetupDoctorReport() {
       }),
     });
   }
-  if (!demoMode && apiKeyConfigured && activeCacheIsDemo) {
+  checks.push({
+    name: "Active data state",
+    status:
+      activeDataState.status === "no_workspace"
+        ? "warn"
+        : activeDataState.status === "demo_workspace"
+          ? "warn"
+          : activeDataState.status === "cached_workspace_refresh_disabled"
+            ? "warn"
+            : "pass",
+    message: activeDataState.message,
+    detail: activeDataState.recommended_action,
+  });
+  if (!demoMode && (apiKeyConfigured || smartleadApiKeyConfigured) && activeDataState.is_demo_workspace) {
     checks.push({
       name: "Active workspace",
       status: "warn",
-      message: "Active local cache is the synthetic demo workspace, not live Instantly data.",
-      detail: "Run refresh_data after setup to replace the active analysis workspace with live Instantly data.",
+      message: "Active local cache is the synthetic demo workspace, not live provider data.",
+      detail: "Run refresh_data after setup to replace demo_workspace with live provider data.",
     });
   }
   checks.push({
@@ -542,14 +572,6 @@ export async function buildSetupDoctorReport() {
         : "ready";
 
   const nextSteps: string[] = [];
-  const liveRefreshReady = credentialValidation?.status === "valid";
-  const smartleadConfigReady = smartleadCredentialValidation?.status === "valid";
-  const dualProviderClientMissing =
-    providerMode.mode === "all" && liveRefreshReady && smartleadConfigReady && !selectedClient;
-  const providerLiveRefreshReady = demoMode ||
-    (providerMode.mode === "all"
-      ? liveRefreshReady && smartleadConfigReady && Boolean(selectedClient)
-      : (instantlySelected && liveRefreshReady) || (smartleadSelected && smartleadConfigReady));
   const noReadableCache = !dbExists || Boolean(cacheReadinessError);
   const instantlyFirstRunDemoSeedReady =
     instantlySelected && !apiKeyConfigured && noReadableCache;
@@ -603,8 +625,8 @@ export async function buildSetupDoctorReport() {
     nextSteps.push("Set SENDLENS_CLIENT before running refresh_data with SENDLENS_PROVIDER=all so Instantly and Smartlead refreshes write the same named local workspace.");
   } else if (providerMode.mode === "all" && liveRefreshReady && smartleadConfigReady) {
     nextSteps.push("Run refresh_data now to pull live Instantly and read-only Smartlead data into the current client workspace.");
-  } else if (!demoMode && liveRefreshReady && activeCacheIsDemo) {
-    nextSteps.push("Run refresh_data now to pull live Instantly data and switch the active workspace away from demo_workspace.");
+  } else if (!demoMode && providerCredentialRefreshReady && activeDataState.is_demo_workspace) {
+    nextSteps.push("Run refresh_data now to pull live provider data and switch the active workspace away from demo_workspace.");
   } else if (demoMode && !dbExists) {
     nextSteps.push("Call seed_demo_workspace before analysis.");
   } else {
@@ -619,6 +641,7 @@ export async function buildSetupDoctorReport() {
     schema_version: "sendlens_setup_doctor.v1",
     setup_status: setupStatus,
     demo_mode: demoMode,
+    active_data_state: activeDataState,
     capabilities: {
       source_provider_mode: providerMode.mode,
       source_providers: sourceProviders,

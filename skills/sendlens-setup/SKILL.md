@@ -21,6 +21,8 @@ Use the recovery reference for custom-agent discovery failures too; agent regist
 
 Display the relevant status, failures, warnings, and next steps from `setup_doctor`.
 
+Start with `active_data_state` when present. If it reports `no_workspace`, say there is no SendLens workspace available yet before offering real-provider setup or `seed_demo_workspace`. If it reports `demo_workspace`, say SendLens is showing synthetic demo fixtures before any inventory. If it reports `cached_workspace_refresh_disabled`, say cached analysis is available but live refresh is disabled before describing cache freshness.
+
 When describing freshness, use the exact `cache_freshness.label` and timestamp. Do not replace a seconds/minutes-old refresh with vague phrasing such as "earlier today."
 
 The doctor checks:
@@ -61,6 +63,7 @@ Smartlead V1 is read-only. Smart Delivery uses a separate support-gated service:
 Return:
 
 - setup status: `ready`, `ready_with_warnings`, or `blocked`.
+- active data state: no workspace, synthetic demo workspace, cached workspace without refresh credentials, or refresh-configured local workspace.
 - blocking failures and warnings.
 - next command to run.
 - cache freshness using `cache_freshness.label` when present.

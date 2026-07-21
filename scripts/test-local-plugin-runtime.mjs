@@ -1551,6 +1551,15 @@ delete process.env.SENDLENS_DEMO_MODE;
 const noKeyNoCacheDoctorReport = await buildSetupDoctorReport();
 assert.equal(noKeyNoCacheDoctorReport.setup_status, "blocked");
 assert.equal(noKeyNoCacheDoctorReport.capabilities.demo_seed, true);
+assert.equal(noKeyNoCacheDoctorReport.active_data_state.status, "no_workspace");
+assert.match(
+  noKeyNoCacheDoctorReport.active_data_state.message,
+  /No SendLens workspace is available yet/i,
+);
+assert.match(
+  noKeyNoCacheDoctorReport.active_data_state.recommended_action,
+  /seed_demo_workspace/i,
+);
 assert.match(
   String(noKeyNoCacheDoctorReport.next_steps[0]),
   /Call seed_demo_workspace now/,
