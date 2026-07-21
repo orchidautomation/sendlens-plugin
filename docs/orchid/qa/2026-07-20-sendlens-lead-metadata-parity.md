@@ -34,10 +34,11 @@ Before the Smartlead mapping change, the focused ingest assertion for the docume
 - `npm run eval:plugin` — zero errors; existing semantic-score warning remains.
 - `git diff --check`
 
-## Environment-limited checks
+## Local environment limitations and CI proof
 
 - A later full `npm run test:plugin` attempt could not complete on this VPS: child-process tests (`test-http-transport` and `test-db-lock-retry`) exited before their readiness handshakes under both the system Node 24 runtime and a cached Node 22.23.1 runtime. The failures did not report an assertion in changed metadata code; all directly affected tests pass independently.
-- `npm run test:host-bundles` produced no result for more than two minutes and was stopped. CI remains the authoritative host-bundle and full-suite gate before merge.
+- `npm run test:host-bundles` produced no result for more than two minutes locally and was stopped.
+- GitHub CI subsequently passed the complete plugin checks on Node 22 and Node 24, container checks, macOS runtime/host-bundle checks, and site checks.
 
 ## Manual review
 
