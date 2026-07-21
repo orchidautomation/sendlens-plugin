@@ -510,7 +510,7 @@ function inspectExpressionForUnsafeColumns(
   usage: AnalyzeDataPrivacyColumnUsage["usage"],
   violations: AnalyzeDataPrivacyColumnUsage[],
   seen = new Set<object>(),
-  insideAggregate = false,
+  insideCountAggregate = false,
 ) {
   if (!expr || typeof expr !== "object") return;
   if (seen.has(expr)) return;
@@ -528,19 +528,19 @@ function inspectExpressionForUnsafeColumns(
     if (column === "*") {
       for (const table of tables) addStarViolations(table, usage, violations);
     } else {
-      for (const table of tables) addColumnViolation(table, column, usage, violations, { insideAggregate });
+      for (const table of tables) addColumnViolation(table, column, usage, violations, { insideCountAggregate });
     }
   }
 
-  const childInsideAggregate = insideAggregate || node.type === "aggr_func";
+  const childInsideCountAggregate = insideCountAggregate || isCountAggregate(node);
   for (const value of Object.values(node)) {
     if (Array.isArray(value)) {
       for (const item of value) {
-        inspectExpressionForUnsafeColumns(item, scope, usage, violations, seen, childInsideAggregate);
+        inspectExpressionForUnsafeColumns(item, scope, usage, violations, seen, childInsideCountAggregate);
       }
       continue;
     }
-    inspectExpressionForUnsafeColumns(value, scope, usage, violations, seen, childInsideAggregate);
+    inspectExpressionForUnsafeColumns(value, scope, usage, violations, seen, childInsideCountAggregate);
   }
 }
 
@@ -559,7 +559,7 @@ function addColumnViolation(
   column: string,
   usage: AnalyzeDataPrivacyColumnUsage["usage"],
   violations: AnalyzeDataPrivacyColumnUsage[],
-  options: { insideAggregate?: boolean } = {},
+  options: { insideCountAggregate?: boolean } = {},
 ) {
   const unsafe = HARD_UNSAFE_COLUMN_GUIDANCE.get(column);
   if (unsafe) {
@@ -577,7 +577,7 @@ function addColumnViolation(
   }
 
   if (!isDirectPersonalIdentifierColumn(column)) return;
-  if (usage === "select" && options.insideAggregate) return;
+  if (usage === "select" && options.insideCountAggregate) return;
   violations.push({
     table,
     column,
@@ -669,6 +669,10 @@ function normalizeIdentifier(value: string) {
 
 function isDirectPersonalIdentifierColumn(column: string) {
   return EMAIL_OR_PHONE_COLUMN_PATTERN.test(column) || PERSON_NAME_COLUMN_PATTERN.test(column);
+}
+
+function isCountAggregate(node: Record<string, unknown>) {
+  return node.type === "aggr_func" && normalizeIdentifier(String(node.name ?? "")) === "count";
 }
 
 function dedupeViolations(violations: AnalyzeDataPrivacyColumnUsage[]) {

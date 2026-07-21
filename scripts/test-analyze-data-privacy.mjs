@@ -149,6 +149,30 @@ try {
     },
   );
   enforceAnalyzeDataPrivacy("SELECT COUNT(DISTINCT email) AS sampled_leads FROM sendlens.sampled_leads");
+  assert.throws(
+    () => enforceAnalyzeDataPrivacy("SELECT MIN(phone) AS sample_phone FROM sendlens.sampled_leads"),
+    (error) => {
+      assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
+      assert.ok(error.report.blocked_columns?.some((column) => column.column === "phone"));
+      return true;
+    },
+  );
+  assert.throws(
+    () => enforceAnalyzeDataPrivacy("SELECT MAX(first_name) AS name FROM sendlens.sampled_leads"),
+    (error) => {
+      assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
+      assert.ok(error.report.blocked_columns?.some((column) => column.column === "first_name"));
+      return true;
+    },
+  );
+  assert.throws(
+    () => enforceAnalyzeDataPrivacy("SELECT STRING_AGG(first_name, ',') AS names FROM sendlens.sampled_leads"),
+    (error) => {
+      assert.ok(error instanceof AnalyzeDataPrivacyGuardError);
+      assert.ok(error.report.blocked_columns?.some((column) => column.column === "first_name"));
+      return true;
+    },
+  );
 
   const highCardinalityRows = Array.from({ length: 8 }, (_, index) => ({
     cohort: `rare-cohort-${index}`,
