@@ -324,7 +324,13 @@ const TABLE_HARD_UNSAFE_COLUMNS = new Map<PublicTableName, Set<string>>([
   ["lead_evidence", new Set(["personalization", "status_summary", "custom_payload"])],
   ["lead_payload_kv", new Set(["payload_value", "payload_value_json"])],
   ["reply_context", new Set(["custom_payload", "reply_body_text", "reply_body_html", "template_body_text", "rendered_body_text"])],
-  ["reply_email_context", new Set(["custom_payload", "reply_body_text", "reply_body_html", "template_body_text", "rendered_body_text"])],
+  ["reply_email_context", new Set([
+    "custom_payload",
+    "reply_body_text",
+    "reply_body_html",
+    "template_body_text",
+    "rendered_body_text",
+  ])],
   ["rendered_outbound_context", new Set(["rendered_body_text", "template_body_text"])],
 ]);
 
