@@ -73,7 +73,11 @@ try {
   }
 
   const metadataCoverageRecipe = recipes.find((recipe) => recipe.id === "campaign-metadata-coverage");
-  assert.match(metadataCoverageRecipe.sql, /COALESCE\(NULLIF\(email, ''\), provider_lead_id\)/);
+  assert.equal(
+    [...metadataCoverageRecipe.sql.matchAll(/COALESCE\(NULLIF\(email, ''\), provider_lead_id\)/g)].length,
+    3,
+    "metadata coverage denominator, value counts, and key counts must use the same provider-aware lead identity",
+  );
   const payloadSignalRecipe = recipes.find((recipe) => recipe.id === "campaign-payload-key-signals");
   assert.match(payloadSignalRecipe.sql, /payload_is_scalar = TRUE/);
   assert.match(payloadSignalRecipe.sql, /payload_value_normalized/);

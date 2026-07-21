@@ -3463,7 +3463,7 @@ key_coverage AS (
     payload_key,
     payload_key_normalized,
     payload_key_family,
-    COUNT(DISTINCT email) AS leads_with_key,
+    COUNT(DISTINCT COALESCE(NULLIF(email, ''), provider_lead_id)) AS leads_with_key,
     COUNT(DISTINCT payload_value_normalized) FILTER (
       WHERE payload_is_scalar = TRUE
         AND COALESCE(trim(payload_value_normalized), '') <> ''
