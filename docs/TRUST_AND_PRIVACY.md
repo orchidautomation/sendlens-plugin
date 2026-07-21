@@ -41,6 +41,10 @@ These tools read from configured providers or from the local cache. They do not 
 
 `analyze_data` diagnostics are additive and bounded. They may report elapsed handler time, a small status enum, cache timestamp/generation, row/truncation counts, and referenced public SendLens surfaces parsed from `sendlens.<table>` names. They do not store route history or return SQL, private literals, raw row content, customer identifiers, email addresses, reply text, or non-public table names.
 
+`list_columns` and `search_catalog` return privacy-aware column safety metadata before custom SQL. The metadata marks raw JSON/text and high-cardinality fields with `safe_to_select`, `safe_to_group_by`, `contains_pii`, `raw_json`, `high_cardinality`, `prefer_derived_field`, and `recommended_cohort_field` so agents can choose status, reply, bounce, step, provider, or payload-key cohorts instead of raw provider metadata.
+
+`analyze_data` applies that privacy contract at execution time. It blocks direct selection or grouping of raw/high-cardinality provider text such as `status_summary`, `custom_payload`, `source_raw_json`, raw JSON metadata, and raw body text; it returns a sanitized `privacy_guard` response with safe alternatives. As defense in depth, returned string cells are redacted for email-like identifiers, including identifiers embedded inside JSON strings, and singleton-heavy grouped outputs that look row-level are rejected before rows are returned.
+
 The single-tenant container image uses the same read-only MCP surface and privacy contract. One container owns one configured workspace and one persistent `/data` directory; provider credentials and HTTP bearer credentials are injected only at runtime. See [Single-Tenant Container Deployment](./CONTAINER_DEPLOYMENT.md).
 
 ## Local Storage

@@ -9,6 +9,13 @@ import {
   listTables,
   searchCatalog,
 } from "./catalog";
+import {
+  AnalyzeDataPrivacyGuardError,
+  enforceAnalyzeDataPrivacy,
+  highCardinalityResultPrivacyReport,
+  redactAnalyzeDataRows,
+  type AnalyzeDataPrivacyGuardReport,
+} from "./analysis-safety";
 import { isDemoMode, seedDemoWorkspace } from "./demo-workspace";
 import { assertContainerStartupReady, loadSendLensEnv } from "./env";
 import {
@@ -153,17 +160,26 @@ function analyzeDataFailurePayload(
     | LocalSqlGuardError["code"]
     | "cache_unavailable"
     | "query_error"
-    | "workspace_isolation",
+    | "workspace_isolation"
+    | "privacy_guard",
   diagnostics?: AnalyzeDataDiagnostics,
+  options: {
+    hint?: string;
+    privacyGuard?: AnalyzeDataPrivacyGuardReport;
+  } = {},
 ) {
   return {
     error: ANALYZE_DATA_SAFE_ERROR,
     code,
-    hint:
+    hint: options.hint ?? (
       code === "cache_unavailable"
         ? "Use refresh_status once to check local cache readiness, then refresh or reload the plugin before retrying. Do not include private literals in retries."
-        : "Use one focused read-only SELECT/WITH query against sendlens.* public views. Do not include private literals in retries.",
+        : code === "privacy_guard"
+          ? "Use safe cohort fields or curated analysis_starters recipes instead of raw, high-cardinality, or row-level provider fields."
+        : "Use one focused read-only SELECT/WITH query against sendlens.* public views. Do not include private literals in retries."
+    ),
     diagnostics,
+    ...(options.privacyGuard ? { privacy_guard: options.privacyGuard } : {}),
   };
 }
 
@@ -1747,6 +1763,26 @@ server.registerTool(
         });
       }
       try {
+        enforceAnalyzeDataPrivacy(sql);
+      } catch (err) {
+        if (err instanceof AnalyzeDataPrivacyGuardError) {
+          return jsonResponse(analyzeDataFailurePayload(
+            err.code,
+            buildAnalyzeDataDiagnostics({
+              status: "guard_rejected",
+              startedAt: handlerStartedAt,
+              refreshStatus: readiness.status,
+              sql,
+            }),
+            {
+              hint: err.report.guidance,
+              privacyGuard: err.report,
+            },
+          ));
+        }
+        throw err;
+      }
+      try {
         rewritten = enforceLocalWorkspaceScope(sql, workspaceId);
       } catch (err) {
         if (err instanceof LocalSqlGuardError) {
@@ -1788,11 +1824,30 @@ server.registerTool(
           ));
         }
       }
+      const highCardinalityReport = highCardinalityResultPrivacyReport(returnedRows, { sql });
+      if (highCardinalityReport) {
+        return jsonResponse(analyzeDataFailurePayload(
+          "privacy_guard",
+          buildAnalyzeDataDiagnostics({
+            status: "guard_rejected",
+            startedAt: handlerStartedAt,
+            refreshStatus: readiness.status,
+            sql,
+            rowCount: 0,
+            resultTruncated: false,
+          }),
+          {
+            hint: highCardinalityReport.guidance,
+            privacyGuard: highCardinalityReport,
+          },
+        ));
+      }
+      const redactedRows = redactAnalyzeDataRows(returnedRows);
 
       return jsonResponse({
         rationale,
         readiness: readinessPayload(readiness),
-        row_count: returnedRows.length,
+        row_count: redactedRows.length,
         result_truncated: resultTruncated,
         output_limits: {
           row_limit: ANALYZE_DATA_ROW_LIMIT,
@@ -1805,14 +1860,14 @@ server.registerTool(
           ]
           : cacheWarnings,
         diagnostics: buildAnalyzeDataDiagnostics({
-          status: returnedRows.length === 0 ? "zero_rows" : "ok",
+          status: redactedRows.length === 0 ? "zero_rows" : "ok",
           startedAt: handlerStartedAt,
           refreshStatus: readiness.status,
           sql,
-          rowCount: returnedRows.length,
+          rowCount: redactedRows.length,
           resultTruncated,
         }),
-        rows: returnedRows,
+        rows: redactedRows,
       });
     } catch (err) {
       if (err instanceof CacheReadinessError) {

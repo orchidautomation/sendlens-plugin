@@ -84,6 +84,7 @@ Where relevant, SendLens responses should include:
 `search_catalog`
 
 - returns `matches` for table and column hits, including partial matches for broad multi-token queries
+- column matches include privacy-aware safety metadata such as `safe_to_select`, `safe_to_group_by`, `contains_pii`, `raw_json`, `high_cardinality`, `prefer_derived_field` and `recommended_cohort_field`
 - returns `search_terms` and `suggested_narrower_terms` so operators can retry with schema-specific language
 - returns `analysis_starter_suggestions` for workflow concepts such as runway, scale, refill, deliverability, sender accounts, rendered outbound, reply body, payload, and tags
 - exact campaign-tag sender/account deliverability or bounce intent ranks `campaign-sender-inventory-by-tag` first and names `tag-scope-audit` as its zero-row correction
@@ -98,6 +99,9 @@ Where relevant, SendLens responses should include:
 
 - caller rationale
 - guarded SQL result rows
+- blocks direct selection or grouping of raw/high-cardinality provider text fields such as `status_summary`, `custom_payload`, `source_raw_json`, raw JSON metadata, and raw body text, returning `code: "privacy_guard"` with safe alternatives instead of rows
+- redacts email-like identifiers inside arbitrary string/JSON result cells before returning rows
+- blocks singleton-heavy grouped outputs that look like fake aggregates or row-level high-cardinality cohorts, and points agents back to safe cohort fields or curated recipes
 - `row_count`, `result_truncated`, and output limits
 - warnings when caps are hit
 - additive privacy-safe `diagnostics` with `schema_version: "analyze_data_diagnostics.v1"`, monotonic `elapsed_ms`, bounded public `referenced_surfaces`, `status` (`ok`, `zero_rows`, `guard_rejected`, `query_error`, `cache_unavailable`, or `unknown`), row/truncation counts, and cache timestamp/generation metadata
@@ -139,7 +143,8 @@ Run `npm run test:mcp-response-contract` when changing MCP tools, response field
 - provider overlap-risk public views for sampled cross-provider duplicate email/domain/company exposure
 - `analysis_starters` recipe metadata, exactness labels, SQL, and notes
 - `search_catalog` partial matches, narrower search terms, and workflow concept starter suggestions
-- `analyze_data` rationale, row caps, truncation state, warnings, and rows
+- `list_columns` and `search_catalog` privacy-aware column safety metadata
+- `analyze_data` rationale, row caps, truncation state, warnings, privacy guard, redaction, high-cardinality guard, and rows
 - `fetch_reply_text` hydration result metadata, sample caps, and bounded reply samples
 - `prepare_campaign_analysis` premium-depth coverage, aggregate-to-hydrated gap semantics, selected statuses/OOO/latest-thread scope, per-status exhaustion, context gaps, backfill metadata, warnings, output limits, and bounded redacted reply-email samples unless full evidence is explicitly requested
 

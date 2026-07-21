@@ -1,4 +1,5 @@
 import type { DuckDBConnection } from "@duckdb/node-api";
+import { columnSafetyMetadata, type ColumnSafetyMetadata } from "./analysis-safety";
 import { CURRENT_SCHEMA_MIGRATION_ID, query, resolveDbPath } from "./local-db";
 import { PUBLIC_TABLES, TABLE_DESCRIPTIONS, type PublicTableName } from "./constants";
 import { getQueryRecipeById, type QueryRecipe } from "./query-recipes";
@@ -11,6 +12,7 @@ export type TableInfo = {
 export type ColumnInfo = {
   name: string;
   type: string;
+  safety: ColumnSafetyMetadata;
 };
 
 export class CatalogPublicTableError extends Error {
@@ -28,6 +30,7 @@ export type CatalogMatch = {
   column?: string;
   description: string;
   matched_terms?: string[];
+  safety?: ColumnSafetyMetadata;
 };
 
 export type CatalogStarterSuggestion = {
@@ -282,6 +285,7 @@ export async function searchCatalog(
             column: column.name,
             description,
             matched_terms: scored.matchedTerms,
+            safety: column.safety,
           },
           score: scored.score,
         });
@@ -348,6 +352,7 @@ async function hydratePublicColumns(conn: DuckDBConnection): Promise<PublicColum
     columnsByTable.get(table)?.push({
       name: String(row.name),
       type: String(row.type),
+      safety: columnSafetyMetadata(table, String(row.name), String(row.type)),
     });
   }
   return columnsByTable;
