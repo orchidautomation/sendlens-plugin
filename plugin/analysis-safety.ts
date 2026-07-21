@@ -742,7 +742,7 @@ function projectedSafeRecommendedGroupOutputFields(
   node: SelectNode,
   safeRecommendedGroupColumnNames: Set<string>,
 ) {
-  const fields = new Set<string>(safeRecommendedGroupColumnNames);
+  const fields = new Set<string>();
   for (const columnNode of Array.isArray(node.columns) ? node.columns : []) {
     if (!columnNode || typeof columnNode !== "object") continue;
     const columnExpr = columnNode as { expr?: unknown; as?: unknown };

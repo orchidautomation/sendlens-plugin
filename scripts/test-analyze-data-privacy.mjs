@@ -250,6 +250,15 @@ try {
   });
   assert.equal(unsafeProjectedReport?.reason, "high_cardinality_result");
 
+  const unsafeAliasCollisionRows = Array.from({ length: 8 }, (_, index) => ({
+    status: `rare-company-${index}`,
+    metric: 1,
+  }));
+  const unsafeAliasCollisionReport = highCardinalityResultPrivacyReport(unsafeAliasCollisionRows, {
+    sql: "SELECT MIN(company_name) AS status, COUNT(*) AS metric FROM sendlens.sampled_leads GROUP BY status",
+  });
+  assert.equal(unsafeAliasCollisionReport?.reason, "high_cardinality_result");
+
   const sumSingletonRows = Array.from({ length: 8 }, (_, index) => ({
     cohort: `rare-company-${index}`,
     metric: 1,
