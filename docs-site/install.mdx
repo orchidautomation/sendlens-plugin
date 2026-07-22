@@ -1,0 +1,36 @@
+---
+title: Install SendLens
+description: Public-safe installation guidance for closed-source distribution.
+---
+
+# Install SendLens
+
+The canonical public install entrypoint is:
+
+```bash
+curl -fsSL https://sendlens.app/install.sh | bash
+```
+
+This page intentionally uses the public SendLens installer rather than unauthenticated source checkout or private release asset URLs. If additional customer distribution channels are approved later, they should be documented here as public release channels or authenticated customer portal downloads.
+
+## Supported hosts {#hosts}
+
+SendLens is designed for host-native MCP usage in:
+
+- Claude Code
+- Cursor
+- Codex
+- OpenCode
+
+Host setup can differ by version. After installation, restart the host and run `/sendlens-setup` from inside the AI tool.
+
+## Install safety {#install-safety}
+
+- Do not paste provider API keys into chat.
+- Keep API keys in the local environment or host-specific secret store.
+- Rotate keys at the provider if a local machine or config file is compromised.
+- Restart SendLens after changing provider credentials.
+
+## After install
+
+Continue to [first-run setup](/setup/first-run).

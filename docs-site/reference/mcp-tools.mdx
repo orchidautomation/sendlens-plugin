@@ -1,0 +1,42 @@
+---
+title: MCP tools overview
+description: User-facing overview of SendLens MCP tools and response contracts.
+---
+
+# MCP tools overview
+
+SendLens exposes read-only MCP tools to AI hosts. Host UIs can render tool names differently, so this page documents the stable tool families and response contract rather than promising one host-specific command palette.
+
+## Tool families {#tool-families}
+
+### Setup and doctor checks {#setup-doctor}
+
+Use these tools through `/sendlens-setup` or host setup workflows to verify provider configuration, local state paths, cache identity, and demo-mode availability.
+
+### Provider refresh and cache status {#refresh-status}
+
+Refresh tools read provider APIs into the local DuckDB cache and report provider scope, client scope, refresh timing, and unsupported surfaces. They do not write back to providers.
+
+### Campaign analytics and triage {#campaign-analytics}
+
+Campaign tools rank campaigns by reply quality, bounce risk, lead runway, sender availability, stopped sending, and copy readiness. Good outputs separate exact aggregates from sampled examples.
+
+### Reply and copy analysis {#reply-copy}
+
+Reply and copy tools inspect loaded replies, classify reply patterns, find unfilled personalization tokens, identify blank bodies, and produce copy hypotheses with evidence labels.
+
+### Catalog and workflow routing {#catalog-routing}
+
+Catalog and routing tools help the AI host choose the right SendLens workflow for a question, such as analyst, campaign strategy, copywriting, launch operations, or account briefs.
+
+## Response expectations {#response-expectations}
+
+A good tool result should:
+
+- avoid raw secret values and provider credential URLs,
+- state provider scope and cache scope,
+- disclose all applicable evidence classes: exact, sampled, hybrid, reconstructed, fetched, inferred, and unsupported,
+- avoid overclaiming unsupported or empty evidence,
+- recommend next human or provider-native actions without implying SendLens performed a mutation.
+
+For the canonical definitions, see [Evidence model](/concepts/evidence-model).

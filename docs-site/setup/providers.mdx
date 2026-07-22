@@ -1,0 +1,32 @@
+---
+title: Provider setup
+description: Configure Instantly, Smartlead, and all-provider read-only analysis.
+---
+
+# Provider setup
+
+SendLens reads outbound data from providers and stores a normalized local cache. It does not mutate provider records.
+
+## Instantly {#instantly}
+
+Set `SENDLENS_INSTANTLY_API_KEY` in the environment used by your AI host or MCP server. Instantly supports read-only campaign analytics, replies, copy checks, sender risk, and lead runway analysis.
+
+## Smartlead {#smartlead}
+
+Set `SENDLENS_SMARTLEAD_API_KEY` for Smartlead read-only analysis across available campaign, lead, reply, sender, analytics, and deliverability-adjacent surfaces. Smartlead credentials are query-string credentials in upstream API calls, so SendLens treats them as sensitive and suppresses them from setup output, traces, logs, and errors.
+
+Smartlead Smart Delivery and inbox-placement style evidence may require provider support or account-level access. Empty or unsupported evidence does not prove deliverability health.
+
+## Provider selection {#provider-selection}
+
+Use `SENDLENS_PROVIDER` when you need to pin the active provider:
+
+- `instantly`
+- `smartlead`
+- `all`
+
+Use `all` when both providers are configured and you want cross-provider normalization. In all-provider answers, keep provider scope and evidence classes visible because Instantly and Smartlead expose different source surfaces.
+
+## Client-scoped caches {#client-caches}
+
+Set `SENDLENS_CLIENT` to separate local cache identities for agencies or multi-client operators. Pair it with `SENDLENS_DB_PATH` or `SENDLENS_STATE_DIR` if you need explicit storage locations. See [configuration reference](/reference/configuration).

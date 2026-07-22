@@ -1,0 +1,24 @@
+---
+title: Provider model
+description: How Instantly, Smartlead, and all-provider mode fit together.
+---
+
+# Provider model
+
+SendLens normalizes read-only outbound provider data into a local analytical model. Provider-specific systems remain the source of truth; SendLens is the evidence-aware analysis layer.
+
+## Instantly {#instantly}
+
+Instantly is a first-class SendLens provider. Use it for campaign analytics, reply analysis, copy QA, lead runway, sender risk, and account-manager briefs.
+
+## Smartlead {#smartlead}
+
+Smartlead is also a first-class read-only SendLens provider. Use it for campaign, lead, reply, sender, analytics, and deliverability-adjacent analysis where upstream access allows it. Smart Delivery surfaces can be support-gated, and SendLens does not add Smartlead mutation paths.
+
+## All-provider mode {#all-provider}
+
+All-provider mode helps agencies compare Instantly and Smartlead workspaces with normalized terms. Because providers expose different surfaces, every cross-provider answer should keep provider scope and evidence class visible.
+
+## Native provider MCPs vs SendLens {#native-vs-sendlens}
+
+Native provider MCPs are best for actions inside a provider account. SendLens is best for local analytics, evidence language, provider normalization, and specialist outbound workflows.

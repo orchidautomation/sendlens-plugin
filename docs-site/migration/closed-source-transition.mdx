@@ -1,0 +1,24 @@
+---
+title: Closed-source transition
+description: Public docs guidance for SendLens as the product source becomes private.
+---
+
+# Closed-source transition
+
+These docs are designed to remain public even if the product source repository is private.
+
+## What changes {#what-changes}
+
+- Public docs become the canonical onboarding and troubleshooting surface.
+- Installation should use `https://sendlens.app/install.sh` or another approved public distribution channel.
+- Source checkout, contribution, and maintainer workflow instructions should not be required for customer setup.
+
+## What stays the same {#what-stays-same}
+
+- SendLens remains local-first by default.
+- Provider integrations remain read-only.
+- Evidence labels and privacy guardrails remain part of the product contract.
+
+## Open distribution decision {#distribution-decision}
+
+If direct release assets remain public, this page can link to the approved release channel. If not, docs should continue to use the public installer or authenticated customer portal.

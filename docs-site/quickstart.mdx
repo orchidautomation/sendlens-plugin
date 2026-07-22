@@ -1,0 +1,58 @@
+---
+title: Quickstart
+description: Install SendLens and get to a useful outbound answer quickly.
+---
+
+# Quickstart
+
+## Prerequisites {#prerequisites}
+
+- An AI host that can run local MCP plugins, such as Claude Code, Cursor, Codex, or OpenCode.
+- Node.js available on the machine where the host runs.
+- A provider API key for Instantly or Smartlead, or demo mode if you only want a synthetic walkthrough.
+
+## 1. Install {#install}
+
+Use the public installer endpoint:
+
+```bash
+curl -fsSL https://sendlens.app/install.sh | bash
+```
+
+If your host requires manual MCP registration, follow the host-specific instructions printed by the installer. The installer output is designed to avoid printing provider secret values.
+
+## 2. Reload your host {#reload-host}
+
+Restart or reload the AI host so it discovers the SendLens MCP server and the SendLens workflows. If the host has a plugin or MCP panel, confirm SendLens is listed before continuing.
+
+## 3. Run setup {#setup}
+
+In your AI host, run:
+
+```text
+/sendlens-setup
+```
+
+Choose Instantly, Smartlead read-only support, all-provider mode, or demo mode. See [provider setup](/setup/providers) for environment variable names and [demo mode](/setup/demo-mode) for the synthetic path.
+
+## 4. Ask the first useful question {#first-question}
+
+Try one of these:
+
+```text
+Which active campaign should I scale, pause, or rewrite this week? Show the evidence class for each recommendation.
+```
+
+```text
+Audit my latest campaign replies and separate buying signals from auto-replies and out-of-office noise.
+```
+
+```text
+Check the loaded campaign for blank bodies, unfilled personalization tokens, and risky Step 0 copy.
+```
+
+## What to read next
+
+- [Evidence model](/concepts/evidence-model) explains how much weight to put on each answer.
+- [Local-first privacy](/concepts/local-first-privacy) explains what stays on your machine.
+- [Troubleshooting](/reference/troubleshooting) covers missing tools, stale cache, provider auth, and empty evidence.

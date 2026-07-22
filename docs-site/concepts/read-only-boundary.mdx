@@ -1,0 +1,25 @@
+---
+title: Read-only boundary
+description: SendLens analyzes outbound data but does not mutate provider systems.
+---
+
+# Read-only boundary
+
+SendLens is intentionally read-only.
+
+## SendLens can {#can}
+
+- Refresh provider data into a local cache.
+- Query normalized campaign, reply, lead, copy, and sender views.
+- Classify evidence strength and unsupported surfaces.
+- Recommend what a human or native provider tool should do next.
+
+## SendLens cannot {#cannot}
+
+- Create, pause, or edit campaigns.
+- Add, remove, or update leads.
+- Send emails or change sequences.
+- Manage accounts, mailboxes, or webhooks.
+- Write changes back to Instantly or Smartlead.
+
+This boundary keeps SendLens as the intelligence layer. If your workflow needs a provider action, use the provider UI or an approved native provider system of action.

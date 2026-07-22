@@ -1,0 +1,16 @@
+---
+title: Container deployment
+description: Run SendLens in a controlled single-tenant container.
+---
+
+# Container deployment
+
+A container deployment can help enterprise operators standardize runtime, storage, environment variables, and network controls.
+
+## Operator checklist {#operator-checklist}
+
+- Mount or provision durable local state intentionally.
+- Inject provider credentials through a secret manager.
+- Enforce HTTPS, bearer token, Host, and Origin controls for HTTP mode.
+- Keep logs sanitized.
+- Document who can access the AI host and model context that receives SendLens results.

@@ -1,0 +1,26 @@
+---
+title: Troubleshooting
+description: Fix common setup, provider, cache, and evidence issues.
+---
+
+# Troubleshooting
+
+## SendLens does not appear in my host {#missing-host}
+
+Restart the host after installation. Check that the MCP server registration matches your host and that Node.js is available in the host environment.
+
+## Provider auth fails {#provider-auth}
+
+Confirm the key is set in the environment used by the host process. Do not paste the key into chat. Rotate the key at the provider if it may have been exposed.
+
+## Data looks stale {#stale-cache}
+
+Run the setup or refresh workflow again and check the reported cache scope and refresh timestamp. Restart after changing provider variables.
+
+## Evidence is empty or unsupported {#empty-evidence}
+
+Empty evidence does not prove a campaign is healthy. It can mean the provider, permissions, cache scope, or support-gated API surface did not expose the data.
+
+## I need a provider action {#provider-action}
+
+Use the provider UI or approved native provider system of action. SendLens is read-only.

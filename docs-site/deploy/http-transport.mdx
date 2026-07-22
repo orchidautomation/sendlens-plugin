@@ -1,0 +1,20 @@
+---
+title: HTTP transport
+description: Enterprise operator notes for single-tenant remote MCP access.
+---
+
+# HTTP transport
+
+HTTP transport is for controlled, single-tenant operator deployments where a remote AI host needs MCP access through HTTPS.
+
+## Requirements {#requirements}
+
+- One configured workspace per deployment.
+- HTTPS termination.
+- Bearer-token authentication.
+- Strict Host and Origin allowlists.
+- Sanitized logs that do not print provider credentials.
+
+## Boundary {#boundary}
+
+HTTP transport does not turn SendLens into a multi-tenant analytics warehouse. Treat it as a controlled deployment of the same read-only intelligence layer.

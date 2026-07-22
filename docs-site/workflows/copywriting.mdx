@@ -1,0 +1,22 @@
+---
+title: Copywriter
+description: Analyze outbound copy using reply and performance evidence.
+---
+
+# Copywriter
+
+Use this workflow to inspect Step 0 angles, objection patterns, personalization token failures, blank bodies, and sentence-level hypotheses. Treat copy conclusions as exact only when the underlying data is complete.
+
+## Example prompt {#example-prompt}
+
+```text
+Use SendLens Copywriter to inspect Step 0 copy, unfilled tokens, blank bodies, and reply objections. Identify what to rewrite and what evidence supports it.
+```
+
+## Evidence expectations {#evidence-expectations}
+
+Copywriting answers should separate exact copy QA findings from inferred message hypotheses and avoid treating sampled replies as complete proof. Link recommendations back to [the evidence model](/concepts/evidence-model).
+
+## Read-only handoff {#read-only-handoff}
+
+SendLens can recommend the next action, but provider changes must happen in a provider UI or approved native provider system of action.

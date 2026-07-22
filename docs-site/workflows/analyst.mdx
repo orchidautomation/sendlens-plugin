@@ -1,0 +1,22 @@
+---
+title: SendLens Analyst
+description: Diagnose campaign health with evidence-aware analysis.
+---
+
+# SendLens Analyst
+
+Ask broad questions about active campaigns, risks, replies, lead runway, and sender health. Require evidence class, provider scope, and unsupported surfaces in every answer.
+
+## Example prompt {#example-prompt}
+
+```text
+Use SendLens Analyst to rank active campaigns by risk and opportunity. Include reply quality, bounce risk, lead runway, sender state, evidence class, and unsupported surfaces.
+```
+
+## Evidence expectations {#evidence-expectations}
+
+Analyst answers should combine exact campaign aggregates with sampled examples when needed, and flag unsupported provider surfaces before making a recommendation. Link recommendations back to [the evidence model](/concepts/evidence-model).
+
+## Read-only handoff {#read-only-handoff}
+
+SendLens can recommend the next action, but provider changes must happen in a provider UI or approved native provider system of action.
