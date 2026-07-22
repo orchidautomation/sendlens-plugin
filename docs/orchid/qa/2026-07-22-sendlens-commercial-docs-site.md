@@ -120,3 +120,32 @@ Results:
 - Site CI: passed, including production audit with 0 vulnerabilities.
 - Diff hygiene: passed.
 - Repo preflight: passed with the existing `.agent-artifacts` missing warning.
+
+## Provider-positioning audit — 2026-07-22
+
+Brandon flagged that SendLens should not be represented as only "Instantly analytics" because the product also supports Smartlead.
+
+Audit and fixes:
+
+- Re-scanned `docs-site/` for Instantly-only language, "Instantly analytics", "Instantly-focused", "shipped provider", and "mature provider" wording.
+- Rewrote provider setup and concepts pages to describe Instantly and Smartlead V1 as supported read-only provider paths, with all-provider normalization when both are configured.
+- Preserved Smartlead caveats: V1 is read-only, Smart Delivery can be support-gated, query-string credentials are sensitive, and empty/unsupported evidence does not prove deliverability health.
+- Rewrote the release-story page so the story is provider-normalized instead of Instantly-first.
+- Updated the Instantly comparison page to mention all-provider comparison with Smartlead where both providers are configured.
+
+Validation:
+
+```bash
+npm run docs:check
+cd docs-site && npx mint@4.2.726 validate
+cd docs-site && npx mint@4.2.726 broken-links
+git diff --check
+/home/brandon/.codex/plugins/cache/personal/orchid-agent-stack/0.1.0+codex.20260621000222/scripts/repo-preflight.sh .
+```
+
+Results:
+
+- Docs check: passed.
+- Mintlify validate and broken-links: passed.
+- Diff hygiene: passed.
+- Repo preflight: passed with the existing `.agent-artifacts` missing warning.

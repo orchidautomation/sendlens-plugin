@@ -9,11 +9,11 @@ SendLens reads outbound data from providers and stores a normalized local cache.
 
 ## Instantly {#instantly}
 
-Set `SENDLENS_INSTANTLY_API_KEY` in the environment used by your AI host or MCP server. Instantly is the mature provider path for campaign analytics, replies, copy checks, sender risk, and lead runway analysis.
+Set `SENDLENS_INSTANTLY_API_KEY` in the environment used by your AI host or MCP server. Instantly supports read-only campaign analytics, replies, copy checks, sender risk, and lead runway analysis.
 
 ## Smartlead V1 {#smartlead}
 
-Set `SENDLENS_SMARTLEAD_API_KEY` for Smartlead read-only analysis. Smartlead credentials are query-string credentials in upstream API calls, so SendLens treats them as sensitive and suppresses them from setup output, traces, logs, and errors.
+Set `SENDLENS_SMARTLEAD_API_KEY` for Smartlead read-only analysis across available campaign, lead, reply, sender, analytics, and deliverability-adjacent surfaces. Smartlead credentials are query-string credentials in upstream API calls, so SendLens treats them as sensitive and suppresses them from setup output, traces, logs, and errors.
 
 Smartlead Smart Delivery and inbox-placement style evidence may require provider support or account-level access. Empty or unsupported evidence does not prove deliverability health.
 
@@ -25,7 +25,7 @@ Use `SENDLENS_PROVIDER` when you need to pin the active provider:
 - `smartlead`
 - `all`
 
-Use `all` only when each provider is configured and you want cross-provider normalization.
+Use `all` when both providers are configured and you want cross-provider normalization. In all-provider answers, keep provider scope and evidence classes visible because Instantly and Smartlead expose different source surfaces.
 
 ## Client-scoped caches {#client-caches}
 
