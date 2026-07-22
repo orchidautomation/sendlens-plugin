@@ -1,0 +1,20 @@
+---
+title: Local vs cloud positioning
+description: When to use local SendLens and when an enterprise deployment may fit.
+---
+
+# Local vs cloud positioning
+
+The default SendLens experience is local: a host-native MCP plugin, a local DuckDB cache, and read-only provider access from the user's machine or controlled environment.
+
+## Local-first default {#local-default}
+
+Choose local SendLens when you want fast setup, private cache ownership, and analysis inside the AI host your team already uses.
+
+## Enterprise deployment {#enterprise-deployment}
+
+Choose a single-tenant HTTP or container deployment when an operator needs remote MCP access, central operational controls, HTTPS, bearer-token enforcement, and explicit Host/Origin restrictions. See [HTTP transport](/deploy/http-transport) and [container deployment](/deploy/container).
+
+## Not a shared SendLens warehouse {#not-warehouse}
+
+The core docs do not assume a multi-tenant SendLens-hosted analytics warehouse. If a commercial cloud package is introduced, this page should be updated with the exact data boundary, retention model, and security commitments.

@@ -1,0 +1,34 @@
+---
+title: SendLens documentation
+description: Local-first, read-only outbound intelligence for AI hosts.
+---
+
+# SendLens documentation
+
+SendLens is the read-only outbound intelligence layer for AI hosts. It connects to outbound providers such as Instantly and Smartlead, normalizes campaign data into a local DuckDB cache, and gives your AI host evidence-backed answers about campaign health, replies, copy, lead quality, and launch readiness.
+
+<Note>
+SendLens is not a system of action. It does not create campaigns, send emails, mutate leads, update accounts, or manage webhooks. Native provider MCPs and provider apps are where actions belong; SendLens is where analysis, evidence, and cross-provider interpretation belong.
+</Note>
+
+## What SendLens helps you do
+
+- Decide which campaigns to scale, pause, kill, or rewrite.
+- Separate real buying signals from auto-replies and noisy inbox activity.
+- Inspect copy risks such as empty bodies, unfilled tokens, and weak Step 0 angles.
+- Compare Instantly and Smartlead workspaces through normalized read-only views.
+- Explain every recommendation with evidence classes such as exact, sampled, reconstructed, inferred, or unsupported.
+- Keep provider data local by default while using your existing AI host workflow.
+
+## Start here
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" href="/quickstart">Install SendLens, run setup, and ask your first question.</Card>
+  <Card title="Trust and privacy" href="/legal/trust-and-privacy">Review the local-first cache, read-only provider boundary, and AI-host caveat.</Card>
+  <Card title="Evidence model" href="/concepts/evidence-model">Learn how SendLens labels exact, sampled, reconstructed, inferred, and unsupported evidence.</Card>
+  <Card title="Commercial CTA" href="/commercial/pricing">See current packaging placeholders and how to request access.</Card>
+</CardGroup>
+
+## Positioning in one sentence
+
+SendLens turns outbound data into a local, evidence-aware analyst inside your AI host, while provider-native tools remain the place to take action.

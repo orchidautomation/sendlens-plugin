@@ -1,0 +1,20 @@
+---
+title: MCP tool reference
+description: User-facing overview of SendLens MCP tools and response contracts.
+---
+
+# MCP tool reference
+
+SendLens exposes MCP tools to AI hosts for read-only analysis. The exact host UI may vary, but responses should preserve provider scope, cache scope, evidence classes, and unsupported surfaces.
+
+## Common tool families {#tool-families}
+
+- Setup and doctor checks.
+- Provider refresh and cache status.
+- Campaign analytics and triage.
+- Reply and copy analysis.
+- Catalog and workflow routing.
+
+## Response expectations {#response-expectations}
+
+A good tool result should avoid raw secret values, avoid overclaiming unsupported evidence, and make it clear when data is sampled, reconstructed, inferred, or exact.

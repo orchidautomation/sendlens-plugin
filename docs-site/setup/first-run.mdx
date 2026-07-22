@@ -1,0 +1,35 @@
+---
+title: First-run setup
+description: Configure SendLens inside your AI host after installation.
+---
+
+# First-run setup
+
+## Prerequisites {#prerequisites}
+
+Complete [installation](/install), then restart your AI host.
+
+## Setup command {#setup-command}
+
+Run this inside the host:
+
+```text
+/sendlens-setup
+```
+
+The setup workflow checks whether SendLens can start, whether a provider is configured, where the local cache will be stored, and whether demo mode is available.
+
+## Choose a provider {#choose-provider}
+
+- **Instantly** is the shipped provider path for campaign analytics today.
+- **Smartlead V1** is read-only and intended for provider parity. Some Smart Delivery surfaces are support-gated by upstream access.
+- **All-provider mode** can normalize available providers into one analytical view when both are configured.
+- **Demo mode** uses synthetic data and is safe for evaluation without provider credentials.
+
+## Reload after changes {#reload-after-changes}
+
+If you add or rotate provider keys, restart the MCP server or reload the host. A stale host process can keep using old environment variables until it is restarted.
+
+## First useful workflow {#first-workflow}
+
+After setup, use [SendLens Analyst](/workflows/analyst) for broad diagnosis or [Campaign Strategist](/workflows/campaign-strategy) when you already know which campaign needs a decision.

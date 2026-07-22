@@ -64,7 +64,8 @@
     "site:lint": "npm --prefix site run lint",
     "site:test": "npm --prefix site run test",
     "site:typecheck": "npm --prefix site run typecheck",
-    "site:audit": "npm --prefix site run audit:prod"
+    "site:audit": "npm --prefix site run audit:prod",
+    "docs:check": "node scripts/check-docs-site.mjs"
   },
   "dependencies": {
     "@duckdb/node-api": "^1.5.1-r.1",

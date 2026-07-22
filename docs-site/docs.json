@@ -1,0 +1,143 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "SendLens Docs",
+  "colors": {
+    "primary": "#0F766E",
+    "light": "#14B8A6",
+    "dark": "#2DD4BF"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Start here",
+        "pages": [
+          "index",
+          "quickstart",
+          "install",
+          "setup/first-run",
+          "setup/providers",
+          "setup/demo-mode"
+        ]
+      },
+      {
+        "group": "Core concepts",
+        "pages": [
+          "concepts/local-first-privacy",
+          "concepts/evidence-model",
+          "concepts/providers",
+          "concepts/read-only-boundary",
+          "concepts/local-vs-cloud"
+        ]
+      },
+      {
+        "group": "Workflows",
+        "pages": [
+          "workflows/overview",
+          "workflows/analyst",
+          "workflows/campaign-strategy",
+          "workflows/copywriting",
+          "workflows/launch-operations",
+          "workflows/account-briefs"
+        ]
+      },
+      {
+        "group": "Use cases",
+        "pages": [
+          "use-cases/campaign-triage",
+          "use-cases/reply-analysis",
+          "use-cases/icp-signals",
+          "use-cases/copy-analysis",
+          "use-cases/deliverability",
+          "use-cases/end-to-end-campaign"
+        ]
+      },
+      {
+        "group": "Compare",
+        "pages": [
+          "compare/instantly-vs-sendlens",
+          "compare/smartlead-vs-sendlens",
+          "compare/native-mcps-vs-sendlens"
+        ]
+      },
+      {
+        "group": "Commercial",
+        "pages": [
+          "commercial/pricing",
+          "commercial/support-and-maintenance",
+          "commercial/changelog"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/mcp-tools",
+          "reference/configuration",
+          "reference/troubleshooting",
+          "reference/glossary"
+        ]
+      },
+      {
+        "group": "Deploy",
+        "pages": [
+          "deploy/http-transport",
+          "deploy/container"
+        ]
+      },
+      {
+        "group": "Trust",
+        "pages": [
+          "legal/trust-and-privacy",
+          "migration/closed-source-transition"
+        ]
+      }
+    ]
+  },
+  "redirects": [
+    {
+      "source": "/docs/INSTALL",
+      "destination": "/install"
+    },
+    {
+      "source": "/docs/TRUST_AND_PRIVACY",
+      "destination": "/legal/trust-and-privacy"
+    },
+    {
+      "source": "/docs/TROUBLESHOOTING",
+      "destination": "/reference/troubleshooting"
+    },
+    {
+      "source": "/docs/HTTP_TRANSPORT",
+      "destination": "/deploy/http-transport"
+    },
+    {
+      "source": "/docs/CONTAINER_DEPLOYMENT",
+      "destination": "/deploy/container"
+    },
+    {
+      "source": "/docs/MCP_RESPONSE_CONTRACT",
+      "destination": "/reference/mcp-tools"
+    },
+    {
+      "source": "/docs/skills/sendlens-setup",
+      "destination": "/setup/first-run"
+    },
+    {
+      "source": "/docs/skills/sendlens-analyst",
+      "destination": "/workflows/analyst"
+    },
+    {
+      "source": "/docs/skills/sendlens-campaign-strategist",
+      "destination": "/workflows/campaign-strategy"
+    },
+    {
+      "source": "/docs/skills/sendlens-copywriter",
+      "destination": "/workflows/copywriting"
+    },
+    {
+      "source": "/docs/skills/sendlens-launch-operator",
+      "destination": "/workflows/launch-operations"
+    }
+  ]
+}

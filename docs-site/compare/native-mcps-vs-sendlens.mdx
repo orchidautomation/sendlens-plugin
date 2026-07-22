@@ -1,0 +1,20 @@
+---
+title: Native provider MCPs vs SendLens
+description: Separate systems of action from the intelligence layer.
+---
+
+# Native provider MCPs vs SendLens
+
+Native provider MCPs are systems of action. They are useful when an AI host should operate directly inside a provider account. SendLens is the read-only intelligence layer.
+
+## Native provider MCPs {#native-provider-mcps}
+
+Use native provider MCPs for approved write actions, provider-specific admin tasks, and workflows that must change the source system.
+
+## SendLens {#sendlens}
+
+Use SendLens for local analysis, evidence labels, cross-provider normalization, specialist outbound workflows, and privacy guardrails.
+
+## Recommended architecture {#recommended-architecture}
+
+Keep SendLens in the analysis lane and provider-native tools in the action lane. Require explicit human review before provider mutations.

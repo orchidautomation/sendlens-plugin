@@ -1,0 +1,22 @@
+---
+title: Launch Operator
+description: Check campaign readiness before or after launch.
+---
+
+# Launch Operator
+
+Use this workflow to catch empty bodies, unfilled tokens, missing senders, risky personalization, stopped sending, or thin lead pools before a human takes action in the provider.
+
+## Example prompt {#example-prompt}
+
+```text
+Use SendLens to answer this with provider scope, cache scope, evidence class, and unsupported surfaces: what should I do next?
+```
+
+## Evidence expectations {#evidence-expectations}
+
+Link recommendations back to [the evidence model](/concepts/evidence-model). If evidence is sampled, inferred, reconstructed, or unsupported, say what would be needed to increase confidence.
+
+## Read-only handoff {#read-only-handoff}
+
+SendLens can recommend the next action, but provider changes must happen in a provider UI or approved native provider system of action.

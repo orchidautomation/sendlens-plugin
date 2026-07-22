@@ -1,0 +1,28 @@
+---
+title: Trust and privacy
+description: Canonical public trust boundary for SendLens.
+---
+
+# Trust and privacy
+
+SendLens is designed as a local-first, read-only outbound intelligence layer.
+
+## Data storage {#data-storage}
+
+The default workflow stores normalized provider data in a local DuckDB cache. The core stdio workflow does not require a SendLens-hosted data warehouse.
+
+## Provider access {#provider-access}
+
+SendLens reads provider APIs using keys you configure locally. It does not mutate campaigns, leads, accounts, emails, or webhooks.
+
+## AI host and model context {#ai-host-context}
+
+When SendLens returns data to your AI host, that data can enter the host and model context. Your host configuration, model provider, workspace retention policy, and logs determine how that context is handled after SendLens returns it.
+
+## Secrets {#secrets}
+
+SendLens docs and setup flows should never ask you to paste API keys into chat. Smartlead query-string credential values are treated as sensitive and should be redacted from logs, traces, setup output, errors, and support examples.
+
+## Evidence and uncertainty {#evidence-uncertainty}
+
+SendLens labels evidence so users can distinguish exact rows from sampled, reconstructed, inferred, or unsupported surfaces. Unsupported evidence is a safety signal, not proof that a problem is absent.

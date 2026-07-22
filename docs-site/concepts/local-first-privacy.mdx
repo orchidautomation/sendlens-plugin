@@ -1,0 +1,27 @@
+---
+title: Local-first privacy
+description: How SendLens stores and processes outbound data.
+---
+
+# Local-first privacy
+
+SendLens is local-first by default. Provider data is read into a local DuckDB cache on the machine running your AI host or MCP server. The core stdio workflow does not require a SendLens-hosted warehouse.
+
+## What stays local {#what-stays-local}
+
+- Normalized provider campaign, lead, reply, sender, and copy metadata used for analysis.
+- Refresh state and local cache files.
+- Client-scoped caches when `SENDLENS_CLIENT`, `SENDLENS_DB_PATH`, or `SENDLENS_STATE_DIR` are configured.
+
+## What can leave the machine {#what-can-leave}
+
+SendLens tool results enter your AI host and model context when you ask the model to analyze them. Your host, model provider, workspace policy, and logging settings control how that context is handled after SendLens returns it.
+
+## Privacy design choices {#design-choices}
+
+- Read-only provider integrations.
+- Evidence labels that make uncertainty explicit.
+- Secret redaction in setup, logs, traces, and errors.
+- Local cache by default rather than centralizing outbound data in a SendLens cloud warehouse.
+
+For the canonical trust page, see [Trust and privacy](/legal/trust-and-privacy).

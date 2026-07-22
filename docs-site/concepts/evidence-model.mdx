@@ -1,0 +1,50 @@
+---
+title: Evidence model
+description: Understand exact, sampled, hybrid, reconstructed, fetched, inferred, and unsupported evidence.
+---
+
+# Evidence model
+
+SendLens answers should tell you what kind of evidence supports the recommendation. The evidence class is as important as the recommendation itself.
+
+## Evidence classes {#evidence-classes}
+
+### Exact {#exact}
+
+The answer is based on complete local rows for the scope being analyzed, such as all loaded replies for a campaign in the cache.
+
+### Sampled {#sampled}
+
+The answer uses a representative subset because the full result set is too large for the response. Sampled evidence is useful for pattern detection but should not be treated as a complete audit.
+
+### Hybrid {#hybrid}
+
+The answer combines exact aggregates with sampled examples. This is common when SendLens can count every row but only show selected supporting examples.
+
+### Reconstructed {#reconstructed}
+
+The answer is rebuilt from available events or related fields because the provider does not expose the exact final state in one field.
+
+### Fetched {#fetched}
+
+The answer includes newly fetched provider data from a refresh path. It should still state provider and cache scope.
+
+### Inferred {#inferred}
+
+The answer is a hypothesis from correlated fields or observed patterns. Use it for prioritization, not as proof.
+
+### Unsupported {#unsupported}
+
+The provider, account, permission set, or current cache does not expose enough data to answer. Unsupported or empty evidence never proves health.
+
+## Smart Delivery caveat {#smart-delivery-caveat}
+
+For Smartlead Smart Delivery and inbox-placement surfaces, missing rows or unsupported evidence do not mean placement is healthy. They mean SendLens could not verify the surface with available read-only evidence.
+
+## How to ask for evidence {#ask-for-evidence}
+
+Add this to prompts:
+
+```text
+Show the evidence class, data scope, and any unsupported surfaces before recommending an action.
+```
