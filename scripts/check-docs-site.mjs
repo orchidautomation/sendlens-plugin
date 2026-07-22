@@ -29,7 +29,7 @@ walk(root);
 
 const pageSet = new Set(pages.map((p) => '/' + path.relative(root, p).replace(/\.mdx$/, '').replace(/\\/g, '/')));
 const publicUnsafe = [/docs\/orchid/i, /\.agent-artifacts/i, /github\.com\/orchidautomation\/sendlens-plugin/i, /Linear/];
-const secretValue = /(?:^|[^a-z])sk-[A-Za-z0-9_-]{12,}|[A-Za-z0-9_]*API_KEY\s*=\s*['\"]?[A-Za-z0-9_-]{16,}/;
+const secretValue = /(?:^|[^a-z])sk-[A-Za-z0-9_-]{12,}|[A-Za-z0-9_]*API_KEY\s*=\s*['\"]?[A-Za-z0-9_-]{16,}|[?&](?:api_?key|token|access_token)=['\"]?[A-Za-z0-9._~-]{12,}/i;
 
 for (const file of pages) {
   const rel = path.relative(root, file);
@@ -37,9 +37,17 @@ for (const file of pages) {
   if (!text.startsWith('---\n')) errors.push(`${rel}: missing frontmatter`);
   for (const pattern of publicUnsafe) if (pattern.test(text)) errors.push(`${rel}: public-safety pattern matched ${pattern}`);
   if (secretValue.test(text)) errors.push(`${rel}: possible secret value`);
-  for (const match of text.matchAll(/\]\((\/[^)\s#]+)(#[^)\s]+)?\)/g)) {
-    const target = match[1].replace(/\/$/, '') || '/index';
-    if (!pageSet.has(target) && target !== '/') errors.push(`${rel}: broken internal link ${match[0]}`);
+  const internalLinks = [];
+  for (const match of text.matchAll(/(?<!!)\]\((\/[^)\s#]+)(#[^)\s]+)?\)/g)) {
+    internalLinks.push({ target: match[1], raw: match[0] });
+  }
+  for (const match of text.matchAll(/\bhref=["'](\/[^"'\s#]+)(#[^"'\s]+)?["']/g)) {
+    internalLinks.push({ target: match[1], raw: match[0] });
+  }
+  for (const { target: rawTarget, raw } of internalLinks) {
+    const target = rawTarget.replace(/\/$/, '') || '/index';
+    if (target.startsWith('/images/') || target.startsWith('/assets/') || target === '/favicon.svg') continue;
+    if (!pageSet.has(target) && target !== '/') errors.push(`${rel}: broken internal link ${raw}`);
   }
 }
 

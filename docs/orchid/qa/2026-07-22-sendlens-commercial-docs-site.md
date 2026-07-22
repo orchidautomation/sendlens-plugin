@@ -87,3 +87,36 @@ Results:
 - Mintlify validate and broken links: passed.
 - Diff hygiene: passed.
 - Repo preflight: passed with the existing `.agent-artifacts` missing warning.
+
+## Blocks review fix — 2026-07-22
+
+Blocks PR Review flagged valid public-safety and documentation quality issues after the CI fix. Follow-up changes:
+
+- Hardened `scripts/check-docs-site.mjs` to catch query-string credential shapes such as `?api_key=...`, `apikey`, `token`, and `access_token`.
+- Added Mintlify JSX `href="/..."` validation to the internal-link checker.
+- Avoided false positives for Markdown image links and known asset paths.
+- Added the Smartlead query-string suppression caveat beside `SENDLENS_SMARTLEAD_API_KEY` in configuration reference.
+- Retitled/expanded the MCP page as an overview with tool families and full evidence-class response expectations.
+- Replaced generic duplicated workflow prompts with role-specific examples and evidence expectations.
+- Replaced quickstart “skills” terminology with “workflows”.
+
+Validation after these review fixes:
+
+```bash
+npm run docs:check
+node scripts/release-state.mjs --check-base origin/codex/mintlify-docs-plan
+cd docs-site && npx mint@4.2.726 validate
+cd docs-site && npx mint@4.2.726 broken-links
+npm run site:ci
+git diff --check
+/home/brandon/.codex/plugins/cache/personal/orchid-agent-stack/0.1.0+codex.20260621000222/scripts/repo-preflight.sh .
+```
+
+Results:
+
+- Docs check: passed.
+- Release state check: passed.
+- Mintlify validate and broken-links: passed.
+- Site CI: passed, including production audit with 0 vulnerabilities.
+- Diff hygiene: passed.
+- Repo preflight: passed with the existing `.agent-artifacts` missing warning.

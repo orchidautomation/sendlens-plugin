@@ -8,7 +8,7 @@ description: Environment variables and local cache settings.
 ## Provider variables {#provider-vars}
 
 - `SENDLENS_INSTANTLY_API_KEY`: Instantly read-only API key.
-- `SENDLENS_SMARTLEAD_API_KEY`: Smartlead read-only API key.
+- `SENDLENS_SMARTLEAD_API_KEY`: Smartlead read-only API key. Smartlead credentials are used as query-string credentials upstream, so setup output, logs, traces, errors, tests, and support examples must suppress the value.
 - `SENDLENS_PROVIDER`: `instantly`, `smartlead`, or `all`.
 
 ## Cache variables {#cache-vars}
