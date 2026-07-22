@@ -38,10 +38,10 @@ for (const file of pages) {
   for (const pattern of publicUnsafe) if (pattern.test(text)) errors.push(`${rel}: public-safety pattern matched ${pattern}`);
   if (secretValue.test(text)) errors.push(`${rel}: possible secret value`);
   const internalLinks = [];
-  for (const match of text.matchAll(/(?<!!)\]\((\/[^)\s#]+)(#[^)\s]+)?\)/g)) {
+  for (const match of text.matchAll(/(?<!!)\[[^\]]+\]\((\/[^)\s#]+)(#[^)\s]+)?\)/g)) {
     internalLinks.push({ target: match[1], raw: match[0] });
   }
-  for (const match of text.matchAll(/\bhref=["'](\/[^"'\s#]+)(#[^"'\s]+)?["']/g)) {
+  for (const match of text.matchAll(/\bhref\s*=\s*["'](\/[^"'\s#]+)(#[^"'\s]+)?["']/g)) {
     internalLinks.push({ target: match[1], raw: match[0] });
   }
   for (const { target: rawTarget, raw } of internalLinks) {
