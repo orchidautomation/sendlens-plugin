@@ -128,8 +128,8 @@ Brandon flagged that SendLens should not be represented as only "Instantly analy
 Audit and fixes:
 
 - Re-scanned `docs-site/` for Instantly-only language, "Instantly analytics", "Instantly-focused", "shipped provider", and "mature provider" wording.
-- Rewrote provider setup and concepts pages to describe Instantly and Smartlead V1 as supported read-only provider paths, with all-provider normalization when both are configured.
-- Preserved Smartlead caveats: V1 is read-only, Smart Delivery can be support-gated, query-string credentials are sensitive, and empty/unsupported evidence does not prove deliverability health.
+- Rewrote provider setup and concepts pages to describe Instantly and Smartlead as supported read-only provider paths, with all-provider normalization when both are configured.
+- Preserved Smartlead caveats: SendLens Smartlead support is read-only, Smart Delivery can be support-gated, query-string credentials are sensitive, and empty/unsupported evidence does not prove deliverability health.
 - Rewrote the release-story page so the story is provider-normalized instead of Instantly-first.
 - Updated the Instantly comparison page to mention all-provider comparison with Smartlead where both providers are configured.
 
