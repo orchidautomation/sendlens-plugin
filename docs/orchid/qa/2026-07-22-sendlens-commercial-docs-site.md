@@ -54,3 +54,36 @@ No raw customer data, secrets, private issue text, or provider mutation guidance
 - Final pricing/package names and limits are placeholders pending approved commercial terms.
 - Final public release/download channel is still open; docs use `https://sendlens.app/install.sh` as the canonical installer until an approved channel is confirmed.
 - Final production docs URL remains a deployment decision.
+
+## Follow-up CI fix — 2026-07-22
+
+After opening PR #86, CI surfaced two actionable failures:
+
+- `plugin-checks` required the candidate package version to be greater than the PR target branch version.
+- `site-checks` failed `npm audit --omit=dev --audit-level=high` because Next's optional `sharp` dependency resolved to a vulnerable `<0.35.0` version.
+
+Fixes applied:
+
+- Bumped root `package.json` and `package-lock.json` to `0.1.75`.
+- Added a site package override for `sharp@0.35.3` and regenerated `site/package-lock.json`.
+
+Additional validation run:
+
+```bash
+npm run docs:check
+node scripts/release-state.mjs --check-base origin/codex/mintlify-docs-plan
+npm run site:ci
+cd docs-site && npx mint@4.2.726 validate
+cd docs-site && npx mint@4.2.726 broken-links
+git diff --check
+/home/brandon/.codex/plugins/cache/personal/orchid-agent-stack/0.1.0+codex.20260621000222/scripts/repo-preflight.sh .
+```
+
+Results:
+
+- Docs check: passed.
+- Release state check: passed; `0.1.75` is ahead of target branch `0.1.72`.
+- Site CI: passed, including lint, typecheck, tests, build, and production audit with 0 vulnerabilities.
+- Mintlify validate and broken links: passed.
+- Diff hygiene: passed.
+- Repo preflight: passed with the existing `.agent-artifacts` missing warning.
