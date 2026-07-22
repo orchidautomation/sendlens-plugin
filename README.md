@@ -268,6 +268,7 @@ SendLens is built by **Orchid Labs**, the product division of **Orchid Automatio
 - [Troubleshooting](./docs/TROUBLESHOOTING.md)
 - [Local customization](./docs/LOCAL_CUSTOMIZATION.md)
 - [Release guide](./docs/RELEASING.md)
+- [Licensing and commercial enforcement](./docs/LICENSING.md)
 
 ---
 
@@ -341,3 +342,7 @@ Env loading order supports named client overlays:
 4. `.env.clients/<client>.local.env`
 
 Use `SENDLENS_CLIENT` to load a client-specific overlay. This is what makes a single laptop usable across many client workspaces.
+
+## License
+
+SendLens versions already distributed under MIT remain MIT. Future commercial versions are governed by the commercial license in [`LICENSE`](./LICENSE), with the prior MIT text preserved in [`LICENSE-MIT-LEGACY.txt`](./LICENSE-MIT-LEGACY.txt). See [`docs/LICENSING.md`](./docs/LICENSING.md) for the transition notes, billing/entitlement model, and agency-use guardrails.

@@ -1,21 +1,76 @@
-MIT License
+# SendLens Commercial License
 
-Copyright (c) 2026 Orchid Labs
+Copyright (c) 2026 Orchid Labs. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This license is a draft commercial product license for future SendLens releases. It is not legal advice and must be reviewed by qualified counsel before commercial launch.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+## 1. Legacy MIT releases
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+SendLens versions and source copies that were already distributed under the MIT License remain available under those MIT terms. This commercial license does not revoke, narrow, or replace permissions already granted for those prior MIT releases, tags, forks, clones, or copies.
+
+The preserved MIT text is available in `LICENSE-MIT-LEGACY.txt` for attribution and historical reference. As of July 22, 2026, the current public MIT lineage includes SendLens releases through `v0.1.74`; update this sentence if additional MIT releases ship before this transition merges.
+
+## 2. License scope
+
+Unless a file or written order form says otherwise, this license governs future commercial versions of SendLens, including source code, object code, packaged host bundles, installers, skills, commands, documentation, templates, examples, and related materials distributed by Orchid Labs.
+
+## 3. Evaluation use
+
+You may view the source and run SendLens with synthetic demo data for internal evaluation. Evaluation use does not grant production use, client-service use, redistribution, sublicensing, hosted-service use, or the right to remove license checks.
+
+## 4. Paid production use
+
+Production use requires an active paid SendLens license or a written agreement with Orchid Labs. Subject to that license or agreement, Orchid Labs grants you a limited, non-exclusive, non-transferable, revocable right to install and use SendLens internally for outbound analytics and related AI-host workflows.
+
+A paid individual license is for one named human user. It is not a shared agency, team, department, client, or service-provider credential.
+
+A paid team or agency license must state its named users, device allowance, client/workspace allowance, support terms, update terms, and any managed-service rights.
+
+## 5. Restrictions
+
+You may not, and may not allow others to:
+
+1. share one named-user login, license key, activation, or entitlement across multiple people;
+2. use an individual license for agency, client-service, service-bureau, outsourcing, resale, or managed-service work;
+3. redistribute, resell, sublicense, lease, rent, publish, or make SendLens available to third parties;
+4. offer SendLens, modified SendLens, or substantially similar hosted functionality as a competing product or service;
+5. remove, disable, bypass, or interfere with license checks, device limits, entitlement checks, signatures, activation flows, or update controls;
+6. use SendLens to modify provider campaigns, leads, accounts, emails, webhooks, or settings unless Orchid Labs separately ships and licenses that capability;
+7. remove copyright, license, attribution, telemetry-boundary, or privacy notices;
+8. use SendLens in violation of applicable law, provider terms, AI-host terms, or third-party rights.
+
+## 6. Agencies and client work
+
+Agency and client-service use requires an agency, team, managed, or enterprise license that explicitly permits client work. Unless the order form says otherwise, every agency user who operates SendLens needs a named seat, and every active client workspace served through SendLens must be inside the licensed client/workspace allowance.
+
+## 7. Ownership
+
+Orchid Labs and its licensors retain all right, title, and interest in SendLens. This license grants use rights only. It does not transfer ownership, trademarks, copyrights, patents, trade secrets, hosted infrastructure, customer lists, roadmap access, or support obligations beyond the written order form.
+
+You retain ownership of your provider credentials, campaign data, reply data, local DuckDB files, local analysis outputs, and other customer data.
+
+## 8. Privacy boundary
+
+The default SendLens product is designed for local-first analysis. This license does not require Orchid Labs to host your provider credentials, raw campaigns, replies, or DuckDB evidence store. Any hosted identity, billing, entitlement, activation, telemetry, support, or managed-service behavior must be described in separate product terms, privacy terms, or an order form.
+
+## 9. Updates and support
+
+Updates, major-version upgrades, compatibility maintenance, support, refunds, transfers, device resets, offline grace, and managed-service obligations are provided only as stated in the applicable order form or written commercial terms.
+
+Unless a written agreement says otherwise, a lifetime or one-time license means access to the purchased product version and its stated update window; it does not guarantee perpetual free major-version upgrades, perpetual support, or perpetual compatibility with third-party providers and AI hosts.
+
+## 10. Termination
+
+This license terminates automatically if you violate its terms. On termination, you must stop using SendLens commercial versions and delete commercial copies in your possession or control, except for records you are legally required to retain. Termination does not affect rights granted under prior MIT releases.
+
+## 11. Disclaimers
+
+SENDLENS IS PROVIDED "AS IS" AND "AS AVAILABLE" TO THE MAXIMUM EXTENT PERMITTED BY LAW. ORCHID LABS DISCLAIMS ALL WARRANTIES, INCLUDING IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, ACCURACY, AVAILABILITY, AND COMPATIBILITY WITH THIRD-PARTY PROVIDERS OR AI HOSTS.
+
+## 12. Limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, ORCHID LABS WILL NOT BE LIABLE FOR LOST PROFITS, LOST REVENUE, LOST DATA, BUSINESS INTERRUPTION, PROVIDER ACCOUNT ACTIONS, AI-HOST OUTPUTS, OR INDIRECT, SPECIAL, INCIDENTAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES.
+
+## 13. Written agreements control
+
+If you have a signed agreement or order form with Orchid Labs that conflicts with this license, that signed agreement or order form controls for the covered use.
