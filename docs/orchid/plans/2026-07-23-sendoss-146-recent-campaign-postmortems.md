@@ -29,7 +29,7 @@ This resolves the issue’s contract; no material migration or product choice re
 
 Instantly supports bounded campaign analytics over date ranges and batches campaign ids through the existing client. Use `GET /api/v2/campaigns/analytics` with campaign ids plus `start_date` and `end_date`, then select inactive campaigns only when the provider confirms `emails_sent_count > 0` in the window. The API accepts multiple campaign ids and date filters, so this remains a bounded discovery pass rather than lead/email hydration.
 
-Instantly campaign schedule payloads may include timezone fields. The recency window should be stored as calendar dates and include a timezone evidence field when the campaign exposes one. If no provider/account timezone is available before detail hydration, use a documented UTC fallback and mark that fallback in stored evidence.
+Instantly campaign schedule payloads may include timezone fields. The recency window should be calculated as calendar dates in the campaign/provider reporting timezone when available, batched by matching date ranges for bounded analytics calls, and stored with timezone evidence. If no provider/account timezone is available before detail hydration, use a documented UTC fallback and mark that fallback in stored evidence.
 
 ### Smartlead
 

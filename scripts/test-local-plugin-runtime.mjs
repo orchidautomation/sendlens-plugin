@@ -51,7 +51,8 @@ await run(
    VALUES ('c1', 'ws_test', 'ws_test', 'Alpha', 'active', 50, CURRENT_TIMESTAMP),
           ('c2', 'ws_test', 'ws_test', 'Beta', 'paused', 25, CURRENT_TIMESTAMP),
           ('c3', 'ws_test', 'ws_test', 'Gamma', 'active', 5, CURRENT_TIMESTAMP),
-          ('c4', 'ws_test', 'ws_test', 'Runway Active', 'active', 40, CURRENT_TIMESTAMP)`,
+          ('c4', 'ws_test', 'ws_test', 'Runway Active', 'active', 40, CURRENT_TIMESTAMP),
+          ('c5', 'ws_test', 'ws_test', 'Unknown Paused', 'paused', 15, CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
@@ -67,6 +68,21 @@ await run(
        recent_activity_source = 'instantly.campaigns.analytics'
    WHERE workspace_id = 'ws_test'
      AND id = 'c2'`,
+);
+await run(
+  db,
+  `UPDATE sendlens.campaigns
+   SET detail_selection_reason = 'directory_only',
+       recent_activity_coverage = 'unavailable',
+       recent_activity_window_start = DATE '2026-06-24',
+       recent_activity_window_end = DATE '2026-07-23',
+       recent_activity_timezone = 'UTC',
+       recent_activity_timezone_source = 'utc_fallback',
+       recent_sent_count = NULL,
+       recent_activity_evaluated_at = TIMESTAMP '2026-07-23 12:00:00',
+       recent_activity_source = 'instantly.campaigns.analytics'
+   WHERE workspace_id = 'ws_test'
+     AND id = 'c5'`,
 );
 await run(
   db,
@@ -110,7 +126,8 @@ await run(
           ('ws_test', 'c1', 'l8', 'wrong@example.com', 'Riley', 'Wrong', 'Wrong Co', 'wrong.test', 'active', 1, -2, 0, 0, CURRENT_TIMESTAMP, 'Founder', '{"campaign":"c1","stage":"wrong_person"}', 'reply_full', CURRENT_TIMESTAMP),
           ('ws_test', 'c1', 'l9', 'lost@example.com', 'Logan', 'Lost', 'Lost Co', 'lost.test', 'active', 1, -3, 0, 0, CURRENT_TIMESTAMP, 'COO', '{"campaign":"c1","stage":"lost"}', 'reply_full', CURRENT_TIMESTAMP),
           ('ws_test', 'c1', 'l10', 'noshow@example.com', 'Nova', 'NoShow', 'No Show Co', 'noshow.test', 'active', 1, -4, 0, 0, CURRENT_TIMESTAMP, 'VP Growth', '{"campaign":"c1","stage":"no_show"}', 'reply_full', CURRENT_TIMESTAMP),
-          ('ws_test', 'c1', 'l11', 'neutral@example.com', 'Noel', 'Neutral', 'Neutral Co', 'neutral.test', 'active', 1, NULL, 0, 0, CURRENT_TIMESTAMP, 'Director Ops', '{"campaign":"c1","stage":"neutral"}', 'reply_full', CURRENT_TIMESTAMP)`,
+          ('ws_test', 'c1', 'l11', 'neutral@example.com', 'Noel', 'Neutral', 'Neutral Co', 'neutral.test', 'active', 1, NULL, 0, 0, CURRENT_TIMESTAMP, 'Director Ops', '{"campaign":"c1","stage":"neutral"}', 'reply_full', CURRENT_TIMESTAMP),
+          ('ws_test', 'c2', 'l12', 'paused@example.com', 'Parker', 'Paused', 'Paused Co', 'paused.test', 'active', 0, NULL, NULL, NULL, NULL, 'Director RevOps', '{"campaign":"c2","stage":"recent-paused"}', 'nonreply_sample', CURRENT_TIMESTAMP)`,
 );
 await run(
   db,
@@ -387,6 +404,8 @@ assert.equal(summary.exact_metrics.total_sent, 3275);
 assert.equal(summary.exact_metrics.total_unique_replies, 54);
 assert.equal(summary.inventory_metrics.campaign_count, 3);
 assert.equal(summary.inventory_metrics.recent_campaign_count, 0);
+assert.equal(summary.inventory_metrics.recent_activity_unavailable_campaign_count, 1);
+assert.ok(summary.summary.includes("Coverage across active campaigns: 9 replied leads, 11 sampled leads"));
 assert.ok(summary.summary.includes("3 custom tags stored locally"));
 assert.ok(summary.summary.includes("1 Instantly inbox-placement tests"));
 assert.ok(summary.summary.includes("4 Instantly per-email analytics rows"));
@@ -406,22 +425,39 @@ assert.equal(alphaSummaryCampaign.unique_reply_rate_pct, 3);
 assert.equal(alphaSummaryCampaign.total_opportunity_value, 25000);
 assert.equal(summary.output_limits.campaign_limit, 100);
 
+await run(
+  db,
+  `UPDATE sendlens.campaigns
+   SET detail_selection_reason = 'exact_id'
+   WHERE workspace_id = 'ws_test'
+     AND id = 'c2'`,
+);
+
 const activeOrRecentSummary = await buildWorkspaceSummary(db, undefined, "all", "active_or_recent");
 assert.equal(activeOrRecentSummary.campaign_inventory_scope, "active_or_recent");
 assert.equal(activeOrRecentSummary.exact_metrics.campaign_count, 3);
 assert.equal(activeOrRecentSummary.exact_metrics.total_sent, 3275);
 assert.equal(activeOrRecentSummary.inventory_metrics.campaign_count, 4);
 assert.equal(activeOrRecentSummary.inventory_metrics.recent_campaign_count, 1);
+assert.equal(
+  activeOrRecentSummary.inventory_metrics.recent_activity_unavailable_campaign_count,
+  1,
+);
+assert.ok(
+  activeOrRecentSummary.summary.includes(
+    "Coverage across active or recently sending campaigns: 9 replied leads, 12 sampled leads",
+  ),
+);
 const betaSummaryCampaign = activeOrRecentSummary.campaigns.find((campaign) => campaign.campaign_id === "c2");
 assert.ok(betaSummaryCampaign);
 assert.equal(betaSummaryCampaign.status, "paused");
-assert.equal(betaSummaryCampaign.detail_selection_reason, "recent_sends");
+assert.equal(betaSummaryCampaign.detail_selection_reason, "exact_id");
 assert.equal(betaSummaryCampaign.recent_activity_coverage, "available");
 assert.equal(betaSummaryCampaign.recent_sent_count, 12);
 
 const allInventorySummary = await buildWorkspaceSummary(db, undefined, "all", "all");
 assert.equal(allInventorySummary.campaign_inventory_scope, "all");
-assert.equal(allInventorySummary.inventory_metrics.campaign_count, 4);
+assert.equal(allInventorySummary.inventory_metrics.campaign_count, 5);
 assert.equal(allInventorySummary.exact_metrics.campaign_count, 3);
 
 const campaignOverview = await runQuery(

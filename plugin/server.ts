@@ -62,6 +62,7 @@ import {
   buildWorkspaceSummary,
   campaignInventoryScopeWhere,
   providerEvidenceWarnings,
+  recentCampaignEvidenceWhere,
   type CampaignInventoryScope,
 } from "./summary";
 import { PLUGIN_VERSION } from "./version";
@@ -2072,6 +2073,9 @@ async function buildScopedWorkspaceSnapshot(
     ...baseWhereClauses,
     campaignInventoryScopeWhere("co", campaignScope),
   ];
+  const inventoryCoverageWhereClauses = [
+    ...baseWhereClauses,
+  ];
   const activeWhereClauses = [
     ...baseWhereClauses,
     "co.status = 'active'",
@@ -2079,6 +2083,7 @@ async function buildScopedWorkspaceSnapshot(
   const scopeNotes: string[] = [];
   if (providerScope !== "all") {
     whereClauses.push(`co.source_provider = '${providerScope}'`);
+    inventoryCoverageWhereClauses.push(`co.source_provider = '${providerScope}'`);
     activeWhereClauses.push(`co.source_provider = '${providerScope}'`);
     scopeNotes.push(`provider "${providerScope}"`);
   } else {
@@ -2089,6 +2094,16 @@ async function buildScopedWorkspaceSnapshot(
   if (scope.instantlyTag) {
     const safeTag = scope.instantlyTag.replace(/'/g, "''");
     whereClauses.push(
+      `EXISTS (
+        SELECT 1
+        FROM sendlens.campaign_tags ct
+        WHERE ct.workspace_id = co.workspace_id
+          AND ct.campaign_id = co.campaign_id
+          AND ct.source_provider = co.source_provider
+          AND lower(ct.tag_label) = lower('${safeTag}')
+      )`,
+    );
+    inventoryCoverageWhereClauses.push(
       `EXISTS (
         SELECT 1
         FROM sendlens.campaign_tags ct
@@ -2114,11 +2129,13 @@ async function buildScopedWorkspaceSnapshot(
   if (scope.campaignName) {
     const safeName = scope.campaignName.replace(/'/g, "''");
     whereClauses.push(`lower(co.campaign_name) LIKE lower('%${safeName}%')`);
+    inventoryCoverageWhereClauses.push(`lower(co.campaign_name) LIKE lower('%${safeName}%')`);
     activeWhereClauses.push(`lower(co.campaign_name) LIKE lower('%${safeName}%')`);
     scopeNotes.push(`campaign name containing "${scope.campaignName}"`);
   }
 
   const whereSql = whereClauses.join("\n  AND ");
+  const inventoryCoverageWhereSql = inventoryCoverageWhereClauses.join("\n  AND ");
   const activeWhereSql = activeWhereClauses.join("\n  AND ");
 
   const campaignRows = await query(
@@ -2274,9 +2291,14 @@ async function buildScopedWorkspaceSnapshot(
     `SELECT
        COUNT(*) AS campaign_count,
        SUM(CASE WHEN co.status = 'active' THEN 1 ELSE 0 END) AS active_campaign_count,
-       SUM(CASE WHEN COALESCE(co.detail_selection_reason, '') = 'recent_sends' THEN 1 ELSE 0 END) AS recent_campaign_count,
+       SUM(CASE WHEN ${recentCampaignEvidenceWhere("co")} THEN 1 ELSE 0 END) AS recent_campaign_count,
        SUM(CASE WHEN COALESCE(co.detail_selection_reason, '') = 'directory_only' THEN 1 ELSE 0 END) AS directory_only_campaign_count,
-       SUM(CASE WHEN COALESCE(co.recent_activity_coverage, '') = 'unavailable' THEN 1 ELSE 0 END) AS recent_activity_unavailable_campaign_count
+       (
+         SELECT COUNT(*)
+         FROM sendlens.campaign_overview co
+         WHERE ${inventoryCoverageWhereSql}
+           AND COALESCE(co.recent_activity_coverage, '') = 'unavailable'
+       ) AS recent_activity_unavailable_campaign_count
      FROM sendlens.campaign_overview co
      WHERE ${whereSql}`,
   );

@@ -23,7 +23,10 @@ const {
   stampCacheOwner,
   withCacheProviderMode,
 } = require("../build/plugin/local-db.js");
-const { refreshWorkspaceAtomically } = require("../build/plugin/instantly-ingest.js");
+const {
+  recentActivityWindowForTests,
+  refreshWorkspaceAtomically,
+} = require("../build/plugin/instantly-ingest.js");
 const { readRefreshStatus } = require("../build/plugin/refresh-status.js");
 
 const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sendlens-cache-identity-"));
@@ -33,6 +36,27 @@ process.env.SENDLENS_STATE_DIR = tempDir;
 delete process.env.SENDLENS_DEMO_MODE;
 delete process.env.SENDLENS_CLIENT;
 process.env.SENDLENS_CONTEXT_ROOT = tempDir;
+
+assert.deepEqual(
+  recentActivityWindowForTests(new Date("2026-07-23T00:30:00Z"), "UTC"),
+  {
+    startDate: "2026-06-24",
+    endDate: "2026-07-23",
+    asOfDate: "2026-07-23",
+    days: 30,
+  },
+  "UTC fallback should use the UTC calendar date for the inclusive 30-day window",
+);
+assert.deepEqual(
+  recentActivityWindowForTests(new Date("2026-07-23T00:30:00Z"), "America/Los_Angeles"),
+  {
+    startDate: "2026-06-23",
+    endDate: "2026-07-22",
+    asOfDate: "2026-07-22",
+    days: 30,
+  },
+  "campaign reporting timezones should shift the inclusive 30-day calendar window at boundaries",
+);
 
 const originals = {};
 for (const key of [
@@ -73,6 +97,8 @@ function installSuccessfulRefresh(
     pagesFetched: 1,
   },
   recentSentCount = 10,
+  campaignTimezone = null,
+  expectedRecentWindow = null,
 ) {
   instantly.listCampaigns = async () => [
     {
@@ -83,6 +109,9 @@ function installSuccessfulRefresh(
       daily_limit: 25,
       timestamp_created: "2026-05-01T00:00:00Z",
       timestamp_updated: "2026-05-02T00:00:00Z",
+      ...(campaignTimezone
+        ? { campaign_schedule: { timezone: campaignTimezone } }
+        : {}),
     },
   ];
   instantly.getCampaignAnalytics = async (_apiKey, options) => {
@@ -91,6 +120,10 @@ function installSuccessfulRefresh(
     if (dateRanged) {
       assert.match(options.startDate, /^\d{4}-\d{2}-\d{2}$/);
       assert.match(options.endDate, /^\d{4}-\d{2}-\d{2}$/);
+      if (expectedRecentWindow) {
+        assert.equal(options.startDate, expectedRecentWindow.startDate);
+        assert.equal(options.endDate, expectedRecentWindow.endDate);
+      }
       const start = new Date(`${options.startDate}T00:00:00Z`);
       const end = new Date(`${options.endDate}T00:00:00Z`);
       assert.equal(
@@ -542,7 +575,18 @@ try {
     closeDb(db);
   }
 
-  installSuccessfulRefresh("ws_schema", "schema-campaign", "Schema Campaign");
+  const losAngelesWindow = recentActivityWindowForTests(new Date(), "America/Los_Angeles");
+  installSuccessfulRefresh(
+    "ws_schema",
+    "schema-campaign",
+    "Schema Campaign",
+    1,
+    1,
+    { exhausted: true, terminationReason: "cursor_exhausted", pagesFetched: 1 },
+    10,
+    "America/Los_Angeles",
+    losAngelesWindow,
+  );
   const schemaRefreshed = await refreshWorkspaceAtomically({ source: "manual" });
   assert.equal(schemaRefreshed.workspaceId, "ws_schema");
   db = await openDb();

@@ -223,6 +223,7 @@ type RecentActivityWindow = {
 type RecentActivitySelection = {
   evidenceByCampaign: Map<string, CampaignRecentActivityEvidence>;
   window: RecentActivityWindow | null;
+  windows: RecentActivityWindow[];
   coverage: RecentActivityCoverage;
   selectedRecentCampaigns: number;
   unavailableCampaigns: number;
@@ -321,11 +322,39 @@ function isoDateUtc(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-function recentActivityWindow(asOf = new Date()): RecentActivityWindow {
+function isValidTimeZone(timezone: string) {
+  try {
+    Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function calendarDateInTimeZone(date: Date, timezone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = new Map(parts.map((part) => [part.type, part.value]));
+  const year = Number(values.get("year"));
+  const month = Number(values.get("month"));
+  const day = Number(values.get("day"));
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  }
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function recentActivityWindow(asOf = new Date(), timezone = "UTC"): RecentActivityWindow {
+  const resolvedTimezone = isValidTimeZone(timezone) ? timezone : "UTC";
+  const localDate = calendarDateInTimeZone(asOf, resolvedTimezone);
   const end = new Date(Date.UTC(
-    asOf.getUTCFullYear(),
-    asOf.getUTCMonth(),
-    asOf.getUTCDate(),
+    localDate.getUTCFullYear(),
+    localDate.getUTCMonth(),
+    localDate.getUTCDate(),
   ));
   const start = new Date(end);
   start.setUTCDate(start.getUTCDate() - (RECENT_CAMPAIGN_WINDOW_DAYS - 1));
@@ -337,9 +366,11 @@ function recentActivityWindow(asOf = new Date()): RecentActivityWindow {
   };
 }
 
+export const recentActivityWindowForTests = recentActivityWindow;
+
 function campaignRecentTimezone(campaign: Record<string, unknown>) {
   const timezone = campaignScheduleTimezone(campaign);
-  return timezone
+  return timezone && isValidTimeZone(timezone)
     ? { timezone, source: "campaign_schedule" }
     : { timezone: "UTC", source: "utc_fallback" };
 }
@@ -373,29 +404,35 @@ function exactIdEvidence(campaign: Record<string, unknown>): CampaignRecentActiv
 function buildRecentActivitySelection(
   campaigns: Array<Record<string, unknown>>,
   recentAnalyticsByCampaign: Map<string, Record<string, unknown>>,
-  window: RecentActivityWindow,
+  windowByCampaign: Map<string, RecentActivityWindow>,
   evaluatedAt: string,
-  coverage: RecentActivityCoverage,
+  coverageByCampaign: Map<string, RecentActivityCoverage>,
 ): RecentActivitySelection {
   const evidenceByCampaign = new Map<string, CampaignRecentActivityEvidence>();
   let selectedRecentCampaigns = 0;
   let unavailableCampaigns = 0;
+  const windowKeys = new Set<string>();
+  let availableCampaigns = 0;
 
   for (const campaign of campaigns) {
     const campaignId = String(campaign.id ?? "");
     if (!campaignId) continue;
     const timezone = campaignRecentTimezone(campaign);
+    const window = windowByCampaign.get(campaignId) ?? recentActivityWindow(new Date(), timezone.timezone);
+    windowKeys.add(`${window.startDate}:${window.endDate}`);
     const analyticsRow = recentAnalyticsByCampaign.get(campaignId);
-    const recentSentCount = coverage === "available"
+    const requestedCoverage = coverageByCampaign.get(campaignId) ?? "unavailable";
+    const recentSentCount = requestedCoverage === "available"
       ? recentAnalyticsSentCount(analyticsRow)
       : null;
-    const campaignCoverage: RecentActivityCoverage = coverage === "available"
+    const campaignCoverage: RecentActivityCoverage = requestedCoverage === "available"
       ? recentSentCount == null ? "unavailable" : "available"
-      : coverage;
+      : requestedCoverage;
     const active = isCampaignActivelySending(campaign);
     const recent = !active && campaignCoverage === "available" && (recentSentCount ?? 0) > 0;
     if (recent) selectedRecentCampaigns += 1;
     if (campaignCoverage === "unavailable") unavailableCampaigns += 1;
+    if (campaignCoverage === "available") availableCampaigns += 1;
 
     evidenceByCampaign.set(campaignId, {
       detailSelectionReason: active ? "active" : recent ? "recent_sends" : "directory_only",
@@ -410,10 +447,21 @@ function buildRecentActivitySelection(
     });
   }
 
+  const windows = Array.from(windowKeys).map((key) => {
+    const [startDate, endDate] = key.split(":");
+    return {
+      startDate,
+      endDate,
+      asOfDate: endDate,
+      days: RECENT_CAMPAIGN_WINDOW_DAYS,
+    };
+  });
+
   return {
     evidenceByCampaign,
-    window,
-    coverage,
+    window: windows.length === 1 ? windows[0] : null,
+    windows,
+    coverage: unavailableCampaigns > 0 && availableCampaigns === 0 ? "unavailable" : "available",
     selectedRecentCampaigns,
     unavailableCampaigns,
   };
@@ -429,6 +477,7 @@ function buildExactSelection(campaigns: Array<Record<string, unknown>>): RecentA
   return {
     evidenceByCampaign,
     window: null,
+    windows: [],
     coverage: "not_evaluated",
     selectedRecentCampaigns: 0,
     unavailableCampaigns: 0,
@@ -3700,36 +3749,64 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
     if (scopedRefresh) {
       recentActivitySelection = buildExactSelection([]);
     } else {
-      const window = recentActivityWindow();
+      const asOf = new Date();
       const evaluatedAt = new Date().toISOString();
-      let recentAnalytics: Array<Record<string, unknown>> = [];
-      let recentCoverage: RecentActivityCoverage = "available";
-      if (allCampaignIds.length > 0) {
-        try {
-          recentAnalytics = await instantly.getCampaignAnalytics(apiKey, {
-            campaignIds: allCampaignIds,
-            startDate: window.startDate,
-            endDate: window.endDate,
-          });
-        } catch (error) {
-          recentCoverage = "unavailable";
-          await appendTraceLog("refresh.recent_activity_unavailable", {
-            provider: SOURCE_PROVIDER,
-            windowStart: window.startDate,
-            windowEnd: window.endDate,
-            message: errorMessage(error),
-          });
+      const recentAnalyticsByCampaign = new Map<string, Record<string, unknown>>();
+      const windowByCampaign = new Map<string, RecentActivityWindow>();
+      const coverageByCampaign = new Map<string, RecentActivityCoverage>();
+      const campaignsByWindow = new Map<string, {
+        window: RecentActivityWindow;
+        campaignIds: string[];
+      }>();
+
+      for (const campaign of campaigns) {
+        const campaignId = String(campaign.id ?? "");
+        if (!campaignId) continue;
+        const timezone = campaignRecentTimezone(campaign);
+        const window = recentActivityWindow(asOf, timezone.timezone);
+        const key = `${window.startDate}:${window.endDate}`;
+        windowByCampaign.set(campaignId, window);
+        const group = campaignsByWindow.get(key) ?? {
+          window,
+          campaignIds: [],
+        };
+        group.campaignIds.push(campaignId);
+        campaignsByWindow.set(key, group);
+      }
+
+      if (campaignsByWindow.size > 0) {
+        for (const group of campaignsByWindow.values()) {
+          try {
+            const recentAnalytics = await instantly.getCampaignAnalytics(apiKey, {
+              campaignIds: group.campaignIds,
+              startDate: group.window.startDate,
+              endDate: group.window.endDate,
+            });
+            for (const campaignId of group.campaignIds) {
+              coverageByCampaign.set(campaignId, "available");
+            }
+            for (const row of recentAnalytics) {
+              recentAnalyticsByCampaign.set(String(row.campaign_id ?? ""), row);
+            }
+          } catch (error) {
+            for (const campaignId of group.campaignIds) {
+              coverageByCampaign.set(campaignId, "unavailable");
+            }
+            await appendTraceLog("refresh.recent_activity_unavailable", {
+              provider: SOURCE_PROVIDER,
+              window: group.window,
+              campaignCount: group.campaignIds.length,
+              message: errorMessage(error),
+            });
+          }
         }
       }
-      const recentAnalyticsByCampaign = new Map(
-        recentAnalytics.map((row) => [String(row.campaign_id ?? ""), row]),
-      );
       recentActivitySelection = buildRecentActivitySelection(
         campaigns,
         recentAnalyticsByCampaign,
-        window,
+        windowByCampaign,
         evaluatedAt,
-        recentCoverage,
+        coverageByCampaign,
       );
     }
     const selectedCampaigns = scopedRefresh
@@ -3750,6 +3827,7 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
       recentActivityCoverage: recentActivitySelection.coverage,
       recentActivityWindowStart: recentActivitySelection.window?.startDate ?? null,
       recentActivityWindowEnd: recentActivitySelection.window?.endDate ?? null,
+      recentActivityWindows: recentActivitySelection.windows,
       recentActivityUnavailableCampaigns: recentActivitySelection.unavailableCampaigns,
       elapsedMs: Date.now() - campaignsStartedAt,
     });
@@ -3962,6 +4040,7 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
       recent_campaign_count: recentActivitySelection.selectedRecentCampaigns,
       recent_activity_coverage: recentActivitySelection.coverage,
       recent_activity_window: recentActivitySelection.window,
+      recent_activity_windows: recentActivitySelection.windows,
       recent_activity_unavailable_campaign_count: recentActivitySelection.unavailableCampaigns,
       selection_reasons: {
         active: options.campaignIds?.length ? 0 : activeCampaigns.length,

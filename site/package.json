@@ -11,6 +11,9 @@
     "test": "node --test app/api/waitlist/route.test.mjs",
     "audit:prod": "npm audit --omit=dev --audit-level=high"
   },
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "dependencies": {
     "@vercel/blob": "^2.6.1",
     "next": "^15.5.21",

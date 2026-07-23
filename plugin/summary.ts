@@ -31,13 +31,17 @@ function providerScopeLabel(providerScope: SourceProviderMode) {
   return providerScope === "all" ? "all providers" : providerScope;
 }
 
+export function recentCampaignEvidenceWhere(alias: string) {
+  return `(${alias}.status <> 'active' AND COALESCE(${alias}.recent_activity_coverage, '') = 'available' AND COALESCE(${alias}.recent_sent_count, 0) > 0)`;
+}
+
 export function campaignInventoryScopeWhere(
   alias: string,
   campaignInventoryScope: CampaignInventoryScope,
 ) {
   if (campaignInventoryScope === "all") return "TRUE";
   if (campaignInventoryScope === "active_or_recent") {
-    return `(${alias}.status = 'active' OR COALESCE(${alias}.detail_selection_reason, '') = 'recent_sends')`;
+    return `(${alias}.status = 'active' OR ${recentCampaignEvidenceWhere(alias)})`;
   }
   return `${alias}.status = 'active'`;
 }
@@ -143,7 +147,6 @@ export async function buildWorkspaceSummary(
   const overviewProviderFilter = providerScope === "all"
     ? "TRUE"
     : `COALESCE(source_provider, 'instantly') = '${providerScope}'`;
-  const leadProviderFilter = overviewProviderFilter;
   const tagProviderFilter = overviewProviderFilter;
   const capabilityProviderFilter = overviewProviderFilter;
   const campaignInventoryFilter = campaignInventoryScopeWhere("c", campaignInventoryScope);
@@ -176,9 +179,15 @@ export async function buildWorkspaceSummary(
     `SELECT
        COUNT(*) AS campaign_count,
        SUM(CASE WHEN c.status = 'active' THEN 1 ELSE 0 END) AS active_campaign_count,
-       SUM(CASE WHEN COALESCE(c.detail_selection_reason, '') = 'recent_sends' THEN 1 ELSE 0 END) AS recent_campaign_count,
+       SUM(CASE WHEN ${recentCampaignEvidenceWhere("c")} THEN 1 ELSE 0 END) AS recent_campaign_count,
        SUM(CASE WHEN COALESCE(c.detail_selection_reason, '') = 'directory_only' THEN 1 ELSE 0 END) AS directory_only_campaign_count,
-       SUM(CASE WHEN COALESCE(c.recent_activity_coverage, '') = 'unavailable' THEN 1 ELSE 0 END) AS recent_activity_unavailable_campaign_count
+       (
+         SELECT COUNT(*)
+         FROM sendlens.campaigns uc
+         WHERE uc.workspace_id = '${workspace}'
+           AND ${providerScopeWhere("uc", providerScope)}
+           AND COALESCE(uc.recent_activity_coverage, '') = 'unavailable'
+       ) AS recent_activity_unavailable_campaign_count
      FROM sendlens.campaigns c
      WHERE c.workspace_id = '${workspace}'
        AND ${campaignProviderFilter}
@@ -307,17 +316,27 @@ export async function buildWorkspaceSummary(
   const sampledLeadRows = await query(
     conn,
     `SELECT COUNT(*) AS count
-     FROM sendlens.lead_evidence
-     WHERE workspace_id = '${workspace}'
-       AND ${leadProviderFilter}`,
+     FROM sendlens.lead_evidence le
+     JOIN sendlens.campaigns c
+       ON le.workspace_id = c.workspace_id
+      AND le.campaign_id = c.id
+      AND COALESCE(le.source_provider, 'instantly') = COALESCE(c.source_provider, 'instantly')
+     WHERE le.workspace_id = '${workspace}'
+       AND ${campaignProviderFilter}
+       AND ${campaignInventoryFilter}`,
   );
   const repliedLeadRows = await query(
     conn,
     `SELECT COUNT(*) AS count
-     FROM sendlens.lead_evidence
-     WHERE workspace_id = '${workspace}'
-       AND has_reply_signal = TRUE
-       AND ${leadProviderFilter}`,
+     FROM sendlens.lead_evidence le
+     JOIN sendlens.campaigns c
+       ON le.workspace_id = c.workspace_id
+      AND le.campaign_id = c.id
+      AND COALESCE(le.source_provider, 'instantly') = COALESCE(c.source_provider, 'instantly')
+     WHERE le.workspace_id = '${workspace}'
+       AND le.has_reply_signal = TRUE
+       AND ${campaignProviderFilter}
+       AND ${campaignInventoryFilter}`,
   );
   const tagRows = await query(
     conn,
@@ -457,7 +476,7 @@ export async function buildWorkspaceSummary(
       bestCampaign
         ? `Coverage on the current leader: ${num(bestCampaign.reply_lead_rows)} reply-signal leads found during bounded lead scan, ${num(bestCampaign.nonreply_rows_sampled)} sampled non-reply leads, ${num(bestCampaign.reply_outbound_rows)} locally reconstructed reply-copy rows.`
         : "Coverage on the current leader is not available yet.",
-      `Coverage across active campaigns: ${repliedLeadCount} replied leads, ${sampledLeadCount} sampled leads, and ${tagCount} custom tags stored locally.`,
+      `Coverage across ${campaignInventoryScopeLabel(campaignInventoryScope)}: ${repliedLeadCount} replied leads, ${sampledLeadCount} sampled leads, and ${tagCount} custom tags stored locally.`,
       `Deliverability evidence: ${inboxPlacementTestCount} Instantly inbox-placement tests, ${inboxPlacementAnalyticsCount} Instantly per-email analytics rows, ${smartDeliveryTestCount} Smart Delivery tests, and ${smartDeliveryEvidenceCount} Smart Delivery aggregate/diagnostic rows stored locally.`,
       campaignInventoryScope === "active"
         ? "Inactive or purely historical campaigns are excluded from this default workspace read unless you explicitly ask for them."
