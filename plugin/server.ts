@@ -847,6 +847,9 @@ server.registerTool(
           loaded_campaign_id: loadedCampaignId,
           refresh_campaign_ids: [resolved.campaign_source_id],
           refresh_provider: campaignScope.refreshProvider ?? resolved.source_provider,
+          refresh_certificate: "refresh_certificate" in refreshed
+            ? refreshed.refresh_certificate
+            : undefined,
           full_refresh_result_included: include_refresh_metadata,
         },
         output_limits: {

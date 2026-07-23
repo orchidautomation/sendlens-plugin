@@ -10,6 +10,10 @@ import {
 const WORKSPACE_COVERAGE_LIMIT = 100;
 const WORKSPACE_CAMPAIGN_LIMIT = 100;
 
+type WorkspaceSummaryOptions = {
+  liveRefreshReady?: boolean;
+};
+
 function pct(numerator: number, denominator: number) {
   if (!denominator) return 0;
   return (numerator / denominator) * 100;
@@ -78,6 +82,7 @@ export async function buildWorkspaceSummary(
   conn: DuckDBConnection,
   workspaceId?: string,
   providerScope: SourceProviderMode = "all",
+  options: WorkspaceSummaryOptions = {},
 ) {
   const activeWorkspaceId = workspaceId ?? (await getActiveWorkspaceId(conn));
   if (!activeWorkspaceId) {
@@ -85,6 +90,7 @@ export async function buildWorkspaceSummary(
       workspaceId: null,
       localCacheReadable: false,
       sourceProviderMode: providerScope,
+      liveRefreshReady: options.liveRefreshReady,
     });
     return {
       schema_version: "workspace_snapshot.v1",
@@ -111,6 +117,7 @@ export async function buildWorkspaceSummary(
   const activeDataState = buildActiveDataState({
     workspaceId: activeWorkspaceId,
     sourceProviderMode: providerScope,
+    liveRefreshReady: options.liveRefreshReady,
   });
   const campaignProviderFilter = providerScopeWhere("c", providerScope);
   const overviewProviderFilter = providerScope === "all"

@@ -24,7 +24,7 @@ const {
   withCacheProviderMode,
 } = require("../build/plugin/local-db.js");
 const { refreshWorkspaceAtomically } = require("../build/plugin/instantly-ingest.js");
-const { readRefreshStatus } = require("../build/plugin/refresh-status.js");
+const { readRefreshStatus, writeRefreshStatus } = require("../build/plugin/refresh-status.js");
 
 const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sendlens-cache-identity-"));
 const dbPath = path.join(tempDir, "workspace-cache.duckdb");
@@ -211,6 +211,18 @@ async function openDb() {
 
 function providerScopedFingerprint(provider, value) {
   return createHash("sha256").update(`${provider}:${value}`, "utf8").digest("hex");
+}
+
+function providerCertificate(summary, provider) {
+  const certificate = summary.refresh_certificate;
+  assert.equal(
+    certificate?.schema_version,
+    "sendlens_refresh_certificate.v1",
+    "refresh responses must include the provider freshness certificate",
+  );
+  const providerStatus = certificate.providers.find((row) => row.source_provider === provider);
+  assert.ok(providerStatus, `missing ${provider} refresh certificate row`);
+  return providerStatus;
 }
 
 async function pathExists(filePath) {
@@ -543,6 +555,15 @@ try {
     campaignIds: ["instantly:qualified-campaign"],
   });
   assert.equal(qualifiedInstantlyRefresh.workspaceId, "ws_qualified");
+  assert.equal(qualifiedInstantlyRefresh.source_provider_scope, "instantly");
+  assert.equal(qualifiedInstantlyRefresh.active_data_state.source_provider_mode, "instantly");
+  assert.equal(qualifiedInstantlyRefresh.active_data_state.live_refresh_configured, true);
+  assert.equal(
+    qualifiedInstantlyRefresh.refresh_certificate.requested_provider_scope,
+    "instantly",
+  );
+  assert.equal(providerCertificate(qualifiedInstantlyRefresh, "instantly").status, "refreshed");
+  assert.equal(providerCertificate(qualifiedInstantlyRefresh, "smartlead").status, "not_requested");
 
   delete process.env.SENDLENS_INSTANTLY_API_KEY;
   db = await openDb();
@@ -695,6 +716,15 @@ try {
     client: smartleadProviderOverrideClient,
   });
   assert.equal(smartleadOverrideRefresh.workspaceId, "smartlead_override_ws");
+  assert.equal(smartleadOverrideRefresh.source_provider_scope, "smartlead");
+  assert.equal(smartleadOverrideRefresh.active_data_state.source_provider_mode, "smartlead");
+  assert.equal(smartleadOverrideRefresh.active_data_state.live_refresh_configured, true);
+  assert.equal(
+    smartleadOverrideRefresh.refresh_certificate.requested_provider_scope,
+    "smartlead",
+  );
+  assert.equal(providerCertificate(smartleadOverrideRefresh, "instantly").status, "not_requested");
+  assert.equal(providerCertificate(smartleadOverrideRefresh, "smartlead").status, "refreshed");
   assert.deepEqual([...new Set(smartleadRequestedCampaignIds)], ["901"]);
   assert(smartleadProviderCalls.length > 0);
   resetSmartleadProviderTracking();
@@ -726,6 +756,22 @@ try {
   process.env.SENDLENS_INSTANTLY_API_KEY = "instantly-all-secret";
   process.env.SENDLENS_SMARTLEAD_API_KEY = "smartlead-all-secret";
   process.env.SENDLENS_CLIENT = "all_scoped_ws";
+
+  installSuccessfulRefresh("all_scoped_ws", "instantly-full", "Instantly Full");
+  process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-full.duckdb");
+  const allProviderFullRefresh = await refreshWorkspaceAtomically({
+    provider: "all",
+    source: "manual",
+    client: smartleadProviderOverrideClient,
+  });
+  assert.equal(allProviderFullRefresh.workspaceId, "all_scoped_ws");
+  assert.equal(allProviderFullRefresh.source_provider_scope, "all");
+  assert.equal(allProviderFullRefresh.refresh_certificate.requested_provider_scope, "all");
+  assert.equal(allProviderFullRefresh.refresh_certificate.overall_status, "succeeded");
+  assert.equal(providerCertificate(allProviderFullRefresh, "instantly").status, "refreshed");
+  assert.equal(providerCertificate(allProviderFullRefresh, "smartlead").status, "refreshed");
+  resetSmartleadProviderTracking();
+
   process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-smartlead-scope.duckdb");
   instantly.listCampaigns = async () => {
     throw new Error("Instantly scoped refresh should be skipped");
@@ -737,6 +783,11 @@ try {
     client: smartleadProviderOverrideClient,
   });
   assert.equal(allProviderScopedRefresh.workspaceId, "all_scoped_ws");
+  assert.equal(allProviderScopedRefresh.source_provider_scope, "all");
+  assert.equal(allProviderScopedRefresh.refresh_certificate.requested_provider_scope, "all");
+  assert.equal(allProviderScopedRefresh.refresh_certificate.overall_status, "succeeded");
+  assert.equal(providerCertificate(allProviderScopedRefresh, "instantly").status, "not_requested");
+  assert.equal(providerCertificate(allProviderScopedRefresh, "smartlead").status, "refreshed");
   assert.deepEqual([...new Set(smartleadRequestedCampaignIds)], ["901"]);
   assert(smartleadProviderCalls.some((call) => call.method === "listCampaigns"));
   resetSmartleadProviderTracking();
@@ -750,6 +801,19 @@ try {
     client: smartleadProviderOverrideClient,
   });
   assert.equal(allProviderUnqualifiedSmartleadRefresh.workspaceId, "all_scoped_ws");
+  assert.equal(allProviderUnqualifiedSmartleadRefresh.source_provider_scope, "all");
+  assert.equal(
+    allProviderUnqualifiedSmartleadRefresh.refresh_certificate.overall_status,
+    "partial",
+  );
+  assert.equal(
+    providerCertificate(allProviderUnqualifiedSmartleadRefresh, "instantly").status,
+    "failed",
+  );
+  assert.equal(
+    providerCertificate(allProviderUnqualifiedSmartleadRefresh, "smartlead").status,
+    "refreshed",
+  );
   assert.deepEqual([...new Set(smartleadRequestedCampaignIds)], ["901"]);
   assert(smartleadProviderCalls.some((call) => call.method === "listCampaigns"));
   resetSmartleadProviderTracking();
@@ -762,6 +826,15 @@ try {
     client: smartleadProviderOverrideClient,
   });
   assert.equal(allProviderQualifiedInstantlyCompactRefresh.workspaceId, "all_scoped_ws");
+  assert.equal(allProviderQualifiedInstantlyCompactRefresh.source_provider_scope, "all");
+  assert.equal(
+    providerCertificate(allProviderQualifiedInstantlyCompactRefresh, "instantly").status,
+    "refreshed",
+  );
+  assert.equal(
+    providerCertificate(allProviderQualifiedInstantlyCompactRefresh, "smartlead").status,
+    "not_requested",
+  );
   assert.deepEqual(smartleadProviderCalls, []);
   assert.deepEqual(smartleadRequestedCampaignIds, []);
   resetSmartleadProviderTracking();
@@ -774,6 +847,15 @@ try {
     client: smartleadProviderOverrideClient,
   });
   assert.equal(allProviderQualifiedInstantlyWhitespaceRefresh.workspaceId, "all_scoped_ws");
+  assert.equal(allProviderQualifiedInstantlyWhitespaceRefresh.source_provider_scope, "all");
+  assert.equal(
+    providerCertificate(allProviderQualifiedInstantlyWhitespaceRefresh, "instantly").status,
+    "refreshed",
+  );
+  assert.equal(
+    providerCertificate(allProviderQualifiedInstantlyWhitespaceRefresh, "smartlead").status,
+    "not_requested",
+  );
   assert.deepEqual(smartleadProviderCalls, []);
   assert.deepEqual(smartleadRequestedCampaignIds, []);
 
@@ -785,6 +867,19 @@ try {
     client: smartleadProviderOverrideClient,
   });
   assert.equal(allProviderUnqualifiedInstantlyRefresh.workspaceId, "all_scoped_ws");
+  assert.equal(allProviderUnqualifiedInstantlyRefresh.source_provider_scope, "all");
+  assert.equal(
+    allProviderUnqualifiedInstantlyRefresh.refresh_certificate.overall_status,
+    "partial",
+  );
+  assert.equal(
+    providerCertificate(allProviderUnqualifiedInstantlyRefresh, "instantly").status,
+    "refreshed",
+  );
+  assert.equal(
+    providerCertificate(allProviderUnqualifiedInstantlyRefresh, "smartlead").status,
+    "failed",
+  );
   assert.deepEqual(smartleadProviderCalls, [{ method: "listCampaigns", campaignId: null }]);
   assert.deepEqual(smartleadRequestedCampaignIds, []);
   const allProviderPartialStatus = await readRefreshStatus();
@@ -813,7 +908,94 @@ try {
       },
     ],
   );
+  assert.equal(allProviderPartialStatus.refreshCertificate.requested_provider_scope, "all");
+  assert.equal(allProviderPartialStatus.refreshCertificate.overall_status, "partial");
+  assert.equal(
+    allProviderPartialStatus.refreshCertificate.providers.find((row) =>
+      row.source_provider === "instantly"
+    )?.status,
+    "refreshed",
+  );
+  assert.equal(
+    allProviderPartialStatus.refreshCertificate.providers.find((row) =>
+      row.source_provider === "smartlead"
+    )?.status,
+    "failed",
+  );
+  await writeRefreshStatus({
+    status: "running",
+    source: "manual",
+    lastRefreshScope: "provider_workspace",
+    workspaceId: null,
+    message: "Starting a follow-up provider refresh.",
+  });
+  const runningStatusAfterPartial = await readRefreshStatus();
+  assert.equal(runningStatusAfterPartial.status, "running");
+  assert.equal(runningStatusAfterPartial.refreshCertificate, undefined);
+  assert.equal(runningStatusAfterPartial.partialFailures, undefined);
   resetSmartleadProviderTracking();
+
+  process.env.SENDLENS_INSTANTLY_API_KEY = "instantly-all-one-key-secret";
+  delete process.env.SENDLENS_SMARTLEAD_API_KEY;
+  delete process.env.SENDLENS_CLIENT;
+  process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-one-key.duckdb");
+  installSuccessfulRefresh("one_key_ws", "one-key-instantly", "One Key Instantly");
+  const allProviderOneKeyRefresh = await refreshWorkspaceAtomically({
+    provider: "all",
+    source: "manual",
+  });
+  assert.equal(allProviderOneKeyRefresh.workspaceId, "one_key_ws");
+  assert.equal(allProviderOneKeyRefresh.source_provider_scope, "all");
+  assert.equal(allProviderOneKeyRefresh.refresh_certificate.overall_status, "succeeded");
+  assert.equal(providerCertificate(allProviderOneKeyRefresh, "instantly").status, "refreshed");
+  assert.equal(providerCertificate(allProviderOneKeyRefresh, "smartlead").status, "not_configured");
+
+  delete process.env.SENDLENS_INSTANTLY_API_KEY;
+  process.env.SENDLENS_SMARTLEAD_API_KEY = "smartlead-all-one-key-secret";
+  process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-smartlead-one-key.duckdb");
+  instantly.listCampaigns = async () => {
+    throw new Error("Instantly refresh should be skipped when only Smartlead is configured.");
+  };
+  resetSmartleadProviderTracking();
+  const allProviderSmartleadOneKeyRefresh = await refreshWorkspaceAtomically({
+    provider: "all",
+    source: "manual",
+    client: smartleadProviderOverrideClient,
+  });
+  assert.equal(allProviderSmartleadOneKeyRefresh.workspaceId, "smartlead_override_ws");
+  assert.equal(allProviderSmartleadOneKeyRefresh.source_provider_scope, "all");
+  assert.equal(allProviderSmartleadOneKeyRefresh.refresh_certificate.overall_status, "succeeded");
+  assert.equal(
+    providerCertificate(allProviderSmartleadOneKeyRefresh, "instantly").status,
+    "not_configured",
+  );
+  assert.equal(
+    providerCertificate(allProviderSmartleadOneKeyRefresh, "smartlead").status,
+    "refreshed",
+  );
+  assert(smartleadProviderCalls.some((call) => call.method === "listCampaigns"));
+  resetSmartleadProviderTracking();
+
+  const statusBeforeNoProviderRefresh = await readRefreshStatus();
+  delete process.env.SENDLENS_INSTANTLY_API_KEY;
+  delete process.env.SENDLENS_SMARTLEAD_API_KEY;
+  process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-no-keys.duckdb");
+  await assert.rejects(
+    refreshWorkspaceAtomically({
+      provider: "all",
+      source: "manual",
+    }),
+    /requires SENDLENS_INSTANTLY_API_KEY, SENDLENS_SMARTLEAD_API_KEY, or both/,
+  );
+  const statusAfterNoProviderRefresh = await readRefreshStatus();
+  assert.equal(statusAfterNoProviderRefresh.status, statusBeforeNoProviderRefresh.status);
+  assert.equal(statusAfterNoProviderRefresh.lastSuccessAt, statusBeforeNoProviderRefresh.lastSuccessAt);
+  assert.equal(statusAfterNoProviderRefresh.message, statusBeforeNoProviderRefresh.message);
+
+  process.env.SENDLENS_INSTANTLY_API_KEY = "instantly-all-secret";
+  process.env.SENDLENS_SMARTLEAD_API_KEY = "smartlead-all-secret";
+  process.env.SENDLENS_CLIENT = "all_scoped_ws";
+  installSuccessfulRefresh("all_scoped_ws", "instantly-only", "Instantly Only");
 
   process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-explicit-smartlead-miss.duckdb");
   await assert.rejects(

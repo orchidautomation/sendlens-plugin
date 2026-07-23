@@ -25,6 +25,16 @@ Where relevant, SendLens responses should include:
 
 ## Tool-Specific Shape
 
+`refresh_data`
+
+- accepts optional `provider` input: `all`, `instantly`, or `smartlead`
+- accepts optional `campaign_ids` for provider-qualified or native campaign-scoped refreshes
+- returns the refreshed workspace summary shape, including `source_provider_scope`, `active_data_state`, `provider_breakdown`, and coverage fields
+- returns additive `refresh_certificate` metadata with `schema_version: "sendlens_refresh_certificate.v1"`, `requested_provider_scope`, optional `requested_campaign_ids`, `overall_status`, and per-provider rows
+- per-provider certificate rows use provider names only and include `requested`, `configured`, `status`, `workspace_freshness`, optional `refresh_scope`, and secret-safe messages
+- `provider=all` reports unconfigured selected providers as `not_configured` instead of converting a configured provider's successful refresh into a workspace failure
+- explicit `provider=instantly` or `provider=smartlead` preserves that provider scope in nested summaries and freshness metadata
+
 `workspace_snapshot`
 
 - `schema_version: "workspace_snapshot.v1"`
@@ -64,7 +74,7 @@ Where relevant, SendLens responses should include:
 - accepts a provider-qualified or native campaign ID; `SENDLENS_PROVIDER=all` requires a provider-qualified campaign ID
 - validates campaign selectors against the active local cache before refresh when possible; invalid selectors return `schema_version: "campaign_selector_error.v1"` with `selector`, `workspace_id`, and `suggested_lookup_path`
 - refresh result for the requested campaign
-- scoped refresh metadata for the requested campaign; the broad refresh result is only returned when `include_refresh_metadata=true`
+- scoped refresh metadata for the requested campaign, including the compact `refresh_certificate`; the broad refresh result is only returned when `include_refresh_metadata=true`
 - exact `campaign_overview`
 - `human_reply_sample` grouped into positive, negative, and neutral buckets
 - compact `rendered_outbound_summary` with row counts and redacted preview metadata

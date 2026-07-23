@@ -9,7 +9,11 @@ import {
   stampCacheOwner,
   withCacheProviderMode,
 } from "./local-db";
-import { buildRefreshScope, writeRefreshStatus } from "./refresh-status";
+import {
+  buildRefreshCertificate,
+  buildRefreshScope,
+  writeRefreshStatus,
+} from "./refresh-status";
 import {
   createSmartleadClient,
   SmartleadApiError,
@@ -2858,7 +2862,27 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
     await setActiveWorkspaceId(db, workspaceId, mode);
     await stampCacheOwner(db, workspaceId);
     const endedAt = new Date().toISOString();
-    const summary = await buildWorkspaceSummary(db, workspaceId);
+    const finalRefreshScope = buildRefreshScope({
+      provider: "smartlead",
+      campaignIds: options.campaignIds,
+      campaignsMatched: selectedCampaigns.length,
+    });
+    const refreshCertificate = buildRefreshCertificate({
+      requestedProviderScope: "smartlead",
+      effectiveProviderScope: ["smartlead"],
+      refreshedProviders: [{
+        provider: "smartlead",
+        refreshScope: finalRefreshScope,
+        message: "Smartlead refresh completed.",
+      }],
+      requestedCampaignIds: options.campaignIds,
+    });
+    const summary = {
+      ...(await buildWorkspaceSummary(db, workspaceId, "smartlead", {
+        liveRefreshReady: true,
+      })),
+      refresh_certificate: refreshCertificate,
+    };
     await appendSyncLog(db, {
       id: syncLogId,
       workspaceId,
@@ -2879,11 +2903,8 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
       status: "succeeded",
       source,
       lastRefreshScope: initialRefreshScope.type,
-      refreshScope: buildRefreshScope({
-        provider: "smartlead",
-        campaignIds: options.campaignIds,
-        campaignsMatched: selectedCampaigns.length,
-      }),
+      refreshScope: finalRefreshScope,
+      refreshCertificate,
       workspaceId,
       startedAt,
       endedAt,
@@ -2914,6 +2935,21 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
         error instanceof Error ? error.message : String(error),
       )
       : false;
+    const failedRefreshScope = buildRefreshScope({
+      provider: "smartlead",
+      campaignIds: options.campaignIds,
+      failedScopedLookup,
+    });
+    const refreshCertificate = buildRefreshCertificate({
+      requestedProviderScope: "smartlead",
+      effectiveProviderScope: ["smartlead"],
+      failedProviders: [{
+        provider: "smartlead",
+        refreshScope: failedRefreshScope,
+        message: error instanceof Error ? error.message : String(error),
+      }],
+      requestedCampaignIds: options.campaignIds,
+    });
     await appendSyncLog(db, {
       id: syncLogId,
       source,
@@ -2933,11 +2969,8 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
       lastRefreshScope: failedScopedLookup
         ? "failed_scoped_lookup"
         : initialRefreshScope.type,
-      refreshScope: buildRefreshScope({
-        provider: "smartlead",
-        campaignIds: options.campaignIds,
-        failedScopedLookup,
-      }),
+      refreshScope: failedRefreshScope,
+      refreshCertificate,
       startedAt,
       endedAt: new Date().toISOString(),
       message: error instanceof Error ? error.message : String(error),
