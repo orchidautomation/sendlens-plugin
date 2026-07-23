@@ -727,6 +727,10 @@ try {
   assert.equal(providerCertificate(smartleadOverrideRefresh, "smartlead").status, "refreshed");
   assert.deepEqual([...new Set(smartleadRequestedCampaignIds)], ["901"]);
   assert(smartleadProviderCalls.length > 0);
+  const statusAfterSmartleadOverride = await readRefreshStatus();
+  assert.equal(statusAfterSmartleadOverride.status, "succeeded");
+  assert.equal(statusAfterSmartleadOverride.endedAt, statusAfterSmartleadOverride.lastSuccessAt);
+  assert.equal(statusAfterSmartleadOverride.refreshCertificate.requested_provider_scope, "smartlead");
   resetSmartleadProviderTracking();
   db = await openDb();
   try {
@@ -788,6 +792,10 @@ try {
   assert.equal(allProviderScopedRefresh.refresh_certificate.overall_status, "succeeded");
   assert.equal(providerCertificate(allProviderScopedRefresh, "instantly").status, "not_requested");
   assert.equal(providerCertificate(allProviderScopedRefresh, "smartlead").status, "refreshed");
+  assert.equal(
+    providerCertificate(allProviderScopedRefresh, "smartlead").refresh_scope.campaignsMatched,
+    1,
+  );
   assert.deepEqual([...new Set(smartleadRequestedCampaignIds)], ["901"]);
   assert(smartleadProviderCalls.some((call) => call.method === "listCampaigns"));
   resetSmartleadProviderTracking();
@@ -877,6 +885,10 @@ try {
     "refreshed",
   );
   assert.equal(
+    providerCertificate(allProviderUnqualifiedInstantlyRefresh, "instantly").refresh_scope.campaignsMatched,
+    1,
+  );
+  assert.equal(
     providerCertificate(allProviderUnqualifiedInstantlyRefresh, "smartlead").status,
     "failed",
   );
@@ -915,6 +927,12 @@ try {
       row.source_provider === "instantly"
     )?.status,
     "refreshed",
+  );
+  assert.equal(
+    allProviderPartialStatus.refreshCertificate.providers.find((row) =>
+      row.source_provider === "instantly"
+    )?.refresh_scope.campaignsMatched,
+    1,
   );
   assert.equal(
     allProviderPartialStatus.refreshCertificate.providers.find((row) =>
@@ -1009,6 +1027,44 @@ try {
   );
   assert.deepEqual(smartleadProviderCalls, [{ method: "listCampaigns", campaignId: null }]);
   assert.deepEqual(smartleadRequestedCampaignIds, []);
+
+  process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-unscoped-smartlead-failure.duckdb");
+  installSuccessfulRefresh("all_scoped_ws", "instantly-before-smartlead-failure", "Instantly Before Smartlead Failure");
+  const smartleadHardFailureClient = {
+    async listCampaigns() {
+      throw new Error("Smartlead synthetic outage.");
+    },
+  };
+  await assert.rejects(
+    refreshWorkspaceAtomically({
+      provider: "all",
+      source: "manual",
+      client: smartleadHardFailureClient,
+    }),
+    /Smartlead synthetic outage\./,
+  );
+  const allProviderFailureStatus = await readRefreshStatus();
+  assert.equal(allProviderFailureStatus.status, "failed");
+  assert.equal(allProviderFailureStatus.lastRefreshScope, "workspace");
+  assert.equal(allProviderFailureStatus.refreshScope.provider, "all");
+  assert.equal(allProviderFailureStatus.refreshCertificate.requested_provider_scope, "all");
+  assert.equal(allProviderFailureStatus.refreshCertificate.overall_status, "partial");
+  assert.equal(
+    allProviderFailureStatus.refreshCertificate.providers.find((row) =>
+      row.source_provider === "instantly"
+    )?.status,
+    "refreshed",
+  );
+  assert.equal(
+    allProviderFailureStatus.refreshCertificate.providers.find((row) =>
+      row.source_provider === "smartlead"
+    )?.status,
+    "failed",
+  );
+  assert.match(
+    allProviderFailureStatus.message,
+    /All-provider refresh failed after instantly completed; smartlead failed/,
+  );
   delete process.env.SENDLENS_INSTANTLY_API_KEY;
   delete process.env.SENDLENS_CLIENT;
   delete process.env.SENDLENS_SMARTLEAD_API_KEY;
