@@ -645,7 +645,14 @@ async function dispatchLocalTool(toolName, input) {
     case "analysis_starters":
       return buildQueryRecipeResponse(input);
     case "workspace_snapshot":
-      return withDb(async (db) => buildWorkspaceSummary(db, undefined, input.provider ?? "all"));
+      return withDb(async (db) =>
+        buildWorkspaceSummary(
+          db,
+          undefined,
+          input.provider ?? "all",
+          input.campaign_scope ?? "active",
+        )
+      );
     case "search_catalog":
       return withDb(async (db) => {
         const matches = await searchCatalog(db, input.query);

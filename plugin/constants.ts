@@ -1,7 +1,7 @@
 export const LOCAL_PLUGIN_NAME = "sendlens";
 export const DEFAULT_DB_DIRECTORY = ".sendlens";
 export const DEFAULT_DB_FILENAME = "workspace-cache.duckdb";
-export const CURRENT_CACHE_SCHEMA_VERSION = "sendlens.cache.v2";
+export const CURRENT_CACHE_SCHEMA_VERSION = "sendlens.cache.v3";
 
 export const FULL_LEADS_THRESHOLD = 500;
 export const FULL_EMAILS_THRESHOLD = 1000;
@@ -77,7 +77,7 @@ export type PublicTableName = (typeof PUBLIC_TABLES)[number];
 
 export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
   campaigns:
-    "Exact provider-qualified campaign metadata, including tracking, deliverability guardrail settings, sequence counts, and source-provider IDs when available.",
+    "Exact provider-qualified campaign metadata, including tracking, deliverability guardrail settings, sequence counts, source-provider IDs, and bounded recent-activity selection evidence when available.",
   campaign_analytics:
     "Exact per-campaign aggregate metrics such as sends, replies, bounces, and opportunities.",
   campaign_daily_metrics:
@@ -153,7 +153,7 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
   provider_capabilities:
     "Provider capability status by local workspace, including unsupported or partial surfaces such as Smartlead inbox placement.",
   campaign_overview:
-    "Semantic campaign health view: exact metrics, status, tracking and deliverability settings, sample coverage, and reply/bounce rates in one place.",
+    "Semantic campaign health view: exact metrics, status, active/recent selection evidence, tracking and deliverability settings, sample coverage, and reply/bounce rates in one place.",
   lead_evidence:
     "Semantic lead evidence view with provider-qualified campaign and lead fields, reply signals, provider event time, local observed/sample time, and preserved campaign-scoped payload JSON.",
   lead_payload_kv:

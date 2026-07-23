@@ -35,8 +35,9 @@ export const BASELINE_SCHEMA_MIGRATION_ID = "202607160001_current_schema_baselin
 export const PREVIOUS_SCHEMA_MIGRATION_IDS = [
   "202607160002_refresh_reply_context_views",
   "202607170001_tag_semantic_aliases",
+  "202607200001_lead_metadata_semantics",
 ] as const;
-export const CURRENT_SCHEMA_MIGRATION_ID = "202607200001_lead_metadata_semantics";
+export const CURRENT_SCHEMA_MIGRATION_ID = "202607230001_recent_campaign_activity";
 const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
 const cacheProviderModeContext = new AsyncLocalStorage<SourceProviderMode>();
 
@@ -620,6 +621,12 @@ async function runSchemaMigration(
   }
 }
 
+function isCurrentSchemaMigrationStatement(statement: string) {
+  if (/\bCREATE\s+OR\s+REPLACE\s+VIEW\b/i.test(statement)) return true;
+  return /\bALTER\s+TABLE\s+sendlens\.campaigns\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+(detail_selection_reason|recent_activity_coverage|recent_activity_window_start|recent_activity_window_end|recent_activity_timezone|recent_activity_timezone_source|recent_sent_count|recent_activity_evaluated_at|recent_activity_source)\b/i
+    .test(statement);
+}
+
 async function ensureSchema(conn: DuckDBConnection) {
   await assertNoUnsupportedFutureCacheSchema(conn);
   await ensureSchemaMigrationLedger(conn);
@@ -663,6 +670,15 @@ async function ensureSchema(conn: DuckDBConnection) {
       timestamp_created TIMESTAMP,
       timestamp_updated TIMESTAMP,
       source_raw_json VARCHAR,
+      detail_selection_reason VARCHAR,
+      recent_activity_coverage VARCHAR,
+      recent_activity_window_start DATE,
+      recent_activity_window_end DATE,
+      recent_activity_timezone VARCHAR,
+      recent_activity_timezone_source VARCHAR,
+      recent_sent_count INTEGER,
+      recent_activity_evaluated_at TIMESTAMP,
+      recent_activity_source VARCHAR,
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (workspace_id, id)
     )`,
@@ -1168,6 +1184,15 @@ async function ensureSchema(conn: DuckDBConnection) {
     "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS provider_campaign_id VARCHAR",
     "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS campaign_source_id VARCHAR",
     "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS source_raw_json VARCHAR",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS detail_selection_reason VARCHAR",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS recent_activity_coverage VARCHAR",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS recent_activity_window_start DATE",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS recent_activity_window_end DATE",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS recent_activity_timezone VARCHAR",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS recent_activity_timezone_source VARCHAR",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS recent_sent_count INTEGER",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS recent_activity_evaluated_at TIMESTAMP",
+    "ALTER TABLE sendlens.campaigns ADD COLUMN IF NOT EXISTS recent_activity_source VARCHAR",
     "ALTER TABLE sendlens.campaign_analytics ADD COLUMN IF NOT EXISTS source_provider VARCHAR DEFAULT 'instantly'",
     "ALTER TABLE sendlens.campaign_analytics ADD COLUMN IF NOT EXISTS provider_campaign_id VARCHAR",
     "ALTER TABLE sendlens.campaign_analytics ADD COLUMN IF NOT EXISTS campaign_source_id VARCHAR",
@@ -1538,6 +1563,15 @@ async function ensureSchema(conn: DuckDBConnection) {
         ) AS campaign_source_id,
         c.name AS campaign_name,
         c.status,
+        COALESCE(c.detail_selection_reason, CASE WHEN c.status = 'active' THEN 'active' ELSE 'directory_only' END) AS detail_selection_reason,
+        COALESCE(c.recent_activity_coverage, 'not_evaluated') AS recent_activity_coverage,
+        c.recent_activity_window_start,
+        c.recent_activity_window_end,
+        c.recent_activity_timezone,
+        c.recent_activity_timezone_source,
+        c.recent_sent_count,
+        c.recent_activity_evaluated_at,
+        c.recent_activity_source,
         c.daily_limit,
         c.open_tracking,
         c.link_tracking,
@@ -2711,7 +2745,7 @@ async function ensureSchema(conn: DuckDBConnection) {
   await runSchemaMigration(conn, CURRENT_SCHEMA_MIGRATION_ID, async () => {
     let providerQualifiedAccountKeysChecked = false;
     for (const statement of statements) {
-      if (!/\bCREATE\s+OR\s+REPLACE\s+VIEW\b/i.test(statement)) continue;
+      if (!isCurrentSchemaMigrationStatement(statement)) continue;
       if (!providerQualifiedAccountKeysChecked) {
         await ensureProviderQualifiedAccountPrimaryKeys(conn);
         providerQualifiedAccountKeysChecked = true;
