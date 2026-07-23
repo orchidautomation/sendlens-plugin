@@ -2908,6 +2908,7 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
       workspaceId,
       startedAt,
       endedAt,
+      lastSuccessAt: endedAt,
       campaignsTotal: selectedCampaigns.length,
       campaignsProcessed: selectedCampaigns.length,
       currentCampaignId: null,

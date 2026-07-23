@@ -45,6 +45,8 @@ import {
 import {
   buildRefreshCertificate,
   buildRefreshScope,
+  type RefreshCertificate,
+  type RefreshScope,
   readRefreshStatus,
   writeRefreshStatus,
 } from "./refresh-status";
@@ -105,6 +107,26 @@ type RefreshOptions = {
   minTimestampCreated?: string | null;
   skipReplylessCampaigns?: boolean;
 };
+type ProviderRefreshOutcome = {
+  provider: SourceProvider;
+  refreshScope: RefreshScope;
+  message: string;
+};
+
+type RefreshWorkspaceSummary = Awaited<ReturnType<typeof buildWorkspaceSummary>> & {
+  refresh_certificate?: RefreshCertificate;
+};
+
+function providerRefreshScopeFromCertificate(
+  summary: { refresh_certificate?: RefreshCertificate },
+  provider: SourceProvider,
+  fallback: RefreshScope,
+) {
+  return summary.refresh_certificate?.providers.find((row) =>
+    row.source_provider === provider
+  )?.refresh_scope ?? fallback;
+}
+
 type RefreshSource = "session_start" | "manual";
 type RefreshMode = "fast" | "full";
 export type ReplyTextHydrationMode =
@@ -3277,7 +3299,7 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
         );
       }
 
-      const summaries = [];
+      const summaries: RefreshWorkspaceSummary[] = [];
       const scopedMisses: Array<{
         provider: "instantly" | "smartlead";
         refreshScope: ReturnType<typeof buildRefreshScope>;
@@ -3290,21 +3312,65 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
         ...(instantlyOptions ? (["instantly"] as const) : []),
         ...(smartleadOptions ? (["smartlead"] as const) : []),
       ];
-      const refreshedProviders: Array<{
-        provider: SourceProvider;
-        refreshScope: ReturnType<typeof buildRefreshScope>;
-        message: string;
-      }> = [];
+      const refreshedProviders: ProviderRefreshOutcome[] = [];
+      const persistAggregateFailure = async (provider: SourceProvider, error: unknown) => {
+        const failedRefreshScope = buildRefreshScope({
+          provider,
+          campaignIds: options.campaignIds,
+          failedScopedLookup: isScopedCampaignMiss(error),
+        });
+        const failedProviders = [
+          ...scopedMisses,
+          {
+            provider,
+            refreshScope: failedRefreshScope,
+            message: error instanceof Error ? error.message : String(error),
+          },
+        ];
+        const endedAt = new Date().toISOString();
+        const aggregateRefreshScope = buildRefreshScope({
+          provider: "all",
+          campaignIds: options.campaignIds,
+          failedScopedLookup: options.campaignIds?.length ? true : undefined,
+        });
+        const refreshCertificate = buildRefreshCertificate({
+          requestedProviderScope: "all",
+          effectiveProviderScope,
+          refreshedProviders,
+          failedProviders,
+          requestedCampaignIds: options.campaignIds,
+        });
+        await writeRefreshStatus({
+          status: "failed",
+          source: options.source ?? "manual",
+          lastRefreshScope: options.campaignIds?.length ? "failed_scoped_lookup" : "workspace",
+          refreshScope: aggregateRefreshScope,
+          refreshCertificate,
+          workspaceId: summaries[summaries.length - 1]?.workspaceId ?? null,
+          endedAt,
+          currentCampaignId: null,
+          currentCampaignName: null,
+          partialFailures: failedProviders,
+          message: `All-provider refresh failed while refreshing ${provider}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        });
+      };
       if (instantlyConfigured && instantlyOptions) {
         try {
           const instantlySummary = await refreshInstantlyWorkspace(instantlyOptions);
           summaries.push(instantlySummary);
+          const fallbackRefreshScope = buildRefreshScope({
+            provider: "instantly",
+            campaignIds: instantlyOptions.campaignIds,
+          });
           refreshedProviders.push({
             provider: "instantly",
-            refreshScope: buildRefreshScope({
-              provider: "instantly",
-              campaignIds: instantlyOptions.campaignIds,
-            }),
+            refreshScope: providerRefreshScopeFromCertificate(
+              instantlySummary,
+              "instantly",
+              fallbackRefreshScope,
+            ),
             message: "Instantly refresh completed.",
           });
         } catch (error) {
@@ -3312,6 +3378,9 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
             !shouldSwallowProviderScopedMiss(options.campaignIds, "instantly", configuredProviderCount) ||
             !isScopedCampaignMiss(error)
           ) {
+            if (refreshedProviders.length > 0) {
+              await persistAggregateFailure("instantly", error);
+            }
             throw error;
           }
           scopedMisses.push({
@@ -3329,12 +3398,17 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
         try {
           const smartleadSummary = await refreshSmartleadWorkspace(smartleadOptions);
           summaries.push(smartleadSummary);
+          const fallbackRefreshScope = buildRefreshScope({
+            provider: "smartlead",
+            campaignIds: smartleadOptions.campaignIds,
+          });
           refreshedProviders.push({
             provider: "smartlead",
-            refreshScope: buildRefreshScope({
-              provider: "smartlead",
-              campaignIds: smartleadOptions.campaignIds,
-            }),
+            refreshScope: providerRefreshScopeFromCertificate(
+              smartleadSummary,
+              "smartlead",
+              fallbackRefreshScope,
+            ),
             message: "Smartlead refresh completed.",
           });
         } catch (error) {
@@ -3342,6 +3416,9 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
             !shouldSwallowProviderScopedMiss(options.campaignIds, "smartlead", configuredProviderCount) ||
             !isScopedCampaignMiss(error)
           ) {
+            if (refreshedProviders.length > 0) {
+              await persistAggregateFailure("smartlead", error);
+            }
             throw error;
           }
           scopedMisses.push({
