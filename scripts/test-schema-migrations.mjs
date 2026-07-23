@@ -153,6 +153,38 @@ await withTempDb("sendlens-schema-historical-", async (dbPath) => {
       migratedRows.map((row) => row.name),
       ["normalized_email", "source_provider"],
     );
+    const recentCampaignColumns = await query(
+      db,
+      `SELECT name
+       FROM pragma_table_info('sendlens.campaigns')
+       WHERE name IN (
+         'detail_selection_reason',
+         'recent_activity_coverage',
+         'recent_activity_window_start',
+         'recent_activity_window_end',
+         'recent_activity_timezone',
+         'recent_activity_timezone_source',
+         'recent_sent_count',
+         'recent_activity_evaluated_at',
+         'recent_activity_source'
+       )
+       ORDER BY name`,
+    );
+    assert.deepEqual(
+      recentCampaignColumns.map((row) => row.name),
+      [
+        "detail_selection_reason",
+        "recent_activity_coverage",
+        "recent_activity_evaluated_at",
+        "recent_activity_source",
+        "recent_activity_timezone",
+        "recent_activity_timezone_source",
+        "recent_activity_window_end",
+        "recent_activity_window_start",
+        "recent_sent_count",
+      ],
+      "historical caches must receive additive recent campaign activity evidence columns",
+    );
     const metadataViewColumns = await query(
       db,
       `SELECT column_name
@@ -181,10 +213,15 @@ await withTempDb("sendlens-schema-historical-", async (dbPath) => {
     );
     const campaignRows = await query(
       db,
-      "SELECT id, workspace_id, name FROM sendlens.campaigns WHERE workspace_id = 'ws_legacy'",
+      "SELECT campaign_id AS id, workspace_id, campaign_name AS name, detail_selection_reason FROM sendlens.campaign_overview WHERE workspace_id = 'ws_legacy'",
     );
     assert.deepEqual(campaignRows, [
-      { id: "legacy-campaign", workspace_id: "ws_legacy", name: "Legacy Campaign" },
+      {
+        id: "legacy-campaign",
+        workspace_id: "ws_legacy",
+        name: "Legacy Campaign",
+        detail_selection_reason: "active",
+      },
     ]);
     const migrations = await query(
       db,
@@ -198,7 +235,7 @@ await withTempDb("sendlens-schema-historical-", async (dbPath) => {
       db,
       "SELECT value FROM sendlens.plugin_state WHERE key = 'cache_schema_version'",
     );
-    assert.deepEqual(cacheSchema, [{ value: "sendlens.cache.v2" }]);
+    assert.deepEqual(cacheSchema, [{ value: "sendlens.cache.v3" }]);
     const readiness = await getCacheReadiness(db);
     assert.equal(readiness.readable, true, "migrated historical caches must be readable");
   } finally {

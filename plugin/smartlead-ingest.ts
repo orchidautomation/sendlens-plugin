@@ -1675,6 +1675,7 @@ async function storeProviderCapabilities(
     ["campaign_sequences", "supported", "high", "Smartlead sequences normalize into campaign_variants."],
     ["campaign_analytics", "supported", "medium", "Smartlead aggregate analytics normalize from provider counts; rates are recomputed in views."],
     ["campaign_daily_metrics", "partial", "medium", "Smartlead daily analytics normalize only when date-grained rows are returned."],
+    ["recent_activity", "unavailable", "high", "Smartlead V1 refresh does not implement provider-wide recent paused-campaign auto-hydration; active_or_recent must not be treated as Smartlead parity until a bounded selector is added."],
     ["step_analytics", "partial", "medium", "Smartlead statistics can be sequence aggregate or email-detail rows; email detail rows are aggregated by sequence."],
     ["sender_accounts", "supported", "high", "Smartlead email accounts normalize into accounts."],
     ["account_campaign_assignments", "supported", "high", "Smartlead campaign email account membership normalizes into campaign_account_assignments."],

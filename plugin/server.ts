@@ -58,7 +58,13 @@ import { toReplyTextFetchResult } from "./reply-text-contract";
 import { readRefreshStatus } from "./refresh-status";
 import { buildSetupDoctorReport } from "./setup-doctor";
 import { enforceLocalWorkspaceScope, LocalSqlGuardError } from "./sql-guard";
-import { buildWorkspaceSummary, providerEvidenceWarnings } from "./summary";
+import {
+  buildWorkspaceSummary,
+  campaignInventoryScopeWhere,
+  providerEvidenceWarnings,
+  recentCampaignEvidenceWhere,
+  type CampaignInventoryScope,
+} from "./summary";
 import { PLUGIN_VERSION } from "./version";
 
 loadSendLensEnv();
@@ -850,6 +856,9 @@ server.registerTool(
           refresh_certificate: "refresh_certificate" in refreshed
             ? refreshed.refresh_certificate
             : undefined,
+          campaign_scope: "exact_id",
+          detail_selection_reason: "exact_id",
+          bounded_hydration: true,
           full_refresh_result_included: include_refresh_metadata,
         },
         output_limits: {
@@ -1435,6 +1444,10 @@ server.registerTool(
         .enum(["instantly", "smartlead", "all"])
         .optional()
         .describe("Optional source provider read scope. Use all for mixed-provider workspace analysis; instantly or smartlead for provider-scoped reads."),
+      campaign_scope: z
+        .enum(["active", "active_or_recent", "all"])
+        .optional()
+        .describe("Campaign inventory scope. Defaults to active. Use active_or_recent for active plus confirmed recently sending paused campaigns; use all for directory inventory only."),
       instantly_tag: z
         .string()
         .optional()
@@ -1445,7 +1458,7 @@ server.registerTool(
         .describe("Optional case-insensitive campaign name fragment to filter by."),
     },
   },
-  async ({ provider = "all", instantly_tag, campaign_name }) => {
+  async ({ provider = "all", campaign_scope = "active", instantly_tag, campaign_name }) => {
     const readiness = await waitForSessionSnapshot();
     let db: Awaited<ReturnType<typeof getDb>> | null = null;
     try {
@@ -1456,10 +1469,11 @@ server.registerTool(
       const summary = hasScope
         ? await buildScopedWorkspaceSnapshot(db, {
           provider,
+          campaignScope: campaign_scope,
           instantlyTag: instantly_tag?.trim() || undefined,
           campaignName: campaign_name?.trim() || undefined,
         })
-        : await buildWorkspaceSummary(db, undefined, provider);
+        : await buildWorkspaceSummary(db, undefined, provider, campaign_scope);
       const payload = {
         ...summary,
         warnings: [
@@ -2013,6 +2027,7 @@ async function buildScopedWorkspaceSnapshot(
   db: Awaited<ReturnType<typeof getDb>>,
   scope: {
     provider?: SourceProviderMode;
+    campaignScope?: CampaignInventoryScope;
     instantlyTag?: string;
     campaignName?: string;
   },
@@ -2032,6 +2047,8 @@ async function buildScopedWorkspaceSnapshot(
         `${activeDataState.analysis_notice}\n${activeDataState.recommended_action}`,
       exact_metrics: {},
       source_provider_scope: scope.provider ?? "all",
+      campaign_inventory_scope: scope.campaignScope ?? "active",
+      inventory_metrics: {},
       provider_breakdown: [],
       provider_capabilities: [],
       rate_caveats: [],
@@ -2047,25 +2064,59 @@ async function buildScopedWorkspaceSnapshot(
 
   const workspace = workspaceId.replace(/'/g, "''");
   const providerScope = scope.provider ?? "all";
+  const campaignScope = scope.campaignScope ?? "active";
   const activeDataState = buildActiveDataState({
     workspaceId,
     sourceProviderMode: providerScope,
   });
-  const whereClauses = [
+  const baseWhereClauses = [
     `co.workspace_id = '${workspace}'`,
-    `co.status = 'active'`,
+  ];
+  const whereClauses = [
+    ...baseWhereClauses,
+    campaignInventoryScopeWhere("co", campaignScope),
+  ];
+  const inventoryCoverageWhereClauses = [
+    ...baseWhereClauses,
+  ];
+  const activeWhereClauses = [
+    ...baseWhereClauses,
+    "co.status = 'active'",
   ];
   const scopeNotes: string[] = [];
   if (providerScope !== "all") {
     whereClauses.push(`co.source_provider = '${providerScope}'`);
+    inventoryCoverageWhereClauses.push(`co.source_provider = '${providerScope}'`);
+    activeWhereClauses.push(`co.source_provider = '${providerScope}'`);
     scopeNotes.push(`provider "${providerScope}"`);
   } else {
     scopeNotes.push("all providers");
   }
+  scopeNotes.push(`campaign scope "${campaignScope}"`);
 
   if (scope.instantlyTag) {
     const safeTag = scope.instantlyTag.replace(/'/g, "''");
     whereClauses.push(
+      `EXISTS (
+        SELECT 1
+        FROM sendlens.campaign_tags ct
+        WHERE ct.workspace_id = co.workspace_id
+          AND ct.campaign_id = co.campaign_id
+          AND ct.source_provider = co.source_provider
+          AND lower(ct.tag_label) = lower('${safeTag}')
+      )`,
+    );
+    inventoryCoverageWhereClauses.push(
+      `EXISTS (
+        SELECT 1
+        FROM sendlens.campaign_tags ct
+        WHERE ct.workspace_id = co.workspace_id
+          AND ct.campaign_id = co.campaign_id
+          AND ct.source_provider = co.source_provider
+          AND lower(ct.tag_label) = lower('${safeTag}')
+      )`,
+    );
+    activeWhereClauses.push(
       `EXISTS (
         SELECT 1
         FROM sendlens.campaign_tags ct
@@ -2081,10 +2132,14 @@ async function buildScopedWorkspaceSnapshot(
   if (scope.campaignName) {
     const safeName = scope.campaignName.replace(/'/g, "''");
     whereClauses.push(`lower(co.campaign_name) LIKE lower('%${safeName}%')`);
+    inventoryCoverageWhereClauses.push(`lower(co.campaign_name) LIKE lower('%${safeName}%')`);
+    activeWhereClauses.push(`lower(co.campaign_name) LIKE lower('%${safeName}%')`);
     scopeNotes.push(`campaign name containing "${scope.campaignName}"`);
   }
 
   const whereSql = whereClauses.join("\n  AND ");
+  const inventoryCoverageWhereSql = inventoryCoverageWhereClauses.join("\n  AND ");
+  const activeWhereSql = activeWhereClauses.join("\n  AND ");
 
   const campaignRows = await query(
     db,
@@ -2095,6 +2150,15 @@ async function buildScopedWorkspaceSnapshot(
        co.campaign_source_id,
        co.campaign_name,
        co.status,
+       co.detail_selection_reason,
+       co.recent_activity_coverage,
+       co.recent_activity_window_start,
+       co.recent_activity_window_end,
+       co.recent_activity_timezone,
+       co.recent_activity_timezone_source,
+       co.recent_sent_count,
+       co.recent_activity_evaluated_at,
+       co.recent_activity_source,
        co.daily_limit,
        co.emails_sent_count,
        co.reply_count_unique,
@@ -2149,7 +2213,7 @@ async function buildScopedWorkspaceSnapshot(
          ELSE ROUND(100.0 * COALESCE(SUM(co.bounced_count), 0) / SUM(co.emails_sent_count), 2)
        END AS bounce_rate_pct
      FROM sendlens.campaign_overview co
-     WHERE ${whereSql}
+     WHERE ${activeWhereSql}
      GROUP BY 1
      ORDER BY source_provider`,
   );
@@ -2194,10 +2258,12 @@ async function buildScopedWorkspaceSnapshot(
           activeDataState.status === "cached_workspace_refresh_disabled"
           ? activeDataState.message
           : null,
-        `No campaigns matched ${scopeNotes.join(" and ")} in the active cached workspace.`,
+        `No campaigns matched ${scopeNotes.join(" and ")} in the cached workspace.`,
       ].filter(Boolean).join("\n"),
       exact_metrics: {},
       source_provider_scope: providerScope,
+      campaign_inventory_scope: campaignScope,
+      inventory_metrics: {},
       provider_breakdown: [],
       provider_capabilities: providerCapabilities,
       rate_caveats: [],
@@ -2220,10 +2286,28 @@ async function buildScopedWorkspaceSnapshot(
        COALESCE(SUM(co.total_opportunities), 0) AS total_opportunities,
        COALESCE(SUM(co.total_opportunity_value), 0) AS total_pipeline
      FROM sendlens.campaign_overview co
+     WHERE ${activeWhereSql}`,
+  );
+
+  const inventoryMetricsRows = await query(
+    db,
+    `SELECT
+       COUNT(*) AS campaign_count,
+       SUM(CASE WHEN co.status = 'active' THEN 1 ELSE 0 END) AS active_campaign_count,
+       SUM(CASE WHEN ${recentCampaignEvidenceWhere("co")} THEN 1 ELSE 0 END) AS recent_campaign_count,
+       SUM(CASE WHEN COALESCE(co.detail_selection_reason, '') = 'directory_only' THEN 1 ELSE 0 END) AS directory_only_campaign_count,
+       (
+         SELECT COUNT(*)
+         FROM sendlens.campaign_overview co
+         WHERE ${inventoryCoverageWhereSql}
+           AND COALESCE(co.recent_activity_coverage, '') = 'unavailable'
+       ) AS recent_activity_unavailable_campaign_count
+     FROM sendlens.campaign_overview co
      WHERE ${whereSql}`,
   );
 
   const metrics = metricsRows[0] ?? {};
+  const inventoryMetrics = inventoryMetricsRows[0] ?? {};
   const totalSent = Number(metrics.total_sent ?? 0) || 0;
   const configuredDailyLimitTotal = Number(metrics.configured_daily_limit_total ?? 0) || 0;
   const totalUniqueReplies = Number(metrics.total_unique_replies ?? 0) || 0;
@@ -2299,14 +2383,18 @@ async function buildScopedWorkspaceSnapshot(
         ? activeDataState.message
         : null,
       `Scoped cached snapshot for ${scopeNotes.join(" and ")}.`,
-      `${Number(metrics.campaign_count ?? 0)} active campaigns, ${totalSent} sends, ${totalUniqueReplies} unique human replies, ${totalBounces} bounces, ${totalOpportunities} opportunities, and $${totalPipeline} pipeline.`,
+      `${Number(inventoryMetrics.campaign_count ?? 0) || 0} campaigns in inventory scope; active-only totals are ${Number(metrics.campaign_count ?? 0)} active campaigns, ${totalSent} sends, ${totalUniqueReplies} unique human replies, ${totalBounces} bounces, ${totalOpportunities} opportunities, and $${totalPipeline} pipeline.`,
       `Configured campaign daily limit in scope: ${configuredDailyLimitTotal} emails/day.`,
       `Exact scoped headline rates: ${replyRate.toFixed(2)}% unique reply rate and ${bounceRate.toFixed(2)}% bounce rate.`,
       leader
         ? `Largest campaign in scope: ${String(leader.campaign_name)} with ${Number(leader.emails_sent_count ?? 0)} sends and ${Number(leader.unique_reply_rate_pct ?? 0).toFixed(2)}% unique reply rate.`
         : "No leading campaign available.",
       "This read comes from the current local cache and does not trigger another workspace refresh.",
-      "By default, scoped snapshots only include active campaigns. Ask explicitly for inactive or historical campaigns if you want them included.",
+      campaignScope === "active"
+        ? "By default, scoped snapshots only include active campaigns. Ask explicitly for active_or_recent or all campaign scope if you want inactive inventory included."
+        : campaignScope === "active_or_recent"
+          ? "This scoped snapshot includes active campaigns plus inactive campaigns with confirmed recent sends; unknown and zero-send inactive campaigns remain directory-only."
+          : "This scoped snapshot includes all directory campaign rows and does not imply every campaign detail, lead, reply, or outbound row has been hydrated.",
     ].filter(Boolean).join("\n"),
     exact_metrics: {
       campaign_count: Number(metrics.campaign_count ?? 0) || 0,
@@ -2321,6 +2409,16 @@ async function buildScopedWorkspaceSnapshot(
       bounce_rate_pct: Number(bounceRate.toFixed(2)),
     },
     source_provider_scope: providerScope,
+    campaign_inventory_scope: campaignScope,
+    inventory_metrics: {
+      campaign_count: Number(inventoryMetrics.campaign_count ?? 0) || 0,
+      active_campaign_count: Number(inventoryMetrics.active_campaign_count ?? 0) || 0,
+      recent_campaign_count: Number(inventoryMetrics.recent_campaign_count ?? 0) || 0,
+      directory_only_campaign_count: Number(inventoryMetrics.directory_only_campaign_count ?? 0) || 0,
+      recent_activity_unavailable_campaign_count: Number(
+        inventoryMetrics.recent_activity_unavailable_campaign_count ?? 0,
+      ) || 0,
+    },
     provider_breakdown: providerBreakdown.map((row) => ({
       source_provider: row.source_provider ?? "instantly",
       active_campaign_count: Number(row.active_campaign_count ?? 0) || 0,
@@ -2342,6 +2440,15 @@ async function buildScopedWorkspaceSnapshot(
       provider_campaign_id: row.provider_campaign_id ?? row.campaign_id,
       campaign_source_id: row.campaign_source_id ?? row.campaign_id,
       campaign_name: row.campaign_name,
+      detail_selection_reason: row.detail_selection_reason,
+      recent_activity_coverage: row.recent_activity_coverage,
+      recent_activity_window_start: row.recent_activity_window_start ?? null,
+      recent_activity_window_end: row.recent_activity_window_end ?? null,
+      recent_activity_timezone: row.recent_activity_timezone ?? null,
+      recent_activity_timezone_source: row.recent_activity_timezone_source ?? null,
+      recent_sent_count: row.recent_sent_count ?? null,
+      recent_activity_evaluated_at: row.recent_activity_evaluated_at ?? null,
+      recent_activity_source: row.recent_activity_source ?? null,
       reply_lead_rows: row.reply_lead_rows,
       nonreply_rows_sampled: row.nonreply_rows_sampled,
       reply_outbound_rows: row.reply_outbound_rows,

@@ -334,6 +334,7 @@ without treating them as stale cache:
 | `campaign_sequences` | supported |
 | `campaign_analytics` | supported, medium confidence |
 | `campaign_daily_metrics` | partial until daily row shape is validated |
+| `recent_activity` | unavailable in V1; do not auto-hydrate paused recently sending Smartlead campaigns until a bounded provider-wide selector is implemented |
 | `step_analytics` | partial until statistics row shape is validated |
 | `sender_accounts` | supported |
 | `account_campaign_assignments` | supported |
@@ -354,6 +355,7 @@ without treating them as stale cache:
 | Campaign list wrapper | Docs say direct array, but generated examples sometimes assume wrapped campaigns. | Client parser accepts direct array and common wrapped variants. Fixture all variants. |
 | Campaign analytics shape | Campaign-scoped analytics and global analytics have different field names and rate semantics. | Normalize only documented raw counts. Recompute rates locally for SendLens answers. |
 | `analytics-by-date` granularity | Docs show a date range object, not guaranteed daily rows. | Do not populate `campaign_daily_metrics` unless fixture confirms rows. |
+| Provider-wide recent activity selector | V1 refresh does not normalize bounded date-range analytics into a safe paused-campaign selector. | Report `recent_activity=unavailable`; do not claim `active_or_recent` Smartlead parity from aggregate endpoints. |
 | `statistics` shape | Docs conflict between sequence aggregate, campaign aggregate, and detailed email statistics. | Build a parser that supports aggregate sequence rows and detailed email rows, with nulls for unavailable fields. |
 | Message history bodies | Example omits body fields even with plain-text output documented. | Treat body as optional. Inbound exact bodies map to `reply_emails`; outbound exact bodies require a new exact outbound surface, while missing outbound bodies fall back to reconstruction. |
 | Bulk message-history static suffix | Docs include `bbfbdsFGHlBr76ruhjvh6fhHL` in the path. | Keep endpoint behind one client method and mark live-untested. Unit-test URL construction exactly from docs. |
