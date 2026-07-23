@@ -72,6 +72,7 @@ function installSuccessfulRefresh(
     terminationReason: "cursor_exhausted",
     pagesFetched: 1,
   },
+  recentSentCount = 10,
 ) {
   instantly.listCampaigns = async () => [
     {
@@ -86,13 +87,26 @@ function installSuccessfulRefresh(
   ];
   instantly.getCampaignAnalytics = async (_apiKey, options) => {
     assert.deepEqual(options?.campaignIds, [campaignId]);
+    const dateRanged = Boolean(options?.startDate || options?.endDate);
+    if (dateRanged) {
+      assert.match(options.startDate, /^\d{4}-\d{2}-\d{2}$/);
+      assert.match(options.endDate, /^\d{4}-\d{2}-\d{2}$/);
+      const start = new Date(`${options.startDate}T00:00:00Z`);
+      const end = new Date(`${options.endDate}T00:00:00Z`);
+      assert.equal(
+        Math.round((end.getTime() - start.getTime()) / 86_400_000),
+        29,
+        "recent campaign discovery must use an inclusive 30-day window",
+      );
+    }
+    const emailsSentCount = dateRanged ? recentSentCount : 10;
     return [
       {
         campaign_id: campaignId,
         campaign_name: campaignName,
         leads_count: reportedLeadCount,
         contacted_count: 1,
-        emails_sent_count: 10,
+        emails_sent_count: emailsSentCount,
         reply_count_unique: 1,
         reply_count_automatic: 0,
         bounced_count: 0,
@@ -466,7 +480,15 @@ try {
     closeDb(db);
   }
 
-  installSuccessfulRefresh("ws_new", "new-campaign", "New Campaign", 3);
+  installSuccessfulRefresh(
+    "ws_new",
+    "new-campaign",
+    "New Campaign",
+    3,
+    1,
+    { exhausted: true, terminationReason: "cursor_exhausted", pagesFetched: 1 },
+    0,
+  );
   const inactiveOnlyRefresh = await refreshWorkspaceAtomically({ source: "manual" });
   assert.equal(inactiveOnlyRefresh.workspaceId, "ws_new");
   db = await openDb();

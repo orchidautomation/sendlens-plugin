@@ -31,8 +31,11 @@ Where relevant, SendLens responses should include:
 - `active_data_state` declaring whether the active data is unavailable, synthetic demo fixtures, cached data without refresh credentials, or refresh-configured local workspace data
 - exact workspace/campaign/account metrics
 - optional `provider` input: `all`, `instantly`, or `smartlead`
+- optional `campaign_scope` input: `active` default, `active_or_recent`, or `all`
 - `source_provider_scope`, `provider_breakdown`, and `provider_capabilities` for mixed-provider workspaces
+- `campaign_inventory_scope` and `inventory_metrics`; `exact_metrics` remain active-only even when inactive recent campaigns are visible
 - bounded `campaigns` rows from `campaign_overview` for ranking and campaign selection
+- campaign rows include `detail_selection_reason`, recent-activity coverage/window/timezone fields, and `recent_sent_count` when the provider exposes bounded recency evidence
 - bounded campaign coverage rows
 - `rate_caveats` when cross-provider rates are recomputed from normalized counts
 - optional scope metadata for tag or campaign-name filters
@@ -137,7 +140,7 @@ Where relevant, SendLens responses should include:
 Run `npm run test:mcp-response-contract` when changing MCP tools, response field names, warnings, caps, or this document. The test pins the response-contract terms that agents rely on for:
 
 - `workspace_snapshot` active data state, exact metrics, campaign rows, coverage, warnings, output limits, and readiness
-- `workspace_snapshot` provider-scoped/all-provider outputs, provider capability rows, cross-provider rate caveats, and support-gated Smart Delivery coverage
+- `workspace_snapshot` provider-scoped/all-provider outputs, explicit campaign inventory scopes, active-only KPI totals, provider capability rows, cross-provider rate caveats, and support-gated Smart Delivery/recent-activity coverage
 - `load_campaign_data` provider-qualified/native campaign handling, the `SENDLENS_PROVIDER=all` provider-qualified ID requirement, structured selector errors, campaign overview, reply samples, rendered outbound reconstruction caveats, and output limits
 - campaign selector ambiguity responses with provider-qualified matches
 - provider overlap-risk public views for sampled cross-provider duplicate email/domain/company exposure
@@ -152,7 +155,7 @@ Run `npm run test:mcp-response-contract` when changing MCP tools, response field
 
 - `campaigns`, `campaign_analytics`, `step_analytics`, `campaign_variants`, `accounts`, `account_daily_metrics`, `custom_tags`, and tag mapping views are exact provider-qualified local copies where the configured provider exposes those surfaces.
 - `inbox_placement_tests` and `inbox_placement_analytics` are exact local copies of Instantly-derived inbox-placement surfaces.
-- `campaign_overview` is the preferred exact campaign rollup plus tracking settings, deliverability guardrail settings, and sample coverage metadata.
+- `campaign_overview` is the preferred exact campaign rollup plus active/recent selection reason, bounded recent-activity evidence, tracking settings, deliverability guardrail settings, and sample coverage metadata.
 - `inbox_placement_test_overview` and `sender_deliverability_health` are exact semantic rollups over Instantly inbox placement analytics when those API surfaces are available.
 - `smartlead_delivery_test_overview`, `smartlead_sender_delivery_health`, and `smartlead_delivery_authentication_health` preserve Smart Delivery run aggregates and diagnostics without claiming Instantly-style per-email parity.
 - `reply_emails` contains exact inbound email rows fetched from provider reply surfaces. Instantly rows are fetched on demand through List email; Smartlead rows can come from bounded message-history hydration during campaign refresh. Exact body text is present only when the provider returned body fields.

@@ -55,6 +55,21 @@ await run(
 );
 await run(
   db,
+  `UPDATE sendlens.campaigns
+   SET detail_selection_reason = 'recent_sends',
+       recent_activity_coverage = 'available',
+       recent_activity_window_start = DATE '2026-06-24',
+       recent_activity_window_end = DATE '2026-07-23',
+       recent_activity_timezone = 'UTC',
+       recent_activity_timezone_source = 'utc_fallback',
+       recent_sent_count = 12,
+       recent_activity_evaluated_at = TIMESTAMP '2026-07-23 12:00:00',
+       recent_activity_source = 'instantly.campaigns.analytics'
+   WHERE workspace_id = 'ws_test'
+     AND id = 'c2'`,
+);
+await run(
+  db,
   `INSERT OR REPLACE INTO sendlens.campaign_analytics
    (workspace_id, campaign_id, campaign_name, leads_count, contacted_count, emails_sent_count, new_leads_contacted_count, reply_count_unique, reply_count_automatic, bounced_count, total_opportunities, total_opportunity_value, synced_at)
    VALUES
@@ -365,10 +380,13 @@ assert.equal(JSON.stringify(diagnostics).includes(diagnosticCanary), false);
 const summary = await buildWorkspaceSummary(db);
 assert.equal(summary.schema_version, "workspace_snapshot.v1");
 assert.equal(summary.workspaceId, "ws_test");
+assert.equal(summary.campaign_inventory_scope, "active");
 assert.equal(summary.exact_metrics.campaign_count, 3);
 assert.equal(summary.exact_metrics.active_campaign_count, 3);
 assert.equal(summary.exact_metrics.total_sent, 3275);
 assert.equal(summary.exact_metrics.total_unique_replies, 54);
+assert.equal(summary.inventory_metrics.campaign_count, 3);
+assert.equal(summary.inventory_metrics.recent_campaign_count, 0);
 assert.ok(summary.summary.includes("3 custom tags stored locally"));
 assert.ok(summary.summary.includes("1 Instantly inbox-placement tests"));
 assert.ok(summary.summary.includes("4 Instantly per-email analytics rows"));
@@ -388,11 +406,31 @@ assert.equal(alphaSummaryCampaign.unique_reply_rate_pct, 3);
 assert.equal(alphaSummaryCampaign.total_opportunity_value, 25000);
 assert.equal(summary.output_limits.campaign_limit, 100);
 
+const activeOrRecentSummary = await buildWorkspaceSummary(db, undefined, "all", "active_or_recent");
+assert.equal(activeOrRecentSummary.campaign_inventory_scope, "active_or_recent");
+assert.equal(activeOrRecentSummary.exact_metrics.campaign_count, 3);
+assert.equal(activeOrRecentSummary.exact_metrics.total_sent, 3275);
+assert.equal(activeOrRecentSummary.inventory_metrics.campaign_count, 4);
+assert.equal(activeOrRecentSummary.inventory_metrics.recent_campaign_count, 1);
+const betaSummaryCampaign = activeOrRecentSummary.campaigns.find((campaign) => campaign.campaign_id === "c2");
+assert.ok(betaSummaryCampaign);
+assert.equal(betaSummaryCampaign.status, "paused");
+assert.equal(betaSummaryCampaign.detail_selection_reason, "recent_sends");
+assert.equal(betaSummaryCampaign.recent_activity_coverage, "available");
+assert.equal(betaSummaryCampaign.recent_sent_count, 12);
+
+const allInventorySummary = await buildWorkspaceSummary(db, undefined, "all", "all");
+assert.equal(allInventorySummary.campaign_inventory_scope, "all");
+assert.equal(allInventorySummary.inventory_metrics.campaign_count, 4);
+assert.equal(allInventorySummary.exact_metrics.campaign_count, 3);
+
 const campaignOverview = await runQuery(
   db,
-  "SELECT campaign_name, emails_sent_count, reply_count_unique, bounced_count, total_opportunities, total_opportunity_value, reply_lead_rows, nonreply_rows_sampled, unique_reply_rate_pct, bounce_rate_pct, tracking_status, deliverability_settings_status FROM sendlens.campaign_overview WHERE campaign_id = 'c1'",
+  "SELECT campaign_name, detail_selection_reason, recent_activity_coverage, emails_sent_count, reply_count_unique, bounced_count, total_opportunities, total_opportunity_value, reply_lead_rows, nonreply_rows_sampled, unique_reply_rate_pct, bounce_rate_pct, tracking_status, deliverability_settings_status FROM sendlens.campaign_overview WHERE campaign_id = 'c1'",
 );
 assert.equal(campaignOverview[0].campaign_name, "Alpha");
+assert.equal(campaignOverview[0].detail_selection_reason, "active");
+assert.equal(campaignOverview[0].recent_activity_coverage, "not_evaluated");
 assert.equal(Number(campaignOverview[0].emails_sent_count), 800);
 assert.equal(Number(campaignOverview[0].reply_count_unique), 24);
 assert.equal(Number(campaignOverview[0].bounced_count), 8);

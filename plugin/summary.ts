@@ -10,6 +10,8 @@ import {
 const WORKSPACE_COVERAGE_LIMIT = 100;
 const WORKSPACE_CAMPAIGN_LIMIT = 100;
 
+export type CampaignInventoryScope = "active" | "active_or_recent" | "all";
+
 function pct(numerator: number, denominator: number) {
   if (!denominator) return 0;
   return (numerator / denominator) * 100;
@@ -27,6 +29,28 @@ function providerScopeWhere(alias: string, providerScope: SourceProviderMode) {
 
 function providerScopeLabel(providerScope: SourceProviderMode) {
   return providerScope === "all" ? "all providers" : providerScope;
+}
+
+export function campaignInventoryScopeWhere(
+  alias: string,
+  campaignInventoryScope: CampaignInventoryScope,
+) {
+  if (campaignInventoryScope === "all") return "TRUE";
+  if (campaignInventoryScope === "active_or_recent") {
+    return `(${alias}.status = 'active' OR COALESCE(${alias}.detail_selection_reason, '') = 'recent_sends')`;
+  }
+  return `${alias}.status = 'active'`;
+}
+
+function campaignInventoryScopeLabel(campaignInventoryScope: CampaignInventoryScope) {
+  switch (campaignInventoryScope) {
+    case "active_or_recent":
+      return "active or recently sending campaigns";
+    case "all":
+      return "all campaign directory rows";
+    default:
+      return "active campaigns";
+  }
 }
 
 function rateCaveats(providerScope: SourceProviderMode, providerCount: number) {
@@ -78,6 +102,7 @@ export async function buildWorkspaceSummary(
   conn: DuckDBConnection,
   workspaceId?: string,
   providerScope: SourceProviderMode = "all",
+  campaignInventoryScope: CampaignInventoryScope = "active",
 ) {
   const activeWorkspaceId = workspaceId ?? (await getActiveWorkspaceId(conn));
   if (!activeWorkspaceId) {
@@ -100,6 +125,8 @@ export async function buildWorkspaceSummary(
         "No workspace has been refreshed locally yet.",
       ],
       source_provider_scope: providerScope,
+      campaign_inventory_scope: campaignInventoryScope,
+      inventory_metrics: {},
       provider_breakdown: [],
       provider_capabilities: [],
       rate_caveats: [],
@@ -119,6 +146,11 @@ export async function buildWorkspaceSummary(
   const leadProviderFilter = overviewProviderFilter;
   const tagProviderFilter = overviewProviderFilter;
   const capabilityProviderFilter = overviewProviderFilter;
+  const campaignInventoryFilter = campaignInventoryScopeWhere("c", campaignInventoryScope);
+  const overviewInventoryFilter = campaignInventoryScopeWhere(
+    "campaign_overview",
+    campaignInventoryScope,
+  ).replaceAll("campaign_overview.", "");
   const metricsRows = await query(
     conn,
     `SELECT
@@ -138,6 +170,21 @@ export async function buildWorkspaceSummary(
        AND ${campaignProviderFilter}`,
   );
   const metrics = metricsRows[0] ?? {};
+
+  const inventoryMetricsRows = await query(
+    conn,
+    `SELECT
+       COUNT(*) AS campaign_count,
+       SUM(CASE WHEN c.status = 'active' THEN 1 ELSE 0 END) AS active_campaign_count,
+       SUM(CASE WHEN COALESCE(c.detail_selection_reason, '') = 'recent_sends' THEN 1 ELSE 0 END) AS recent_campaign_count,
+       SUM(CASE WHEN COALESCE(c.detail_selection_reason, '') = 'directory_only' THEN 1 ELSE 0 END) AS directory_only_campaign_count,
+       SUM(CASE WHEN COALESCE(c.recent_activity_coverage, '') = 'unavailable' THEN 1 ELSE 0 END) AS recent_activity_unavailable_campaign_count
+     FROM sendlens.campaigns c
+     WHERE c.workspace_id = '${workspace}'
+       AND ${campaignProviderFilter}
+       AND ${campaignInventoryFilter}`,
+  );
+  const inventoryMetrics = inventoryMetricsRows[0] ?? {};
 
   const providerBreakdown = await query(
     conn,
@@ -177,6 +224,15 @@ export async function buildWorkspaceSummary(
        campaign_name AS name,
        campaign_name,
        status,
+       detail_selection_reason,
+       recent_activity_coverage,
+       recent_activity_window_start,
+       recent_activity_window_end,
+       recent_activity_timezone,
+       recent_activity_timezone_source,
+       recent_sent_count,
+       recent_activity_evaluated_at,
+       recent_activity_source,
        leads_count,
        reply_count_unique,
        emails_sent_count,
@@ -202,7 +258,7 @@ export async function buildWorkspaceSummary(
        reply_outbound_rows
      FROM sendlens.campaign_overview
      WHERE workspace_id = '${workspace}'
-       AND status = 'active'
+       AND ${overviewInventoryFilter}
        AND ${overviewProviderFilter}
      ORDER BY unique_reply_rate_pct DESC NULLS LAST,
               emails_sent_count DESC
@@ -242,7 +298,7 @@ export async function buildWorkspaceSummary(
       AND sr.campaign_id = c.id
       AND COALESCE(sr.source_provider, 'instantly') = COALESCE(c.source_provider, 'instantly')
      WHERE sr.workspace_id = '${workspace}'
-       AND c.status = 'active'
+       AND ${campaignInventoryFilter}
        AND ${campaignProviderFilter}
      ORDER BY source_provider, campaign_id
      LIMIT ${WORKSPACE_COVERAGE_LIMIT + 1}`,
@@ -352,12 +408,12 @@ export async function buildWorkspaceSummary(
   const visibleCoverage = coverage.slice(0, WORKSPACE_COVERAGE_LIMIT);
   if (coverageTruncated) {
     warnings.push(
-      `Coverage rows were truncated to ${WORKSPACE_COVERAGE_LIMIT} active campaigns. Use a scoped workspace_snapshot or analyze_data query for a narrower slice.`,
+      `Coverage rows were truncated to ${WORKSPACE_COVERAGE_LIMIT} ${campaignInventoryScopeLabel(campaignInventoryScope)}. Use a scoped workspace_snapshot or analyze_data query for a narrower slice.`,
     );
   }
   if (campaignRowsTruncated) {
     warnings.push(
-      `Campaign rows were truncated to ${WORKSPACE_CAMPAIGN_LIMIT} active campaigns. Use a scoped workspace_snapshot or analyze_data query for a narrower slice.`,
+      `Campaign rows were truncated to ${WORKSPACE_CAMPAIGN_LIMIT} ${campaignInventoryScopeLabel(campaignInventoryScope)}. Use a scoped workspace_snapshot or analyze_data query for a narrower slice.`,
     );
   }
   if (
@@ -394,6 +450,7 @@ export async function buildWorkspaceSummary(
         ? activeDataState.message
         : null,
       `Workspace ${activeWorkspaceId} has ${num(metrics.active_campaign_count)} active campaigns in the current SendLens snapshot for ${providerScopeLabel(providerScope)}.`,
+      `Campaign inventory scope "${campaignInventoryScope}" returns ${num(inventoryMetrics.campaign_count)} ${campaignInventoryScopeLabel(campaignInventoryScope)}; active KPI totals below remain active-only.`,
       `Exact totals: ${totalSent} sends, ${totalUniqueReplies} unique human replies, ${num(metrics.total_auto_replies)} auto-replies, ${num(metrics.total_opportunities)} opportunities.`,
       `Exact headline rates: ${replyRate.toFixed(2)}% unique reply rate and ${bounceRate.toFixed(2)}% bounce rate.`,
       `Best campaign: ${bestCampaignLine}`,
@@ -402,7 +459,11 @@ export async function buildWorkspaceSummary(
         : "Coverage on the current leader is not available yet.",
       `Coverage across active campaigns: ${repliedLeadCount} replied leads, ${sampledLeadCount} sampled leads, and ${tagCount} custom tags stored locally.`,
       `Deliverability evidence: ${inboxPlacementTestCount} Instantly inbox-placement tests, ${inboxPlacementAnalyticsCount} Instantly per-email analytics rows, ${smartDeliveryTestCount} Smart Delivery tests, and ${smartDeliveryEvidenceCount} Smart Delivery aggregate/diagnostic rows stored locally.`,
-      "Inactive or purely historical campaigns are excluded from this default workspace read unless you explicitly ask for them.",
+      campaignInventoryScope === "active"
+        ? "Inactive or purely historical campaigns are excluded from this default workspace read unless you explicitly ask for them."
+        : campaignInventoryScope === "active_or_recent"
+          ? "This workspace read includes active campaigns plus inactive campaigns with confirmed recent sends; inactive unknown or zero-send campaigns remain directory-only."
+          : "This workspace read includes all campaign directory rows and does not imply every campaign detail, lead, reply, or outbound row has been hydrated.",
       "Reply analysis uses lead reply outcomes plus locally reconstructed template copy. Sampled raw tables are evidence support only and should not be treated as population totals.",
     ].filter(Boolean).join("\n"),
     exact_metrics: {
@@ -421,6 +482,16 @@ export async function buildWorkspaceSummary(
       smart_delivery_evidence_rows: smartDeliveryEvidenceCount,
     },
     source_provider_scope: providerScope,
+    campaign_inventory_scope: campaignInventoryScope,
+    inventory_metrics: {
+      campaign_count: num(inventoryMetrics.campaign_count),
+      active_campaign_count: num(inventoryMetrics.active_campaign_count),
+      recent_campaign_count: num(inventoryMetrics.recent_campaign_count),
+      directory_only_campaign_count: num(inventoryMetrics.directory_only_campaign_count),
+      recent_activity_unavailable_campaign_count: num(
+        inventoryMetrics.recent_activity_unavailable_campaign_count,
+      ),
+    },
     provider_breakdown: providerBreakdown.map((row) => ({
       source_provider: row.source_provider ?? "instantly",
       active_campaign_count: num(row.active_campaign_count),
@@ -443,6 +514,17 @@ export async function buildWorkspaceSummary(
       campaign_source_id: row.campaign_source_id ?? row.campaign_id,
       campaign_name: row.campaign_name ?? row.name,
       status: row.status,
+      detail_selection_reason: row.detail_selection_reason,
+      recent_activity_coverage: row.recent_activity_coverage,
+      recent_activity_window_start: row.recent_activity_window_start,
+      recent_activity_window_end: row.recent_activity_window_end,
+      recent_activity_timezone: row.recent_activity_timezone,
+      recent_activity_timezone_source: row.recent_activity_timezone_source,
+      recent_sent_count: row.recent_sent_count == null
+        ? null
+        : num(row.recent_sent_count),
+      recent_activity_evaluated_at: row.recent_activity_evaluated_at,
+      recent_activity_source: row.recent_activity_source,
       leads_count: num(row.leads_count),
       emails_sent_count: num(row.emails_sent_count),
       reply_count_unique: num(row.reply_count_unique),
