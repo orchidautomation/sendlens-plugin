@@ -1117,7 +1117,7 @@ try {
     allProviderRuntimeFailureStatus.refreshCertificate.providers.find((row) =>
       row.source_provider === "instantly"
     )?.status,
-    "refreshed",
+    "attempted",
   );
   assert.equal(
     allProviderRuntimeFailureStatus.refreshCertificate.providers.find((row) =>
@@ -1128,9 +1128,10 @@ try {
   assert.equal(
     allProviderRuntimeFailureStatus.refreshCertificate.providers.find((row) =>
       row.source_provider === "instantly"
-    )?.refresh_scope.workspaceFreshness,
-    "provider_workspace",
+    )?.workspace_freshness,
+    "attempted",
   );
+  assert.notEqual(allProviderRuntimeFailureStatus.lastSuccessAt, allProviderRuntimeFailureStatus.endedAt);
   resetSmartleadProviderTracking();
 
   process.env.SENDLENS_DB_PATH = path.join(tempDir, "all-provider-explicit-smartlead-miss.duckdb");
@@ -1171,7 +1172,7 @@ try {
     allProviderFailureStatus.refreshCertificate.providers.find((row) =>
       row.source_provider === "instantly"
     )?.status,
-    "refreshed",
+    "attempted",
   );
   assert.equal(
     allProviderFailureStatus.refreshCertificate.providers.find((row) =>
@@ -1183,6 +1184,7 @@ try {
     allProviderFailureStatus.message,
     /All-provider refresh failed after instantly completed; smartlead failed/,
   );
+  assert.notEqual(allProviderFailureStatus.lastSuccessAt, allProviderFailureStatus.endedAt);
   delete process.env.SENDLENS_INSTANTLY_API_KEY;
   delete process.env.SENDLENS_CLIENT;
   delete process.env.SENDLENS_SMARTLEAD_API_KEY;

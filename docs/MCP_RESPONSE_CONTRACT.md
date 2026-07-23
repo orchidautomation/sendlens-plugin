@@ -31,7 +31,7 @@ Where relevant, SendLens responses should include:
 - accepts optional `campaign_ids` for provider-qualified or native campaign-scoped refreshes
 - returns the refreshed workspace summary shape, including `source_provider_scope`, `active_data_state`, `provider_breakdown`, and coverage fields
 - returns additive `refresh_certificate` metadata with `schema_version: "sendlens_refresh_certificate.v1"`, `requested_provider_scope`, optional `requested_campaign_ids`, `overall_status`, and per-provider rows
-- per-provider certificate rows use provider names only and include `requested`, `configured`, `status`, `workspace_freshness`, optional `refresh_scope`, and secret-safe messages
+- per-provider certificate rows use provider names only and include `requested`, `configured`, `status`, `workspace_freshness`, optional `refresh_scope`, and secret-safe messages; hard-failed atomic refreshes can report `status: "attempted"` for provider work completed only in a discarded shadow cache
 - `provider=all` reports unconfigured selected providers as `not_configured` instead of converting a configured provider's successful refresh into a workspace failure
 - explicit `provider=instantly` or `provider=smartlead` preserves that provider scope in nested summaries and freshness metadata
 

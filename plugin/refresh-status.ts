@@ -34,6 +34,7 @@ export type RefreshScope = {
 
 export type RefreshProviderStatus =
   | "refreshed"
+  | "attempted"
   | "failed"
   | "not_configured"
   | "not_requested"
@@ -41,6 +42,7 @@ export type RefreshProviderStatus =
 
 export type RefreshProviderFreshness =
   | RefreshScopeFreshness
+  | "attempted"
   | "failed"
   | "not_configured"
   | "not_requested";
@@ -118,12 +120,14 @@ function indexProviderOutcomes(outcomes: ProviderRefreshOutcome[] | undefined) {
 function deriveOverallStatus(providerResults: RefreshProviderResult[]) {
   const requestedResults = providerResults.filter((result) => result.requested);
   const refreshed = requestedResults.filter((result) => result.status === "refreshed");
+  const attempted = requestedResults.filter((result) => result.status === "attempted");
   const failed = requestedResults.filter((result) =>
     result.status === "failed" || result.status === "not_refreshed"
   );
   const configuredRequested = requestedResults.filter((result) => result.configured);
 
   if (failed.length > 0 && refreshed.length > 0) return "partial";
+  if (failed.length > 0 && attempted.length > 0) return "partial";
   if (failed.length > 0) return "failed";
   if (refreshed.length > 0) return "succeeded";
   if (configuredRequested.length === 0) return "not_configured";
@@ -134,6 +138,7 @@ export function buildRefreshCertificate(options: {
   requestedProviderScope: SourceProviderMode;
   effectiveProviderScope?: SourceProvider[];
   refreshedProviders?: ProviderRefreshOutcome[];
+  attemptedProviders?: ProviderRefreshOutcome[];
   failedProviders?: ProviderRefreshOutcome[];
   requestedCampaignIds?: string[] | null;
   overallStatus?: RefreshCertificate["overall_status"];
@@ -143,11 +148,13 @@ export function buildRefreshCertificate(options: {
     options.effectiveProviderScope ?? providersForMode(options.requestedProviderScope),
   );
   const refreshedByProvider = indexProviderOutcomes(options.refreshedProviders);
+  const attemptedByProvider = indexProviderOutcomes(options.attemptedProviders);
   const failedByProvider = indexProviderOutcomes(options.failedProviders);
   const providers = REFRESH_PROVIDERS.map((provider): RefreshProviderResult => {
     const requested = providerScopeProviders.has(provider) && effectiveProviders.has(provider);
     const configured = providerCredentialConfigured(provider);
     const refreshed = refreshedByProvider.get(provider);
+    const attempted = attemptedByProvider.get(provider);
     const failed = failedByProvider.get(provider);
 
     if (!requested) {
@@ -193,6 +200,18 @@ export function buildRefreshCertificate(options: {
         workspace_freshness: refreshed.refreshScope?.workspaceFreshness ?? "unknown",
         refresh_scope: refreshed.refreshScope,
         message: refreshed.message,
+      };
+    }
+
+    if (attempted) {
+      return {
+        source_provider: provider,
+        requested: true,
+        configured: true,
+        status: "attempted",
+        workspace_freshness: "attempted",
+        refresh_scope: attempted.refreshScope,
+        message: attempted.message,
       };
     }
 

@@ -3633,7 +3633,11 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
         const refreshCertificate = buildRefreshCertificate({
           requestedProviderScope: "all",
           effectiveProviderScope,
-          refreshedProviders,
+          attemptedProviders: refreshedProviders.map((provider) => ({
+            ...provider,
+            message:
+              `${provider.provider} refresh completed in the shadow cache, but the all-provider refresh failed before promotion; the previous live cache remains active.`,
+          })),
           failedProviders,
           requestedCampaignIds: options.campaignIds,
         });
@@ -3646,7 +3650,6 @@ export async function refreshWorkspace(options: RefreshOptions = {}) {
           workspaceId: summaries[summaries.length - 1]?.workspaceId ?? null,
           startedAt: allRefreshStartedAt,
           endedAt,
-          ...(refreshedProviders.length > 0 ? { lastSuccessAt: endedAt } : {}),
           currentCampaignId: null,
           currentCampaignName: null,
           partialFailures: failedProviders.length ? failedProviders : undefined,
