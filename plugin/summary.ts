@@ -12,6 +12,29 @@ const WORKSPACE_CAMPAIGN_LIMIT = 100;
 
 export type CampaignInventoryScope = "active" | "active_or_recent" | "all";
 
+type WorkspaceSummaryOptions = {
+  campaignInventoryScope?: CampaignInventoryScope;
+  liveRefreshReady?: boolean;
+};
+
+type WorkspaceSummaryArgument = CampaignInventoryScope | WorkspaceSummaryOptions;
+
+function normalizeWorkspaceSummaryOptions(
+  options: WorkspaceSummaryArgument = {},
+): Required<Pick<WorkspaceSummaryOptions, "campaignInventoryScope">> &
+  Pick<WorkspaceSummaryOptions, "liveRefreshReady"> {
+  if (typeof options === "string") {
+    return {
+      campaignInventoryScope: options,
+      liveRefreshReady: undefined,
+    };
+  }
+  return {
+    campaignInventoryScope: options.campaignInventoryScope ?? "active",
+    liveRefreshReady: options.liveRefreshReady,
+  };
+}
+
 function pct(numerator: number, denominator: number) {
   if (!denominator) return 0;
   return (numerator / denominator) * 100;
@@ -106,14 +129,17 @@ export async function buildWorkspaceSummary(
   conn: DuckDBConnection,
   workspaceId?: string,
   providerScope: SourceProviderMode = "all",
-  campaignInventoryScope: CampaignInventoryScope = "active",
+  options: WorkspaceSummaryArgument = {},
 ) {
+  const summaryOptions = normalizeWorkspaceSummaryOptions(options);
+  const campaignInventoryScope = summaryOptions.campaignInventoryScope;
   const activeWorkspaceId = workspaceId ?? (await getActiveWorkspaceId(conn));
   if (!activeWorkspaceId) {
     const activeDataState = buildActiveDataState({
       workspaceId: null,
       localCacheReadable: false,
       sourceProviderMode: providerScope,
+      liveRefreshReady: summaryOptions.liveRefreshReady,
     });
     return {
       schema_version: "workspace_snapshot.v1",
@@ -142,6 +168,7 @@ export async function buildWorkspaceSummary(
   const activeDataState = buildActiveDataState({
     workspaceId: activeWorkspaceId,
     sourceProviderMode: providerScope,
+    liveRefreshReady: summaryOptions.liveRefreshReady,
   });
   const campaignProviderFilter = providerScopeWhere("c", providerScope);
   const overviewProviderFilter = providerScope === "all"

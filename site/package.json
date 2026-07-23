@@ -23,7 +23,10 @@
   "overrides": {
     "undici": "6.27.0",
     "postcss": "8.5.19",
-    "sharp": "0.35.3"
+    "sharp": "0.35.3",
+    "next": {
+      "sharp": "0.35.3"
+    }
   },
   "devDependencies": {
     "eslint": "^9.39.5",

@@ -12,6 +12,7 @@ const files = {
   server: "plugin/server.ts",
   setupDoctor: "plugin/setup-doctor.ts",
   activeDataState: "plugin/active-data-state.ts",
+  refreshStatus: "plugin/refresh-status.ts",
   summary: "plugin/summary.ts",
   localDb: "plugin/local-db.ts",
   recipes: "plugin/query-recipes.ts",
@@ -81,6 +82,25 @@ assertPattern(
   /server\.registerTool\(\s*["']refresh_data["'][\s\S]*?catch \(error\) \{[\s\S]*?error instanceof CacheReadinessError[\s\S]*?return cacheReadinessResponse\(error\);/,
   "refresh_data formats cache readiness failures",
 );
+
+for (const term of [
+  "`refresh_certificate`",
+  "`requested_provider_scope`",
+  "`overall_status`",
+  "`not_configured`",
+  "explicit `provider=instantly` or `provider=smartlead` preserves that provider scope",
+]) {
+  assertIncludes(source.docs, term, "refresh_data provider freshness docs");
+}
+for (const term of [
+  'schema_version: "sendlens_refresh_certificate.v1"',
+  "requested_provider_scope",
+  "overall_status",
+  "not_configured",
+  "workspace_freshness",
+]) {
+  assertIncludes(source.refreshStatus, term, "refresh certificate runtime");
+}
 
 for (const term of [
   'schema_version: "workspace_snapshot.v1"',
@@ -186,6 +206,7 @@ for (const term of [
   "include_rendered_outbound = false",
   "include_refresh_metadata = false",
   "full_refresh_result_included",
+  'refresh_certificate: "refresh_certificate" in refreshed',
   "campaign_overview",
   "human_reply_sample",
   "rendered_outbound_summary",

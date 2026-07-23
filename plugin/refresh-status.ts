@@ -1,8 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { isUnresolvedEnvValue } from "./env";
 import { isUnresolvedDbPath, resolveDbPath } from "./local-db";
 import { getRateLimitStats, type RateLimitStats } from "./instantly-client";
-import { resolveSourceProviderMode } from "./provider-config";
+import {
+  providersForMode,
+  resolveSourceProviderMode,
+  type SourceProvider,
+  type SourceProviderMode,
+} from "./provider-config";
 
 export type RefreshScopeType =
   | "workspace"
@@ -26,11 +32,51 @@ export type RefreshScope = {
   workspaceFreshness: RefreshScopeFreshness;
 };
 
+export type RefreshProviderStatus =
+  | "refreshed"
+  | "attempted"
+  | "failed"
+  | "not_configured"
+  | "not_requested"
+  | "not_refreshed";
+
+export type RefreshProviderFreshness =
+  | RefreshScopeFreshness
+  | "attempted"
+  | "failed"
+  | "not_configured"
+  | "not_requested";
+
+export type RefreshProviderResult = {
+  source_provider: SourceProvider;
+  requested: boolean;
+  configured: boolean;
+  status: RefreshProviderStatus;
+  workspace_freshness: RefreshProviderFreshness;
+  refresh_scope?: RefreshScope;
+  message?: string;
+};
+
+export type RefreshCertificate = {
+  schema_version: "sendlens_refresh_certificate.v1";
+  requested_provider_scope: SourceProviderMode;
+  requested_campaign_ids?: string[];
+  overall_status: "succeeded" | "partial" | "failed" | "not_configured";
+  providers: RefreshProviderResult[];
+};
+
+type ProviderRefreshOutcome = {
+  provider: SourceProvider;
+  refreshScope?: RefreshScope;
+  message?: string;
+};
+
 export type RefreshStatus = {
   status: "idle" | "running" | "succeeded" | "failed";
   source?: "session_start" | "manual";
   lastRefreshScope?: RefreshScopeType;
   refreshScope?: RefreshScope;
+  refreshCertificate?: RefreshCertificate;
   partialFailures?: Array<{
     provider: "instantly" | "smartlead";
     refreshScope: RefreshScope;
@@ -49,6 +95,146 @@ export type RefreshStatus = {
   dbPath?: string;
   rateLimit?: RateLimitStats;
 };
+
+const REFRESH_PROVIDERS: SourceProvider[] = ["instantly", "smartlead"];
+
+function providerCredentialEnvKey(provider: SourceProvider) {
+  return provider === "instantly"
+    ? "SENDLENS_INSTANTLY_API_KEY"
+    : "SENDLENS_SMARTLEAD_API_KEY";
+}
+
+function providerCredentialConfigured(provider: SourceProvider) {
+  const value = process.env[providerCredentialEnvKey(provider)]?.trim();
+  return Boolean(value) && !isUnresolvedEnvValue(value);
+}
+
+function indexProviderOutcomes(outcomes: ProviderRefreshOutcome[] | undefined) {
+  const byProvider = new Map<SourceProvider, ProviderRefreshOutcome>();
+  for (const outcome of outcomes ?? []) {
+    byProvider.set(outcome.provider, outcome);
+  }
+  return byProvider;
+}
+
+function deriveOverallStatus(providerResults: RefreshProviderResult[]) {
+  const requestedResults = providerResults.filter((result) => result.requested);
+  const refreshed = requestedResults.filter((result) => result.status === "refreshed");
+  const attempted = requestedResults.filter((result) => result.status === "attempted");
+  const failed = requestedResults.filter((result) =>
+    result.status === "failed" || result.status === "not_refreshed"
+  );
+  const configuredRequested = requestedResults.filter((result) => result.configured);
+
+  if (failed.length > 0 && refreshed.length > 0) return "partial";
+  if (failed.length > 0 && attempted.length > 0) return "partial";
+  if (failed.length > 0) return "failed";
+  if (refreshed.length > 0) return "succeeded";
+  if (configuredRequested.length === 0) return "not_configured";
+  return "failed";
+}
+
+export function buildRefreshCertificate(options: {
+  requestedProviderScope: SourceProviderMode;
+  effectiveProviderScope?: SourceProvider[];
+  refreshedProviders?: ProviderRefreshOutcome[];
+  attemptedProviders?: ProviderRefreshOutcome[];
+  failedProviders?: ProviderRefreshOutcome[];
+  requestedCampaignIds?: string[] | null;
+  overallStatus?: RefreshCertificate["overall_status"];
+}): RefreshCertificate {
+  const providerScopeProviders = new Set(providersForMode(options.requestedProviderScope));
+  const effectiveProviders = new Set(
+    options.effectiveProviderScope ?? providersForMode(options.requestedProviderScope),
+  );
+  const refreshedByProvider = indexProviderOutcomes(options.refreshedProviders);
+  const attemptedByProvider = indexProviderOutcomes(options.attemptedProviders);
+  const failedByProvider = indexProviderOutcomes(options.failedProviders);
+  const providers = REFRESH_PROVIDERS.map((provider): RefreshProviderResult => {
+    const requested = providerScopeProviders.has(provider) && effectiveProviders.has(provider);
+    const configured = providerCredentialConfigured(provider);
+    const refreshed = refreshedByProvider.get(provider);
+    const attempted = attemptedByProvider.get(provider);
+    const failed = failedByProvider.get(provider);
+
+    if (!requested) {
+      return {
+        source_provider: provider,
+        requested: false,
+        configured,
+        status: "not_requested",
+        workspace_freshness: "not_requested",
+        message: `${provider} was outside the effective refresh scope for this request.`,
+      };
+    }
+
+    if (!configured) {
+      return {
+        source_provider: provider,
+        requested: true,
+        configured: false,
+        status: "not_configured",
+        workspace_freshness: "not_configured",
+        message: `${providerCredentialEnvKey(provider)} is not configured for this refresh.`,
+      };
+    }
+
+    if (failed) {
+      return {
+        source_provider: provider,
+        requested: true,
+        configured: true,
+        status: "failed",
+        workspace_freshness: "failed",
+        refresh_scope: failed.refreshScope,
+        message: failed.message,
+      };
+    }
+
+    if (refreshed) {
+      return {
+        source_provider: provider,
+        requested: true,
+        configured: true,
+        status: "refreshed",
+        workspace_freshness: refreshed.refreshScope?.workspaceFreshness ?? "unknown",
+        refresh_scope: refreshed.refreshScope,
+        message: refreshed.message,
+      };
+    }
+
+    if (attempted) {
+      return {
+        source_provider: provider,
+        requested: true,
+        configured: true,
+        status: "attempted",
+        workspace_freshness: "attempted",
+        refresh_scope: attempted.refreshScope,
+        message: attempted.message,
+      };
+    }
+
+    return {
+      source_provider: provider,
+      requested: true,
+      configured: true,
+      status: "not_refreshed",
+      workspace_freshness: "unknown",
+      message: `${provider} was selected and configured but no refresh result was recorded.`,
+    };
+  });
+
+  return {
+    schema_version: "sendlens_refresh_certificate.v1",
+    requested_provider_scope: options.requestedProviderScope,
+    requested_campaign_ids: options.requestedCampaignIds?.length
+      ? [...options.requestedCampaignIds]
+      : undefined,
+    overall_status: options.overallStatus ?? deriveOverallStatus(providers),
+    providers,
+  };
+}
 
 export function buildRefreshScope(options: {
   provider?: RefreshScope["provider"];
@@ -232,6 +418,11 @@ export async function writeRefreshStatus(
   const current = await readRefreshStatus();
   const { mode: _legacyMode, ...currentSansLegacyMode } =
     current as RefreshStatus & { mode?: unknown };
+  const replacesRefreshMetadata =
+    "status" in patch ||
+    "source" in patch ||
+    "lastRefreshScope" in patch ||
+    "refreshScope" in patch;
   const next: RefreshStatus = {
     ...currentSansLegacyMode,
     ...patch,
@@ -241,6 +432,12 @@ export async function writeRefreshStatus(
     // status was updated, not the moment it was first read.
     rateLimit: getRateLimitStats(),
   };
+  if (replacesRefreshMetadata && !("refreshCertificate" in patch)) {
+    delete next.refreshCertificate;
+  }
+  if (replacesRefreshMetadata && !("partialFailures" in patch)) {
+    delete next.partialFailures;
+  }
   const statusPath = await resolveWritableStatusPath();
   await fs.writeFile(statusPath, JSON.stringify(next, null, 2));
   return next;

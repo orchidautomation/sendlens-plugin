@@ -853,6 +853,9 @@ server.registerTool(
           loaded_campaign_id: loadedCampaignId,
           refresh_campaign_ids: [resolved.campaign_source_id],
           refresh_provider: campaignScope.refreshProvider ?? resolved.source_provider,
+          refresh_certificate: "refresh_certificate" in refreshed
+            ? refreshed.refresh_certificate
+            : undefined,
           campaign_scope: "exact_id",
           detail_selection_reason: "exact_id",
           bounded_hydration: true,
