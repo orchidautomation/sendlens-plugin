@@ -1,0 +1,50 @@
+---
+title: "Connect Instantly"
+description: "Configure the current read-only Instantly provider path and verify the local workspace."
+---
+
+SendLens reads Instantly through the provider key available to the host process. It does not add campaign, lead, account, email, webhook, or provider-setting mutation tools.
+
+<Warning>
+  Do not paste a provider key into chat, an issue, a screenshot, or a shared document.
+</Warning>
+
+## 1. Make the key available to the host
+
+For a one-run launch:
+
+```bash
+export SENDLENS_INSTANTLY_API_KEY="replace-with-your-key"
+codex
+```
+
+Use the command for your own host in place of `codex`. For repeat use, store the value in a local configuration file that is excluded from version control, then start the host from that folder.
+
+## 2. Reload SendLens
+
+After changing provider configuration, restart or reload the host so the SendLens MCP process receives the new value.
+
+- Claude Code: `/reload-plugins`
+- Cursor: reload the window
+- Codex: restart or refresh plugins
+- OpenCode: restart or reload
+
+## 3. Run setup
+
+```text
+/sendlens-setup
+```
+
+Setup verifies provider availability without printing the configured key. If the key is absent and no live cache is active, setup can initialize the synthetic demo workspace.
+
+## 4. Check the workspace
+
+Ask the host to run `refresh_status`, then `workspace_snapshot`. A first full refresh may continue briefly after the host starts.
+
+If the current key does not match the key fingerprint that last refreshed the cache, SendLens blocks the stale cache until a new `refresh_data` completes. The raw key is not stored in DuckDB.
+
+## What Instantly data becomes available
+
+Depending on provider coverage, the local cache can include campaign records and metrics, sender assignments and health, steps and variants, tags, inbox-placement evidence, bounded lead samples, reconstructed copy, and reply text fetched for analysis.
+
+SendLens reports exact, sampled, reconstructed, fetched, and missing evidence separately.

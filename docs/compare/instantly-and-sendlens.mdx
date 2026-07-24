@@ -1,0 +1,36 @@
+---
+title: "Instantly and SendLens"
+description: "A claims-neutral comparison of the provider execution plane and the local decision plane."
+---
+
+Instantly and SendLens solve different parts of the workflow.
+
+Instantly operates the outbound system. Its official MCP documentation describes an agent-facing remote connection, and the current `instantly-cli` repository describes a broad CLI and MCP surface across Instantly V2 API groups.
+
+SendLens reads provider evidence into a local DuckDB model and runs repeatable analysis, strategy, copy, and launch-gating workflows. It does not expose provider mutations.
+
+| Dimension | Instantly provider surfaces | SendLens |
+| --- | --- | --- |
+| Primary role | Operate and administer outbound | Analyze evidence and support decisions |
+| Typical interface | Provider product, API, CLI, or MCP | Local MCP tools and specialist workflows |
+| Mutation boundary | Provider operations can include writes | Strictly read-only |
+| Data model | Provider-native objects and operations | Local DuckDB evidence with provenance and coverage |
+| Best fit | Execute an operator's chosen action | Diagnose, design the next test, and gate launch or scale |
+| Combined workflow | Applies the decision | Substantiates the decision before and after execution |
+
+## Where SendLens adds a different layer
+
+- exact versus sampled evidence labels
+- local joins across metrics, senders, replies, copy, tags, and lead fields
+- campaign and workspace diagnosis
+- evidence-backed strategy and copy workflows
+- explicit launch, measurement, and scale gates
+
+## Claims discipline
+
+This comparison does not claim that Instantly lacks analysis or agent support. It does not describe provider execution as unsafe or inferior. Any adoption, retention, upgrade, or performance benefit from using SendLens is a hypothesis until customer evidence supports it.
+
+Sources:
+
+- [Instantly MCP help](https://help.instantly.ai/en/articles/12980002-instantly-mcp-model-context-protocol)
+- [`bcharleson/instantly-cli`](https://github.com/bcharleson/instantly-cli)

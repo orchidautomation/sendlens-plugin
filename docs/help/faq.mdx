@@ -1,0 +1,44 @@
+---
+title: "FAQ"
+description: "Answers about product scope, privacy, providers, licensing, and release status."
+---
+
+## Why not use only a provider MCP or API?
+
+Provider surfaces operate and expose the provider system. SendLens adds a local evidence model and repeatable diagnosis, strategy, copy, and launch-gating workflows. The surfaces can be complementary.
+
+## Can SendLens change my campaigns or send email?
+
+No. The current product is read-only. It does not expose campaign, lead, account, email, webhook, or provider-setting mutations.
+
+## What data stays local?
+
+In the default local path, provider keys, DuckDB, raw campaign evidence, and fetched replies stay on the machine running SendLens. MCP results are returned to the AI host and can then be handled by the host's configured model provider.
+
+## Does SendLens upload my DuckDB cache to Orchid?
+
+The current core workflow does not require uploading the cache to an Orchid-operated service. Optional HTTP or container deployments keep the cache with the machine or container running SendLens and return results to connected MCP clients.
+
+## Is the current release free and open source?
+
+The current repository and published releases through v0.1.76 are MIT licensed. Existing MIT rights remain in place.
+
+## Can I buy or activate a paid version?
+
+No paid purchase or activation flow is released in this documentation. See [Activation status](/docs/get-started/activation-status) for the owning work and blockers.
+
+## What will a commercial license include?
+
+Price, billing cadence, seats, devices, workspaces, agency use, updates, refunds, support, offline use, and recovery are not approved claims. See [License boundary](/docs/trust/license-boundary).
+
+## Is there a private installer?
+
+Not in the current release. The documented installer resolves public GitHub release assets. Private distribution requires separate hardening and clean-host proof.
+
+## Does Smartlead work without Smart Delivery?
+
+Yes for the core Smartlead campaign-analysis path when the key can read those surfaces. Smart Delivery is separately support-gated; SendLens records unavailable access instead of treating empty placement data as healthy.
+
+## Are SendLens recommendations guaranteed to improve performance?
+
+No. SendLens calibrates the evidence behind a recommendation, but campaign outcomes remain uncertain. Treat unproven segments, copy, and tactics as experiments with explicit measurement and stop rules.

@@ -1,0 +1,65 @@
+---
+title: "SendLens overview"
+description: "A local-first, read-only outbound intelligence layer for the AI tools operators already use."
+---
+
+<Info>
+  These docs describe the current public MIT release line. Paid access, private distribution, and commercial license terms are not released features.
+</Info>
+
+# Ask better questions of outbound data
+
+SendLens connects provider evidence to Claude Code, Cursor, Codex, and OpenCode. It gives each host the same local DuckDB analysis layer, read-only MCP tools, specialist workflows, demo workspace, and evidence labels.
+
+It is designed as a **decision and intelligence layer**, not as another outbound dashboard or a provider control surface.
+
+<CardGroup cols={2}>
+  <Card title="Install the current release" icon="download" href="/docs/get-started/install">
+    Install the public MIT host bundle and run the first local check.
+  </Card>
+  <Card title="Connect Instantly" icon="plug" href="/docs/get-started/instantly-setup">
+    Configure read-only provider access without putting a provider key into chat.
+  </Card>
+  <Card title="Understand the data boundary" icon="shield" href="/docs/trust/architecture-and-privacy">
+    See what stays in the SendLens runtime and what reaches your AI host.
+  </Card>
+  <Card title="Run a workflow" icon="route" href="/docs/workflows/core-workflows">
+    Move from a local refresh to diagnosis, strategy, copy, and a launch gate.
+  </Card>
+</CardGroup>
+
+## What SendLens does
+
+SendLens brings campaign totals, sender health, replies, lead fields, daily volume, tags, copy, and deliverability evidence into one analysis surface. You can ask questions in plain English and receive an answer that distinguishes what is proven from what is directional.
+
+Typical work includes:
+
+- campaign and workspace triage
+- step and variant analysis
+- reply, objection, and ICP-signal research
+- sender and inbox-placement diagnosis
+- evidence-backed campaign strategy and copy
+- pre-launch and scale gating
+- client-safe account briefs
+
+## Evidence stays calibrated
+
+SendLens labels evidence according to how it was obtained:
+
+| Label | Meaning |
+| --- | --- |
+| Exact | Direct provider records or locally stored exact evidence |
+| Sampled | A bounded lead or copy slice with coverage limits |
+| Hybrid | Exact aggregates combined with sampled evidence |
+| Reconstructed | Copy rendered locally from templates and stored variables |
+| Fetched | Exact reply text pulled on demand into local DuckDB |
+
+Missing evidence is reported as missing. Empty placement data, for example, does not prove that sender health is clean.
+
+## Deliberate boundary
+
+SendLens does not send email or change campaigns, leads, accounts, webhooks, or provider settings. The current Instantly and Smartlead adapters are read-only by design.
+
+<Note>
+  Commercial access and private installation are tracked separately. See [Activation status](/docs/get-started/activation-status) and [License boundary](/docs/trust/license-boundary) for the current release state.
+</Note>

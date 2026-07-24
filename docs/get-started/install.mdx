@@ -1,0 +1,68 @@
+---
+title: "Install the current MIT release"
+description: "Install the released SendLens host bundles for Claude Code, Cursor, Codex, or OpenCode."
+---
+
+<Warning>
+  This is the current public MIT install path. It resolves public GitHub release assets and is not evidence of a future paid or private installer.
+</Warning>
+
+## Requirements
+
+- macOS or Linux
+- Node.js
+- `curl`, `bash`, `mktemp`, and network access
+- one supported host: Claude Code, Cursor, Codex, or OpenCode
+
+The public installer verifies release metadata and checksums. It does not require a globally installed Pluxx CLI.
+
+## Install all supported hosts
+
+```bash
+bash <(curl -fsSL https://sendlens.app/install.sh) --agents -y
+```
+
+## Install one host
+
+<Tabs>
+  <Tab title="Claude Code">
+    ```bash
+    bash <(curl -fsSL https://sendlens.app/install.sh) --claude-code -y
+    ```
+  </Tab>
+  <Tab title="Cursor">
+    ```bash
+    bash <(curl -fsSL https://sendlens.app/install.sh) --cursor -y
+    ```
+  </Tab>
+  <Tab title="Codex">
+    ```bash
+    bash <(curl -fsSL https://sendlens.app/install.sh) --codex -y
+    ```
+  </Tab>
+  <Tab title="OpenCode">
+    ```bash
+    bash <(curl -fsSL https://sendlens.app/install.sh) --opencode -y
+    ```
+  </Tab>
+</Tabs>
+
+## Run the first check
+
+Reload or restart the host, then run:
+
+```text
+/sendlens-setup
+```
+
+Setup checks the installed surface, helps connect a provider, and can initialize a synthetic demo workspace when no provider key is configured.
+
+<Note>
+  Demo results are synthetic. They demonstrate the workflow but must not be used to judge a real campaign or workspace.
+</Note>
+
+## Current release boundary
+
+The current package and its published release history through v0.1.76 are MIT licensed. This page does not describe purchasing, paid activation, private downloads, renewal, or offline commercial use because those flows have not been released.
+
+Continue to [Instantly setup](/docs/get-started/instantly-setup), or check [Activation status](/docs/get-started/activation-status) before making any commercial assumption.
