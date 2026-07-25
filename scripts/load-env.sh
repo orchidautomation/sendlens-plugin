@@ -75,6 +75,11 @@ is_sendlens_container_enabled() {
   [[ "${normalized}" == "1" || "${normalized}" == "true" || "${normalized}" == "yes" ]]
 }
 
+contains_ascii_control_character() {
+  local LC_ALL=C
+  [[ "${1:-}" =~ [[:cntrl:]] ]]
+}
+
 capture_initial_sendlens_env_keys() {
   local key
   SENDLENS_INITIAL_ENV_KEYS="|"
@@ -156,6 +161,9 @@ parse_sendlens_env_line() {
     value="${HOME:-}/${value#*/}"
   fi
   if [[ "${value}" == *'$'* || "${value}" == *'`'* ]]; then
+    return 2
+  fi
+  if contains_ascii_control_character "${value}"; then
     return 2
   fi
 

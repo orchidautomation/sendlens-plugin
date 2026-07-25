@@ -375,6 +375,41 @@ try {
   );
   assertSensitiveOutputSuppressed(rejectionResult, "unsafe\\nmultiline");
 
+  const controlCharacterRoot = await tempDir("sendlens-safe-config-control-characters-");
+  const controlCharacterSentinel = "control-value-must-not-be-logged";
+  await writeFile(
+    path.join(controlCharacterRoot, ".env"),
+    [
+      "SENDLENS_INSTANTLY_API_KEY=prior-key",
+      "SENDLENS_DB_PATH=/tmp/prior.duckdb",
+      "SENDLENS_PROVIDER=smartlead",
+      "",
+    ].join("\n"),
+  );
+  await writeFile(
+    path.join(controlCharacterRoot, ".env.local"),
+    [
+      `SENDLENS_INSTANTLY_API_KEY=${controlCharacterSentinel}\u0001`,
+      `SENDLENS_DB_PATH=/tmp/${controlCharacterSentinel}\u001f`,
+      "SENDLENS_PROVIDER=smartlead\u007f",
+      "",
+    ].join("\n"),
+  );
+  const controlCharacterResult = loadConfig(
+    controlCharacterRoot,
+    [
+      '[[ "${SENDLENS_INSTANTLY_API_KEY:-}" == "prior-key" ]]',
+      '[[ "${SENDLENS_DB_PATH:-}" == "/tmp/prior.duckdb" ]]',
+      '[[ "${SENDLENS_PROVIDER:-}" == "smartlead" ]]',
+    ].join("\n"),
+  );
+  assertSucceeded(controlCharacterResult, "ASCII control characters are rejected");
+  assert.match(
+    controlCharacterResult.stderr,
+    /\[sendlens] Ignoring unsafe or invalid SendLens dotenv entry\./,
+  );
+  assertSensitiveOutputSuppressed(controlCharacterResult, controlCharacterSentinel);
+
   const canaryRoot = await tempDir("sendlens-safe-config-canary-");
   const markers = Array.from(
     { length: 11 },
