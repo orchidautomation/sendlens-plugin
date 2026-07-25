@@ -174,7 +174,7 @@ if ! acquire_refresh_lock; then
   fi
   exit 0
 fi
-nohup bash -lc '
+nohup bash -c '
   LOCK_DIR="$1"
   LOG_PATH="$2"
   PLUGIN_ROOT="$3"

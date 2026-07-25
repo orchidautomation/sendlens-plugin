@@ -564,6 +564,11 @@ try {
   const sessionAttackMarker = path.join(sessionContext, "must-not-exist-session-attack");
   const sessionSuccessMarker = path.join(sessionContext, "session-success");
   const sessionHome = await tempDir("sendlens-safe-config-session-home-");
+  await mkdir(path.join(sessionHome, "empty-login-path"));
+  await writeFile(
+    path.join(sessionHome, ".bash_profile"),
+    'export PATH="$HOME/empty-login-path"\n',
+  );
   const sessionDbPath = path.join(sessionContext, "workspace.duckdb");
   const sessionStateDir = path.join(sessionContext, "state");
   await writeFile(
