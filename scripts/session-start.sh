@@ -4,6 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ROOT="${PLUGIN_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 SENDLENS_CONTEXT_ROOT="${SENDLENS_CONTEXT_ROOT:-${PLUXX_HOOK_WORKSPACE_ROOT:-${PLUXX_MCP_WORKSPACE_ROOT:-${PWD}}}}"
+export SENDLENS_CONTEXT_ROOT
+
+# shellcheck disable=SC1091
+source "${PLUGIN_ROOT}/scripts/load-env.sh"
 DB_PATH="${SENDLENS_DB_PATH:-${HOME}/.sendlens/workspace-cache.duckdb}"
 STATE_DIR="${SENDLENS_STATE_DIR:-$(dirname "${DB_PATH}")}"
 LOCK_DIR="${STATE_DIR}/session-start-refresh.lock"
@@ -11,9 +15,6 @@ LOG_PATH="${STATE_DIR}/session-start-refresh.log"
 export SENDLENS_CONTEXT_ROOT
 export SENDLENS_DB_PATH="${DB_PATH}"
 export SENDLENS_STATE_DIR="${STATE_DIR}"
-
-# shellcheck disable=SC1091
-source "${PLUGIN_ROOT}/scripts/load-env.sh"
 
 SOURCE_PROVIDER="$(source_provider_mode)"
 DB_PATH="${SENDLENS_DB_PATH:-${HOME}/.sendlens/workspace-cache.duckdb}"
