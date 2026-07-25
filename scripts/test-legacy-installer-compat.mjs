@@ -686,7 +686,7 @@ async function testTopLevelInstallerContract(releaseDir) {
 }
 
 try {
-  assert.equal(packageJson.devDependencies?.["@orchid-labs/pluxx"], "0.1.36");
+  assert.equal(packageJson.devDependencies?.["@orchid-labs/pluxx"], "0.1.38");
 
   assertRun(run("npm", ["run", "--silent", "build:plugin"]), "build:plugin");
   assertRun(run("npm", ["run", "--silent", "build:hosts"]), "build:hosts");

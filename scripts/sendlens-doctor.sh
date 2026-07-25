@@ -7,8 +7,13 @@ SENDLENS_CONTEXT_ROOT="${SENDLENS_CONTEXT_ROOT:-${PWD}}"
 export PLUGIN_ROOT
 export SENDLENS_CONTEXT_ROOT
 
-# shellcheck disable=SC1091
-source "${PLUGIN_ROOT}/scripts/load-env.sh" || true
+DOCTOR_START_DIR="${PWD}"
+if cd "${PLUGIN_ROOT}"; then
+  # shellcheck source=scripts/load-env.sh
+  source "scripts/load-env.sh" || true
+  cd "${DOCTOR_START_DIR}" || exit 1
+fi
+unset DOCTOR_START_DIR
 
 DB_PATH="${SENDLENS_DB_PATH:-${HOME}/.sendlens/workspace-cache.duckdb}"
 STATE_DIR="${SENDLENS_STATE_DIR:-$(dirname "${DB_PATH}")}"
