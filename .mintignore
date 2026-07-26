@@ -1,0 +1,15 @@
+README.md
+AGENTS.md
+INSTRUCTIONS.md
+docs/*.md
+docs/decisions/
+docs/examples/
+docs/operator-memory/
+docs/orchid/
+docs/skills/
+agents/
+commands/
+plugin/
+scripts/
+site/
+skills/

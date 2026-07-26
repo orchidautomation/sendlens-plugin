@@ -1,0 +1,66 @@
+---
+title: "Troubleshooting"
+description: "Recover missing tools, provider setup, refreshes, and sparse evidence in the current release."
+---
+
+## Start with the bundled checks
+
+From a source checkout:
+
+```bash
+npm run doctor
+```
+
+Inside a supported AI host:
+
+```text
+/sendlens-setup
+```
+
+## MCP tools do not appear
+
+1. Reload or restart the host.
+2. Confirm the correct host bundle is installed.
+3. Rerun the current installer.
+4. Verify the install for that host.
+5. Remove or disable an older `sendlens-local` bundle if it conflicts.
+
+For Codex, bundled hooks are a separate opt-in. If tools work but the startup refresh does not, rerun the current Codex installer and follow its prompt, then restart Codex.
+
+## Provider key is missing
+
+SendLens infers provider mode from the keys available to the host process:
+
+- Instantly key only: `instantly`
+- Smartlead key only: `smartlead`
+- both keys: `all`, with `SENDLENS_CLIENT` required for a shared named workspace
+
+After changing a key, restart or reload the host. Do not paste the value into chat.
+
+## Refresh is still running
+
+Run `refresh_status`. A tool can wait briefly while the startup refresh finishes. If DuckDB is locked, wait until the status leaves `running`, then retry.
+
+## Data is empty or sparse
+
+- confirm the provider workspace has the expected campaigns
+- run `refresh_data`
+- confirm the key belongs to the expected workspace
+- use `load_campaign_data` before deep campaign analysis
+- remember that lead evidence can be sampled while campaign totals remain exact
+
+## Placement evidence is empty
+
+Empty placement tables mean no local placement evidence was available. They do not prove clean delivery.
+
+For Smartlead, check the `inbox_placement` capability. Smart Delivery access is support-gated and can be unavailable while core campaign analysis still works.
+
+## Public installer recovery
+
+The current installer uses public GitHub release assets. If it fails:
+
+- confirm `curl`, `bash`, `mktemp`, Node.js, and network access
+- retry after a transient network failure
+- open the latest public GitHub release and inspect the published assets
+
+No private or paid installer recovery path is released today.

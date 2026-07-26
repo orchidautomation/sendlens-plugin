@@ -1,0 +1,41 @@
+---
+title: "Core workflows"
+description: "Move from local provider evidence to diagnosis, strategy, copy, and a launch decision."
+---
+
+SendLens combines read-only MCP tools with specialist skills and agents. The normal path is evidence first, recommendation second.
+
+<Steps>
+  <Step title="Refresh the local workspace">
+    Run `refresh_status` to see the current state, then `refresh_data` when a new provider pull is needed. A scoped campaign load can add deeper evidence without turning every question into a full refresh.
+  </Step>
+  <Step title="Triage what needs attention">
+    Use `workspace_snapshot` and the workspace triage workflow to rank campaigns by bounce risk, lead runway, sender coverage, reply performance, sending state, and evidence gaps.
+  </Step>
+  <Step title="Prepare campaign evidence">
+    Use `load_campaign_data` or `prepare_campaign_analysis` for the selected campaign. Fetch reply text only when the question requires it.
+  </Step>
+  <Step title="Diagnose before prescribing">
+    The analyst workflow checks metrics, replies, ICP signals, copy, senders, and placement evidence while preserving exact, sampled, hybrid, reconstructed, and fetched labels.
+  </Step>
+  <Step title="Turn findings into a campaign plan">
+    The strategy workflow defines audience, offer, angle, sequence, and an experiment from validated evidence. Unsupported conclusions stay labeled as hypotheses.
+  </Step>
+  <Step title="Draft and gate">
+    The copy workflow produces evidence-backed variants. The launch workflow records blockers, measurement rules, and scale or stop criteria before execution happens in another system.
+  </Step>
+</Steps>
+
+## Start with plain-language questions
+
+- “Which active campaign needs attention first, and why?”
+- “What changed before reply rate dropped?”
+- “Which sampled lead fields are associated with positive replies?”
+- “Where does placement look healthy but the conversation still fail?”
+- “Use the strongest validated evidence to recommend the next campaign test.”
+
+## Read-only means no silent execution
+
+SendLens can analyze provider evidence and recommend actions. It does not activate, pause, delete, or edit campaigns; change leads or accounts; send or reply to email; or manage provider webhooks and settings.
+
+That separation lets operators use a provider control surface for execution and SendLens for local analysis, strategy, and launch gating.

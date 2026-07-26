@@ -1,0 +1,55 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "SendLens",
+  "colors": {
+    "primary": "#6D5EF8",
+    "light": "#8D83FF",
+    "dark": "#6D5EF8"
+  },
+  "logo": {
+    "light": "/assets/sendlens-logo.svg",
+    "dark": "/assets/sendlens-logo.svg"
+  },
+  "favicon": "/assets/sendlens-mark.svg",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Start here",
+        "pages": [
+          "docs/overview",
+          "docs/get-started/install",
+          "docs/get-started/instantly-setup",
+          "docs/get-started/activation-status"
+        ]
+      },
+      {
+        "group": "Use SendLens",
+        "pages": [
+          "docs/workflows/core-workflows"
+        ]
+      },
+      {
+        "group": "Trust and product boundaries",
+        "pages": [
+          "docs/trust/architecture-and-privacy",
+          "docs/trust/license-boundary"
+        ]
+      },
+      {
+        "group": "Compare",
+        "pages": [
+          "docs/compare/instantly-and-sendlens",
+          "docs/compare/smartlead-and-sendlens"
+        ]
+      },
+      {
+        "group": "Help",
+        "pages": [
+          "docs/help/troubleshooting",
+          "docs/help/faq"
+        ]
+      }
+    ]
+  }
+}

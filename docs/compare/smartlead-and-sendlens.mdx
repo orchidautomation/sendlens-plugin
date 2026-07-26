@@ -1,0 +1,30 @@
+---
+title: "Smartlead and SendLens"
+description: "How SendLens uses Smartlead evidence while preserving a read-only product boundary."
+---
+
+Smartlead is an outbound provider. SendLens V1 reads a bounded set of Smartlead campaign, account, lead, analytics, message-history, and Smart Delivery surfaces into the same local analysis model used for provider-aware workflows.
+
+This page compares the provider operation layer with SendLens analysis. It does not claim a particular official Smartlead MCP feature set.
+
+| Dimension | Smartlead provider surfaces | SendLens Smartlead V1 |
+| --- | --- | --- |
+| Primary role | Run and administer outbound | Analyze provider evidence locally |
+| Data shape | Smartlead-native records and metrics | Provider-qualified local tables and views |
+| Mutation boundary | The provider offers operational actions | No campaign, lead, account, email, webhook, or setting mutations |
+| Lead and reply depth | Provider records and message history | Bounded lead samples and exact message history where fetched |
+| Deliverability | Smart Delivery is a separate support-gated service | Reads supported Smart Delivery test and diagnostic evidence |
+| Cross-provider use | Provider-specific workspace | Normalized Instantly and Smartlead analysis with caveats |
+
+## Smart Delivery boundary
+
+A valid Smartlead Standard API key can power core campaign analysis while Smart Delivery remains unavailable. SendLens records that capability as unsupported. Empty Smart Delivery rows never prove healthy placement.
+
+SendLens preserves Smartlead-specific aggregate and diagnostic shapes rather than fabricating Instantly-style per-email placement rows.
+
+## Comparison cautions
+
+- Provider-native denominators can differ, so normalized rates keep provider caveats.
+- Bounded lead evidence is not full-population proof.
+- Smartlead message history is exact for the rows fetched, but coverage remains explicit.
+- Provider operation and SendLens analysis can be used together; one is not presented as a replacement for the other.
