@@ -59,6 +59,7 @@ type SmartleadIngestClient = Pick<
   | "listAllEmailAccounts"
   | "getEmailAccountWarmupStats"
   | "listAllCampaignLeads"
+  | "getCampaignPerformanceStats"
 > & Partial<Pick<SmartleadClient, "getMessageHistory" | "getBulkMessageHistory">>;
 
 type SmartleadDeliveryIngestClient = Pick<
@@ -109,6 +110,10 @@ type CampaignBundle = {
   messageHistory: SmartleadMessageHistoryHydration;
   campaignAccounts: SmartleadRow[];
   mailboxStats: SmartleadRow[];
+  performance: SmartleadRow;
+  dateStart: string;
+  dateEnd: string;
+  perfTimezone: string | null;
 };
 
 type CampaignVariantTemplate = {
@@ -2092,6 +2097,43 @@ async function storeCampaignDirectory(
   );
 }
 
+async function storeSmartleadCampaignPerformance(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  campaignId: string | null,
+  performance: Record<string, unknown> | null,
+  dateStart: string,
+  dateEnd: string,
+  timezone: string | null,
+) {
+  if (!campaignId) return;
+  const row = performance ?? {};
+  // Smartlead campaign-performance shape is doc-derived (beta/live-untested);
+  // tolerate missing fields by defaulting to NULL.
+  const pick = (key: string) => {
+    const value = row[key];
+    if (value === undefined || value === null) return "NULL";
+    const num = Number(value);
+    return Number.isFinite(num) ? String(num) : "NULL";
+  };
+  await run(
+    conn,
+    `INSERT OR REPLACE INTO sendlens.smartlead_campaign_performance
+     (workspace_id, source_provider, campaign_id, date_start, date_end, timezone,
+      sent_count, delivered_count, open_count, unique_open_count, reply_count,
+      positive_replied, unique_lead_count, total_positive_response, client_health, synced_at)
+     VALUES (
+      '${esc(workspaceId)}', 'smartlead', ${sqlString(campaignId)},
+      ${sqlString(dateStart)}, ${sqlString(dateEnd)}, ${sqlString(timezone ?? "")},
+      ${pick("sent_count") ?? "NULL"}, ${pick("delivered_count") ?? "NULL"}, ${pick("open_count") ?? "NULL"},
+      ${pick("unique_open_count") ?? "NULL"}, ${pick("reply_count") ?? "NULL"},
+      ${pick("positive_replied") ?? "NULL"}, ${pick("unique_lead_count") ?? "NULL"},
+      ${pick("total_positive_response") ?? "NULL"}, ${pick("client_health") ?? "NULL"},
+      CURRENT_TIMESTAMP
+     )`,
+  );
+}
+
 async function storeCampaignFacts(
   conn: DuckDBConnection,
   workspaceId: string,
@@ -2639,7 +2681,7 @@ async function fetchCampaignBundle(
   if (!nativeId) throw new Error("Smartlead campaign row is missing id.");
   const detail = { ...campaign, ...asRecord(await client.getCampaign(nativeId)) };
   const timezone = campaignTimezone(detail);
-  const [sequences, analytics, dailyPayload, statisticsRows, campaignAccounts, leadPayload, mailboxStats] =
+  const [sequences, analytics, dailyPayload, statisticsRows, campaignAccounts, leadPayload, mailboxStats, performance] =
     await Promise.all([
       client.getCampaignSequences(nativeId),
       client.getCampaignAnalytics(nativeId),
@@ -2657,6 +2699,12 @@ async function fetchCampaignBundle(
         endDate: endDate(),
         timezone: timezone ?? undefined,
       }),
+      client.getCampaignPerformanceStats({
+        startDate: startDate(),
+        endDate: endDate(),
+        timezone: timezone ?? undefined,
+        campaignIds: [nativeId],
+      }),
     ]);
   const leads = arrayFrom(leadPayload);
   const messageHistory = await fetchSmartleadMessageHistory(client, nativeId, leads);
@@ -2672,6 +2720,10 @@ async function fetchCampaignBundle(
     leads,
     messageHistory,
     mailboxStats: arrayFrom(mailboxStats),
+    performance: asRecord(performance),
+    dateStart: startDate(),
+    dateEnd: endDate(),
+    perfTimezone: timezone,
   };
 }
 
@@ -2858,6 +2910,15 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
     await storeCampaignDirectory(db, workspaceId, bundles);
     for (const bundle of bundles) {
       await storeCampaignFacts(db, workspaceId, bundle);
+      await storeSmartleadCampaignPerformance(
+        db,
+        workspaceId,
+        providerCampaignId(bundle.directory),
+        bundle.performance,
+        bundle.dateStart,
+        bundle.dateEnd,
+        bundle.perfTimezone,
+      );
     }
 
     await setActiveWorkspaceId(db, workspaceId, mode);

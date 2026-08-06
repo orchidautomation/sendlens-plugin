@@ -59,6 +59,7 @@ export const PUBLIC_TABLES = [
   "smartlead_delivery_test_overview",
   "smartlead_sender_delivery_health",
   "smartlead_delivery_authentication_health",
+  "smartlead_campaign_performance",
   "reply_emails",
   "reply_email_hydration_state",
   "reply_email_context",
@@ -144,6 +145,8 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Exact Smartlead Smart Delivery sender-level provider-reported inbox, spam, bounce, and reputation metrics by test.",
   smartlead_delivery_authentication_health:
     "Exact Smartlead Smart Delivery SPF, DKIM, rDNS, domain/IP blacklist, IP, and spam-filter diagnostic evidence.",
+  smartlead_campaign_performance:
+    "Smartlead campaign performance analytics (sent/delivered/open/reply/positive/unique-lead counts and client_health) for a date range; beta/live-untested, doc-derived shape.",
   reply_emails:
     "Exact inbound reply email rows fetched from provider reply surfaces, including Instantly email search and bounded Smartlead message history.",
   reply_email_hydration_state:

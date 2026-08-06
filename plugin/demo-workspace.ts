@@ -369,6 +369,13 @@ async function seedInboxPlacement(db: Awaited<ReturnType<typeof getDb>>) {
      ('${DEMO_WORKSPACE_ID}', 'demo-smartlead-sender', 'demo-smartlead-delivery', 'sender_report', 'sender-smartlead@demo.invalid', 'sender-smartlead@demo.invalid', NULL, NULL, NULL, NULL, 2, NULL, NULL, NULL, NULL, NULL, NULL, 88, 5, 0, 8.8, NULL, NULL, NULL, NULL, NULL, NULL, '2026-05-08 10:00:00'::TIMESTAMP, NULL, '{"source":"synthetic_demo"}', CURRENT_TIMESTAMP),
      ('${DEMO_WORKSPACE_ID}', 'demo-smartlead-spf', 'demo-smartlead-delivery', 'spf', 'seed-smartlead', 'sender-smartlead@demo.invalid', 'seed-smartlead@example.invalid', 'Gmail', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, false, NULL, NULL, NULL, NULL, NULL, '2026-05-08 10:00:00'::TIMESTAMP, '{"reason":"synthetic SPF failure"}', '{"source":"synthetic_demo"}', CURRENT_TIMESTAMP)`,
   );
+  await run(
+    db,
+    `INSERT OR REPLACE INTO sendlens.smartlead_campaign_performance
+     (workspace_id, source_provider, campaign_id, date_start, date_end, timezone, sent_count, delivered_count, open_count, unique_open_count, reply_count, positive_replied, unique_lead_count, total_positive_response, client_health, synced_at)
+     VALUES
+     ('${DEMO_WORKSPACE_ID}', 'smartlead', '${DEMO_CAMPAIGN_SMARTLEAD_ID}', '2026-05-01', '2026-05-31', 'America/New_York', 120, 116, 48, 40, 12, 4, 90, 5, 0.044, CURRENT_TIMESTAMP)`,
+  );
 }
 
 async function seedProviderCapabilities(db: Awaited<ReturnType<typeof getDb>>) {

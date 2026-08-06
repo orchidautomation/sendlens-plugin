@@ -131,6 +131,9 @@ const fakeClient = {
       positive_replies: 2,
     };
   },
+  async getCampaignPerformanceStats() {
+    return { sent_count: 10, delivered_count: 9, open_count: 5, unique_open_count: 4, reply_count: 2, positive_replied: 1, unique_lead_count: 8, total_positive_response: 2, client_health: 0.125 };
+  },
   async getCampaignAnalyticsByDate(campaignId, options) {
     assert.equal(String(campaignId), "101");
     assert.equal(options.timezone, "America/New_York");
@@ -944,6 +947,9 @@ function regressionClient({ includeTags }) {
         bounce_count: stats.reduce((sum, row) => sum + row.bounced, 0),
       };
     },
+    async getCampaignPerformanceStats() {
+      return { sent_count: 10, delivered_count: 9, open_count: 5, unique_open_count: 4, reply_count: 2, positive_replied: 1, unique_lead_count: 8, total_positive_response: 2, client_health: 0.125 };
+    },
     async getCampaignAnalyticsByDate(campaignId) {
       const totals = regressionMailboxStats[campaignId].reduce(
         (sum, row) => ({
@@ -1246,6 +1252,9 @@ await refreshSmartleadWorkspace({
         sent_count: overLimitLeads.length,
         reply_count: overLimitLeads.length,
       };
+    },
+    async getCampaignPerformanceStats() {
+      return { sent_count: 10, delivered_count: 9, open_count: 5, unique_open_count: 4, reply_count: 2, positive_replied: 1, unique_lead_count: 8, total_positive_response: 2, client_health: 0.125 };
     },
     async getCampaignAnalyticsByDate(campaignId) {
       assert.equal(String(campaignId), "201");
