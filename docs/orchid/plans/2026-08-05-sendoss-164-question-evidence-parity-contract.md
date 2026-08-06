@@ -122,7 +122,7 @@ For each family: grain, denominator, provider scope, freshness, completeness, at
 ### Q7 — Provider overlap
 - Grain: lead / sender-domain. Denominator: observed. Provider scope: both. Freshness: cached. Completeness: observed. Attribution: cross-provider. Privacy: sampled-PII / redacted. Evidence: hydrated-sample. Max claim: `observed`/`directional`.
 - States: answerable for collision risk; degraded when lead identity is sampled.
-- Tables: `provider_overlap_risk`, `provider_overlap_risk_details`, `sampled_leads`, `lead_evidence`. Recipes: (overlap risk views).
+- Tables: `provider_overlap_risk`, `provider_overlap_risk_details`, `sampled_leads`, `lead_evidence`. Recipes: `cross-provider-overlap-risk`, `duplicate-contact-company-exposure`.
 - Gap (SENDOSS-169): effective-dated cross-provider lineage; current overlap is point-in-time only.
 
 ### Q8 — Experiments and validity
