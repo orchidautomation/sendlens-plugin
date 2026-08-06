@@ -66,6 +66,9 @@ export const PUBLIC_TABLES = [
   "sampled_leads",
   "sampled_outbound_emails",
   "sampling_runs",
+  "sync_runs",
+  "sync_partitions",
+  "population_snapshots",
   "provider_capabilities",
   "campaign_overview",
   "lead_evidence",
@@ -159,6 +162,12 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Locally reconstructed outbound copy built from campaign templates plus lead variables. Do not treat it as exact delivered email text, including when Smartlead message-history coverage exists.",
   sampling_runs:
     "Per-campaign ingest coverage metadata, including exact-vs-sampled mode, deterministic sampling provenance, requested event window, sample sizes, and legacy unknown provenance markers.",
+  sync_runs:
+    "Per-refresh sync execution records (fast/deep/incremental) with scope, timing, status, cursor state, and coverage summary for progressive resumable sync.",
+  sync_partitions:
+    "Resumable per-partition cursor and exhaustion state so deep crawls can resume across rate limits, retries, and process restarts without duplicates.",
+  population_snapshots:
+    "Truthful sampling-frame snapshots distinguishing complete/observed/sampled/enriched-tail/unsupported frames with inclusion reason, algorithm/version, population fingerprint, cumulative coverage, and selection probability.",
   provider_capabilities:
     "Provider capability status by local workspace, including unsupported or partial surfaces such as Smartlead inbox placement.",
   campaign_overview:

@@ -212,6 +212,29 @@ async function seedTagsAndAccounts(db: Awaited<ReturnType<typeof getDb>>) {
   );
   await run(
     db,
+    `INSERT OR REPLACE INTO sendlens.sync_runs
+     (workspace_id, source_provider, sync_run_id, sync_mode, scope, status, started_at, completed_at, duration_ms, campaigns_processed, total_pages, total_items, coverage_summary_json, created_at)
+     VALUES
+     ('${DEMO_WORKSPACE_ID}', 'instantly', 'instantly:fast:2026-08-05T20:00:00Z', 'fast', 'workspace', 'completed', TIMESTAMP '2026-08-05 20:00:00', TIMESTAMP '2026-08-05 20:00:12', 12000, 3, 18, 500, '{"campaignsProcessed":3,"mode":"fast","scope":"workspace"}', CURRENT_TIMESTAMP)`,
+  );
+  await run(
+    db,
+    `INSERT OR REPLACE INTO sendlens.sync_partitions
+     (workspace_id, source_provider, partition_key, last_cursor, exhausted, cumulative_count, last_synced_at, created_at)
+     VALUES
+     ('${DEMO_WORKSPACE_ID}', 'instantly', 'demo-alpha:leads', 'demo-cursor-1', FALSE, 500, TIMESTAMP '2026-08-05 20:00:10', CURRENT_TIMESTAMP),
+     ('${DEMO_WORKSPACE_ID}', 'instantly', 'workspace:campaigns', NULL, TRUE, 4, TIMESTAMP '2026-08-05 20:00:00', CURRENT_TIMESTAMP)`,
+  );
+  await run(
+    db,
+    `INSERT OR REPLACE INTO sendlens.population_snapshots
+     (workspace_id, source_provider, snapshot_id, frame, inclusion_reason, algorithm_version, population_fingerprint, cumulative_coverage, selection_probability, cursor_exhausted, created_at)
+     VALUES
+     ('${DEMO_WORKSPACE_ID}', 'instantly', 'instantly:observed:2026-08-05T20:00:00Z', 'observed', 'fast-path bounded refresh', 'sendlens-fast-500-v1', 'demo-fingerprint', NULL, NULL, FALSE, CURRENT_TIMESTAMP),
+     ('${DEMO_WORKSPACE_ID}', 'instantly', 'instantly:sampled:2026-08-05T20:00:00Z', 'sampled', '500-lead deterministic sample', 'sendlens-fast-500-v1', 'demo-fingerprint', 500, NULL, FALSE, CURRENT_TIMESTAMP)`,
+  );
+  await run(
+    db,
     `INSERT OR REPLACE INTO sendlens.accounts
      (workspace_id, email, organization_id, status, warmup_status, warmup_score, provider, daily_limit, sending_gap, first_name, last_name, total_sent_30d, total_replies_30d, total_bounces_30d, synced_at)
      VALUES

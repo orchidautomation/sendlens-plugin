@@ -38,8 +38,9 @@ export const PREVIOUS_SCHEMA_MIGRATION_IDS = [
   "202607200001_lead_metadata_semantics",
   "202607230001_recent_campaign_activity",
   "202608050001_lead_list_label_surfaces",
+  "202608060001_smartlead_campaign_performance",
 ] as const;
-export const CURRENT_SCHEMA_MIGRATION_ID = "202608060001_smartlead_campaign_performance";
+export const CURRENT_SCHEMA_MIGRATION_ID = "202608070001_progressive_sync_frames";
 const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
 const cacheProviderModeContext = new AsyncLocalStorage<SourceProviderMode>();
 
@@ -2842,6 +2843,51 @@ async function ensureSchema(conn: DuckDBConnection) {
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (workspace_id, source_provider, campaign_id, date_start, date_end)
     )`);
+    await run(conn, `CREATE TABLE IF NOT EXISTS sendlens.sync_runs (
+      workspace_id VARCHAR NOT NULL,
+      source_provider VARCHAR NOT NULL,
+      sync_run_id VARCHAR NOT NULL,
+      sync_mode VARCHAR,
+      scope VARCHAR,
+      status VARCHAR,
+      started_at TIMESTAMP,
+      completed_at TIMESTAMP,
+      duration_ms BIGINT,
+      campaigns_processed INTEGER,
+      total_pages INTEGER,
+      total_items INTEGER,
+      cursor_state_json VARCHAR,
+      coverage_summary_json VARCHAR,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, source_provider, sync_run_id)
+    )`);
+    await run(conn, `CREATE TABLE IF NOT EXISTS sendlens.sync_partitions (
+      workspace_id VARCHAR NOT NULL,
+      source_provider VARCHAR NOT NULL,
+      partition_key VARCHAR NOT NULL,
+      last_cursor VARCHAR,
+      exhausted BOOLEAN,
+      cumulative_count INTEGER,
+      last_synced_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, source_provider, partition_key)
+    )`);
+    await run(conn, `CREATE TABLE IF NOT EXISTS sendlens.population_snapshots (
+      workspace_id VARCHAR NOT NULL,
+      source_provider VARCHAR NOT NULL,
+      snapshot_id VARCHAR NOT NULL,
+      frame VARCHAR,
+      inclusion_reason VARCHAR,
+      algorithm_version VARCHAR,
+      population_fingerprint VARCHAR,
+      cumulative_coverage INTEGER,
+      selection_probability DOUBLE,
+      cursor_exhausted BOOLEAN,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, source_provider, snapshot_id)
+    )`);
+    await run(conn, "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS coverage_mode VARCHAR");
+    await run(conn, "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS evidence_lane VARCHAR");
     await stampCacheSchemaVersion(conn);
   });
 }
