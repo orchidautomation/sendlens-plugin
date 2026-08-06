@@ -36,8 +36,9 @@ export const PREVIOUS_SCHEMA_MIGRATION_IDS = [
   "202607160002_refresh_reply_context_views",
   "202607170001_tag_semantic_aliases",
   "202607200001_lead_metadata_semantics",
+  "202607230001_recent_campaign_activity",
 ] as const;
-export const CURRENT_SCHEMA_MIGRATION_ID = "202607230001_recent_campaign_activity";
+export const CURRENT_SCHEMA_MIGRATION_ID = "202608050001_lead_list_label_surfaces";
 const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
 const cacheProviderModeContext = new AsyncLocalStorage<SourceProviderMode>();
 
@@ -864,6 +865,31 @@ async function ensureSchema(conn: DuckDBConnection) {
       timestamp_created TIMESTAMP,
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (workspace_id, tag_id, resource_type, resource_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.lead_lists (
+      workspace_id VARCHAR NOT NULL,
+      id VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      organization_id VARCHAR,
+      name VARCHAR,
+      timestamp_created TIMESTAMP,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.lead_labels (
+      workspace_id VARCHAR NOT NULL,
+      id VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      organization_id VARCHAR,
+      label VARCHAR,
+      interest_status VARCHAR,
+      interest_status_label VARCHAR,
+      description VARCHAR,
+      use_with_ai BOOLEAN,
+      created_by VARCHAR,
+      timestamp_created TIMESTAMP,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, id)
     )`,
     `CREATE TABLE IF NOT EXISTS sendlens.inbox_placement_tests (
       workspace_id VARCHAR NOT NULL,
@@ -2752,6 +2778,31 @@ async function ensureSchema(conn: DuckDBConnection) {
       }
       await run(conn, statement);
     }
+    await run(conn, `CREATE TABLE IF NOT EXISTS sendlens.lead_lists (
+      workspace_id VARCHAR NOT NULL,
+      id VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      organization_id VARCHAR,
+      name VARCHAR,
+      timestamp_created TIMESTAMP,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, id)
+    )`);
+    await run(conn, `CREATE TABLE IF NOT EXISTS sendlens.lead_labels (
+      workspace_id VARCHAR NOT NULL,
+      id VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'instantly',
+      organization_id VARCHAR,
+      label VARCHAR,
+      interest_status VARCHAR,
+      interest_status_label VARCHAR,
+      description VARCHAR,
+      use_with_ai BOOLEAN,
+      created_by VARCHAR,
+      timestamp_created TIMESTAMP,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, id)
+    )`);
     await stampCacheSchemaVersion(conn);
   });
 }

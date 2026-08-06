@@ -726,6 +726,24 @@ export async function listLeadLists(
   return { items, nextCursor };
 }
 
+export async function listAllLeadLists(
+  apiKey: string,
+  maxPages = 200,
+): Promise<Array<Record<string, unknown>>> {
+  const allLists: Array<Record<string, unknown>> = [];
+  let cursor: string | null = null;
+  const seenCursors = new Set<string>();
+
+  for (let page = 0; page < maxPages; page++) {
+    const { items, nextCursor } = await listLeadLists(apiKey, cursor || undefined);
+    allLists.push(...items);
+    cursor = nextUnseenCursor(nextCursor, seenCursors);
+    if (!cursor) break;
+  }
+
+  return allLists;
+}
+
 export async function listCustomTags(
   apiKey: string,
   cursor?: string,

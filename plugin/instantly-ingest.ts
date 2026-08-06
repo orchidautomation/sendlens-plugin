@@ -1263,6 +1263,78 @@ async function storeCustomTags(
   );
 }
 
+async function storeLeadLists(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  leadLists: Array<Record<string, unknown>>,
+) {
+  await insertRows(
+    conn,
+    "lead_lists",
+    [
+      "workspace_id",
+      "id",
+      "organization_id",
+      "name",
+      "timestamp_created",
+      "synced_at",
+    ],
+    leadLists
+      .filter((list) => String(list.id ?? "").trim())
+      .map(
+        (list) => `(
+          '${esc(workspaceId)}',
+          ${sqlString(list.id)},
+          ${sqlString(list.organization_id ?? list.organization)},
+          ${sqlString(list.name)},
+          ${sqlTimestamp(list.timestamp_created)},
+          CURRENT_TIMESTAMP
+        )`,
+      ),
+  );
+}
+
+async function storeLeadLabels(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  labels: Array<Record<string, unknown>>,
+) {
+  await insertRows(
+    conn,
+    "lead_labels",
+    [
+      "workspace_id",
+      "id",
+      "organization_id",
+      "label",
+      "interest_status",
+      "interest_status_label",
+      "description",
+      "use_with_ai",
+      "created_by",
+      "timestamp_created",
+      "synced_at",
+    ],
+    labels
+      .filter((label) => String(label.id ?? "").trim())
+      .map(
+        (label) => `(
+          '${esc(workspaceId)}',
+          ${sqlString(label.id)},
+          ${sqlString(label.organization_id ?? label.organization)},
+          ${sqlString(label.label)},
+          ${sqlString(label.interest_status)},
+          ${sqlString(label.interest_status_label)},
+          ${sqlString(label.description)},
+          ${/^(true|1)$/i.test(String(label.use_with_ai ?? "")) ? "TRUE" : "FALSE"},
+          ${sqlString(label.created_by)},
+          ${sqlTimestamp(label.timestamp_created)},
+          CURRENT_TIMESTAMP
+        )`,
+      ),
+  );
+}
+
 function stringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value
@@ -4049,10 +4121,12 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
       await storeProviderCapabilities(db, workspaceId, recentActivitySelection);
       const tagsStartedAt = Date.now();
       const inboxPlacementStartedAt = Date.now();
-      const [customTags, customTagMappings, inboxPlacement] = await Promise.all([
+      const [customTags, customTagMappings, inboxPlacement, leadLists, leadLabels] = await Promise.all([
         instantly.listAllCustomTags(apiKey),
         instantly.listAllCustomTagMappings(apiKey),
         loadInboxPlacementData(apiKey),
+        instantly.listAllLeadLists(apiKey),
+        instantly.listAllLeadLabels(apiKey),
       ]);
       await appendTraceLog("refresh.tags", {
         customTags: customTags.length,
@@ -4069,6 +4143,8 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
       });
       await storeWorkspaceAccounts(db, workspaceId, accounts, dailyAccountMetrics, warmup);
       await storeCustomTags(db, workspaceId, customTags, customTagMappings);
+      await storeLeadLists(db, workspaceId, leadLists);
+      await storeLeadLabels(db, workspaceId, leadLabels);
       await storeInboxPlacementData(
         db,
         workspaceId,
