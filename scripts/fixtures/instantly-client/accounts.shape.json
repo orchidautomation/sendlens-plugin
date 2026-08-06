@@ -1,0 +1,26 @@
+{
+  "endpoint": "accounts",
+  "http_status": 200,
+  "shape": {
+    "items": [
+      {
+        "email": "<email>",
+        "timestamp_created": "<str>",
+        "timestamp_updated": "<str>",
+        "first_name": "<str>",
+        "last_name": "<str>",
+        "organization": "<id>",
+        "warmup_status": "num",
+        "provider_code": "num",
+        "setup_pending": "bool",
+        "is_managed_account": "bool",
+        "tracking_domain_name": "<str>",
+        "tracking_domain_status": "<str>",
+        "status": "num",
+        "timestamp_warmup_start": "<str>",
+        "stat_warmup_score": "num"
+      }
+    ],
+    "next_starting_after": "<email>"
+  }
+}

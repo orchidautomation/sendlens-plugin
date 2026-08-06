@@ -1,0 +1,9 @@
+{
+  "endpoint": "accounts-analytics-daily",
+  "http_status": 413,
+  "shape": {
+    "statusCode": "num",
+    "error": "<str>",
+    "message": "<str>"
+  }
+}

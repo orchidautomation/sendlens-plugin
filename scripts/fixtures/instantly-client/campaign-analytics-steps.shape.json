@@ -1,0 +1,19 @@
+{
+  "endpoint": "campaign-analytics-steps",
+  "http_status": 200,
+  "shape": [
+    {
+      "step": "<str>",
+      "variant": "<str>",
+      "sent": "num",
+      "opened": "num",
+      "unique_opened": "num",
+      "replies": "num",
+      "unique_replies": "num",
+      "replies_automatic": "num",
+      "unique_replies_automatic": "num",
+      "clicks": "num",
+      "unique_clicks": "num"
+    }
+  ]
+}

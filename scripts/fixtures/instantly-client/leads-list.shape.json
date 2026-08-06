@@ -1,0 +1,47 @@
+{
+  "endpoint": "leads-list",
+  "http_status": 200,
+  "shape": {
+    "items": [
+      {
+        "id": "<id>",
+        "timestamp_created": "<str>",
+        "timestamp_updated": "<str>",
+        "organization": "<id>",
+        "status": "num",
+        "email_open_count": "num",
+        "email_reply_count": "num",
+        "email_click_count": "num",
+        "company_domain": "<str>",
+        "status_summary": {
+          "lastStep": {
+            "from": "<email>",
+            "stepID": "<str>",
+            "timestamp_executed": "<str>"
+          }
+        },
+        "campaign": "<id>",
+        "email": "<email>",
+        "last_name": "<str>",
+        "first_name": "<str>",
+        "company_name": "<str>",
+        "payload": {
+          "firstName": "<str>",
+          "lastName": "<str>",
+          "companyName": "<str>",
+          "email": "<email>",
+          "content1": "<str>",
+          "content2": "<str>",
+          "content3": "<str>",
+          "subject1": "<str>"
+        },
+        "timestamp_last_contact": "<str>",
+        "upload_method": "<str>",
+        "assigned_to": "<id>",
+        "timestamp_last_touch": "<str>",
+        "esp_code": "num"
+      }
+    ],
+    "next_starting_after": "<id>"
+  }
+}

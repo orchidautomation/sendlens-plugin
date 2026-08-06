@@ -1,0 +1,32 @@
+{
+  "endpoint": "emails",
+  "http_status": 200,
+  "shape": {
+    "items": [
+      {
+        "id": "<id>",
+        "timestamp_created": "<str>",
+        "timestamp_email": "<str>",
+        "message_id": "<email>",
+        "subject": "<str>",
+        "to_address_email_list": "<email>",
+        "body": {
+          "html": "<str>"
+        },
+        "organization_id": "<id>",
+        "eaccount": "<email>",
+        "from_address_email": "<email>",
+        "cc_address_email_list": "<str>",
+        "campaign_id": "<id>",
+        "lead": "<email>",
+        "lead_id": "<id>",
+        "ue_type": "num",
+        "step": "<str>",
+        "is_unread": "num",
+        "is_focused": "num",
+        "thread_id": "<str>"
+      }
+    ],
+    "next_starting_after": "<id>"
+  }
+}

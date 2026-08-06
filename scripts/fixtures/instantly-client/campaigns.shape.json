@@ -1,0 +1,75 @@
+{
+  "endpoint": "campaigns",
+  "http_status": 200,
+  "shape": {
+    "items": [
+      {
+        "id": "<id>",
+        "name": "<str>",
+        "status": "num",
+        "campaign_schedule": {
+          "schedules": [
+            {
+              "name": "<str>",
+              "timing": {
+                "from": "<str>",
+                "to": "<str>"
+              },
+              "days": {
+                "1": "bool",
+                "2": "bool",
+                "3": "bool",
+                "4": "bool",
+                "5": "bool"
+              },
+              "timezone": "<str>"
+            }
+          ],
+          "start_date": "null",
+          "end_date": "null"
+        },
+        "timestamp_created": "<str>",
+        "timestamp_updated": "<str>",
+        "pl_value": "num",
+        "sequences": [
+          {
+            "steps": [
+              {
+                "type": "<str>",
+                "delay": "num",
+                "variants": [
+                  {
+                    "subject": "<str>",
+                    "body": "<str>"
+                  }
+                ],
+                "delay_unit": "<str>",
+                "pre_delay_unit": "<str>"
+              }
+            ]
+          }
+        ],
+        "text_only": "bool",
+        "email_list": [
+          "<email>"
+        ],
+        "daily_limit": "num",
+        "stop_on_reply": "bool",
+        "link_tracking": "bool",
+        "open_tracking": "bool",
+        "core_variables": {
+          "lastName": "bool",
+          "firstName": "bool",
+          "companyName": "bool"
+        },
+        "custom_variables": {
+          "URL": "bool",
+          "ImageURL": "bool",
+          "<label_key>": "bool"
+        },
+        "organization": "<id>"
+      }
+    ],
+    "next_starting_after": "<id>"
+  }
+}

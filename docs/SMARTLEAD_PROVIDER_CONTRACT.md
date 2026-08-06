@@ -1,9 +1,8 @@
 # Smartlead V1 Provider Contract
 
-Date checked: 2026-07-11
+Date checked: 2026-08-05 (SENDOSS-163 pass)
 
-Status: implemented V1 contract with official-document and synthetic-fixture
-validation. Live customer-shape validation remains deferred.
+Status: beta / live-untested for live customer-shape validation. This V1 contract is official-document and synthetic-fixture validated only. SENDOSS-163 validated Instantly live; Smartlead live validation is deferred until a Smartlead key is available, so Smartlead read surfaces are recorded as `blocked / live-validation-pending`, not healthy.
 
 This document converts `docs/SMARTLEAD_API_PARITY_MAP.md` into the read-only
 Smartlead V1 provider contract for SendLens OSS. It is based on public

@@ -1,0 +1,20 @@
+{
+  "endpoint": "lead-labels",
+  "http_status": 200,
+  "shape": {
+    "items": [
+      {
+        "id": "<id>",
+        "timestamp_created": "<str>",
+        "created_by": "<id>",
+        "organization_id": "<id>",
+        "label": "<str>",
+        "interest_status_label": "<str>",
+        "interest_status": "num",
+        "description": "<str>",
+        "use_with_ai": "bool"
+      }
+    ],
+    "next_starting_after": "<str>"
+  }
+}
