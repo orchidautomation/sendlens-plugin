@@ -1,0 +1,17 @@
+{
+  "endpoint": "custom-tags",
+  "http_status": 200,
+  "shape": {
+    "items": [
+      {
+        "id": "<id>",
+        "timestamp_created": "<str>",
+        "timestamp_updated": "<str>",
+        "organization_id": "<id>",
+        "label": "<str>",
+        "description": "<str>"
+      }
+    ],
+    "next_starting_after": "<id>"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "endpoint": "custom-tag-mappings",
+  "http_status": 200,
+  "shape": {
+    "items": [
+      {
+        "id": "<id>",
+        "tag_id": "<id>",
+        "resource_id": "<id>",
+        "resource_type": "num",
+        "timestamp_created": "<str>",
+        "organization_id": "<id>"
+      }
+    ],
+    "next_starting_after": "<str>"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "endpoint": "inbox-placement-tests",
+  "http_status": 200,
+  "shape": {
+    "items": []
+  }
+}

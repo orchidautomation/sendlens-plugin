@@ -1,0 +1,15 @@
+{
+  "endpoint": "lead-lists",
+  "http_status": 200,
+  "shape": {
+    "items": [
+      {
+        "id": "<id>",
+        "organization_id": "<id>",
+        "name": "<str>",
+        "timestamp_created": "<str>"
+      }
+    ],
+    "next_starting_after": "<str>"
+  }
+}

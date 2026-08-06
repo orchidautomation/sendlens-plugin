@@ -1,0 +1,279 @@
+{
+  "provider": "instantly",
+  "generated_at": "<date>",
+  "smartlead": "beta/live-untested",
+  "endpoints": [
+    {
+      "name": "campaigns",
+      "http_status": 200,
+      "envelope_keys": [
+        "items",
+        "next_starting_after"
+      ],
+      "item_keys": [
+        "id",
+        "name",
+        "status",
+        "campaign_schedule",
+        "timestamp_created",
+        "timestamp_updated",
+        "pl_value",
+        "sequences",
+        "text_only",
+        "email_list",
+        "daily_limit",
+        "stop_on_reply",
+        "link_tracking",
+        "open_tracking",
+        "core_variables",
+        "custom_variables",
+        "organization"
+      ],
+      "state": "answerable"
+    },
+    {
+      "name": "accounts",
+      "http_status": 200,
+      "envelope_keys": [
+        "items",
+        "next_starting_after"
+      ],
+      "item_keys": [
+        "email",
+        "timestamp_created",
+        "timestamp_updated",
+        "first_name",
+        "last_name",
+        "organization",
+        "warmup_status",
+        "provider_code",
+        "setup_pending",
+        "is_managed_account",
+        "tracking_domain_name",
+        "tracking_domain_status",
+        "status",
+        "timestamp_warmup_start",
+        "stat_warmup_score"
+      ],
+      "state": "answerable"
+    },
+    {
+      "name": "subsequences",
+      "http_status": 200,
+      "envelope_keys": [
+        "items"
+      ],
+      "item_keys": [],
+      "state": "answerable"
+    },
+    {
+      "name": "campaign-analytics",
+      "http_status": 200,
+      "envelope_keys": [
+        "<array>"
+      ],
+      "item_keys": [],
+      "state": "answerable"
+    },
+    {
+      "name": "lead-lists",
+      "http_status": 200,
+      "envelope_keys": [
+        "items",
+        "next_starting_after"
+      ],
+      "item_keys": [
+        "id",
+        "organization_id",
+        "name",
+        "timestamp_created"
+      ],
+      "state": "answerable"
+    },
+    {
+      "name": "custom-tags",
+      "http_status": 200,
+      "envelope_keys": [
+        "items",
+        "next_starting_after"
+      ],
+      "item_keys": [
+        "id",
+        "timestamp_created",
+        "timestamp_updated",
+        "organization_id",
+        "label",
+        "description"
+      ],
+      "state": "answerable"
+    },
+    {
+      "name": "emails",
+      "http_status": 200,
+      "envelope_keys": [
+        "items",
+        "next_starting_after"
+      ],
+      "item_keys": [
+        "id",
+        "timestamp_created",
+        "timestamp_email",
+        "message_id",
+        "subject",
+        "to_address_email_list",
+        "body",
+        "organization_id",
+        "eaccount",
+        "from_address_email",
+        "cc_address_email_list",
+        "campaign_id",
+        "lead",
+        "lead_id",
+        "ue_type",
+        "step",
+        "is_unread",
+        "is_focused",
+        "thread_id"
+      ],
+      "state": "answerable"
+    },
+    {
+      "name": "lead-labels",
+      "http_status": 200,
+      "envelope_keys": [
+        "items",
+        "next_starting_after"
+      ],
+      "item_keys": [
+        "id",
+        "timestamp_created",
+        "created_by",
+        "organization_id",
+        "label",
+        "interest_status_label",
+        "interest_status",
+        "description",
+        "use_with_ai"
+      ],
+      "state": "answerable"
+    },
+    {
+      "name": "custom-tag-mappings",
+      "http_status": 200,
+      "envelope_keys": [
+        "items",
+        "next_starting_after"
+      ],
+      "item_keys": [
+        "id",
+        "tag_id",
+        "resource_id",
+        "resource_type",
+        "timestamp_created",
+        "organization_id"
+      ],
+      "state": "answerable"
+    },
+    {
+      "name": "inbox-placement-tests",
+      "http_status": 200,
+      "envelope_keys": [
+        "items"
+      ],
+      "item_keys": [],
+      "state": "answerable"
+    },
+    {
+      "name": "campaign-details",
+      "http_status": 200,
+      "envelope_keys": [
+        "id",
+        "name",
+        "status",
+        "campaign_schedule",
+        "timestamp_created",
+        "timestamp_updated",
+        "pl_value",
+        "sequences",
+        "text_only",
+        "email_list",
+        "daily_limit",
+        "stop_on_reply",
+        "link_tracking",
+        "open_tracking",
+        "core_variables",
+        "custom_variables",
+        "organization"
+      ],
+      "item_keys": [],
+      "state": "answerable"
+    },
+    {
+      "name": "campaign-analytics-steps",
+      "http_status": 200,
+      "envelope_keys": [
+        "<array>"
+      ],
+      "item_keys": [],
+      "state": "answerable"
+    },
+    {
+      "name": "campaign-analytics-daily",
+      "http_status": 200,
+      "envelope_keys": [
+        "<array>"
+      ],
+      "item_keys": [],
+      "state": "answerable"
+    },
+    {
+      "name": "accounts-analytics-daily",
+      "http_status": 413,
+      "envelope_keys": [],
+      "item_keys": [],
+      "state": "blocked"
+    },
+    {
+      "name": "leads-list",
+      "http_status": 200,
+      "envelope_keys": [
+        "items",
+        "next_starting_after"
+      ],
+      "item_keys": [
+        "id",
+        "timestamp_created",
+        "timestamp_updated",
+        "organization",
+        "status",
+        "email_open_count",
+        "email_reply_count",
+        "email_click_count",
+        "company_domain",
+        "status_summary",
+        "campaign",
+        "email",
+        "last_name",
+        "first_name",
+        "company_name",
+        "payload",
+        "timestamp_last_contact",
+        "upload_method",
+        "assigned_to",
+        "timestamp_last_touch",
+        "esp_code"
+      ],
+      "state": "answerable"
+    },
+    {
+      "name": "accounts-warmup-analytics",
+      "http_status": 200,
+      "envelope_keys": [
+        "email_date_data",
+        "aggregate_data"
+      ],
+      "item_keys": [],
+      "state": "answerable"
+    }
+  ]
+}

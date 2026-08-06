@@ -1,0 +1,22 @@
+{
+  "endpoint": "campaign-analytics-daily",
+  "http_status": 200,
+  "shape": [
+    {
+      "date": "<date>",
+      "sent": "num",
+      "contacted": "num",
+      "new_leads_contacted": "num",
+      "opened": "num",
+      "unique_opened": "num",
+      "replies": "num",
+      "unique_replies": "num",
+      "replies_automatic": "num",
+      "unique_replies_automatic": "num",
+      "clicks": "num",
+      "unique_clicks": "num",
+      "opportunities": "num",
+      "unique_opportunities": "num"
+    }
+  ]
+}

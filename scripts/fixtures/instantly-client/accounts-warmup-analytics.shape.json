@@ -1,0 +1,24 @@
+{
+  "endpoint": "accounts-warmup-analytics",
+  "http_status": 200,
+  "shape": {
+    "email_date_data": {
+      "<email_key>": {
+        "<date_key>": {
+          "sent": "num",
+          "landed_inbox": "num",
+          "received": "num"
+        }
+      }
+    },
+    "aggregate_data": {
+      "<email_key>": {
+        "sent": "num",
+        "received": "num",
+        "landed_inbox": "num",
+        "health_score_label": "<str>",
+        "health_score": "num"
+      }
+    }
+  }
+}

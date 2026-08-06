@@ -1,0 +1,33 @@
+{
+  "endpoint": "campaign-analytics",
+  "http_status": 200,
+  "shape": [
+    {
+      "campaign_name": "<str>",
+      "campaign_id": "<id>",
+      "campaign_status": "num",
+      "campaign_is_evergreen": "bool",
+      "leads_count": "num",
+      "contacted_count": "num",
+      "emails_sent_count": "num",
+      "new_leads_contacted_count": "num",
+      "open_count": "num",
+      "reply_count": "num",
+      "link_click_count": "num",
+      "bounced_count": "num",
+      "unsubscribed_count": "num",
+      "completed_count": "num",
+      "total_opportunities": "num",
+      "total_opportunity_value": "num",
+      "open_count_unique": "num",
+      "open_count_unique_by_step": "num",
+      "reply_count_unique": "num",
+      "reply_count_unique_by_step": "num",
+      "reply_count_automatic": "num",
+      "reply_count_automatic_unique": "num",
+      "reply_count_automatic_unique_by_step": "num",
+      "link_click_count_unique": "num",
+      "link_click_count_unique_by_step": "num"
+    }
+  ]
+}

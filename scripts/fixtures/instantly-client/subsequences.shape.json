@@ -1,0 +1,7 @@
+{
+  "endpoint": "subsequences",
+  "http_status": 200,
+  "shape": {
+    "items": []
+  }
+}
