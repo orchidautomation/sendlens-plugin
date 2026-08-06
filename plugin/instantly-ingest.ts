@@ -1274,6 +1274,7 @@ async function storeLeadLists(
     [
       "workspace_id",
       "id",
+      "source_provider",
       "organization_id",
       "name",
       "timestamp_created",
@@ -1285,6 +1286,7 @@ async function storeLeadLists(
         (list) => `(
           '${esc(workspaceId)}',
           ${sqlString(list.id)},
+          'instantly',
           ${sqlString(list.organization_id ?? list.organization)},
           ${sqlString(list.name)},
           ${sqlTimestamp(list.timestamp_created)},
@@ -1305,6 +1307,7 @@ async function storeLeadLabels(
     [
       "workspace_id",
       "id",
+      "source_provider",
       "organization_id",
       "label",
       "interest_status",
@@ -1321,6 +1324,7 @@ async function storeLeadLabels(
         (label) => `(
           '${esc(workspaceId)}',
           ${sqlString(label.id)},
+          'instantly',
           ${sqlString(label.organization_id ?? label.organization)},
           ${sqlString(label.label)},
           ${sqlString(label.interest_status)},
@@ -4131,6 +4135,11 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
       await appendTraceLog("refresh.tags", {
         customTags: customTags.length,
         customTagMappings: customTagMappings.length,
+        elapsedMs: Date.now() - tagsStartedAt,
+      });
+      await appendTraceLog("refresh.lead_taxonomy", {
+        leadLists: leadLists.length,
+        leadLabels: leadLabels.length,
         elapsedMs: Date.now() - tagsStartedAt,
       });
       await appendTraceLog("refresh.inbox_placement", {

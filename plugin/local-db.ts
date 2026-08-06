@@ -874,7 +874,7 @@ async function ensureSchema(conn: DuckDBConnection) {
       name VARCHAR,
       timestamp_created TIMESTAMP,
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (workspace_id, id)
+      PRIMARY KEY (workspace_id, source_provider, id)
     )`,
     `CREATE TABLE IF NOT EXISTS sendlens.lead_labels (
       workspace_id VARCHAR NOT NULL,
@@ -889,7 +889,7 @@ async function ensureSchema(conn: DuckDBConnection) {
       created_by VARCHAR,
       timestamp_created TIMESTAMP,
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (workspace_id, id)
+      PRIMARY KEY (workspace_id, source_provider, id)
     )`,
     `CREATE TABLE IF NOT EXISTS sendlens.inbox_placement_tests (
       workspace_id VARCHAR NOT NULL,
@@ -2786,7 +2786,7 @@ async function ensureSchema(conn: DuckDBConnection) {
       name VARCHAR,
       timestamp_created TIMESTAMP,
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (workspace_id, id)
+      PRIMARY KEY (workspace_id, source_provider, id)
     )`);
     await run(conn, `CREATE TABLE IF NOT EXISTS sendlens.lead_labels (
       workspace_id VARCHAR NOT NULL,
@@ -2801,7 +2801,7 @@ async function ensureSchema(conn: DuckDBConnection) {
       created_by VARCHAR,
       timestamp_created TIMESTAMP,
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (workspace_id, id)
+      PRIMARY KEY (workspace_id, source_provider, id)
     )`);
     await stampCacheSchemaVersion(conn);
   });
