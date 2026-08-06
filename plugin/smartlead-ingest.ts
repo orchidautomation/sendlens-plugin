@@ -2127,8 +2127,11 @@ async function storeSmartleadCampaignPerformance(
     const parsed = Number(value);
     return Number.isFinite(parsed) ? String(parsed) : "NULL";
   };
-  const has = (value: unknown): boolean =>
-    value != null && Number.isFinite(Number(value));
+  const has = (value: unknown): boolean => {
+    if (value == null) return false;
+    if (typeof value === "string" && value.trim() === "") return false;
+    return Number.isFinite(Number(value));
+  };
   // Preserve NULLs for missing metrics so doc-shape gaps are not presented as real zeros.
   // Only derive delivered/client_health when their required inputs are present.
   const sent = has(match.sent) ? Number(match.sent) : null;
