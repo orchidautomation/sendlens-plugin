@@ -2124,6 +2124,7 @@ async function storeSmartleadCampaignPerformance(
   const match =
     rows.find((entry) => String(entry?.id ?? "") === String(campaignId)) ?? rows[0] ?? {};
   const numOrNull = (value: unknown): string => {
+    if (value == null) return "NULL";
     if (typeof value === "string" && value.trim() === "") return "NULL";
     const parsed = Number(value);
     return Number.isFinite(parsed) ? String(parsed) : "NULL";
