@@ -132,6 +132,21 @@ await withTempDb("sendlens-schema-fresh-", async () => {
        WHERE table_schema = 'sendlens' AND table_name = 'campaigns'`,
     );
     assert.equal(tables.length, 1, "fresh DB must create the current schema");
+
+    const perfColumns = await query(
+      db,
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'sendlens' AND table_name = 'smartlead_campaign_performance'`,
+    );
+    assert.ok(
+      perfColumns.some((row) => row.column_name === "source_provider"),
+      "smartlead_campaign_performance must exist with a provider-qualified source_provider column",
+    );
+    assert.ok(
+      perfColumns.some((row) => row.column_name === "campaign_id"),
+      "smartlead_campaign_performance must keep a campaign_id column",
+    );
   } finally {
     closeDb(db);
   }

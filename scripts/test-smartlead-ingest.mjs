@@ -131,6 +131,10 @@ const fakeClient = {
       positive_replies: 2,
     };
   },
+  async getCampaignPerformanceStats(opts) {
+    const id = opts?.campaignIds?.[0] ?? "101";
+    return { data: { campaign_wise_performance: [{ id: Number(id), sent: 120, opened: 60, replied: 12, bounced: 4, positive_replied: 5, unique_lead_count: 90, unique_open_count: 50, delivered: 116 }] } };
+  },
   async getCampaignAnalyticsByDate(campaignId, options) {
     assert.equal(String(campaignId), "101");
     assert.equal(options.timezone, "America/New_York");
@@ -513,6 +517,24 @@ assert.match(String(leadEvidence[0].custom_payload), /"persona":"VP Operations"/
 assert.match(String(leadEvidence[0].custom_payload), /"segment":"Enterprise Healthcare"/);
 assert.match(String(leadEvidence[0].custom_payload), /"smartlead_native_location":"Custom reserved-looking field"/);
 assert.match(String(leadEvidence[0].custom_payload), /"smartlead_native_location_2":"San Francisco, CA"/);
+
+const performanceRows = await query(
+  db,
+  `SELECT campaign_id, sent_count, delivered_count, open_count, unique_open_count,
+          reply_count, positive_replied, unique_lead_count, client_health
+   FROM sendlens.smartlead_campaign_performance
+   WHERE workspace_id = '501' AND source_provider = 'smartlead' AND campaign_id = '101'`,
+);
+assert.equal(performanceRows.length, 1);
+assert.equal(performanceRows[0].campaign_id, "101");
+assert.equal(Number(performanceRows[0].sent_count), 120);
+assert.equal(Number(performanceRows[0].delivered_count), 116);
+assert.equal(Number(performanceRows[0].open_count), 60);
+assert.equal(Number(performanceRows[0].unique_open_count), 50);
+assert.equal(Number(performanceRows[0].reply_count), 12);
+assert.equal(Number(performanceRows[0].positive_replied), 5);
+assert.equal(Number(performanceRows[0].unique_lead_count), 90);
+assert.ok(Number(performanceRows[0].client_health) > 0);
 
 const replyContext = await query(
   db,
@@ -944,6 +966,10 @@ function regressionClient({ includeTags }) {
         bounce_count: stats.reduce((sum, row) => sum + row.bounced, 0),
       };
     },
+    async getCampaignPerformanceStats(opts) {
+      const id = opts?.campaignIds?.[0];
+      return { data: { campaign_wise_performance: [{ id: id != null ? Number(id) : 0, sent: 120, opened: 60, replied: 12, bounced: 4, positive_replied: 5, unique_lead_count: 90, unique_open_count: 50, delivered: 116 }] } };
+    },
     async getCampaignAnalyticsByDate(campaignId) {
       const totals = regressionMailboxStats[campaignId].reduce(
         (sum, row) => ({
@@ -1246,6 +1272,10 @@ await refreshSmartleadWorkspace({
         sent_count: overLimitLeads.length,
         reply_count: overLimitLeads.length,
       };
+    },
+    async getCampaignPerformanceStats(opts) {
+      const id = opts?.campaignIds?.[0];
+      return { data: { campaign_wise_performance: [{ id: id != null ? Number(id) : 0, sent: 120, opened: 60, replied: 12, bounced: 4, positive_replied: 5, unique_lead_count: 90, unique_open_count: 50, delivered: 116 }] } };
     },
     async getCampaignAnalyticsByDate(campaignId) {
       assert.equal(String(campaignId), "201");

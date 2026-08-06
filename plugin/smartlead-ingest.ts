@@ -59,6 +59,7 @@ type SmartleadIngestClient = Pick<
   | "listAllEmailAccounts"
   | "getEmailAccountWarmupStats"
   | "listAllCampaignLeads"
+  | "getCampaignPerformanceStats"
 > & Partial<Pick<SmartleadClient, "getMessageHistory" | "getBulkMessageHistory">>;
 
 type SmartleadDeliveryIngestClient = Pick<
@@ -109,6 +110,10 @@ type CampaignBundle = {
   messageHistory: SmartleadMessageHistoryHydration;
   campaignAccounts: SmartleadRow[];
   mailboxStats: SmartleadRow[];
+  performance: SmartleadRow;
+  dateStart: string;
+  dateEnd: string;
+  perfTimezone: string | null;
 };
 
 type CampaignVariantTemplate = {
@@ -2092,6 +2097,77 @@ async function storeCampaignDirectory(
   );
 }
 
+async function storeSmartleadCampaignPerformance(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  campaignId: string | null,
+  performance: Record<string, unknown> | null,
+  dateStart: string,
+  dateEnd: string,
+  timezone: string | null,
+) {
+  if (!campaignId) return;
+  // Smartlead campaign-performance (GET /analytics/campaign/overall-stats) is wrapped as
+  // { ok, data: { campaign_wise_performance: [...] } }. Shape is doc-derived (beta/live-untested);
+  // unwrap and select the entry for this campaign, tolerating missing fields.
+  const body = (performance ?? {}) as Record<string, unknown>;
+  const container = (body.data ?? body) as Record<string, unknown>;
+  const rows: Array<Record<string, unknown>> = Array.isArray(container)
+    ? container
+    : Array.isArray((container as Record<string, unknown>).campaign_wise_performance)
+      ? ((container as Record<string, unknown>).campaign_wise_performance as Array<Record<string, unknown>>)
+      : Array.isArray(body.campaign_wise_performance)
+        ? (body.campaign_wise_performance as Array<Record<string, unknown>>)
+        : Array.isArray(body)
+          ? (body as Array<Record<string, unknown>>)
+          : [];
+  const match =
+    rows.find((entry) => String(entry?.id ?? "") === String(campaignId)) ?? rows[0] ?? {};
+  const numOrNull = (value: unknown): string => {
+    if (value == null) return "NULL";
+    if (typeof value === "string" && value.trim() === "") return "NULL";
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? String(parsed) : "NULL";
+  };
+  const has = (value: unknown): boolean => {
+    if (value == null) return false;
+    if (typeof value === "string" && value.trim() === "") return false;
+    return Number.isFinite(Number(value));
+  };
+  // Preserve NULLs for missing metrics so doc-shape gaps are not presented as real zeros.
+  // Only derive delivered/client_health when their required inputs are present.
+  const sent = has(match.sent) ? Number(match.sent) : null;
+  const bounced = has(match.bounced) ? Number(match.bounced) : null;
+  const delivered = has(match.delivered)
+    ? Number(match.delivered)
+    : sent != null && bounced != null
+      ? sent - bounced
+      : null;
+  const uniqueLeadCount = has(match.unique_lead_count) ? Number(match.unique_lead_count) : null;
+  const positiveReplied = has(match.positive_replied) ? Number(match.positive_replied) : null;
+  const clientHealth =
+    positiveReplied != null && uniqueLeadCount != null && uniqueLeadCount !== 0
+      ? positiveReplied / uniqueLeadCount
+      : null;
+  await run(
+    conn,
+    `INSERT OR REPLACE INTO sendlens.smartlead_campaign_performance
+     (workspace_id, source_provider, campaign_id, date_start, date_end, timezone,
+      sent_count, delivered_count, open_count, unique_open_count, reply_count,
+      positive_replied, unique_lead_count, total_positive_response, client_health, synced_at)
+     VALUES (
+      '${esc(workspaceId)}', 'smartlead', ${sqlString(campaignId)},
+      ${sqlString(dateStart)}, ${sqlString(dateEnd)}, ${sqlString(timezone ?? "")},
+      ${numOrNull(sent)}, ${numOrNull(delivered)},
+      ${numOrNull(match.opened)}, ${numOrNull(match.unique_open_count)}, ${numOrNull(match.replied)},
+      ${numOrNull(positiveReplied)}, ${numOrNull(uniqueLeadCount)},
+      ${numOrNull(match.total_positive_response)},
+      ${clientHealth == null ? "NULL" : String(clientHealth)},
+      CURRENT_TIMESTAMP
+     )`,
+  );
+}
+
 async function storeCampaignFacts(
   conn: DuckDBConnection,
   workspaceId: string,
@@ -2639,13 +2715,15 @@ async function fetchCampaignBundle(
   if (!nativeId) throw new Error("Smartlead campaign row is missing id.");
   const detail = { ...campaign, ...asRecord(await client.getCampaign(nativeId)) };
   const timezone = campaignTimezone(detail);
-  const [sequences, analytics, dailyPayload, statisticsRows, campaignAccounts, leadPayload, mailboxStats] =
+  const rangeStart = startDate();
+  const rangeEnd = endDate();
+  const [sequences, analytics, dailyPayload, statisticsRows, campaignAccounts, leadPayload, mailboxStats, performance] =
     await Promise.all([
       client.getCampaignSequences(nativeId),
       client.getCampaignAnalytics(nativeId),
       client.getCampaignAnalyticsByDate(nativeId, {
-        startDate: startDate(),
-        endDate: endDate(),
+        startDate: rangeStart,
+        endDate: rangeEnd,
         timezone: timezone ?? undefined,
       }),
       client.listAllCampaignStatistics(nativeId, { limit: 1000 }),
@@ -2653,9 +2731,15 @@ async function fetchCampaignBundle(
       client.listAllCampaignLeads(nativeId, { limit: 100 }),
       client.listAllCampaignMailboxStatistics(nativeId, {
         limit: 20,
-        startDate: startDate(),
-        endDate: endDate(),
+        startDate: rangeStart,
+        endDate: rangeEnd,
         timezone: timezone ?? undefined,
+      }),
+      client.getCampaignPerformanceStats({
+        startDate: rangeStart,
+        endDate: rangeEnd,
+        timezone: timezone ?? undefined,
+        campaignIds: [nativeId],
       }),
     ]);
   const leads = arrayFrom(leadPayload);
@@ -2672,6 +2756,10 @@ async function fetchCampaignBundle(
     leads,
     messageHistory,
     mailboxStats: arrayFrom(mailboxStats),
+    performance: asRecord(performance),
+    dateStart: rangeStart,
+    dateEnd: rangeEnd,
+    perfTimezone: timezone,
   };
 }
 
@@ -2858,6 +2946,15 @@ async function refreshSmartleadWorkspaceWithProviderMode(options: SmartleadRefre
     await storeCampaignDirectory(db, workspaceId, bundles);
     for (const bundle of bundles) {
       await storeCampaignFacts(db, workspaceId, bundle);
+      await storeSmartleadCampaignPerformance(
+        db,
+        workspaceId,
+        providerCampaignId(bundle.directory),
+        bundle.performance,
+        bundle.dateStart,
+        bundle.dateEnd,
+        bundle.perfTimezone,
+      );
     }
 
     await setActiveWorkspaceId(db, workspaceId, mode);

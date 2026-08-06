@@ -748,6 +748,10 @@ try {
       recordSmartleadProviderCall("getEmailAccountWarmupStats");
       return {};
     },
+    async getCampaignPerformanceStats() {
+      recordSmartleadProviderCall("getCampaignPerformanceStats");
+      return {};
+    },
   };
 
   process.env.SENDLENS_CLIENT = "sendoso";

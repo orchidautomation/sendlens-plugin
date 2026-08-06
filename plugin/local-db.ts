@@ -37,8 +37,9 @@ export const PREVIOUS_SCHEMA_MIGRATION_IDS = [
   "202607170001_tag_semantic_aliases",
   "202607200001_lead_metadata_semantics",
   "202607230001_recent_campaign_activity",
+  "202608050001_lead_list_label_surfaces",
 ] as const;
-export const CURRENT_SCHEMA_MIGRATION_ID = "202608050001_lead_list_label_surfaces";
+export const CURRENT_SCHEMA_MIGRATION_ID = "202608060001_smartlead_campaign_performance";
 const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
 const cacheProviderModeContext = new AsyncLocalStorage<SourceProviderMode>();
 
@@ -890,6 +891,25 @@ async function ensureSchema(conn: DuckDBConnection) {
       timestamp_created TIMESTAMP,
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (workspace_id, source_provider, id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.smartlead_campaign_performance (
+      workspace_id VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'smartlead',
+      campaign_id VARCHAR NOT NULL,
+      date_start VARCHAR,
+      date_end VARCHAR,
+      timezone VARCHAR,
+      sent_count INTEGER,
+      delivered_count INTEGER,
+      open_count INTEGER,
+      unique_open_count INTEGER,
+      reply_count INTEGER,
+      positive_replied INTEGER,
+      unique_lead_count INTEGER,
+      total_positive_response INTEGER,
+      client_health DOUBLE,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, source_provider, campaign_id, date_start, date_end)
     )`,
     `CREATE TABLE IF NOT EXISTS sendlens.inbox_placement_tests (
       workspace_id VARCHAR NOT NULL,
@@ -2802,6 +2822,25 @@ async function ensureSchema(conn: DuckDBConnection) {
       timestamp_created TIMESTAMP,
       synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (workspace_id, source_provider, id)
+    )`);
+    await run(conn, `CREATE TABLE IF NOT EXISTS sendlens.smartlead_campaign_performance (
+      workspace_id VARCHAR NOT NULL,
+      source_provider VARCHAR DEFAULT 'smartlead',
+      campaign_id VARCHAR NOT NULL,
+      date_start VARCHAR,
+      date_end VARCHAR,
+      timezone VARCHAR,
+      sent_count INTEGER,
+      delivered_count INTEGER,
+      open_count INTEGER,
+      unique_open_count INTEGER,
+      reply_count INTEGER,
+      positive_replied INTEGER,
+      unique_lead_count INTEGER,
+      total_positive_response INTEGER,
+      client_health DOUBLE,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, source_provider, campaign_id, date_start, date_end)
     )`);
     await stampCacheSchemaVersion(conn);
   });
