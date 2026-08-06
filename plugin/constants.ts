@@ -37,6 +37,8 @@ export const PUBLIC_TABLES = [
   "account_daily_metrics",
   "custom_tags",
   "custom_tag_mappings",
+  "lead_lists",
+  "lead_labels",
   "campaign_tags",
   "account_tags",
   "tag_scope_audit",
@@ -98,6 +100,10 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Exact provider custom tag definitions available for filtering local analysis.",
   custom_tag_mappings:
     "Exact provider custom tag assignments across tagged resources such as campaigns or accounts.",
+  lead_lists:
+    "Exact provider lead-list definitions available for campaign audience scoping and exclusion analysis.",
+  lead_labels:
+    "Exact provider lead-label taxonomy with interest status for lead-state and ICP filtering.",
   campaign_tags:
     "Convenience view joining campaign tag mappings to campaign names for exact tag-based filtering; tag_label is retained and campaign_tag_label is the explicit campaign-tag alias.",
   account_tags:

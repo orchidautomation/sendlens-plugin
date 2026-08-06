@@ -196,6 +196,22 @@ async function seedTagsAndAccounts(db: Awaited<ReturnType<typeof getDb>>) {
   );
   await run(
     db,
+    `INSERT OR REPLACE INTO sendlens.lead_lists
+     (workspace_id, id, source_provider, organization_id, name, timestamp_created, synced_at)
+     VALUES
+     ('${DEMO_WORKSPACE_ID}', 'demo-list-icp', 'instantly', 'demo_org', 'ICP Warm Leads', TIMESTAMP '2026-05-01 00:00:00', CURRENT_TIMESTAMP),
+     ('${DEMO_WORKSPACE_ID}', 'demo-list-exclude', 'instantly', 'demo_org', 'Do Not Contact', TIMESTAMP '2026-05-02 00:00:00', CURRENT_TIMESTAMP)`,
+  );
+  await run(
+    db,
+    `INSERT OR REPLACE INTO sendlens.lead_labels
+     (workspace_id, id, source_provider, organization_id, label, interest_status, interest_status_label, description, use_with_ai, created_by, timestamp_created, synced_at)
+     VALUES
+     ('${DEMO_WORKSPACE_ID}', 'demo-label-engaged', 'instantly', 'demo_org', 'Engaged', 'interested', 'Interested', 'Synthetic engaged lead label for demo analysis.', TRUE, 'demo-operator', TIMESTAMP '2026-05-01 00:00:00', CURRENT_TIMESTAMP),
+     ('${DEMO_WORKSPACE_ID}', 'demo-label-oop', 'instantly', 'demo_org', 'Out of Office', 'ooo', 'Out of Office', 'Synthetic out-of-office label for demo reply triage.', FALSE, 'demo-operator', TIMESTAMP '2026-05-03 00:00:00', CURRENT_TIMESTAMP)`,
+  );
+  await run(
+    db,
     `INSERT OR REPLACE INTO sendlens.accounts
      (workspace_id, email, organization_id, status, warmup_status, warmup_score, provider, daily_limit, sending_gap, first_name, last_name, total_sent_30d, total_replies_30d, total_bounces_30d, synced_at)
      VALUES

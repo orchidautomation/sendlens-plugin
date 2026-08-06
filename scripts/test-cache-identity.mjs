@@ -174,6 +174,8 @@ function installSuccessfulRefresh(
   };
   instantly.listAllInboxPlacementTests = async () => [];
   instantly.listAllInboxPlacementAnalyticsForTest = async () => [];
+  instantly.listAllLeadLists = async () => [];
+  instantly.listAllLeadLabels = async () => [];
   instantly.getCampaignDetails = async () => ({
     id: campaignId,
     name: campaignName,
