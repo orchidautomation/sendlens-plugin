@@ -2107,15 +2107,32 @@ async function storeSmartleadCampaignPerformance(
   timezone: string | null,
 ) {
   if (!campaignId) return;
-  const row = performance ?? {};
-  // Smartlead campaign-performance shape is doc-derived (beta/live-untested);
-  // tolerate missing fields by defaulting to NULL.
-  const pick = (key: string) => {
-    const value = row[key];
-    if (value === undefined || value === null) return "NULL";
-    const num = Number(value);
-    return Number.isFinite(num) ? String(num) : "NULL";
+  // Smartlead campaign-performance (GET /analytics/campaign/overall-stats) is wrapped as
+  // { ok, data: { campaign_wise_performance: [...] } }. Shape is doc-derived (beta/live-untested);
+  // unwrap and select the entry for this campaign, tolerating missing fields.
+  const body = (performance ?? {}) as Record<string, unknown>;
+  const container = (body.data ?? body) as Record<string, unknown>;
+  const rows: Array<Record<string, unknown>> = Array.isArray(container)
+    ? container
+    : Array.isArray((container as Record<string, unknown>).campaign_wise_performance)
+      ? ((container as Record<string, unknown>).campaign_wise_performance as Array<Record<string, unknown>>)
+      : Array.isArray(body.campaign_wise_performance)
+        ? (body.campaign_wise_performance as Array<Record<string, unknown>>)
+        : Array.isArray(body)
+          ? (body as Array<Record<string, unknown>>)
+          : [];
+  const match =
+    rows.find((entry) => String(entry?.id ?? "") === String(campaignId)) ?? rows[0] ?? {};
+  const num = (value: unknown): string => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? String(parsed) : "NULL";
   };
+  const sent = Number(match.sent) || 0;
+  const bounced = Number(match.bounced) || 0;
+  const delivered = match.delivered != null ? Number(match.delivered) : sent - bounced;
+  const uniqueLeadCount = Number(match.unique_lead_count) || 0;
+  const positiveReplied = Number(match.positive_replied) || 0;
+  const clientHealth = uniqueLeadCount > 0 ? positiveReplied / uniqueLeadCount : null;
   await run(
     conn,
     `INSERT OR REPLACE INTO sendlens.smartlead_campaign_performance
@@ -2125,10 +2142,11 @@ async function storeSmartleadCampaignPerformance(
      VALUES (
       '${esc(workspaceId)}', 'smartlead', ${sqlString(campaignId)},
       ${sqlString(dateStart)}, ${sqlString(dateEnd)}, ${sqlString(timezone ?? "")},
-      ${pick("sent_count") ?? "NULL"}, ${pick("delivered_count") ?? "NULL"}, ${pick("open_count") ?? "NULL"},
-      ${pick("unique_open_count") ?? "NULL"}, ${pick("reply_count") ?? "NULL"},
-      ${pick("positive_replied") ?? "NULL"}, ${pick("unique_lead_count") ?? "NULL"},
-      ${pick("total_positive_response") ?? "NULL"}, ${pick("client_health") ?? "NULL"},
+      ${num(sent)}, ${num(Number.isFinite(delivered) ? delivered : null)},
+      ${num(match.opened)}, ${num(match.unique_open_count)}, ${num(match.replied)},
+      ${num(positiveReplied)}, ${num(uniqueLeadCount)},
+      ${num(match.total_positive_response)},
+      ${clientHealth == null ? "NULL" : String(clientHealth)},
       CURRENT_TIMESTAMP
      )`,
   );
@@ -2681,13 +2699,15 @@ async function fetchCampaignBundle(
   if (!nativeId) throw new Error("Smartlead campaign row is missing id.");
   const detail = { ...campaign, ...asRecord(await client.getCampaign(nativeId)) };
   const timezone = campaignTimezone(detail);
+  const rangeStart = startDate();
+  const rangeEnd = endDate();
   const [sequences, analytics, dailyPayload, statisticsRows, campaignAccounts, leadPayload, mailboxStats, performance] =
     await Promise.all([
       client.getCampaignSequences(nativeId),
       client.getCampaignAnalytics(nativeId),
       client.getCampaignAnalyticsByDate(nativeId, {
-        startDate: startDate(),
-        endDate: endDate(),
+        startDate: rangeStart,
+        endDate: rangeEnd,
         timezone: timezone ?? undefined,
       }),
       client.listAllCampaignStatistics(nativeId, { limit: 1000 }),
@@ -2695,13 +2715,13 @@ async function fetchCampaignBundle(
       client.listAllCampaignLeads(nativeId, { limit: 100 }),
       client.listAllCampaignMailboxStatistics(nativeId, {
         limit: 20,
-        startDate: startDate(),
-        endDate: endDate(),
+        startDate: rangeStart,
+        endDate: rangeEnd,
         timezone: timezone ?? undefined,
       }),
       client.getCampaignPerformanceStats({
-        startDate: startDate(),
-        endDate: endDate(),
+        startDate: rangeStart,
+        endDate: rangeEnd,
         timezone: timezone ?? undefined,
         campaignIds: [nativeId],
       }),
@@ -2721,8 +2741,8 @@ async function fetchCampaignBundle(
     messageHistory,
     mailboxStats: arrayFrom(mailboxStats),
     performance: asRecord(performance),
-    dateStart: startDate(),
-    dateEnd: endDate(),
+    dateStart: rangeStart,
+    dateEnd: rangeEnd,
     perfTimezone: timezone,
   };
 }
