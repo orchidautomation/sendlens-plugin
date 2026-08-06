@@ -491,6 +491,12 @@ try {
   assert.equal(await pathExists(`${dbPath}.wal`), false);
   db = await openDb();
   try {
+    const syncRunRows = await query(
+      db,
+      `SELECT sync_mode, scope, status, campaigns_processed FROM sendlens.sync_runs WHERE workspace_id = 'ws_new' AND source_provider = 'instantly'`,
+    );
+    assert.ok(syncRunRows.length >= 1, "a refresh must record a sync_runs row");
+    assert.equal(syncRunRows[0].status, "completed");
     const owner = await getCacheOwnerMetadata(db);
     assert.equal(owner.workspaceId, "ws_new");
     assert.equal(owner.apiKeyFingerprint, currentApiKeyFingerprint());

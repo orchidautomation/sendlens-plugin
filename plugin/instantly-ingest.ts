@@ -1263,6 +1263,62 @@ async function storeCustomTags(
   );
 }
 
+async function recordSyncRun(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  provider: string,
+  mode: string,
+  scope: string,
+  status: string,
+  startedAt: string,
+  completedAt: string,
+  durationMs: number,
+  campaignsProcessed: number,
+) {
+  const syncRunId = `${provider}:${mode}:${startedAt}`;
+  await run(
+    conn,
+    `INSERT OR REPLACE INTO sendlens.sync_runs
+     (workspace_id, source_provider, sync_run_id, sync_mode, scope, status, started_at, completed_at, duration_ms, campaigns_processed, coverage_summary_json, created_at)
+     VALUES (
+      '${esc(workspaceId)}', '${esc(provider)}', ${sqlString(syncRunId)},
+      ${sqlString(mode)}, ${sqlString(scope)}, ${sqlString(status)},
+      ${sqlTimestamp(startedAt)}, ${sqlTimestamp(completedAt)},
+      ${Number.isFinite(durationMs) ? String(Math.trunc(durationMs)) : "NULL"},
+      ${Number.isFinite(campaignsProcessed) ? String(Math.trunc(campaignsProcessed)) : "NULL"},
+      ${sqlString(JSON.stringify({ campaignsProcessed, mode, scope }))},
+      CURRENT_TIMESTAMP
+     )`,
+  );
+}
+
+async function recordPopulationSnapshot(
+  conn: DuckDBConnection,
+  workspaceId: string,
+  provider: string,
+  frame: string,
+  inclusionReason: string,
+  algorithmVersion: string,
+  populationFingerprint: string | null,
+  cumulativeCoverage: number | null,
+  cursorExhausted: boolean,
+) {
+  const snapshotId = `${provider}:${frame}:${new Date().toISOString()}`;
+  await run(
+    conn,
+    `INSERT OR REPLACE INTO sendlens.population_snapshots
+     (workspace_id, source_provider, snapshot_id, frame, inclusion_reason, algorithm_version, population_fingerprint, cumulative_coverage, selection_probability, cursor_exhausted, created_at)
+     VALUES (
+      '${esc(workspaceId)}', '${esc(provider)}', ${sqlString(snapshotId)},
+      ${sqlString(frame)}, ${sqlString(inclusionReason)}, ${sqlString(algorithmVersion)},
+      ${populationFingerprint == null ? "NULL" : sqlString(populationFingerprint)},
+      ${cumulativeCoverage == null ? "NULL" : (Number.isFinite(cumulativeCoverage) ? String(Math.trunc(cumulativeCoverage)) : "NULL")},
+      NULL, ${cursorExhausted ? "TRUE" : "FALSE"},
+      CURRENT_TIMESTAMP
+     )`,
+  );
+}
+
 async function storeLeadLists(
   conn: DuckDBConnection,
   workspaceId: string,
@@ -4319,6 +4375,29 @@ async function refreshInstantlyWorkspace(options: RefreshOptions = {}) {
       durationMs: Date.now() - refreshStartedAt,
       message: `Refresh completed for ${selectedCampaigns.length} campaigns.`,
     });
+    await recordSyncRun(
+      db,
+      workspaceId,
+      "instantly",
+      String(mode ?? "fast"),
+      options.campaignIds?.length ? "campaigns" : "workspace",
+      "completed",
+      new Date(refreshStartedAt).toISOString(),
+      finishedAt,
+      Date.now() - refreshStartedAt,
+      selectedCampaigns.length,
+    );
+    await recordPopulationSnapshot(
+      db,
+      workspaceId,
+      "instantly",
+      "observed",
+      "fast-path bounded refresh",
+      "sendlens-fast-500-v1",
+      null,
+      null,
+      false,
+    );
     await writeRefreshStatus({
       status: "succeeded",
       source,
