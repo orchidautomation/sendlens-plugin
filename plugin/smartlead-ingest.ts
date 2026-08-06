@@ -2123,16 +2123,27 @@ async function storeSmartleadCampaignPerformance(
           : [];
   const match =
     rows.find((entry) => String(entry?.id ?? "") === String(campaignId)) ?? rows[0] ?? {};
-  const num = (value: unknown): string => {
+  const numOrNull = (value: unknown): string => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? String(parsed) : "NULL";
   };
-  const sent = Number(match.sent) || 0;
-  const bounced = Number(match.bounced) || 0;
-  const delivered = match.delivered != null ? Number(match.delivered) : sent - bounced;
-  const uniqueLeadCount = Number(match.unique_lead_count) || 0;
-  const positiveReplied = Number(match.positive_replied) || 0;
-  const clientHealth = uniqueLeadCount > 0 ? positiveReplied / uniqueLeadCount : null;
+  const has = (value: unknown): boolean =>
+    value != null && Number.isFinite(Number(value));
+  // Preserve NULLs for missing metrics so doc-shape gaps are not presented as real zeros.
+  // Only derive delivered/client_health when their required inputs are present.
+  const sent = has(match.sent) ? Number(match.sent) : null;
+  const bounced = has(match.bounced) ? Number(match.bounced) : null;
+  const delivered = has(match.delivered)
+    ? Number(match.delivered)
+    : sent != null && bounced != null
+      ? sent - bounced
+      : null;
+  const uniqueLeadCount = has(match.unique_lead_count) ? Number(match.unique_lead_count) : null;
+  const positiveReplied = has(match.positive_replied) ? Number(match.positive_replied) : null;
+  const clientHealth =
+    positiveReplied != null && uniqueLeadCount != null && uniqueLeadCount !== 0
+      ? positiveReplied / uniqueLeadCount
+      : null;
   await run(
     conn,
     `INSERT OR REPLACE INTO sendlens.smartlead_campaign_performance
@@ -2142,10 +2153,10 @@ async function storeSmartleadCampaignPerformance(
      VALUES (
       '${esc(workspaceId)}', 'smartlead', ${sqlString(campaignId)},
       ${sqlString(dateStart)}, ${sqlString(dateEnd)}, ${sqlString(timezone ?? "")},
-      ${num(sent)}, ${num(Number.isFinite(delivered) ? delivered : null)},
-      ${num(match.opened)}, ${num(match.unique_open_count)}, ${num(match.replied)},
-      ${num(positiveReplied)}, ${num(uniqueLeadCount)},
-      ${num(match.total_positive_response)},
+      ${numOrNull(sent)}, ${numOrNull(delivered)},
+      ${numOrNull(match.opened)}, ${numOrNull(match.unique_open_count)}, ${numOrNull(match.replied)},
+      ${numOrNull(positiveReplied)}, ${numOrNull(uniqueLeadCount)},
+      ${numOrNull(match.total_positive_response)},
       ${clientHealth == null ? "NULL" : String(clientHealth)},
       CURRENT_TIMESTAMP
      )`,
