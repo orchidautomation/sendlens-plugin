@@ -48,6 +48,22 @@ const tail = assessEligibility({ frame: "enriched_tail", cursorExhausted: false,
 assert.equal(tail.eligible, false, "enriched tail must not upgrade to observed_pattern");
 assert.equal(tail.maxClaimClass, "enriched_tail");
 
+// statisticalClaimsAllowed is exercised directly.
+assert.equal(statisticalClaimsAllowed({ frame: "complete", cursorExhausted: true, completeness: "complete", claim: "population_fact" }), true);
+assert.equal(statisticalClaimsAllowed({ frame: "complete", cursorExhausted: false, completeness: "partial", claim: "population_fact" }), false);
+
+// finite_frame_estimate also requires a complete, cursor-exhausted frame.
+const finiteComplete = assessEligibility({ frame: "complete", cursorExhausted: true, completeness: "complete", claim: "finite_frame_estimate" });
+assert.equal(finiteComplete.eligible, true);
+const finitePartial = assessEligibility({ frame: "complete", cursorExhausted: false, completeness: "partial", claim: "finite_frame_estimate" });
+assert.equal(finitePartial.eligible, false, "finite_frame_estimate must require a complete exhausted frame");
+
+// Per-family sufficiency: reply-to-copy requires an observed frame; sampled is insufficient.
+const replySampled = assessEligibility({ frame: "sampled", cursorExhausted: false, completeness: "sampled", claim: "observed_pattern", questionFamily: "reply_to_copy" });
+assert.equal(replySampled.eligible, false, "reply_to_copy requires an observed frame");
+const replyObserved = assessEligibility({ frame: "observed", cursorExhausted: false, completeness: "observed", claim: "observed_pattern", questionFamily: "reply_to_copy" });
+assert.equal(replyObserved.eligible, true);
+
 // maxClaimClassForFrame sanity
 assert.equal(maxClaimClassForFrame("complete"), "population_fact");
 assert.equal(maxClaimClassForFrame("sampled"), "observed_pattern");

@@ -41,6 +41,7 @@ export type CatalogStarterSuggestion = {
   reason: string;
   route_cards?: CatalogRecipeRouteCard[];
   correction_path?: CatalogCorrectionPath;
+  eligibility?: { max_claim_class: string; statistical_claims_allowed: boolean };
 };
 
 export type CatalogRecipeRouteCard = {
@@ -421,6 +422,10 @@ function addCatalogRouteCardsWithinBudget(
     const candidate = {
       ...suggestions[index],
       ...bundle,
+      eligibility: {
+        max_claim_class: bundle.route_cards[0]?.max_claim_class ?? "anecdote",
+        statistical_claims_allowed: bundle.route_cards.some((card) => card.max_claim_class === "population_fact"),
+      },
     };
     const candidateSuggestions = [...suggestions];
     candidateSuggestions[index] = candidate;
@@ -466,8 +471,9 @@ function catalogRouteBundle(
 }
 
 function frameForPopulationScope(populationScope: string): EvidenceFrame {
-  if (populationScope === "full") return "complete";
-  if (populationScope === "fast-500" || populationScope === "sampled") return "sampled";
+  const scope = (populationScope ?? "").toLowerCase();
+  if (scope.includes("sampled") || scope.includes("sample ")) return "sampled";
+  if (scope.includes("all cached") || scope.includes("exact") || scope.includes("full") || scope.includes("every")) return "complete";
   return "observed";
 }
 

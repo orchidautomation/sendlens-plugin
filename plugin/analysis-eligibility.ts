@@ -77,18 +77,67 @@ export function statisticalClaimsAllowed(input: EligibilityInput): boolean {
   return input.frame === "complete" && input.completeness === "complete" && input.cursorExhausted === true;
 }
 
+// Per-family minimum-evidence sufficiency: distinct families require distinct
+// minimum frames before their claims can be marked eligible, so non-comparable
+// requests (e.g. reply-to-copy attribution) cannot pass without their evidence.
+const FRAME_STRENGTH: Record<EvidenceFrame, number> = {
+  complete: 5,
+  observed: 4,
+  sampled: 3,
+  enriched_tail: 2,
+  unsupported: 0,
+};
+
+const FAMILY_MIN_FRAME: Record<string, EvidenceFrame> = {
+  // Reply/copy attribution requires hydrated reply + copy evidence (observed).
+  reply: "observed",
+  reply_to_copy: "observed",
+  // ICP traits are sampled; a sampled frame is sufficient for directional ICP.
+  icp: "sampled",
+  // Copy/variant winner claims require one-campaign hydration (observed).
+  copy: "observed",
+  copy_variant: "observed",
+  variant: "observed",
+  // Deliverability is observed (test-based), not population.
+  deliverability: "observed",
+  // Cross-provider overlap uses sampled lead evidence.
+  overlap: "sampled",
+  provider_overlap: "sampled",
+  // Provider comparison requires provider-qualified observed evidence.
+  provider_comparison: "observed",
+  experiment: "observed",
+  reporting: "observed",
+};
+
+export function familySufficiencyMet(
+  questionFamily: string | null,
+  frame: EvidenceFrame,
+): { met: boolean; required: EvidenceFrame | null } {
+  if (!questionFamily) return { met: true, required: null };
+  const required = FAMILY_MIN_FRAME[questionFamily];
+  if (!required) return { met: true, required: null };
+  return { met: FRAME_STRENGTH[frame] >= FRAME_STRENGTH[required], required };
+}
+
 export function assessEligibility(input: EligibilityInput): EligibilityAssessment {
   const maxClaim = maxClaimClassForFrame(input.frame);
   const statAllowed = statisticalClaimsAllowed(input);
   const permitted = input.frame !== "unsupported" && CLAIM_STRENGTH[input.claim] <= CLAIM_STRENGTH[maxClaim];
-  // A population_fact claim additionally requires an exhaustive complete frame.
-  const populationClaimOk =
-    input.claim !== "population_fact" || (input.frame === "complete" && input.cursorExhausted === true);
-  const eligible = permitted && populationClaimOk;
+  // Statistical / population-percentage claims (population_fact and finite_frame_estimate)
+  // require a complete, cursor-exhausted frame; apply the gate to both.
+  const requiresStat = input.claim === "population_fact" || input.claim === "finite_frame_estimate";
+  const statOk = !requiresStat || statAllowed;
+  // Per-family minimum-evidence sufficiency.
+  const familyOk = familySufficiencyMet(input.questionFamily ?? null, input.frame);
+  const eligible = permitted && statOk && familyOk.met;
 
+  const blockedReasons: string[] = [];
+  if (!permitted) blockedReasons.push(`frame=${input.frame} supports at most ${maxClaim}`);
+  if (requiresStat && !statAllowed) blockedReasons.push("statistical/population claim requires a complete, cursor-exhausted frame");
+  if (!familyOk.met) blockedReasons.push(`question family ${input.questionFamily ?? "?"} requires ${familyOk.required}`);
   const nearestSafeConclusion = eligible
     ? `Claim permitted at ${input.claim} (frame=${input.frame}).`
-    : `Claim ${input.claim} is not supported by frame=${input.frame}; nearest safe conclusion is ${maxClaim}.`;
+    : `Claim ${input.claim} is not supported: ${blockedReasons.join("; ")}. Nearest safe conclusion is ${maxClaim}.`;
 
   const boundedEvidenceAction = eligible
     ? null
