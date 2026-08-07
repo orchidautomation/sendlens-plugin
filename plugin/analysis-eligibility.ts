@@ -109,12 +109,38 @@ const FAMILY_MIN_FRAME: Record<string, EvidenceFrame> = {
   reporting: "observed",
 };
 
+const FAMILY_ALIASES: Record<string, string> = {
+  replies: "reply",
+  reply_quality: "reply",
+  copy_auditor: "copy",
+  copy_analysis: "copy",
+  rendered_outbound: "copy",
+  variants: "variant",
+  senders: "deliverability",
+  sender: "deliverability",
+  sender_domain: "deliverability",
+  blast_radius: "deliverability",
+  campaign_performance: "observed",
+  workspace: "observed",
+};
+
+function canonicalFamily(raw: string): string {
+  const key = raw.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+  if (FAMILY_MIN_FRAME[key]) return key;
+  if (FAMILY_ALIASES[key]) return FAMILY_ALIASES[key];
+  // Substring match for compound family labels.
+  for (const alias of Object.keys(FAMILY_ALIASES)) {
+    if (key.includes(alias)) return FAMILY_ALIASES[alias];
+  }
+  return key;
+}
+
 export function familySufficiencyMet(
   questionFamily: string | null,
   frame: EvidenceFrame,
 ): { met: boolean; required: EvidenceFrame | null } {
   if (!questionFamily) return { met: true, required: null };
-  const required = FAMILY_MIN_FRAME[questionFamily];
+  const required = FAMILY_MIN_FRAME[canonicalFamily(questionFamily)];
   if (!required) return { met: true, required: null };
   return { met: FRAME_STRENGTH[frame] >= FRAME_STRENGTH[required], required };
 }
@@ -135,9 +161,18 @@ export function assessEligibility(input: EligibilityInput): EligibilityAssessmen
   if (!permitted) blockedReasons.push(`frame=${input.frame} supports at most ${maxClaim}`);
   if (requiresStat && !statAllowed) blockedReasons.push("statistical/population claim requires a complete, cursor-exhausted frame");
   if (!familyOk.met) blockedReasons.push(`question family ${input.questionFamily ?? "?"} requires ${familyOk.required}`);
+  // Nearest safe claim = strongest claim that satisfies frame + stat + family gates.
+  const claimOrder: ClaimClass[] = ["population_fact", "finite_frame_estimate", "observed_pattern", "enriched_tail", "reconstructed_content", "anecdote"];
+  const nearestSafeClaim =
+    claimOrder.find((candidate) => {
+      const candPermitted = input.frame !== "unsupported" && CLAIM_STRENGTH[candidate] <= CLAIM_STRENGTH[maxClaim];
+      const candRequiresStat = candidate === "population_fact" || candidate === "finite_frame_estimate";
+      const candStatOk = !candRequiresStat || statAllowed;
+      return candPermitted && candStatOk && familyOk.met;
+    }) ?? "anecdote";
   const nearestSafeConclusion = eligible
     ? `Claim permitted at ${input.claim} (frame=${input.frame}).`
-    : `Claim ${input.claim} is not supported: ${blockedReasons.join("; ")}. Nearest safe conclusion is ${maxClaim}.`;
+    : `Claim ${input.claim} is not supported: ${blockedReasons.join("; ")}. Nearest safe conclusion is ${nearestSafeClaim}.`;
 
   const boundedEvidenceAction = eligible
     ? null

@@ -424,7 +424,9 @@ function addCatalogRouteCardsWithinBudget(
       ...bundle,
       eligibility: {
         max_claim_class: bundle.route_cards[0]?.max_claim_class ?? "anecdote",
-        statistical_claims_allowed: bundle.route_cards.some((card) => card.max_claim_class === "population_fact"),
+        // Static metadata cannot prove runtime completeness/cursor-exhaustion; the
+        // runtime assessEligibility gate enforces statistical claims. Conservative here.
+        statistical_claims_allowed: false,
       },
     };
     const candidateSuggestions = [...suggestions];
