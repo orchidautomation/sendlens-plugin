@@ -337,7 +337,7 @@ for (const term of [
   "`prefer_derived_field` and `recommended_cohort_field`",
   "`search_terms` and `suggested_narrower_terms`",
   "`analysis_starter_suggestions`",
-  "workflow concepts such as runway, scale, refill, deliverability, sender accounts, rendered outbound, reply body, payload, and tags",
+  "workflow concepts such as runway, scale, refill, deliverability, sender accounts, sender/domain lineage and quarantine, rendered outbound, reply body, payload, and tags",
   "hydrates public columns in one bounded pass and reuses warm public-column context",
   "`guidance` that points to relevant `analysis_starters` topics",
 ]) {

@@ -24,9 +24,10 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 1. Start with `workspace_snapshot` for broad context.
 2. Pull `analysis_starters(topic="account-manager-brief")`.
 3. Scope by campaign name or provider tag when provided. Treat tag support as provider-specific evidence.
-4. Use campaign-performance runway recipes before making runway claims; do not call a campaign dry unless exact remaining-lead evidence supports it.
-5. Use workspace-health deliverability recipes before attributing weak replies to copy or targeting.
-6. Switch to copy, ICP, or reply specialists before making detailed claims in those lanes.
+4. For sender/domain disconnection or outage risk, use the sender/domain lineage recipe followed by the bounded campaign-blast-radius simulation.
+5. Use campaign-performance runway recipes before making runway claims; do not call a campaign dry unless exact remaining-lead evidence supports it.
+6. Use workspace-health deliverability recipes before attributing weak replies to copy or targeting.
+7. Switch to copy, ICP, or reply specialists before making detailed claims in those lanes.
 
 ## Output Shape
 
@@ -39,3 +40,4 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 ## Evidence Boundaries
 
 Separate internal action priority from client-facing wording. Do not expose noisy implementation details unless they explain a clear client ask, risk, or next step.
+Sender/domain blast-radius output describes stop/degrade/redundancy bounds. Do not present shared sender volume as campaign-attributed performance, and call out unknown assignment or health edges before recommending a client-facing quarantine action.

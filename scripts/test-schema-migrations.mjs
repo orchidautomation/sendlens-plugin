@@ -384,6 +384,57 @@ await withTempDb("sendlens-schema-tag-alias-upgrade-", async () => {
   }
 });
 
+await withTempDb("sendlens-schema-lineage-upgrade-", async () => {
+  await openAndClose();
+  let db = await getDb({ timeoutMs: 0 });
+  try {
+    await run(db, `DELETE FROM sendlens.schema_migrations
+      WHERE migration_id = '${CURRENT_SCHEMA_MIGRATION_ID}'`);
+    await run(
+      db,
+      `INSERT INTO sendlens.schema_migrations (migration_id, applied_at)
+       VALUES ('${PREVIOUS_SCHEMA_MIGRATION_IDS.at(-1)}', CURRENT_TIMESTAMP)`,
+    );
+    await run(db, "DROP VIEW sendlens.sender_domain_lineage");
+  } finally {
+    closeDb(db);
+  }
+
+  await openAndClose();
+  db = await getDb({ timeoutMs: 0 });
+  try {
+    const columns = await query(
+      db,
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'sendlens'
+         AND table_name = 'sender_domain_lineage'
+         AND column_name IN ('sender_domain', 'effective_from', 'domain_health_status')
+       ORDER BY column_name`,
+    );
+    assert.deepEqual(
+      columns,
+      [
+        { column_name: "domain_health_status" },
+        { column_name: "effective_from" },
+        { column_name: "sender_domain" },
+      ],
+      "caches on the progressive-sync migration must receive sender/domain lineage views",
+    );
+    const migrations = await query(
+      db,
+      "SELECT migration_id FROM sendlens.schema_migrations ORDER BY migration_id",
+    );
+    assert.deepEqual(migrations, [
+      { migration_id: BASELINE_SCHEMA_MIGRATION_ID },
+      { migration_id: PREVIOUS_SCHEMA_MIGRATION_IDS.at(-1) },
+      { migration_id: CURRENT_SCHEMA_MIGRATION_ID },
+    ]);
+  } finally {
+    closeDb(db);
+  }
+});
+
 await withTempDb("sendlens-schema-failure-", async (dbPath) => {
   const previousFailure = process.env.SENDLENS_TEST_FAIL_SCHEMA_MIGRATION_ID;
   process.env.SENDLENS_TEST_FAIL_SCHEMA_MIGRATION_ID = BASELINE_SCHEMA_MIGRATION_ID;

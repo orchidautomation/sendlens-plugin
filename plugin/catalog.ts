@@ -97,6 +97,7 @@ export const CATALOG_ROUTE_CARD_RESPONSE_BUDGET_BYTES = 8_192;
 
 const CATALOG_PRIMARY_ROUTE_CARD_IDS_BY_CONCEPT = new Map<string, string[]>([
   ["campaign-tag sender risk", ["campaign-sender-inventory-by-tag"]],
+  ["sender/domain lineage", ["sender-domain-lineage", "campaign-blast-radius"]],
   ["tag", ["tag-scope-audit"]],
 ]);
 
@@ -178,6 +179,23 @@ const CONCEPT_HINTS: ConceptHint[] = [
     topics: ["workspace-health"],
     recipeIds: ["campaign-sender-inventory-by-tag", "campaign-tag-sender-coverage", "sender-deliverability-health"],
     reason: "Exact campaign-tag sender-risk questions should use campaign-sender-inventory-by-tag first; placement and daily-volume routes are follow-ons only after the sender inventory is known.",
+  },
+  {
+    concept: "sender/domain lineage",
+    triggers: [
+      "sender/domain lineage",
+      "sender lineage",
+      "domain lineage",
+      "blast radius",
+      "quarantine",
+      "disconnected account",
+      "domain outage",
+      "sender outage",
+    ],
+    searchTerms: ["sender_domain_lineage", "campaign_blast_radius", "campaign_asset_edges", "sender_domain_assets", "quarantine"],
+    topics: ["workspace-health"],
+    recipeIds: ["sender-domain-lineage", "campaign-blast-radius"],
+    reason: "Lineage and quarantine questions should preserve direct/tag assignment paths, effective windows, provider scope, unknown edges, and sender/domain attribution bounds.",
   },
   {
     concept: "sender",
