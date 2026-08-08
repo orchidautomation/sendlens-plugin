@@ -96,6 +96,8 @@ The local schema exposes exact aggregate tables and semantic analysis views. Com
 | --- | --- | --- |
 | `campaigns`, `campaign_analytics`, `campaign_daily_metrics`, `step_analytics`, `campaign_variants` | Exact provider-qualified campaign surfaces where available | Campaign, step, variant, template, tracking/deliverability settings, provider dimensions, and daily performance analysis |
 | `accounts`, `account_daily_metrics`, `campaign_accounts` | Exact or resolved sender/account surfaces | Account health, sender coverage, and capacity checks; `assignment_account_tag_label` disambiguates tag-based account assignments from campaign tags |
+| `sender_assets`, `sender_domain_assets`, `campaign_asset_edges`, `sender_domain_lineage` | Provider-qualified current assignment and lineage views | Direct/tag sender paths, effective windows, shared sender/domain counts, health evidence, and unresolved edges |
+| `asset_health_events`, `campaign_blast_radius` | Health-event and read-only quarantine simulation views | Disconnected/degraded impact, stop/degrade/retain-redundancy bounds, and configured/measured/unknown capacity evidence |
 | `custom_tags`, `custom_tag_mappings`, `campaign_tags`, `account_tags` | Exact tag surfaces | Campaign and sender scoping; `campaign_tag_label` is the explicit campaign-tag alias while legacy `tag_label` is retained |
 | `inbox_placement_tests`, `inbox_placement_analytics` | Exact when available from Instantly | Inbox placement and authentication evidence |
 | `inbox_placement_test_overview`, `sender_deliverability_health` | Semantic rollups over inbox placement data | Deliverability diagnosis with availability caveats |
@@ -105,6 +107,7 @@ The local schema exposes exact aggregate tables and semantic analysis views. Com
 | `lead_evidence`, `lead_payload_kv` | Sampled lead and campaign-payload evidence | ICP and lead-variable hypotheses |
 | `provider_capabilities` | Provider capability status | Explain supported, partial, or support-gated provider surfaces such as Smartlead Smart Delivery |
 | `provider_overlap_risk`, `provider_overlap_risk_details` | Sampled cross-provider overlap primitives | Find duplicate normalized email, domain, or company exposure across providers within the unsafe window |
+| `cross_provider_lead_overlap_effective` | Sampled overlap effective-window projection | Preserve observed sampling bounds without implying historical assignment continuity |
 | `reply_context`, `reply_email_context`, `reply_emails` | Reply outcome context, email-anchored fetched reply context, and fetched exact reply rows | Reply cohort analysis and exact reply-body analysis when hydrated; reply semantic views preserve one row per replied lead/fetched reply email and mark ambiguous template attribution as context gaps instead of duplicating rows |
 | `rendered_outbound_context` | Locally reconstructed outbound context | Personalization QA and copy analysis, not byte-for-byte delivered email |
 

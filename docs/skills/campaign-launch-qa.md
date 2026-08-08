@@ -23,9 +23,10 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 1. Pull `analysis_starters(topic="campaign-launch-qa")`.
 2. Use the provided campaign name or campaign ID as the scope.
 3. Check blockers before polish.
-4. Pair with copy analysis when the user asks about personalization safety.
-5. Apply cold-email best-practice rules when interpreting tracking, disabled bounce protection, risky contacts, and bounce risk.
-6. Use `campaign-tracking-deliverability-settings` when the user asks which campaign settings are on.
+4. For a sender/domain outage, disconnection, or quarantine decision, run sender/domain lineage and the campaign-blast-radius recipe before recommending stop, degrade, or retain-redundancy actions.
+5. Pair with copy analysis when the user asks about personalization safety.
+6. Apply cold-email best-practice rules when interpreting tracking, disabled bounce protection, risky contacts, and bounce risk.
+7. Use `campaign-tracking-deliverability-settings` when the user asks which campaign settings are on.
 
 ## Output Shape
 
@@ -38,3 +39,4 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 ## Evidence Boundaries
 
 Do not mark a campaign ready when sender inventory or templates are missing. Treat lead supply as unknown unless exact remaining-lead evidence exists; recent new-lead contacts are activity evidence, not proof of remaining supply. Disabled bounce protection or allowed risky contacts are deliverability guardrail warnings. Missing inbox-placement evidence should be described as missing evidence, not a clean sender-health result.
+When a quarantine simulation has unknown assignment edges or health evidence, keep the verdict bounded and do not treat unknown capacity as redundancy.

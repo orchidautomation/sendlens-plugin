@@ -30,6 +30,7 @@ const PLACEHOLDER_FIXTURES = new Map([
 const REGRESSION_RECIPE_IDS = new Set([
   "campaign-metadata-coverage",
   "cross-provider-overlap-risk",
+  "cross-provider-overlap-effective",
   "duplicate-contact-company-exposure",
   "personalization-leak-audit",
   "personalization-leak-raw-detail",
@@ -39,6 +40,8 @@ const REQUIRED_ROUTE_CARD_RECIPE_IDS = [
   "account-health",
   "campaign-metadata-coverage",
   "campaign-sender-inventory-by-tag",
+  "sender-domain-lineage",
+  "campaign-blast-radius",
   "personalization-leak-audit",
   "fetched-reply-text-by-campaign",
   "tag-scope-audit",

@@ -145,6 +145,21 @@ assert.deepEqual(
   "novel supported questions must retain the bounded custom-SQL escalation path",
 );
 
+const lineageGuidance = buildCatalogSearchGuidance(
+  "which disconnected sender domains have blast radius if quarantined",
+  [],
+);
+const lineageSuggestion = lineageGuidance.analysis_starter_suggestions.find(
+  (suggestion) => suggestion.concept === "sender/domain lineage",
+);
+assert.ok(lineageSuggestion);
+assert.deepEqual(lineageSuggestion.recipe_ids, ["sender-domain-lineage", "campaign-blast-radius"]);
+assert.deepEqual(
+  lineageSuggestion.route_cards?.map((card) => card.recipe_id),
+  ["sender-domain-lineage", "campaign-blast-radius"],
+);
+assert.match(lineageSuggestion.route_cards[1].forbidden_adaptations.join(" "), /campaign sends|attribution/i);
+
 const exactLookup = buildQueryRecipeResponse({
   recipe_id: "campaign-sender-inventory-by-tag",
 });
