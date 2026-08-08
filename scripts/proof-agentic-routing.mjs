@@ -791,9 +791,9 @@ function assertReviewedRecipeRegistry() {
   assert.deepEqual(
     recipeIds,
     [...REVIEWED_BASELINE_RECIPE_IDS].sort(),
-    "getQueryRecipes() registry drifted from the reviewed v0.1.83 baseline; update this harness only with a reviewed recipe change",
+    "getQueryRecipes() registry drifted from the reviewed v0.1.84 baseline; update this harness only with a reviewed recipe change",
   );
-  assert.equal(recipeIds.length, 62, "reviewed v0.1.83 recipe baseline is 62");
+  assert.equal(recipeIds.length, 62, "reviewed v0.1.84 recipe baseline is 62");
   return recipeIds;
 }
 
