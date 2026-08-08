@@ -105,6 +105,7 @@ The local schema exposes exact aggregate tables and semantic analysis views. Com
 | `smartlead_delivery_test_overview`, `smartlead_sender_delivery_health`, `smartlead_delivery_authentication_health` | Semantic Smart Delivery views | Provider-specific Smartlead deliverability diagnosis |
 | `campaign_overview` | Semantic campaign rollup | Default campaign ranking, tracking/deliverability settings, and health view |
 | `lead_evidence`, `lead_payload_kv` | Sampled lead and campaign-payload evidence | ICP and lead-variable hypotheses |
+| `experiment_validity_checks` | Provider-qualified experiment readiness view | Variant mapping, shared sender/domain spillover, evidence-frame completeness, hydration balance, denominator compatibility, and bounded MDE labeling before comparison |
 | `provider_capabilities` | Provider capability status | Explain supported, partial, or support-gated provider surfaces such as Smartlead Smart Delivery |
 | `provider_overlap_risk`, `provider_overlap_risk_details` | Sampled cross-provider overlap primitives | Find duplicate normalized email, domain, or company exposure across providers within the unsafe window |
 | `cross_provider_lead_overlap_effective` | Sampled overlap effective-window projection | Preserve observed sampling bounds without implying historical assignment continuity |

@@ -41,8 +41,9 @@ export const PREVIOUS_SCHEMA_MIGRATION_IDS = [
   "202608060001_smartlead_campaign_performance",
   "202608070001_progressive_sync_frames",
   "202608080001_inference_eligibility_evidence_debt",
+  "202608080002_sender_domain_lineage",
 ] as const;
-export const CURRENT_SCHEMA_MIGRATION_ID = "202608080002_sender_domain_lineage";
+export const CURRENT_SCHEMA_MIGRATION_ID = "202608080003_experiment_validity";
 const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
 const cacheProviderModeContext = new AsyncLocalStorage<SourceProviderMode>();
 
@@ -3456,6 +3457,255 @@ async function ensureSchema(conn: DuckDBConnection) {
        AND COALESCE(so.source_provider, 'instantly') = cv.source_provider
        AND CAST(cv.step AS VARCHAR) = so.step_resolved
        AND CAST(cv.variant AS VARCHAR) = so.variant_resolved`,
+    `CREATE OR REPLACE VIEW sendlens.experiment_validity_checks AS
+      WITH variant_definitions AS (
+        SELECT
+          workspace_id,
+          campaign_id,
+          COALESCE(source_provider, 'instantly') AS source_provider,
+          step,
+          variant,
+          COUNT(*) AS definition_count
+        FROM sendlens.campaign_variants
+        GROUP BY 1, 2, 3, 4, 5
+      ),
+      variant_metrics AS (
+        SELECT
+          sa.workspace_id,
+          COALESCE(sa.source_provider, c.source_provider, 'instantly') AS source_provider,
+          sa.campaign_id,
+          COALESCE(
+            sa.campaign_source_id,
+            c.campaign_source_id,
+            COALESCE(sa.source_provider, c.source_provider, 'instantly') || ':' || COALESCE(sa.provider_campaign_id, c.provider_campaign_id, sa.campaign_id)
+          ) AS campaign_source_id,
+          c.name AS campaign_name,
+          c.status AS campaign_status,
+          sa.step,
+          sa.variant,
+          COALESCE(sa.sent, 0) AS sent,
+          COALESCE(sa.unique_replies, 0) AS unique_replies,
+          COALESCE(sa.replies, 0) AS replies,
+          COALESCE(sa.bounces, 0) AS bounces,
+          vd.definition_count,
+          CASE WHEN COALESCE(vd.definition_count, 0) = 1 THEN 'resolved' ELSE 'unresolved' END AS variant_mapping_status
+        FROM sendlens.step_analytics sa
+        LEFT JOIN sendlens.campaigns c
+          ON sa.workspace_id = c.workspace_id
+         AND sa.campaign_id = c.id
+         AND COALESCE(sa.source_provider, 'instantly') = COALESCE(c.source_provider, 'instantly')
+        LEFT JOIN variant_definitions vd
+          ON sa.workspace_id = vd.workspace_id
+         AND sa.campaign_id = vd.campaign_id
+         AND COALESCE(sa.source_provider, 'instantly') = vd.source_provider
+         AND sa.step = vd.step
+         AND sa.variant = vd.variant
+      ),
+      comparison_groups AS (
+        SELECT
+          workspace_id,
+          source_provider,
+          campaign_id,
+          campaign_source_id,
+          step,
+          COUNT(DISTINCT variant) AS variant_count,
+          SUM(sent) AS group_sent,
+          SUM(unique_replies) AS group_unique_replies,
+          SUM(CASE WHEN variant_mapping_status = 'unresolved' THEN 1 ELSE 0 END) AS unresolved_variant_count
+        FROM variant_metrics
+        GROUP BY 1, 2, 3, 4, 5
+      ),
+      frame_rollup AS (
+        SELECT
+          workspace_id,
+          campaign_id,
+          COALESCE(source_provider, 'instantly') AS source_provider,
+          CASE
+            WHEN lead_cursor_exhausted = TRUE
+              AND lower(COALESCE(provenance_status, '')) IN ('complete', 'exact') THEN 'complete'
+            WHEN lead_cursor_exhausted = FALSE THEN 'partial'
+            WHEN lower(COALESCE(provenance_status, '')) IN ('sampled', 'enriched_tail')
+              OR lower(COALESCE(ingest_mode, '')) LIKE '%sample%' THEN 'sampled'
+            WHEN lower(COALESCE(provenance_status, '')) IN ('partial', 'unknown', '') THEN 'partial'
+            ELSE 'observed'
+          END AS frame_status,
+          COALESCE(provenance_status, 'unknown') AS provenance_status,
+          COALESCE(lead_cursor_exhausted, FALSE) AS lead_cursor_exhausted,
+          effective_population_size,
+          selected_record_count,
+          total_leads,
+          reply_rows,
+          reply_lead_rows,
+          reply_outbound_rows,
+          coverage_note,
+          population_fingerprint,
+          CASE
+            WHEN COALESCE(reply_lead_rows, 0) = 0 THEN 'not_available'
+            WHEN COALESCE(reply_outbound_rows, 0) = 0 THEN 'missing'
+            WHEN reply_outbound_rows < reply_lead_rows THEN 'unequal'
+            ELSE 'balanced'
+          END AS hydration_status
+        FROM sendlens.sampling_runs
+      ),
+      known_edges AS (
+        SELECT DISTINCT
+          workspace_id,
+          source_provider,
+          campaign_source_id,
+          sender_email,
+          sender_domain
+        FROM sendlens.campaign_asset_edges
+        WHERE edge_status = 'known'
+      ),
+      sender_usage AS (
+        SELECT
+          workspace_id,
+          source_provider,
+          sender_email,
+          COUNT(DISTINCT campaign_source_id) AS campaign_count
+        FROM known_edges
+        WHERE sender_email IS NOT NULL
+        GROUP BY 1, 2, 3
+      ),
+      domain_usage AS (
+        SELECT
+          workspace_id,
+          source_provider,
+          sender_domain,
+          COUNT(DISTINCT campaign_source_id) AS campaign_count
+        FROM known_edges
+        WHERE sender_domain IS NOT NULL
+        GROUP BY 1, 2, 3
+      ),
+      campaign_asset_rollup AS (
+        SELECT
+          e.workspace_id,
+          e.source_provider,
+          e.campaign_source_id,
+          COUNT(DISTINCT CASE WHEN su.campaign_count > 1 THEN e.sender_email END) AS shared_sender_count,
+          COUNT(DISTINCT CASE WHEN du.campaign_count > 1 THEN e.sender_domain END) AS shared_domain_count
+        FROM known_edges e
+        LEFT JOIN sender_usage su
+          ON e.workspace_id = su.workspace_id
+         AND e.source_provider = su.source_provider
+         AND e.sender_email = su.sender_email
+        LEFT JOIN domain_usage du
+          ON e.workspace_id = du.workspace_id
+         AND e.source_provider = du.source_provider
+         AND e.sender_domain = du.sender_domain
+        GROUP BY 1, 2, 3
+      ),
+      overlap_rollup AS (
+        SELECT
+          workspace_id,
+          source_provider,
+          campaign_source_id,
+          COUNT(DISTINCT overlap_key) AS sampled_overlap_count
+        FROM sendlens.provider_overlap_risk_details
+        GROUP BY 1, 2, 3
+      )
+      SELECT
+        vm.workspace_id,
+        vm.source_provider,
+        vm.campaign_id,
+        vm.campaign_source_id,
+        vm.campaign_name,
+        vm.campaign_status,
+        vm.step,
+        vm.variant,
+        'campaign_step_variant' AS comparison_grain,
+        cg.variant_count,
+        vm.variant_mapping_status,
+        cg.unresolved_variant_count,
+        vm.sent,
+        vm.unique_replies,
+        vm.replies,
+        vm.bounces,
+        cg.group_sent,
+        cg.group_unique_replies,
+        cg.group_sent - vm.sent AS comparison_sent,
+        cg.group_unique_replies - vm.unique_replies AS comparison_unique_replies,
+        ROUND(100.0 * vm.unique_replies / NULLIF(vm.sent, 0), 2) AS observed_reply_rate_pct,
+        ROUND(100.0 * (cg.group_unique_replies - vm.unique_replies) / NULLIF(cg.group_sent - vm.sent, 0), 2) AS comparison_reply_rate_pct,
+        COALESCE(fr.frame_status, 'unsupported') AS frame_status,
+        COALESCE(fr.provenance_status, 'unknown') AS provenance_status,
+        COALESCE(fr.lead_cursor_exhausted, FALSE) AS lead_cursor_exhausted,
+        fr.effective_population_size,
+        fr.selected_record_count,
+        fr.total_leads,
+        fr.reply_rows,
+        fr.reply_lead_rows,
+        fr.reply_outbound_rows,
+        COALESCE(fr.hydration_status, 'not_available') AS hydration_status,
+        fr.coverage_note,
+        fr.population_fingerprint,
+        COALESCE(ar.shared_sender_count, 0) AS shared_sender_count,
+        COALESCE(ar.shared_domain_count, 0) AS shared_domain_count,
+        COALESCE(orx.sampled_overlap_count, 0) AS sampled_overlap_count,
+        CASE
+          WHEN vm.variant_mapping_status = 'unresolved' OR cg.variant_count < 2 OR vm.sent <= 0 OR cg.group_sent - vm.sent <= 0 THEN 'non_comparable'
+          WHEN COALESCE(ar.shared_sender_count, 0) > 0
+            OR COALESCE(ar.shared_domain_count, 0) > 0
+            OR COALESCE(orx.sampled_overlap_count, 0) > 0 THEN 'spillover_risk'
+          WHEN COALESCE(fr.frame_status, 'unsupported') IN ('partial', 'sampled', 'unsupported')
+            OR COALESCE(fr.hydration_status, 'not_available') IN ('missing', 'unequal') THEN 'measurement_gap'
+          ELSE 'decision_eligible'
+        END AS comparison_state,
+        CASE
+          WHEN vm.variant_mapping_status = 'unresolved' THEN 'Resolve the step/variant mapping before comparing variants.'
+          WHEN cg.variant_count < 2 THEN 'Collect at least two resolved variants in the same campaign step.'
+          WHEN vm.sent <= 0 OR cg.group_sent - vm.sent <= 0 THEN 'Use a compatible non-zero sent denominator for both comparison arms.'
+          WHEN COALESCE(ar.shared_sender_count, 0) > 0 OR COALESCE(ar.shared_domain_count, 0) > 0 THEN 'Separate shared sender/domain infrastructure or report the result as spillover risk.'
+          WHEN COALESCE(orx.sampled_overlap_count, 0) > 0 THEN 'Review sampled cross-provider overlap before interpreting the comparison.'
+          WHEN COALESCE(fr.frame_status, 'unsupported') IN ('partial', 'sampled', 'unsupported') THEN 'Complete the evidence frame or keep the result directional and non-population.'
+          WHEN COALESCE(fr.hydration_status, 'not_available') IN ('missing', 'unequal') THEN 'Balance reply/outbound hydration across the comparison before interpreting reply yield.'
+          ELSE 'Directional comparison is eligible; statistical confidence remains unavailable unless the frame and denominator contract support it.'
+        END AS evidence_action,
+        CASE
+          WHEN COALESCE(fr.frame_status, 'unsupported') = 'complete'
+            AND COALESCE(fr.lead_cursor_exhausted, FALSE) = TRUE
+            AND vm.sent > 0
+            AND cg.group_sent - vm.sent > 0 THEN 'available'
+          ELSE 'not_available'
+        END AS minimum_detectable_effect_status,
+        CASE
+          WHEN COALESCE(fr.frame_status, 'unsupported') = 'complete'
+            AND COALESCE(fr.lead_cursor_exhausted, FALSE) = TRUE
+            AND vm.sent > 0
+            AND cg.group_sent - vm.sent > 0 THEN ROUND(
+            100.0 * 1.96 * sqrt(
+              ((cg.group_unique_replies * 1.0) / NULLIF(cg.group_sent, 0))
+              * (1.0 - ((cg.group_unique_replies * 1.0) / NULLIF(cg.group_sent, 0)))
+              * (1.0 / vm.sent + 1.0 / (cg.group_sent - vm.sent))
+            ),
+            2
+          )
+          ELSE NULL
+        END AS minimum_detectable_effect_pct,
+        CASE
+          WHEN vm.source_provider = 'smartlead' THEN 'Smartlead campaign/step metrics and Smart Delivery evidence remain provider-specific.'
+          WHEN vm.source_provider = 'instantly' THEN 'Instantly campaign/step metrics and inbox-placement evidence remain provider-specific.'
+          ELSE 'Provider-specific experiment semantics unavailable.'
+        END AS provider_experiment_semantics
+      FROM variant_metrics vm
+      JOIN comparison_groups cg
+        ON vm.workspace_id = cg.workspace_id
+       AND vm.source_provider = cg.source_provider
+       AND vm.campaign_id = cg.campaign_id
+       AND vm.campaign_source_id = cg.campaign_source_id
+       AND vm.step = cg.step
+      LEFT JOIN frame_rollup fr
+        ON vm.workspace_id = fr.workspace_id
+       AND vm.source_provider = fr.source_provider
+       AND vm.campaign_id = fr.campaign_id
+      LEFT JOIN campaign_asset_rollup ar
+        ON vm.workspace_id = ar.workspace_id
+       AND vm.source_provider = ar.source_provider
+       AND vm.campaign_source_id = ar.campaign_source_id
+      LEFT JOIN overlap_rollup orx
+        ON vm.workspace_id = orx.workspace_id
+       AND vm.source_provider = orx.source_provider
+       AND vm.campaign_source_id = orx.campaign_source_id`,
   ];
 
   if (!appliedIds.includes(BASELINE_SCHEMA_MIGRATION_ID)) {

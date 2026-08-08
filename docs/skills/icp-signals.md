@@ -24,8 +24,9 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 3. Use exact campaign aggregates for the performance baseline.
 4. Use `lead_evidence` and `lead_payload_kv` for sampled segment hypotheses.
 5. Run `campaign-metadata-coverage` before value-level analysis when no exact key is named.
-6. Use normalized keys and metadata families to discover aliases, then group by the original exact payload key. Report sparse and non-scalar coverage rather than silently excluding it.
-7. Treat `diagnostics.analysis_eligibility` as authoritative for frame/claim limits; sampled ICP evidence supports directional hypotheses, not provider-population prevalence.
+6. Use `list-freshness-decay` for a bounded list/import freshness hypothesis, keeping list IDs, freshness buckets, and sampling frames visible.
+7. Use normalized keys and metadata families to discover aliases, then group by the original exact payload key. Report sparse and non-scalar coverage rather than silently excluding it.
+8. Treat `diagnostics.analysis_eligibility` as authoritative for frame/claim limits; sampled ICP evidence supports directional hypotheses, not provider-population prevalence.
 
 ## Output Shape
 

@@ -69,6 +69,748 @@ const MAX_RECIPE_PAGE_SIZE = 25;
 
 const QUERY_RECIPES: QueryRecipe[] = [
   {
+    id: "experiment-validity-audit",
+    topic: "experiment-planner",
+    title: "Experiment validity audit",
+    question: "Can I compare these campaign variants, and what evidence is still missing?",
+    exactness: "hybrid",
+    rationale: "Make spillover, frame, hydration, denominator, and variant-mapping risk explicit before interpreting an experiment result.",
+    route_card: {
+      preferred_intent: "variant comparison validity and evidence-readiness audit",
+      grain: "one row per campaign, step, and variant arm",
+      time_basis: "current cached step analytics plus sampling-run evidence frame",
+      attribution: "campaign-step-variant only; shared infrastructure and overlap are surfaced as risk",
+      provider_scope: "provider-qualified campaign_source_id and provider-specific semantics",
+      population_scope: "observed campaign arms; population claims require a complete frame and compatible denominator",
+      tag_role: "none; resolve campaign or tag scope before this audit",
+      prerequisites: ["experiment_validity_checks public view", "resolved campaign-step-variant metrics"],
+      cost: "low",
+      privacy: "aggregate validity fields only; no lead identity, reply body, or rendered copy",
+      privacy_class: "aggregate_only",
+      safe_adaptations: ["filter to one campaign or step", "sort by comparison_state or evidence_action"],
+      forbidden_adaptations: ["call an arm a winner when state is not decision_eligible", "treat minimum_detectable_effect_pct as statistical confidence", "promote sampled rows to population prevalence"],
+    },
+    sql: `SELECT
+  workspace_id,
+  source_provider,
+  campaign_id,
+  campaign_source_id,
+  campaign_name,
+  step,
+  variant,
+  comparison_grain,
+  variant_count,
+  variant_mapping_status,
+  sent,
+  unique_replies,
+  observed_reply_rate_pct,
+  comparison_sent,
+  comparison_unique_replies,
+  comparison_reply_rate_pct,
+  frame_status,
+  hydration_status,
+  shared_sender_count,
+  shared_domain_count,
+  sampled_overlap_count,
+  comparison_state,
+  evidence_action,
+  minimum_detectable_effect_status,
+  minimum_detectable_effect_pct,
+  provider_experiment_semantics
+FROM sendlens.experiment_validity_checks
+ORDER BY
+  CASE comparison_state
+    WHEN 'spillover_risk' THEN 1
+    WHEN 'measurement_gap' THEN 2
+    WHEN 'non_comparable' THEN 3
+    ELSE 4
+  END,
+  campaign_name,
+  step,
+  variant;`,
+    notes: [
+      "Run this before choosing a winner, calculating lift, or recommending a follow-up test.",
+      "decision_eligible means the cached directional comparison passes the local contract; it does not grant statistical significance.",
+      "Rows marked spillover_risk, measurement_gap, or non_comparable need the evidence_action before interpretation.",
+    ],
+  },
+  {
+    id: "relative-sender-quality",
+    topic: "experiment-planner",
+    title: "Relative sender quality for a controlled comparison",
+    question: "How does sender quality differ across campaign, list, copy, time, or experiment arms?",
+    exactness: "sampled",
+    rationale: "Compare sampled outbound and reply signals by sender while preserving sender/domain spillover and sample-only limits.",
+    route_card: {
+      preferred_intent: "relative sender quality controlling campaign, list, copy, and time",
+      grain: "sender, campaign, sent date, step, and variant aggregate",
+      time_basis: "sampled outbound sent_at date and current lead evidence",
+      attribution: "sender-scoped observed evidence; campaign attribution requires the outbound campaign_source_id",
+      provider_scope: "provider-qualified sender and campaign identity",
+      population_scope: "sampled outbound contacts only; not sender-account population performance",
+      tag_role: "none; use exact tag recipes to define the campaign set first",
+      prerequisites: ["sampled_outbound_emails", "lead_evidence", "campaign_asset_edges for spillover checks"],
+      cost: "medium",
+      privacy: "sender address and aggregate rates; no lead address, reply body, or message body",
+      privacy_class: "operational_identifiers",
+      safe_adaptations: ["filter to one provider or campaign", "group a bounded date window or step"],
+      forbidden_adaptations: ["claim sender causality from unbalanced campaigns or lists", "treat sampled reply rates as inbox-wide prevalence", "hide shared sender/domain risk"],
+    },
+    sql: `WITH known_edges AS (
+  SELECT DISTINCT workspace_id, source_provider, campaign_source_id, sender_email, sender_domain
+  FROM sendlens.campaign_asset_edges
+  WHERE edge_status = 'known'
+),
+sender_usage AS (
+  SELECT workspace_id, source_provider, sender_email, COUNT(DISTINCT campaign_source_id) AS campaign_count
+  FROM known_edges
+  WHERE sender_email IS NOT NULL
+  GROUP BY 1, 2, 3
+),
+domain_usage AS (
+  SELECT workspace_id, source_provider, sender_domain, COUNT(DISTINCT campaign_source_id) AS campaign_count
+  FROM known_edges
+  WHERE sender_domain IS NOT NULL
+  GROUP BY 1, 2, 3
+),
+asset_risk AS (
+  SELECT
+    e.workspace_id,
+    e.source_provider,
+    e.campaign_source_id,
+    COUNT(DISTINCT CASE WHEN su.campaign_count > 1 THEN e.sender_email END) AS shared_sender_count,
+    COUNT(DISTINCT CASE WHEN du.campaign_count > 1 THEN e.sender_domain END) AS shared_domain_count
+  FROM known_edges e
+  LEFT JOIN sender_usage su
+    ON e.workspace_id = su.workspace_id
+   AND e.source_provider = su.source_provider
+   AND e.sender_email = su.sender_email
+  LEFT JOIN domain_usage du
+    ON e.workspace_id = du.workspace_id
+   AND e.source_provider = du.source_provider
+   AND e.sender_domain = du.sender_domain
+  GROUP BY 1, 2, 3
+)
+SELECT
+  so.workspace_id,
+  COALESCE(so.source_provider, 'instantly') AS source_provider,
+  so.campaign_id,
+  so.campaign_source_id,
+  so.from_email AS sender_email,
+  CAST(so.sent_at AS DATE) AS sent_date,
+  CAST(so.step_resolved AS INTEGER) AS step,
+  CAST(so.variant_resolved AS INTEGER) AS variant,
+  COUNT(DISTINCT so.id) AS sampled_outbound_rows,
+  COUNT(DISTINCT lower(trim(so.to_email))) AS sampled_contacts,
+  COUNT(DISTINCT CASE WHEN COALESCE(le.has_reply_signal, FALSE) THEN lower(trim(so.to_email)) END) AS sampled_replying_contacts,
+  COUNT(DISTINCT CASE WHEN le.reply_outcome_label = 'positive' THEN lower(trim(so.to_email)) END) AS sampled_positive_contacts,
+  ROUND(100.0 * COUNT(DISTINCT CASE WHEN COALESCE(le.has_reply_signal, FALSE) THEN lower(trim(so.to_email)) END) / NULLIF(COUNT(DISTINCT lower(trim(so.to_email))), 0), 2) AS sampled_reply_rate_pct,
+  COALESCE(MAX(ar.shared_sender_count), 0) AS shared_sender_count,
+  COALESCE(MAX(ar.shared_domain_count), 0) AS shared_domain_count,
+  'sampled' AS evidence_frame,
+  CASE
+    WHEN COALESCE(MAX(ar.shared_sender_count), 0) > 0 OR COALESCE(MAX(ar.shared_domain_count), 0) > 0 THEN 'spillover_risk'
+    WHEN COUNT(DISTINCT lower(trim(so.to_email))) = 0 THEN 'measurement_gap'
+    ELSE 'measurement_gap'
+  END AS comparison_state
+FROM sendlens.sampled_outbound_emails so
+LEFT JOIN sendlens.lead_evidence le
+  ON so.workspace_id = le.workspace_id
+ AND so.campaign_id = le.campaign_id
+ AND COALESCE(so.source_provider, 'instantly') = le.source_provider
+ AND lower(trim(so.to_email)) = le.normalized_email
+LEFT JOIN asset_risk ar
+  ON so.workspace_id = ar.workspace_id
+ AND COALESCE(so.source_provider, 'instantly') = ar.source_provider
+ AND so.campaign_source_id = ar.campaign_source_id
+WHERE so.from_email IS NOT NULL
+  AND trim(so.from_email) <> ''
+GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
+ORDER BY comparison_state, sent_date DESC NULLS LAST, sampled_reply_rate_pct DESC NULLS LAST;`,
+    notes: [
+      "This is intentionally sampled: it is a directional sender-quality view, not an inbox-account benchmark.",
+      "Control campaign, list, copy, and time outside this recipe only when those dimensions are actually balanced and provider-qualified.",
+      "A shared sender or domain is a spillover risk even when the observed reply rate looks favorable.",
+    ],
+  },
+  {
+    id: "sequence-marginal-yield",
+    topic: "experiment-planner",
+    title: "Sequence marginal yield",
+    question: "What marginal reply yield does each sequence step add?",
+    exactness: "exact",
+    rationale: "Compare provider-reported step aggregates in order while flagging missing prior steps and template truncation.",
+    route_card: {
+      preferred_intent: "sequence marginal reply yield by campaign and step",
+      grain: "one row per provider-qualified campaign and sequence step",
+      time_basis: "cached step analytics sync snapshot",
+      attribution: "provider campaign-step analytics; not a lead-level causal attribution",
+      provider_scope: "provider-qualified campaign_source_id",
+      population_scope: "cached step analytics rows; missing or truncated steps are measurement gaps",
+      tag_role: "none; filter to a campaign set before comparing sequences",
+      prerequisites: ["step_analytics", "campaign_variants for configured-step coverage"],
+      cost: "low",
+      privacy: "aggregate step counts and derived rates only",
+      privacy_class: "aggregate_only",
+      safe_adaptations: ["filter to one campaign or provider", "compare adjacent steps only"],
+      forbidden_adaptations: ["interpret a missing prior step as zero yield", "claim sequence completion from analytics rows alone", "use step rates as a randomized experiment result"],
+    },
+    sql: `WITH step_rollup AS (
+  SELECT
+    workspace_id,
+    COALESCE(source_provider, 'instantly') AS source_provider,
+    campaign_id,
+    campaign_source_id,
+    step,
+    SUM(COALESCE(sent, 0)) AS step_sent,
+    SUM(COALESCE(unique_replies, 0)) AS step_unique_replies,
+    SUM(COALESCE(replies, 0)) AS step_replies,
+    SUM(COALESCE(bounces, 0)) AS step_bounces
+  FROM sendlens.step_analytics
+  GROUP BY 1, 2, 3, 4, 5
+),
+defined_steps AS (
+  SELECT
+    workspace_id,
+    COALESCE(source_provider, 'instantly') AS source_provider,
+    campaign_id,
+    MAX(step) AS max_defined_step,
+    COUNT(DISTINCT step) AS defined_step_count
+  FROM sendlens.campaign_variants
+  GROUP BY 1, 2, 3
+),
+ordered AS (
+  SELECT
+    sr.*,
+    LAG(sr.step) OVER (PARTITION BY sr.workspace_id, sr.source_provider, sr.campaign_id ORDER BY sr.step) AS prior_step,
+    LAG(sr.step_sent) OVER (PARTITION BY sr.workspace_id, sr.source_provider, sr.campaign_id ORDER BY sr.step) AS prior_step_sent,
+    LAG(sr.step_unique_replies) OVER (PARTITION BY sr.workspace_id, sr.source_provider, sr.campaign_id ORDER BY sr.step) AS prior_step_unique_replies,
+    ds.max_defined_step,
+    ds.defined_step_count
+  FROM step_rollup sr
+  LEFT JOIN defined_steps ds
+    ON sr.workspace_id = ds.workspace_id
+   AND sr.source_provider = ds.source_provider
+   AND sr.campaign_id = ds.campaign_id
+)
+SELECT
+  workspace_id,
+  source_provider,
+  campaign_id,
+  campaign_source_id,
+  step,
+  step_sent,
+  step_unique_replies,
+  step_replies,
+  step_bounces,
+  ROUND(100.0 * step_unique_replies / NULLIF(step_sent, 0), 2) AS step_reply_rate_pct,
+  prior_step,
+  prior_step_sent,
+  prior_step_unique_replies,
+  ROUND(100.0 * prior_step_unique_replies / NULLIF(prior_step_sent, 0), 2) AS prior_step_reply_rate_pct,
+  ROUND(
+    100.0 * step_unique_replies / NULLIF(step_sent, 0)
+      - 100.0 * prior_step_unique_replies / NULLIF(prior_step_sent, 0),
+    2
+  ) AS change_vs_prior_step_pct_points,
+  max_defined_step,
+  defined_step_count,
+  CASE
+    WHEN step_sent <= 0 THEN 'non_comparable'
+    WHEN step > 1 AND (prior_step IS NULL OR prior_step <> step - 1) THEN 'measurement_gap'
+    WHEN max_defined_step IS NULL OR step > max_defined_step THEN 'measurement_gap'
+    ELSE 'decision_eligible'
+  END AS comparison_state
+FROM ordered
+ORDER BY campaign_id, step;`,
+    notes: [
+      "The marginal field is a rate change versus the prior observed step, not an incremental causal effect.",
+      "A missing prior step is a measurement gap rather than a zero-reply baseline.",
+    ],
+  },
+  {
+    id: "first-reply-step",
+    topic: "reply-patterns",
+    title: "First reply step and variant",
+    question: "At which step and variant do sampled leads first reply?",
+    exactness: "sampled",
+    rationale: "Summarize sampled first-reply step and variant signals without presenting a small cohort as population prevalence.",
+    route_card: {
+      preferred_intent: "first reply step and variant distribution",
+      grain: "one row per campaign, reply step, and reply variant",
+      time_basis: "sampled lead provider reply fields and sampling-run frame",
+      attribution: "provider-qualified sampled lead evidence",
+      provider_scope: "provider-qualified campaign_source_id",
+      population_scope: "sampled replying leads; prevalence is not available unless the frame is complete",
+      tag_role: "none; resolve campaign scope before reading step distribution",
+      prerequisites: ["lead_evidence", "sampling_runs"],
+      cost: "low",
+      privacy: "aggregate reply counts and labels only; no contact or body output",
+      privacy_class: "aggregate_only",
+      safe_adaptations: ["filter to one campaign", "group variants only after step is fixed"],
+      forbidden_adaptations: ["call the most common step the causal winner", "claim population prevalence from a sampled frame", "combine providers without provider-qualified keys"],
+    },
+    sql: `WITH frame_rollup AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    COALESCE(source_provider, 'instantly') AS source_provider,
+    CASE
+      WHEN lead_cursor_exhausted = TRUE AND lower(COALESCE(provenance_status, '')) IN ('complete', 'exact') THEN 'complete'
+      WHEN lead_cursor_exhausted = FALSE THEN 'partial'
+      WHEN lower(COALESCE(provenance_status, '')) IN ('sampled', 'enriched_tail') OR lower(COALESCE(ingest_mode, '')) LIKE '%sample%' THEN 'sampled'
+      ELSE 'observed'
+    END AS frame_status
+  FROM sendlens.sampling_runs
+)
+SELECT
+  le.workspace_id,
+  le.source_provider,
+  le.campaign_id,
+  le.campaign_source_id,
+  le.email_replied_step AS first_reply_step,
+  COALESCE(le.email_replied_variant, 0) AS first_reply_variant,
+  COUNT(*) AS sampled_replying_leads,
+  SUM(CASE WHEN le.reply_outcome_label = 'positive' THEN 1 ELSE 0 END) AS sampled_positive_leads,
+  SUM(CASE WHEN le.reply_outcome_label = 'negative' THEN 1 ELSE 0 END) AS sampled_negative_leads,
+  COALESCE(fr.frame_status, 'unsupported') AS frame_status,
+  CASE WHEN COALESCE(fr.frame_status, 'unsupported') = 'complete' THEN 'decision_eligible' ELSE 'measurement_gap' END AS comparison_state
+FROM sendlens.lead_evidence le
+LEFT JOIN frame_rollup fr
+  ON le.workspace_id = fr.workspace_id
+ AND le.campaign_id = fr.campaign_id
+ AND le.source_provider = fr.source_provider
+WHERE le.has_reply_signal = TRUE
+  AND le.email_replied_step IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5, 6, 10
+ORDER BY sampled_replying_leads DESC, first_reply_step, first_reply_variant;`,
+    notes: [
+      "This is a sampled distribution of observed first-reply fields; it does not prove the step caused the reply.",
+      "Keep rare cohorts descriptive and report the frame status with every comparison.",
+    ],
+  },
+  {
+    id: "follow-up-yield",
+    topic: "experiment-planner",
+    title: "Follow-up marginal yield",
+    question: "Do follow-up steps add enough reply yield to justify keeping them?",
+    exactness: "exact",
+    rationale: "Expose follow-up step volume and reply yield with explicit configured-step and truncation checks.",
+    route_card: {
+      preferred_intent: "follow-up step yield and truncation risk",
+      grain: "one row per campaign and follow-up step",
+      time_basis: "cached provider step analytics snapshot",
+      attribution: "campaign-step aggregate; no lead-level causal attribution",
+      provider_scope: "provider-qualified campaign_source_id",
+      population_scope: "observed follow-up analytics rows; frame completeness remains separate",
+      tag_role: "none; use a bounded campaign set",
+      prerequisites: ["step_analytics", "campaign_variants"],
+      cost: "low",
+      privacy: "aggregate follow-up counts and derived rates only",
+      privacy_class: "aggregate_only",
+      safe_adaptations: ["filter to steps greater than one", "compare follow-up steps within one campaign"],
+      forbidden_adaptations: ["treat an absent step as a zero-yield follow-up", "ignore configured-step truncation", "claim a follow-up caused a reply"],
+    },
+    sql: `WITH step_rollup AS (
+  SELECT
+    workspace_id,
+    COALESCE(source_provider, 'instantly') AS source_provider,
+    campaign_id,
+    campaign_source_id,
+    step,
+    SUM(COALESCE(sent, 0)) AS follow_up_sent,
+    SUM(COALESCE(unique_replies, 0)) AS follow_up_unique_replies,
+    SUM(COALESCE(bounces, 0)) AS follow_up_bounces
+  FROM sendlens.step_analytics
+  WHERE step > 1
+  GROUP BY 1, 2, 3, 4, 5
+),
+configured AS (
+  SELECT
+    workspace_id,
+    COALESCE(source_provider, 'instantly') AS source_provider,
+    campaign_id,
+    MAX(step) AS max_configured_step,
+    COUNT(DISTINCT step) AS configured_step_count
+  FROM sendlens.campaign_variants
+  GROUP BY 1, 2, 3
+)
+SELECT
+  sr.workspace_id,
+  sr.source_provider,
+  sr.campaign_id,
+  sr.campaign_source_id,
+  sr.step,
+  sr.follow_up_sent,
+  sr.follow_up_unique_replies,
+  sr.follow_up_bounces,
+  ROUND(100.0 * sr.follow_up_unique_replies / NULLIF(sr.follow_up_sent, 0), 2) AS follow_up_yield_pct,
+  c.max_configured_step,
+  c.configured_step_count,
+  CASE
+    WHEN sr.follow_up_sent <= 0 THEN 'non_comparable'
+    WHEN c.max_configured_step IS NULL OR sr.step > c.max_configured_step THEN 'measurement_gap'
+    ELSE 'decision_eligible'
+  END AS comparison_state
+FROM step_rollup sr
+LEFT JOIN configured c
+  ON sr.workspace_id = c.workspace_id
+ AND sr.source_provider = c.source_provider
+ AND sr.campaign_id = c.campaign_id
+ORDER BY comparison_state, follow_up_yield_pct DESC NULLS LAST, sr.campaign_id, sr.step;`,
+    notes: [
+      "Follow-up yield is directional provider analytics, not an incremental causal estimate.",
+      "If analytics extends beyond configured variants or skips a step, fix the frame before making a keep/remove decision.",
+    ],
+  },
+  {
+    id: "reply-objection-cohorts",
+    topic: "reply-patterns",
+    title: "Reply objection cohorts",
+    question: "Which objection cohorts appear by ICP payload, list, step, and variant?",
+    exactness: "sampled",
+    rationale: "Classify hydrated reply text into bounded objection labels and join only safe aggregate cohort dimensions.",
+    route_card: {
+      preferred_intent: "reply objection cohorts by list, payload family, step, and variant",
+      grain: "campaign, list, payload-family, step, variant, and objection aggregate",
+      time_basis: "hydrated sampled reply context and sampled lead metadata",
+      attribution: "provider-qualified reply cohort; message text is used only for a derived label",
+      provider_scope: "provider-qualified campaign_source_id",
+      population_scope: "hydrated sampled replies; no prevalence claim for all replies",
+      tag_role: "none; scope campaigns or lists before interpreting cohorts",
+      prerequisites: ["reply_context with hydrated replies", "lead_evidence", "lead_payload_kv"],
+      cost: "medium",
+      privacy: "derived objection labels and aggregate dimensions; reply body, email, and payload values are suppressed",
+      privacy_class: "aggregate_only",
+      safe_adaptations: ["filter to one campaign or list", "group rare labels into other"],
+      forbidden_adaptations: ["return reply bodies or contact identifiers", "treat a small objection cohort as population prevalence", "infer ICP performance from payload values without a balanced frame"],
+    },
+    sql: `WITH payload_presence AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    normalized_email,
+    string_agg(DISTINCT payload_key_family, ', ' ORDER BY payload_key_family) AS payload_key_families
+  FROM sendlens.lead_payload_kv
+  WHERE payload_key_family IS NOT NULL
+  GROUP BY 1, 2, 3
+),
+reply_rows AS (
+  SELECT
+    rc.workspace_id,
+    rc.source_provider,
+    rc.campaign_id,
+    rc.campaign_source_id,
+    le.list_id,
+    COALESCE(CAST(rc.step_resolved AS VARCHAR), 'unresolved_step') AS step,
+    COALESCE(CAST(rc.variant_resolved AS VARCHAR), 'unresolved_variant') AS variant,
+    rc.reply_email_id,
+    rc.reply_outcome_label,
+    COALESCE(pp.payload_key_families, 'no_mapped_payload') AS payload_key_families,
+    CASE
+      WHEN regexp_matches(lower(COALESCE(rc.reply_body_text, rc.reply_content_preview, '')), '(current vendor|happy with|satisfied with|not looking to change|cannot change|already use)') THEN 'status_quo'
+      WHEN regexp_matches(lower(COALESCE(rc.reply_body_text, rc.reply_content_preview, '')), '(budget|too expensive|price|cost)') THEN 'budget'
+      WHEN regexp_matches(lower(COALESCE(rc.reply_body_text, rc.reply_content_preview, '')), '(later|next quarter|timing|not now|circle back)') THEN 'timing'
+      WHEN regexp_matches(lower(COALESCE(rc.reply_body_text, rc.reply_content_preview, '')), '(not a fit|no need|not relevant)') THEN 'not_a_fit'
+      WHEN regexp_matches(lower(COALESCE(rc.reply_body_text, rc.reply_content_preview, '')), '(wrong person|not responsible|different team)') THEN 'wrong_person'
+      WHEN rc.reply_outcome_label = 'positive' THEN 'positive_interest'
+      ELSE 'other'
+    END AS objection_type
+  FROM sendlens.reply_context rc
+  LEFT JOIN sendlens.lead_evidence le
+    ON rc.workspace_id = le.workspace_id
+   AND rc.campaign_id = le.campaign_id
+   AND rc.source_provider = le.source_provider
+   AND rc.normalized_email = le.normalized_email
+  LEFT JOIN payload_presence pp
+    ON le.workspace_id = pp.workspace_id
+   AND le.campaign_id = pp.campaign_id
+   AND le.normalized_email = pp.normalized_email
+  WHERE rc.reply_email_id IS NOT NULL
+),
+cohorts AS (
+  SELECT
+    workspace_id,
+    source_provider,
+    campaign_id,
+    campaign_source_id,
+    COALESCE(list_id, 'missing_list_id') AS list_id,
+    payload_key_families,
+    step,
+    variant,
+    objection_type,
+    reply_outcome_label,
+    COUNT(DISTINCT reply_email_id) AS hydrated_reply_rows
+  FROM reply_rows
+  GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+),
+frame_rollup AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    COALESCE(source_provider, 'instantly') AS source_provider,
+    CASE
+      WHEN lead_cursor_exhausted = TRUE AND lower(COALESCE(provenance_status, '')) IN ('complete', 'exact') THEN 'complete'
+      WHEN lead_cursor_exhausted = FALSE THEN 'partial'
+      WHEN lower(COALESCE(provenance_status, '')) IN ('sampled', 'enriched_tail') OR lower(COALESCE(ingest_mode, '')) LIKE '%sample%' THEN 'sampled'
+      ELSE 'observed'
+    END AS frame_status
+  FROM sendlens.sampling_runs
+)
+SELECT
+  c.*,
+  COALESCE(fr.frame_status, 'unsupported') AS frame_status,
+  CASE WHEN COALESCE(fr.frame_status, 'unsupported') = 'complete' THEN 'decision_eligible' ELSE 'measurement_gap' END AS comparison_state
+FROM cohorts c
+LEFT JOIN frame_rollup fr
+  ON c.workspace_id = fr.workspace_id
+ AND c.campaign_id = fr.campaign_id
+ AND c.source_provider = fr.source_provider
+ORDER BY hydrated_reply_rows DESC, campaign_id, objection_type, list_id;`,
+    notes: [
+      "Objection labels are bounded derived classifications, not verbatim reply content or a semantic guarantee.",
+      "Payload output contains only mapped key families; payload values and contact identifiers never leave the query.",
+      "Use the frame and cohort size to keep rare observations descriptive rather than turning them into prevalence claims.",
+    ],
+  },
+  {
+    id: "list-freshness-decay",
+    topic: "icp-signals",
+    title: "List freshness and decay",
+    question: "Does reply quality decay as sampled list contacts get older?",
+    exactness: "sampled",
+    rationale: "Bucket sampled leads by observed contact freshness and report reply outcomes without pretending sampled list rows are the whole list.",
+    route_card: {
+      preferred_intent: "list or import freshness decay by reply outcome",
+      grain: "campaign, provider, list, and freshness bucket",
+      time_basis: "sampled_at compared with provider last-contact timestamp",
+      attribution: "provider-qualified sampled lead evidence",
+      provider_scope: "provider-qualified campaign_source_id and list_id",
+      population_scope: "sampled leads only; list-wide prevalence is unavailable without a complete frame",
+      tag_role: "none; resolve campaign/list scope before comparing freshness",
+      prerequisites: ["lead_evidence", "sampling_runs", "list_id coverage"],
+      cost: "low",
+      privacy: "list identifiers, freshness buckets, and aggregate outcomes only",
+      privacy_class: "operational_identifiers",
+      safe_adaptations: ["use bounded freshness buckets", "compare one provider or campaign at a time"],
+      forbidden_adaptations: ["expose lead email or payload values", "call a stale bucket a population decay rate", "compare lists with incompatible sampling frames"],
+    },
+    sql: `WITH frame_rollup AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    COALESCE(source_provider, 'instantly') AS source_provider,
+    CASE
+      WHEN lead_cursor_exhausted = TRUE AND lower(COALESCE(provenance_status, '')) IN ('complete', 'exact') THEN 'complete'
+      WHEN lead_cursor_exhausted = FALSE THEN 'partial'
+      WHEN lower(COALESCE(provenance_status, '')) IN ('sampled', 'enriched_tail') OR lower(COALESCE(ingest_mode, '')) LIKE '%sample%' THEN 'sampled'
+      ELSE 'observed'
+    END AS frame_status
+  FROM sendlens.sampling_runs
+),
+freshness AS (
+  SELECT
+    le.workspace_id,
+    le.source_provider,
+    le.campaign_id,
+    le.campaign_source_id,
+    COALESCE(le.list_id, 'missing_list_id') AS list_id,
+    CASE
+      WHEN le.timestamp_last_contact IS NULL THEN 'unknown_freshness'
+      WHEN date_diff('day', CAST(le.timestamp_last_contact AS DATE), CAST(le.sampled_at AS DATE)) <= 7 THEN 'fresh_0_7d'
+      WHEN date_diff('day', CAST(le.timestamp_last_contact AS DATE), CAST(le.sampled_at AS DATE)) <= 30 THEN 'aging_8_30d'
+      ELSE 'stale_31d_plus'
+    END AS freshness_bucket,
+    CASE
+      WHEN le.timestamp_last_contact IS NULL THEN NULL
+      ELSE CAST(date_diff('day', CAST(le.timestamp_last_contact AS DATE), CAST(le.sampled_at AS DATE)) AS INTEGER)
+    END AS freshness_days,
+    le.has_reply_signal,
+    le.reply_outcome_label
+  FROM sendlens.lead_evidence le
+)
+SELECT
+  f.workspace_id,
+  f.source_provider,
+  f.campaign_id,
+  f.campaign_source_id,
+  f.list_id,
+  f.freshness_bucket,
+  MIN(f.freshness_days) AS minimum_freshness_days,
+  MAX(f.freshness_days) AS maximum_freshness_days,
+  COUNT(*) AS sampled_leads,
+  SUM(CASE WHEN f.has_reply_signal THEN 1 ELSE 0 END) AS sampled_replying_leads,
+  SUM(CASE WHEN f.reply_outcome_label = 'positive' THEN 1 ELSE 0 END) AS sampled_positive_leads,
+  SUM(CASE WHEN f.reply_outcome_label = 'negative' THEN 1 ELSE 0 END) AS sampled_negative_leads,
+  ROUND(100.0 * SUM(CASE WHEN f.has_reply_signal THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) AS sampled_reply_rate_pct,
+  COALESCE(fr.frame_status, 'unsupported') AS frame_status,
+  CASE WHEN COALESCE(fr.frame_status, 'unsupported') = 'complete' THEN 'decision_eligible' ELSE 'measurement_gap' END AS comparison_state
+FROM freshness f
+LEFT JOIN frame_rollup fr
+  ON f.workspace_id = fr.workspace_id
+ AND f.campaign_id = fr.campaign_id
+ AND f.source_provider = fr.source_provider
+GROUP BY 1, 2, 3, 4, 5, 6, 14
+ORDER BY comparison_state, sampled_reply_rate_pct DESC NULLS LAST, list_id, freshness_bucket;`,
+    notes: [
+      "Freshness is measured from provider last-contact evidence to the local sampled_at observation date.",
+      "Unknown freshness and sampled frames must remain visible; do not impute them as fresh or stale.",
+    ],
+  },
+  {
+    id: "matched-provider-cohort-comparison",
+    topic: "experiment-planner",
+    title: "Matched provider cohort comparison guard",
+    question: "Which cross-provider cohorts overlap, and are they compatible to compare?",
+    exactness: "sampled",
+    rationale: "Surface cross-provider matched identities as a guarded comparison input; provider semantics must be explicitly compatible before any lift claim.",
+    route_card: {
+      preferred_intent: "matched cross-provider cohort compatibility check",
+      grain: "cross-provider overlap identity type and hashed cohort key",
+      time_basis: "sampled lead exposure and provider frame snapshots",
+      attribution: "provider-qualified overlap evidence only",
+      provider_scope: "multiple providers are shown separately; semantic equivalence is not assumed",
+      population_scope: "sampled overlapping cohorts; no cross-provider prevalence claim",
+      tag_role: "none; provider scope is the primary boundary",
+      prerequisites: ["provider_overlap_risk_details", "sampling_runs", "explicit provider semantics review"],
+      cost: "medium",
+      privacy: "hashed overlap keys and aggregate provider counts; no contact identity or body",
+      privacy_class: "aggregate_only",
+      safe_adaptations: ["filter to one overlap_type", "require complete frames before a human compatibility review"],
+      forbidden_adaptations: ["treat provider names as semantic compatibility", "compare rates across providers from this guard alone", "reverse hashed overlap keys"],
+    },
+    sql: `WITH overlaps AS (
+  SELECT
+    workspace_id,
+    overlap_type,
+    overlap_key,
+    COUNT(DISTINCT source_provider) AS source_provider_count,
+    string_agg(DISTINCT source_provider, ', ' ORDER BY source_provider) AS source_providers,
+    COUNT(DISTINCT campaign_source_id) AS campaign_count,
+    COUNT(DISTINCT normalized_email) AS sampled_contacts,
+    MIN(evidence_sampled_at) AS first_sampled_at,
+    MAX(evidence_sampled_at) AS last_sampled_at
+  FROM sendlens.provider_overlap_risk_details
+  GROUP BY 1, 2, 3
+  HAVING COUNT(DISTINCT source_provider) > 1
+),
+provider_frames AS (
+  SELECT
+    workspace_id,
+    campaign_id,
+    campaign_source_id,
+    COALESCE(source_provider, 'instantly') AS source_provider,
+    CASE
+      WHEN lead_cursor_exhausted = TRUE AND lower(COALESCE(provenance_status, '')) IN ('complete', 'exact') THEN 'complete'
+      WHEN lead_cursor_exhausted = FALSE THEN 'partial'
+      WHEN lower(COALESCE(provenance_status, '')) IN ('sampled', 'enriched_tail') OR lower(COALESCE(ingest_mode, '')) LIKE '%sample%' THEN 'sampled'
+      ELSE 'observed'
+    END AS frame_status
+  FROM sendlens.sampling_runs
+),
+overlap_frames AS (
+  SELECT
+    d.workspace_id,
+    d.overlap_type,
+    d.overlap_key,
+    COUNT(DISTINCT d.source_provider) AS providers_with_rows,
+    COUNT(DISTINCT CASE WHEN pf.frame_status = 'complete' THEN d.source_provider END) AS complete_provider_count
+  FROM sendlens.provider_overlap_risk_details d
+  LEFT JOIN provider_frames pf
+    ON d.workspace_id = pf.workspace_id
+   AND d.campaign_id = pf.campaign_id
+   AND d.campaign_source_id = pf.campaign_source_id
+   AND d.source_provider = pf.source_provider
+  GROUP BY 1, 2, 3
+)
+SELECT
+  o.workspace_id,
+  o.overlap_type,
+  o.overlap_key,
+  o.source_provider_count,
+  o.source_providers,
+  o.campaign_count,
+  o.sampled_contacts,
+  o.first_sampled_at,
+  o.last_sampled_at,
+  COALESCE(ofr.providers_with_rows, 0) AS providers_with_rows,
+  COALESCE(ofr.complete_provider_count, 0) AS complete_provider_count,
+  CASE
+    WHEN COALESCE(ofr.complete_provider_count, 0) = o.source_provider_count THEN 'complete_frames_require_semantics_review'
+    ELSE 'incomplete_or_sampled_frames'
+  END AS compatibility_status,
+  'non_comparable' AS comparison_state,
+  'Do not compare provider rates until metric definitions, exposure windows, denominator rules, and frame completeness are explicitly compatible.' AS evidence_action
+FROM overlaps o
+LEFT JOIN overlap_frames ofr
+  ON o.workspace_id = ofr.workspace_id
+ AND o.overlap_type = ofr.overlap_type
+ AND o.overlap_key = ofr.overlap_key
+ORDER BY sampled_contacts DESC, overlap_type, overlap_key;`,
+    notes: [
+      "This recipe is a guardrail and intentionally returns non_comparable rather than assuming Instantly and Smartlead metrics mean the same thing.",
+      "A human or approved compatibility contract must establish matching exposure windows, denominators, and outcome semantics before comparison.",
+    ],
+  },
+  {
+    id: "decision-risk-evidence-gaps",
+    topic: "experiment-planner",
+    title: "Decision-risk evidence gaps",
+    question: "Which experiment comparisons are blocked by evidence or spillover risk?",
+    exactness: "hybrid",
+    rationale: "Provide a compact remediation queue for comparisons that are not decision eligible.",
+    route_card: {
+      preferred_intent: "experiment decision-risk remediation queue",
+      grain: "one row per blocked campaign-step-variant comparison",
+      time_basis: "current validity view and sampling-run evidence frame",
+      attribution: "same campaign-step-variant contract as the validity audit",
+      provider_scope: "provider-qualified campaign_source_id",
+      population_scope: "observed blocked comparisons; no prevalence or significance claim",
+      tag_role: "none; resolve tags before selecting a remediation cohort",
+      prerequisites: ["experiment_validity_checks public view"],
+      cost: "low",
+      privacy: "aggregate blocker fields and remediation text only",
+      privacy_class: "aggregate_only",
+      safe_adaptations: ["filter to spillover or measurement gaps", "sort by sent volume after state"],
+      forbidden_adaptations: ["skip the evidence_action", "treat missing evidence as neutral evidence", "promote blocked rows into winner recommendations"],
+    },
+    sql: `SELECT
+  workspace_id,
+  source_provider,
+  campaign_id,
+  campaign_source_id,
+  campaign_name,
+  step,
+  variant,
+  comparison_state,
+  frame_status,
+  hydration_status,
+  variant_mapping_status,
+  sent,
+  comparison_sent,
+  shared_sender_count,
+  shared_domain_count,
+  sampled_overlap_count,
+  evidence_action,
+  minimum_detectable_effect_status
+FROM sendlens.experiment_validity_checks
+WHERE comparison_state <> 'decision_eligible'
+ORDER BY
+  CASE comparison_state
+    WHEN 'spillover_risk' THEN 1
+    WHEN 'measurement_gap' THEN 2
+    ELSE 3
+  END,
+  sent DESC NULLS LAST,
+  campaign_name,
+  step,
+  variant;`,
+    notes: [
+      "Use this as the remediation queue after the validity audit and before experiment interpretation.",
+      "The evidence_action is the minimum next step; do not silently downgrade a blocker to a caveat.",
+    ],
+  },
+  {
     id: "workspace-overview",
     topic: "workspace-health",
     title: "Workspace overview",

@@ -31,9 +31,13 @@ const REGRESSION_RECIPE_IDS = new Set([
   "campaign-metadata-coverage",
   "cross-provider-overlap-risk",
   "cross-provider-overlap-effective",
+  "decision-risk-evidence-gaps",
   "duplicate-contact-company-exposure",
+  "experiment-validity-audit",
+  "matched-provider-cohort-comparison",
   "personalization-leak-audit",
   "personalization-leak-raw-detail",
+  "reply-objection-cohorts",
 ]);
 const REQUIRED_ROUTE_CARD_RECIPE_IDS = [
   "workspace-overview",
@@ -44,6 +48,15 @@ const REQUIRED_ROUTE_CARD_RECIPE_IDS = [
   "campaign-blast-radius",
   "personalization-leak-audit",
   "fetched-reply-text-by-campaign",
+  "experiment-validity-audit",
+  "relative-sender-quality",
+  "sequence-marginal-yield",
+  "first-reply-step",
+  "follow-up-yield",
+  "reply-objection-cohorts",
+  "list-freshness-decay",
+  "matched-provider-cohort-comparison",
+  "decision-risk-evidence-gaps",
   "tag-scope-audit",
 ];
 

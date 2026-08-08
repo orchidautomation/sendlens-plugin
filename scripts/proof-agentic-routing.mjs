@@ -114,13 +114,19 @@ const REVIEWED_BASELINE_RECIPE_IDS = Object.freeze([
   "copy-template-review",
   "cross-provider-overlap-effective",
   "cross-provider-overlap-risk",
+  "decision-risk-evidence-gaps",
   "duplicate-contact-company-exposure",
   "experiment-planner-candidates",
+  "experiment-validity-audit",
   "fetched-reply-text-by-campaign",
   "fetched-reply-text-raw-detail-by-campaign",
+  "first-reply-step",
+  "follow-up-yield",
   "inbox-placement-auth-failures",
   "inbox-placement-test-overview",
+  "list-freshness-decay",
   "lead-list-source-quality",
+  "matched-provider-cohort-comparison",
   "negative-unsubscribe-concentration",
   "personalization-leak-audit",
   "personalization-leak-raw-detail",
@@ -131,8 +137,11 @@ const REVIEWED_BASELINE_RECIPE_IDS = Object.freeze([
   "reply-feed",
   "reply-feed-raw-detail",
   "reply-hydration-coverage",
+  "reply-objection-cohorts",
   "reply-patterns-by-variant",
+  "relative-sender-quality",
   "sampled-leads-by-tag",
+  "sequence-marginal-yield",
   "sender-deliverability-health",
   "sender-domain-lineage",
   "sender-load-balance-by-campaign-tag",
@@ -791,9 +800,9 @@ function assertReviewedRecipeRegistry() {
   assert.deepEqual(
     recipeIds,
     [...REVIEWED_BASELINE_RECIPE_IDS].sort(),
-    "getQueryRecipes() registry drifted from the reviewed v0.1.84 baseline; update this harness only with a reviewed recipe change",
+    "getQueryRecipes() registry drifted from the reviewed v0.1.85 baseline; update this harness only with a reviewed recipe change",
   );
-  assert.equal(recipeIds.length, 62, "reviewed v0.1.84 recipe baseline is 62");
+  assert.equal(recipeIds.length, 71, "reviewed v0.1.85 recipe baseline is 71");
   return recipeIds;
 }
 

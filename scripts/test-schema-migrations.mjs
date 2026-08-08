@@ -435,6 +435,65 @@ await withTempDb("sendlens-schema-lineage-upgrade-", async () => {
   }
 });
 
+await withTempDb("sendlens-schema-experiment-validity-upgrade-", async () => {
+  await openAndClose();
+  let db = await getDb({ timeoutMs: 0 });
+  try {
+    await run(db, `DELETE FROM sendlens.schema_migrations
+      WHERE migration_id = '${CURRENT_SCHEMA_MIGRATION_ID}'`);
+    await run(
+      db,
+      `INSERT OR IGNORE INTO sendlens.schema_migrations (migration_id, applied_at)
+       VALUES ('${PREVIOUS_SCHEMA_MIGRATION_IDS.at(-1)}', CURRENT_TIMESTAMP)`,
+    );
+    await run(db, "DROP VIEW sendlens.experiment_validity_checks");
+  } finally {
+    closeDb(db);
+  }
+
+  await openAndClose();
+  db = await getDb({ timeoutMs: 0 });
+  try {
+    const columns = await query(
+      db,
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'sendlens'
+         AND table_name = 'experiment_validity_checks'
+         AND column_name IN (
+           'comparison_state',
+           'frame_status',
+           'hydration_status',
+           'variant_mapping_status',
+           'minimum_detectable_effect_status'
+         )
+       ORDER BY column_name`,
+    );
+    assert.deepEqual(
+      columns,
+      [
+        { column_name: "comparison_state" },
+        { column_name: "frame_status" },
+        { column_name: "hydration_status" },
+        { column_name: "minimum_detectable_effect_status" },
+        { column_name: "variant_mapping_status" },
+      ],
+      "caches on the sender-lineage migration must receive the experiment validity view",
+    );
+    const migrations = await query(
+      db,
+      "SELECT migration_id FROM sendlens.schema_migrations ORDER BY migration_id",
+    );
+    assert.deepEqual(migrations, [
+      { migration_id: BASELINE_SCHEMA_MIGRATION_ID },
+      { migration_id: PREVIOUS_SCHEMA_MIGRATION_IDS.at(-1) },
+      { migration_id: CURRENT_SCHEMA_MIGRATION_ID },
+    ]);
+  } finally {
+    closeDb(db);
+  }
+});
+
 await withTempDb("sendlens-schema-failure-", async (dbPath) => {
   const previousFailure = process.env.SENDLENS_TEST_FAIL_SCHEMA_MIGRATION_ID;
   process.env.SENDLENS_TEST_FAIL_SCHEMA_MIGRATION_ID = BASELINE_SCHEMA_MIGRATION_ID;
