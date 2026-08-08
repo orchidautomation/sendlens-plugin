@@ -164,6 +164,29 @@ assert.deepEqual(
 );
 assert.match(lineageSuggestion.route_cards[1].forbidden_adaptations.join(" "), /campaign sends|attribution/i);
 
+const experimentGuidance = buildCatalogSearchGuidance(
+  "can we compare experiment variants and minimum detectable effect",
+  [],
+);
+const experimentSuggestion = experimentGuidance.analysis_starter_suggestions.find(
+  (suggestion) => suggestion.concept === "experiment validity",
+);
+assert.ok(experimentSuggestion);
+assert.deepEqual(
+  experimentSuggestion.recipe_ids.slice(0, 2),
+  ["experiment-validity-audit", "decision-risk-evidence-gaps"],
+);
+assert.deepEqual(
+  experimentSuggestion.route_cards?.map((card) => card.recipe_id),
+  ["experiment-validity-audit", "decision-risk-evidence-gaps"],
+  "experiment questions must expose the validity audit and bounded remediation card first",
+);
+assert.match(
+  experimentSuggestion.route_cards[0].forbidden_adaptations.join(" "),
+  /winner|statistical confidence|population prevalence/i,
+);
+assert.equal(experimentSuggestion.eligibility?.statistical_claims_allowed, false);
+
 const exactLookup = buildQueryRecipeResponse({
   recipe_id: "campaign-sender-inventory-by-tag",
 });

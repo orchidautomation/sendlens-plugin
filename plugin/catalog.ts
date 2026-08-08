@@ -98,6 +98,7 @@ export const CATALOG_ROUTE_CARD_RESPONSE_BUDGET_BYTES = 8_192;
 const CATALOG_PRIMARY_ROUTE_CARD_IDS_BY_CONCEPT = new Map<string, string[]>([
   ["campaign-tag sender risk", ["campaign-sender-inventory-by-tag"]],
   ["sender/domain lineage", ["sender-domain-lineage", "campaign-blast-radius"]],
+  ["experiment validity", ["experiment-validity-audit", "decision-risk-evidence-gaps"]],
   ["tag", ["tag-scope-audit"]],
 ]);
 
@@ -148,6 +149,37 @@ const CONCEPT_HINTS: ConceptHint[] = [
     topics: ["campaign-performance", "campaign-launch-qa"],
     recipeIds: ["campaign-tag-daily-volume-utilization", "campaign-launch-qa-checklist"],
     reason: "Scale decisions need campaign performance, sender capacity, launch readiness, and deliverability context.",
+  },
+  {
+    concept: "experiment validity",
+    triggers: [
+      "experiment validity",
+      "variant comparison",
+      "variant comparisons",
+      "minimum detectable effect",
+      "spillover risk",
+      "follow-up yield",
+      "first reply step",
+      "objection cohort",
+      "list freshness",
+      "list decay",
+      "matched provider",
+      "experiment",
+    ],
+    searchTerms: ["experiment_validity_checks", "step_analytics", "campaign_variants", "sampling_runs", "spillover", "hydration", "denominator"],
+    topics: ["experiment-planner", "reply-patterns", "icp-signals"],
+    recipeIds: [
+      "experiment-validity-audit",
+      "decision-risk-evidence-gaps",
+      "relative-sender-quality",
+      "sequence-marginal-yield",
+      "first-reply-step",
+      "follow-up-yield",
+      "reply-objection-cohorts",
+      "list-freshness-decay",
+      "matched-provider-cohort-comparison",
+    ],
+    reason: "Experiment questions start with validity and evidence-gap checks before any winner, lift, sequence, objection, list, sender, or cross-provider interpretation.",
   },
   {
     concept: "refill",

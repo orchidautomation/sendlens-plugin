@@ -85,6 +85,7 @@ export const PUBLIC_TABLES = [
   "cross_provider_lead_overlap_effective",
   "reply_context",
   "rendered_outbound_context",
+  "experiment_validity_checks",
 ] as const;
 
 export type PublicTableName = (typeof PUBLIC_TABLES)[number];
@@ -208,4 +209,6 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Reply outcome view with one row per replied lead/fetched reply email at the available lead-email grain. Template joins collapse to a single unambiguous step/variant match instead of multiplying rows.",
   rendered_outbound_context:
     "Rendered outbound analysis view that joins reconstructed lead-level copy to campaign names and intended templates.",
+  experiment_validity_checks:
+    "Provider-qualified campaign-step-variant validity checks covering variant mapping, shared sender/domain spillover, evidence-frame completeness, hydration balance, denominator compatibility, and bounded minimum-detectable-effect labeling.",
 };

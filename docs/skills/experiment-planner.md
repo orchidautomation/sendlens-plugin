@@ -22,11 +22,12 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 1. Pull `analysis_starters(topic="experiment-planner")` for candidate ranking.
 2. Pick one campaign before designing the experiment.
-3. Do not propose copy tests while launch, sender, deliverability, or exact lead-supply blockers remain unresolved; do not infer a lead-supply blocker from `leads_count - contacted_count`.
-4. Use analyst evidence for the selected reply, ICP, or copy lane.
-5. Use the campaign strategist to define the hypothesis, cohort, changed variable, and intended learning.
-6. Use the launch operator to define measurement, guardrails, read window, and stop/iterate/scale rules.
-7. Check `diagnostics.analysis_eligibility` before comparing variants or providers; invalid frames return a bounded evidence action instead of a statistical or winner claim.
+3. Run `experiment-validity-audit` before comparing variants, sender quality, sequence steps, reply cohorts, list freshness, or providers; use `decision-risk-evidence-gaps` for the remediation queue.
+4. Do not propose copy tests while launch, sender, deliverability, or exact lead-supply blockers remain unresolved; do not infer a lead-supply blocker from `leads_count - contacted_count`.
+5. Use analyst evidence for the selected reply, ICP, or copy lane.
+6. Use the campaign strategist to define the hypothesis, cohort, changed variable, and intended learning.
+7. Use the launch operator to define measurement, guardrails, read window, and stop/iterate/scale rules.
+8. Check `diagnostics.analysis_eligibility` and the validity `comparison_state` before comparing variants or providers; invalid frames return a bounded evidence action instead of a statistical or winner claim.
 
 ## Output Shape
 
@@ -42,3 +43,5 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 ## Evidence Boundaries
 
 Every experiment should identify whether it is based on exact aggregate metrics, sampled lead evidence, fetched replies, reconstructed outbound copy, or operator judgment. The plan should avoid implying statistical certainty when the underlying evidence is directional.
+
+`decision_eligible` is a local evidence-readiness state, not a significance result. `spillover_risk`, `measurement_gap`, and `non_comparable` require the named remediation before interpretation. Cross-provider matches remain guarded until metric definitions, exposure windows, denominators, and frame completeness are explicitly compatible.
