@@ -24,10 +24,11 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 1. Start with `workspace_snapshot` for broad context.
 2. Pull `analysis_starters(topic="account-manager-brief")`.
 3. Scope by campaign name or provider tag when provided. Treat tag support as provider-specific evidence.
-4. For sender/domain disconnection or outage risk, use the sender/domain lineage recipe followed by the bounded campaign-blast-radius simulation.
-5. Use campaign-performance runway recipes before making runway claims; do not call a campaign dry unless exact remaining-lead evidence supports it.
-6. Use workspace-health deliverability recipes before attributing weak replies to copy or targeting.
-7. Switch to copy, ICP, or reply specialists before making detailed claims in those lanes.
+4. When a prior run needs to be replayed or explained, use `analysis-receipt-semantic-diff` with the returned receipt IDs, then `metric-reconciliation-audit`; cite the receipt ID and status, never SQL or raw rows.
+5. For sender/domain disconnection or outage risk, use the sender/domain lineage recipe followed by the bounded campaign-blast-radius simulation.
+6. Use campaign-performance runway recipes before making runway claims; do not call a campaign dry unless exact remaining-lead evidence supports it.
+7. Use workspace-health deliverability recipes before attributing weak replies to copy or targeting.
+8. Switch to copy, ICP, or reply specialists before making detailed claims in those lanes.
 
 ## Output Shape
 

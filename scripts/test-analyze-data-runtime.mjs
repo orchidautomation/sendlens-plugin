@@ -54,6 +54,25 @@ try {
   assert.equal(okPayload.diagnostics?.analysis_eligibility?.schema_version, "analysis_eligibility.v1");
   assert.equal(okPayload.diagnostics?.analysis_eligibility?.evidence_frame, "observed");
   assert.equal(okPayload.diagnostics?.analysis_eligibility?.eligible, true);
+  assert.match(okPayload.analysis_receipt?.receipt_id ?? "", /^ar_/);
+  assert.equal(okPayload.analysis_receipt?.recipe_id, null);
+  assert.equal(typeof okPayload.analysis_receipt?.sql_hash, "string");
+  assert.equal(JSON.stringify(okPayload.analysis_receipt).includes("SELECT"), false);
+
+  const preparedResult = await client.callTool({
+    name: "prepare_campaign_analysis",
+    arguments: { campaign_id: "instantly:demo-alpha", analysis_depth: "fast" },
+  });
+  assert.equal(preparedResult.content?.[0]?.type, "text");
+  const preparedPayload = JSON.parse(preparedResult.content[0].text);
+  assert.match(preparedPayload.analysis_receipt?.receipt_id ?? "", /^ar_/);
+  assert.equal(preparedPayload.analysis_receipt?.recipe_id, "prepare_campaign_analysis");
+  assert.ok([
+    "expected_scope_difference",
+    "unsupported",
+    "retrieval_defect",
+  ].includes(preparedPayload.metric_reconciliation?.status));
+  assert.equal(JSON.stringify(preparedPayload.analysis_receipt).includes("demo-alpha"), false);
 
   const sampledFamilyBlocked = await callAnalyzeData(
     client,
@@ -70,6 +89,8 @@ try {
   assert.equal(sampledFamilyBlocked.diagnostics?.analysis_eligibility?.eligible, false);
   assert.equal(sampledFamilyBlocked.diagnostics?.analysis_eligibility?.question_family, "reply_to_copy");
   assert.match(sampledFamilyBlocked.diagnostics?.analysis_eligibility?.nearest_safe_conclusion ?? "", /No claim is safe/);
+  assert.match(sampledFamilyBlocked.analysis_receipt?.receipt_id ?? "", /^ar_/);
+  assert.equal(sampledFamilyBlocked.analysis_receipt?.status, "analysis_ineligible");
   assertNoCanaries(sampledFamilyBlocked);
 
   const unknownFamilyBlocked = await callAnalyzeData(

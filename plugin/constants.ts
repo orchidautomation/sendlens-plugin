@@ -86,6 +86,9 @@ export const PUBLIC_TABLES = [
   "reply_context",
   "rendered_outbound_context",
   "experiment_validity_checks",
+  "analysis_receipts",
+  "report_dependencies",
+  "metric_reconciliations",
 ] as const;
 
 export type PublicTableName = (typeof PUBLIC_TABLES)[number];
@@ -211,4 +214,10 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Rendered outbound analysis view that joins reconstructed lead-level copy to campaign names and intended templates.",
   experiment_validity_checks:
     "Provider-qualified campaign-step-variant validity checks covering variant mapping, shared sender/domain spillover, evidence-frame completeness, hydration balance, denominator compatibility, and bounded minimum-detectable-effect labeling.",
+  analysis_receipts:
+    "Local bounded replay receipts storing hashes, metric-contract metadata, provider-capability and freshness snapshots, sampling fingerprints, dependency-set hashes, result hashes, truncation, and claim limits without storing SQL, contacts, or message bodies.",
+  report_dependencies:
+    "Local hash-based dependency rows for each public surface referenced by an analysis receipt, preserving freshness and evidence-frame metadata without raw report data.",
+  metric_reconciliations:
+    "Explicit semantic reconciliation records that preserve compatible-contract status, authoritative/decomposed values, residuals, severity, expected scope causes, and unsupported reasons.",
 };

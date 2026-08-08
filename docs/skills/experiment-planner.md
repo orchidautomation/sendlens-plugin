@@ -28,6 +28,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 6. Use the campaign strategist to define the hypothesis, cohort, changed variable, and intended learning.
 7. Use the launch operator to define measurement, guardrails, read window, and stop/iterate/scale rules.
 8. Check `diagnostics.analysis_eligibility` and the validity `comparison_state` before comparing variants or providers; invalid frames return a bounded evidence action instead of a statistical or winner claim.
+9. When comparing saved report runs, cite the `analysis_receipt.receipt_id` and run `analysis-receipt-semantic-diff` before interpreting result changes; a changed freshness, sampling frame, dependency set, or metric contract is not outcome lift.
 
 ## Output Shape
 

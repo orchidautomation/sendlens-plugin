@@ -35,11 +35,12 @@ Use only SendLens MCP tools for SendLens analysis.
 5. Use `fetch_reply_text` for a low-level manual fetch only when balanced premium depth is not needed.
 6. Include out-of-office status `0` only when the user explicitly asks for OOO handling.
 7. After `prepare_campaign_analysis` hydration, report the aggregate unique human reply count separately from the selected List Email body surface: selected statuses, OOO exclusion, `fetch_latest_of_thread`, the stored context latest-thread basis, fetched/hydrated counts by status, exhaustion, and the aggregate-to-hydrated gap from `reply_coverage_summary`. When using `fetch_reply_text` instead, report that tool's returned fetch counts and do not claim full `reply_coverage_summary` gap semantics.
-8. Treat exhausted selected buckets as exhausted only for that queried surface. Do not claim every aggregate reply was hydrated or imply maximum depth will recover a remaining gap; preserve the neutral possible-cause language from the tool response.
-9. Use raw-detail recipes only for local diagnosis; do not paste raw reply bodies, reply-from fields, lead emails, or contact fields into external artifacts.
-10. When segmenting by uploaded lead metadata or custom fields, query `lead_payload_kv` only after the campaign is fixed. Use `campaign-metadata-coverage` before choosing a value-level cohort unless the exact payload key is named; do not silently merge normalized-key or metadata-family aliases.
-11. If title, role, or segment metadata is missing, describe it as source/provider-specific absence. Inspect campaign-scoped payload keys first, and recommend richer future lead fields only when that missing field is required for the decision.
-12. If hydrated replies complain about irrelevant copy, wrong industry, wrong compliance domain, or a template that does not match the intended campaign, report setup/template-resolution risk before normal sentiment themes.
+8. Cite `analysis_receipt.receipt_id` and `metric_reconciliation.status` in the evidence basis. Use `analysis-receipt-semantic-diff` for saved-run comparisons; `expected_scope_difference`, `unsupported`, and `retrieval_defect` have different meanings and must not be collapsed.
+9. Treat exhausted selected buckets as exhausted only for that queried surface. Do not claim every aggregate reply was hydrated or imply maximum depth will recover a remaining gap; preserve the neutral possible-cause language from the tool response.
+10. Use raw-detail recipes only for local diagnosis; do not paste raw reply bodies, reply-from fields, lead emails, or contact fields into external artifacts.
+11. When segmenting by uploaded lead metadata or custom fields, query `lead_payload_kv` only after the campaign is fixed. Use `campaign-metadata-coverage` before choosing a value-level cohort unless the exact payload key is named; do not silently merge normalized-key or metadata-family aliases.
+12. If title, role, or segment metadata is missing, describe it as source/provider-specific absence. Inspect campaign-scoped payload keys first, and recommend richer future lead fields only when that missing field is required for the decision.
+13. If hydrated replies complain about irrelevant copy, wrong industry, wrong compliance domain, or a template that does not match the intended campaign, report setup/template-resolution risk before normal sentiment themes.
 
 ## Fallback And Suppression
 

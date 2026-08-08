@@ -15,7 +15,7 @@ See also: [trust and privacy](./TRUST_AND_PRIVACY.md), [skill docs](./skills/REA
 | Reply, ICP, and copy intelligence | [sendlens-analyst](./skills/sendlens-analyst.md) | `/reply-patterns`, `/icp-signals`, `/copy-analysis` | `reply-auditor`, `icp-auditor`, `copy-auditor` | `prepare_campaign_analysis`, `fetch_reply_text`, `load_campaign_data`, `analysis_starters`, `analyze_data` | hydrated replies, payload views, and reconstructed outbound surfaces |
 | Campaign strategy | [sendlens-campaign-strategist](./skills/sendlens-campaign-strategist.md) | `/sendlens-campaign-strategist`, `/experiment-planner` | `campaign-strategist`, `synthesis-reviewer` | validated analyst evidence | audience, exclusions, offer, angle, sequence architecture, and experiment hypothesis |
 | Evidence-backed copy | [sendlens-copywriter](./skills/sendlens-copywriter.md) | `/sendlens-copywriter`, `/cold-email-best-practices` | `campaign-copywriter`, `copy-auditor`, `synthesis-reviewer` | validated strategy, templates, replies, payload, and reconstructed-copy evidence | subjects, bodies, CTAs, sequence, variants, claim ledger, and rendering requirements |
-| Launch, scale, and learning handoff | [sendlens-launch-operator](./skills/sendlens-launch-operator.md) | `/sendlens-launch-operator`, `/campaign-launch-qa`, `/account-manager-brief` | `launch-operator`, `campaign-analyst`, `workspace-triager` | launch, campaign, sender, and evidence recipes | blocker matrix, operating thresholds, learning record, and client-safe briefing output |
+| Launch, scale, and learning handoff | [sendlens-launch-operator](./skills/sendlens-launch-operator.md) | `/sendlens-launch-operator`, `/campaign-launch-qa`, `/account-manager-brief` | `launch-operator`, `campaign-analyst`, `workspace-triager` | launch, campaign, sender, evidence, and replay-receipt recipes | blocker matrix, operating thresholds, learning record, and client-safe briefing output |
 
 ## Skills
 
@@ -106,11 +106,15 @@ The local schema exposes exact aggregate tables and semantic analysis views. Com
 | `campaign_overview` | Semantic campaign rollup | Default campaign ranking, tracking/deliverability settings, and health view |
 | `lead_evidence`, `lead_payload_kv` | Sampled lead and campaign-payload evidence | ICP and lead-variable hypotheses |
 | `experiment_validity_checks` | Provider-qualified experiment readiness view | Variant mapping, shared sender/domain spillover, evidence-frame completeness, hydration balance, denominator compatibility, and bounded MDE labeling before comparison |
+| `analysis_receipts`, `report_dependencies` | Local bounded replay receipts and public-surface dependency hashes | Re-run comparison, source-freshness and sampling fingerprints, metric-contract compatibility, result hashes, truncation, and claim limits without storing SQL, contacts, or message bodies |
+| `metric_reconciliations` | Explicit metric reconciliation records | Compatible decompositions, expected scope differences, unsupported contracts, retrieval defects, residuals, severity, and semantic causes |
 | `provider_capabilities` | Provider capability status | Explain supported, partial, or support-gated provider surfaces such as Smartlead Smart Delivery |
 | `provider_overlap_risk`, `provider_overlap_risk_details` | Sampled cross-provider overlap primitives | Find duplicate normalized email, domain, or company exposure across providers within the unsafe window |
 | `cross_provider_lead_overlap_effective` | Sampled overlap effective-window projection | Preserve observed sampling bounds without implying historical assignment continuity |
 | `reply_context`, `reply_email_context`, `reply_emails` | Reply outcome context, email-anchored fetched reply context, and fetched exact reply rows | Reply cohort analysis and exact reply-body analysis when hydrated; reply semantic views preserve one row per replied lead/fetched reply email and mark ambiguous template attribution as context gaps instead of duplicating rows |
 | `rendered_outbound_context` | Locally reconstructed outbound context | Personalization QA and copy analysis, not byte-for-byte delivered email |
+
+For report reproducibility, use `analysis-receipt-semantic-diff` with the receipt IDs returned by `analyze_data` or `prepare_campaign_analysis`, then use `metric-reconciliation-audit` for explicit residual status. A changed result hash is not a business explanation until the question, rationale, recipe, and metric contract remain compatible.
 
 ## Scripts
 

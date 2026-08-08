@@ -85,6 +85,7 @@ const REQUIRED_CATALOG_ROUTE_CARD_FIELDS = Object.freeze([
 const REVIEWED_BASELINE_RECIPE_IDS = Object.freeze([
   "account-health",
   "account-manager-client-brief",
+  "analysis-receipt-semantic-diff",
   "campaign-blast-radius",
   "campaign-daily-health-trend",
   "campaign-evidence-coverage-audit",
@@ -127,6 +128,7 @@ const REVIEWED_BASELINE_RECIPE_IDS = Object.freeze([
   "list-freshness-decay",
   "lead-list-source-quality",
   "matched-provider-cohort-comparison",
+  "metric-reconciliation-audit",
   "negative-unsubscribe-concentration",
   "personalization-leak-audit",
   "personalization-leak-raw-detail",
@@ -800,9 +802,9 @@ function assertReviewedRecipeRegistry() {
   assert.deepEqual(
     recipeIds,
     [...REVIEWED_BASELINE_RECIPE_IDS].sort(),
-    "getQueryRecipes() registry drifted from the reviewed v0.1.85 baseline; update this harness only with a reviewed recipe change",
+    "getQueryRecipes() registry drifted from the reviewed v0.1.86 baseline; update this harness only with a reviewed recipe change",
   );
-  assert.equal(recipeIds.length, 71, "reviewed v0.1.85 recipe baseline is 71");
+  assert.equal(recipeIds.length, 73, "reviewed v0.1.86 recipe baseline is 73");
   return recipeIds;
 }
 
