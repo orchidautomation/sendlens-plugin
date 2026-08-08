@@ -99,6 +99,7 @@ const CATALOG_PRIMARY_ROUTE_CARD_IDS_BY_CONCEPT = new Map<string, string[]>([
   ["campaign-tag sender risk", ["campaign-sender-inventory-by-tag"]],
   ["sender/domain lineage", ["sender-domain-lineage", "campaign-blast-radius"]],
   ["experiment validity", ["experiment-validity-audit", "decision-risk-evidence-gaps"]],
+  ["report reproducibility", ["analysis-receipt-semantic-diff", "metric-reconciliation-audit"]],
   ["tag", ["tag-scope-audit"]],
 ]);
 
@@ -188,6 +189,24 @@ const CONCEPT_HINTS: ConceptHint[] = [
     topics: ["campaign-performance", "account-manager-brief"],
     recipeIds: ["campaign-tag-runway-inputs", "account-manager-client-brief"],
     reason: "Refill questions are usually lead-supply or runway questions, not a single schema column.",
+  },
+  {
+    concept: "report reproducibility",
+    triggers: [
+      "replay a report",
+      "replay report",
+      "report reproducibility",
+      "reproduce report",
+      "report run",
+      "semantic diff",
+      "analysis receipt",
+      "analysis receipts",
+      "report receipt",
+    ],
+    searchTerms: ["analysis_receipts", "report_dependencies", "metric_reconciliations", "result_hash", "dependency_set_hash", "semantic diff"],
+    topics: ["account-manager-brief", "workspace-health"],
+    recipeIds: ["analysis-receipt-semantic-diff", "metric-reconciliation-audit"],
+    reason: "Replay questions should compare local receipt contracts and hashes first, then inspect explicit reconciliation status without re-running unbounded SQL or treating incompatible surfaces as equivalent.",
   },
   {
     concept: "deliverability",

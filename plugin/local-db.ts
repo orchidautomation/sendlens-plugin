@@ -42,8 +42,9 @@ export const PREVIOUS_SCHEMA_MIGRATION_IDS = [
   "202608070001_progressive_sync_frames",
   "202608080001_inference_eligibility_evidence_debt",
   "202608080002_sender_domain_lineage",
+  "202608080003_experiment_validity",
 ] as const;
-export const CURRENT_SCHEMA_MIGRATION_ID = "202608080003_experiment_validity";
+export const CURRENT_SCHEMA_MIGRATION_ID = "202608080004_analysis_receipts";
 const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
 const cacheProviderModeContext = new AsyncLocalStorage<SourceProviderMode>();
 
@@ -629,6 +630,8 @@ async function runSchemaMigration(
 
 function isCurrentSchemaMigrationStatement(statement: string) {
   if (/\bCREATE\s+OR\s+REPLACE\s+VIEW\b/i.test(statement)) return true;
+  if (/\bCREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+sendlens\.(analysis_receipts|report_dependencies|metric_reconciliations)\b/i.test(statement)) return true;
+  if (/\bALTER\s+TABLE\s+sendlens\.analysis_receipts\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+recipe_hash\b/i.test(statement)) return true;
   return /\bALTER\s+TABLE\s+sendlens\.campaigns\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+(detail_selection_reason|recent_activity_coverage|recent_activity_window_start|recent_activity_window_end|recent_activity_timezone|recent_activity_timezone_source|recent_sent_count|recent_activity_evaluated_at|recent_activity_source)\b/i
     .test(statement);
 }
@@ -650,6 +653,66 @@ async function ensureSchema(conn: DuckDBConnection) {
       value VARCHAR,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.analysis_receipts (
+      receipt_id VARCHAR PRIMARY KEY,
+      workspace_id VARCHAR NOT NULL,
+      schema_version VARCHAR NOT NULL,
+      status VARCHAR NOT NULL,
+      question_hash VARCHAR NOT NULL,
+      rationale_hash VARCHAR,
+      question_family VARCHAR,
+      recipe_id VARCHAR,
+      recipe_hash VARCHAR,
+      sql_hash VARCHAR,
+      metric_contract_hash VARCHAR NOT NULL,
+      metric_contract_json VARCHAR NOT NULL,
+      provider_capability_snapshot_hash VARCHAR NOT NULL,
+      provider_capability_snapshot_json VARCHAR NOT NULL,
+      source_freshness_hash VARCHAR NOT NULL,
+      source_freshness_json VARCHAR NOT NULL,
+      sampling_fingerprint_hash VARCHAR NOT NULL,
+      sampling_fingerprint_json VARCHAR NOT NULL,
+      dependency_set_hash VARCHAR NOT NULL,
+      result_hash VARCHAR NOT NULL,
+      result_row_count INTEGER NOT NULL,
+      result_truncated BOOLEAN NOT NULL,
+      evidence_frame VARCHAR,
+      source_provider VARCHAR,
+      max_claim_class VARCHAR,
+      statistical_claims_allowed BOOLEAN NOT NULL,
+      cache_generation VARCHAR,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.report_dependencies (
+      receipt_id VARCHAR NOT NULL,
+      workspace_id VARCHAR NOT NULL,
+      dependency_key VARCHAR NOT NULL,
+      dependency_type VARCHAR NOT NULL,
+      dependency_hash VARCHAR NOT NULL,
+      source_freshness_at TIMESTAMP,
+      evidence_frame VARCHAR,
+      source_provider VARCHAR,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (receipt_id, dependency_key)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.metric_reconciliations (
+      reconciliation_id VARCHAR PRIMARY KEY,
+      receipt_id VARCHAR NOT NULL,
+      workspace_id VARCHAR NOT NULL,
+      metric_key VARCHAR NOT NULL,
+      authoritative_surface VARCHAR NOT NULL,
+      decomposition_surface VARCHAR NOT NULL,
+      compatibility_contract_hash VARCHAR NOT NULL,
+      authoritative_value DOUBLE,
+      decomposed_value DOUBLE,
+      residual DOUBLE,
+      status VARCHAR NOT NULL,
+      severity VARCHAR NOT NULL,
+      expected_semantic_causes VARCHAR NOT NULL,
+      unsupported_reason VARCHAR,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    "ALTER TABLE sendlens.analysis_receipts ADD COLUMN IF NOT EXISTS recipe_hash VARCHAR",
     `CREATE TABLE IF NOT EXISTS sendlens.campaigns (
       id VARCHAR,
       workspace_id VARCHAR NOT NULL,

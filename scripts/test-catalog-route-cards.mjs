@@ -187,6 +187,28 @@ assert.match(
 );
 assert.equal(experimentSuggestion.eligibility?.statistical_claims_allowed, false);
 
+const replayGuidance = buildCatalogSearchGuidance(
+  "can we replay a report and explain a semantic diff",
+  [],
+);
+const replaySuggestion = replayGuidance.analysis_starter_suggestions.find(
+  (suggestion) => suggestion.concept === "report reproducibility",
+);
+assert.ok(replaySuggestion);
+assert.deepEqual(
+  replaySuggestion.recipe_ids,
+  ["analysis-receipt-semantic-diff", "metric-reconciliation-audit"],
+);
+assert.deepEqual(
+  replaySuggestion.route_cards?.map((card) => card.recipe_id),
+  ["analysis-receipt-semantic-diff", "metric-reconciliation-audit"],
+);
+assert.equal(replaySuggestion.eligibility?.statistical_claims_allowed, false);
+assert.match(
+  replaySuggestion.route_cards[0].forbidden_adaptations.join(" "),
+  /result hash|freshness|SQL/i,
+);
+
 const exactLookup = buildQueryRecipeResponse({
   recipe_id: "campaign-sender-inventory-by-tag",
 });

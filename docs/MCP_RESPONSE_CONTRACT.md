@@ -22,6 +22,8 @@ Where relevant, SendLens responses should include:
 - `campaign_overview`: exact campaign aggregate surface for one-campaign work
 - `coverage`: ingest mode and sample coverage by campaign
 - `rows`: query result rows for `analyze_data`
+- `analysis_receipt`: additive local replay metadata containing question/recipe/SQL hashes, contract/freshness/sampling fingerprints, result count/truncation, evidence frame, provider, and claim limits; it never contains SQL, contacts, message bodies, filesystem paths, or canaries
+- `metric_reconciliation`: additive explicit reconciliation status and residual metadata; incompatible surfaces are reported as scope-limited, non-comparable, or unsupported rather than forced into a decomposition
 
 ## Tool-Specific Shape
 
@@ -120,6 +122,7 @@ Where relevant, SendLens responses should include:
 - additive privacy-safe `diagnostics` with `schema_version: "analyze_data_diagnostics.v1"`, monotonic `elapsed_ms`, bounded public `referenced_surfaces`, `status` (`ok`, `zero_rows`, `guard_rejected`, `query_error`, `cache_unavailable`, or `unknown`), row/truncation counts, and cache timestamp/generation metadata
 - additive `diagnostics.analysis_eligibility` with `schema_version: "analysis_eligibility.v1"`, the requested claim/family, conservative evidence frame, completeness/cursor state, maximum defensible claim, nearest safe conclusion, bounded evidence action, and evidence debt when the requested analysis is blocked
 - optional `question_family` and `claim_class` inputs are intent hints only; the runtime derives the evidence frame from public surfaces and cached population metadata, never from agent prose alone. Unknown families fail closed, and blocked requests return `code: "analysis_ineligible"` without result rows
+- optional `question` and `recipe_id` inputs bind a run to a hash-only local receipt. The question, rationale, recipe text, SQL, and result values are not stored as plain text; the response exposes only the bounded receipt metadata needed to cite or compare runs
 - failure responses include a stable `error`, sanitized `code`, and safe `hint`; they never echo submitted SQL, rewritten SQL, private literals, row previews, or engine detail
 
 `fetch_reply_text`
@@ -146,6 +149,8 @@ Where relevant, SendLens responses should include:
 - `reply_email_context_sample` is redacted by default: full `reply_body_text`, raw email address fields, and long quoted bodies are omitted while short redacted `reply_body_preview` values preserve diagnostic signal
 - `reply_evidence_detail` defaults to `redacted_preview`; full reply bodies and raw email addresses require explicit opt-in with `full_reply_bodies`
 - default recommended next recipes do not include raw reply-body feed recipes; `reply-email-context-feed` is recommended only when `reply_evidence_detail="full_reply_bodies"`
+- `analysis_receipt` is a hash-only receipt for this bounded preparation run, and `metric_reconciliation` records the metric reconciliation status for the campaign aggregate versus selected hydrated List Email rows; those are different scopes, and a numeric residual is not proof of missing bodies
+- use `analysis-receipt-semantic-diff` with two returned receipt IDs to classify changed questions, recipes, contracts, provider capabilities, freshness, sampling, dependencies, eligibility, or result hashes before interpreting a report rerun
 
 ## Runtime Regression Coverage
 
@@ -176,6 +181,7 @@ Run `npm run test:mcp-response-contract` when changing MCP tools, response field
 - `lead_payload_kv` expands sampled lead `custom_payload` into campaign-scoped key/value rows so ICP analysis can stay inside SendLens tools without raw JSON table functions. Raw `payload_key` and typed `payload_value_json` remain authoritative; additive normalized-key, semantic-family, value-type, and scalar markers support discovery and safe aggregation without collapsing provider or user-defined keys.
 - `provider_overlap_risk` and `provider_overlap_risk_details` are sampled cross-provider overlap primitives. They identify repeated normalized email/domain/company exposure across providers, expose both the overall sampled span and the closest cross-provider contact window, and are not full suppression or CRM dedupe audits unless all relevant campaigns were fully scanned.
 - `experiment_validity_checks` is the guarded pre-comparison surface. Every campaign-step-variant row is classified as `decision_eligible`, `spillover_risk`, `measurement_gap`, or `non_comparable`; shared sender/domain infrastructure, sampled cross-provider overlap, unresolved mappings, partial frames, unequal hydration, and incompatible denominators remain visible. `minimum_detectable_effect_pct` is a bounded directional planning field, not a significance or confidence claim, and sampled rows must not be reported as population prevalence.
+- `analysis_receipts` and `report_dependencies` are local bounded replay metadata. They store hashes, metric contracts, provider-capability/source-freshness/sampling snapshots, dependency hashes, result hashes, truncation, and claim limits without storing SQL, contact values, message bodies, filesystem paths, or canaries. `metric_reconciliations` refuses incompatible decompositions and preserves expected semantic causes, residuals, severity, and unsupported reasons.
 - `sender_assets`, `sender_domain_assets`, `campaign_asset_edges`, and `sender_domain_lineage` preserve provider-qualified direct/tag assignment paths, effective current snapshot windows, health evidence, and unresolved edges.
 - `asset_health_events` separates account snapshots from provider-specific Instantly inbox-placement and Smartlead Smart Delivery evidence. `campaign_blast_radius` is a read-only quarantine bound with configured/measured/unknown capacity evidence; shared sender/domain volume is never campaign-attributed.
 - `cross_provider_lead_overlap_effective` adds bounded effective-window metadata to sampled overlap rows without claiming historical assignment continuity.

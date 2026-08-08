@@ -811,6 +811,183 @@ ORDER BY
     ],
   },
   {
+    id: "analysis-receipt-semantic-diff",
+    topic: "account-manager-brief",
+    title: "Analysis receipt semantic diff",
+    question: "What changed between two report runs, and was the change caused by data, dependencies, or an incompatible metric contract?",
+    exactness: "hybrid",
+    rationale: "Compare two bounded local analysis receipts by contract, provider capability, freshness, sampling, dependencies, and result hashes without replaying or exposing SQL.",
+    route_card: {
+      preferred_intent: "replay a report run and explain a bounded semantic diff",
+      grain: "one before/after receipt pair",
+      time_basis: "receipt creation timestamps plus captured source-freshness metadata",
+      attribution: "receipt-level change classification; no causal claim beyond recorded contract differences",
+      provider_scope: "provider capability and source-provider metadata captured by each receipt",
+      population_scope: "the exact bounded result scope represented by the two receipts",
+      tag_role: "none; receipt IDs are supplied by the prior report response",
+      prerequisites: ["before_receipt_id", "after_receipt_id", "analysis_receipts public table"],
+      cost: "low",
+      privacy: "hashes and bounded status metadata only; SQL, contacts, bodies, and paths are excluded",
+      privacy_class: "aggregate_only",
+      safe_adaptations: ["compare only receipt IDs returned by SendLens", "treat contract changes as non-replayable", "inspect reconciliation rows for scope residuals"],
+      forbidden_adaptations: ["infer a business change from a result hash alone", "treat changed freshness as outcome lift", "supply raw SQL or contact fields as receipt identifiers"],
+    },
+    sql: `WITH before_receipt AS (
+  SELECT
+    receipt_id,
+    status,
+    question_hash,
+    rationale_hash,
+    question_family,
+    recipe_id,
+    recipe_hash,
+    metric_contract_hash,
+    provider_capability_snapshot_hash,
+    source_freshness_hash,
+    sampling_fingerprint_hash,
+    dependency_set_hash,
+    result_hash,
+    result_row_count,
+    result_truncated,
+    evidence_frame,
+    source_provider,
+    max_claim_class,
+    statistical_claims_allowed,
+    created_at
+  FROM sendlens.analysis_receipts
+  WHERE receipt_id = '{{before_receipt_id}}'
+), after_receipt AS (
+  SELECT
+    receipt_id,
+    status,
+    question_hash,
+    rationale_hash,
+    question_family,
+    recipe_id,
+    recipe_hash,
+    metric_contract_hash,
+    provider_capability_snapshot_hash,
+    source_freshness_hash,
+    sampling_fingerprint_hash,
+    dependency_set_hash,
+    result_hash,
+    result_row_count,
+    result_truncated,
+    evidence_frame,
+    source_provider,
+    max_claim_class,
+    statistical_claims_allowed,
+    created_at
+  FROM sendlens.analysis_receipts
+  WHERE receipt_id = '{{after_receipt_id}}'
+)
+SELECT
+  b.receipt_id AS before_receipt_id,
+  a.receipt_id AS after_receipt_id,
+  COALESCE(a.question_family, b.question_family) AS question_family,
+  COALESCE(a.recipe_id, b.recipe_id) AS recipe_id,
+  b.question_hash IS DISTINCT FROM a.question_hash AS question_changed,
+  b.rationale_hash IS DISTINCT FROM a.rationale_hash AS rationale_changed,
+  b.recipe_hash IS DISTINCT FROM a.recipe_hash AS recipe_changed,
+  CASE
+    WHEN b.receipt_id IS NULL THEN 'before_receipt_missing'
+    WHEN a.receipt_id IS NULL THEN 'after_receipt_missing'
+    WHEN b.metric_contract_hash IS DISTINCT FROM a.metric_contract_hash THEN 'incompatible_metric_contract'
+    WHEN b.question_hash IS DISTINCT FROM a.question_hash THEN 'question_changed'
+    WHEN b.rationale_hash IS DISTINCT FROM a.rationale_hash THEN 'rationale_changed'
+    WHEN b.recipe_hash IS DISTINCT FROM a.recipe_hash THEN 'recipe_changed'
+    WHEN b.provider_capability_snapshot_hash IS DISTINCT FROM a.provider_capability_snapshot_hash THEN 'provider_capability_changed'
+    WHEN b.sampling_fingerprint_hash IS DISTINCT FROM a.sampling_fingerprint_hash THEN 'sampling_frame_changed'
+    WHEN b.source_freshness_hash IS DISTINCT FROM a.source_freshness_hash THEN 'source_freshness_changed'
+    WHEN b.dependency_set_hash IS DISTINCT FROM a.dependency_set_hash THEN 'dependency_set_changed'
+    WHEN b.status IS DISTINCT FROM a.status THEN 'run_status_changed'
+    WHEN b.evidence_frame IS DISTINCT FROM a.evidence_frame THEN 'evidence_frame_changed'
+    WHEN b.max_claim_class IS DISTINCT FROM a.max_claim_class
+      OR b.statistical_claims_allowed IS DISTINCT FROM a.statistical_claims_allowed THEN 'claim_limit_changed'
+    WHEN b.result_hash IS DISTINCT FROM a.result_hash THEN 'material_result_change'
+    ELSE 'unchanged'
+  END AS semantic_diff_status,
+  b.metric_contract_hash = a.metric_contract_hash AS metric_contract_compatible,
+  b.provider_capability_snapshot_hash IS DISTINCT FROM a.provider_capability_snapshot_hash AS provider_capability_changed,
+  b.source_freshness_hash IS DISTINCT FROM a.source_freshness_hash AS source_freshness_changed,
+  b.sampling_fingerprint_hash IS DISTINCT FROM a.sampling_fingerprint_hash AS sampling_frame_changed,
+  b.dependency_set_hash IS DISTINCT FROM a.dependency_set_hash AS dependency_set_changed,
+  b.result_hash IS DISTINCT FROM a.result_hash AS result_hash_changed,
+  b.result_row_count AS before_result_row_count,
+  a.result_row_count AS after_result_row_count,
+  b.result_truncated AS before_result_truncated,
+  a.result_truncated AS after_result_truncated,
+  COALESCE(a.evidence_frame, b.evidence_frame) AS evidence_frame,
+  COALESCE(a.source_provider, b.source_provider) AS source_provider,
+  COALESCE(a.max_claim_class, b.max_claim_class) AS max_claim_class,
+  COALESCE(a.statistical_claims_allowed, b.statistical_claims_allowed) AS statistical_claims_allowed,
+  b.created_at AS before_created_at,
+  a.created_at AS after_created_at,
+  CASE
+    WHEN b.receipt_id IS NULL OR a.receipt_id IS NULL THEN FALSE
+    WHEN b.metric_contract_hash IS DISTINCT FROM a.metric_contract_hash THEN FALSE
+    WHEN b.question_hash IS DISTINCT FROM a.question_hash THEN FALSE
+    WHEN b.rationale_hash IS DISTINCT FROM a.rationale_hash THEN FALSE
+    WHEN b.recipe_hash IS DISTINCT FROM a.recipe_hash THEN FALSE
+    ELSE TRUE
+  END AS replay_contract_compatible,
+  'A compatible question, recipe, and metric contract are required before treating a changed result hash as a business change.' AS interpretation_guardrail
+FROM before_receipt b
+FULL OUTER JOIN after_receipt a ON TRUE;`,
+    notes: [
+      "Replace both placeholders with receipt IDs returned by analyze_data or prepare_campaign_analysis.",
+      "This is a semantic diff of local receipt metadata; it never replays SQL or exposes stored report rows.",
+      "If replay_contract_compatible is false, report the incompatibility and stop before interpreting result changes.",
+    ],
+  },
+  {
+    id: "metric-reconciliation-audit",
+    topic: "account-manager-brief",
+    title: "Metric reconciliation audit",
+    question: "Which metric decompositions were reconciled, scope-limited, non-comparable, unsupported, or retrieval-defective?",
+    exactness: "hybrid",
+    rationale: "Review explicit metric reconciliation receipts and residuals before explaining aggregate-versus-hydrated differences.",
+    route_card: {
+      preferred_intent: "audit metric reconciliation status and residual causes",
+      grain: "one row per recorded metric reconciliation",
+      time_basis: "reconciliation creation time and source surfaces captured by the receipt",
+      attribution: "authoritative-versus-decomposition surface contract; incompatible scopes remain explicitly non-comparable",
+      provider_scope: "provider scope inherited from the linked analysis receipt",
+      population_scope: "only the bounded surfaces and result scope named by the linked receipt",
+      tag_role: "none; use the linked receipt ID for a report-specific audit",
+      prerequisites: ["metric_reconciliations public table", "analysis receipt returned by the prior run"],
+      cost: "low",
+      privacy: "surface names, values, hashes, statuses, and semantic causes only; no contacts, bodies, or SQL",
+      privacy_class: "aggregate_only",
+      safe_adaptations: ["filter to one receipt_id", "sort high-severity residuals first", "treat unsupported rows as evidence gaps"],
+      forbidden_adaptations: ["force a reconciliation when compatibility is false", "call a scope residual a retrieval defect without failure evidence", "hide the unsupported reason from the final explanation"],
+    },
+    sql: `SELECT
+  reconciliation_id,
+  receipt_id,
+  metric_key,
+  authoritative_surface,
+  decomposition_surface,
+  authoritative_value,
+  decomposed_value,
+  residual,
+  status,
+  severity,
+  expected_semantic_causes,
+  unsupported_reason,
+  created_at
+FROM sendlens.metric_reconciliations
+ORDER BY
+  CASE severity WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+  created_at DESC
+LIMIT 100;`,
+    notes: [
+      "expected_scope_difference means the surfaces are intentionally not treated as compatible decompositions.",
+      "retrieval_defect requires retrieval failure evidence; otherwise report the residual with its expected semantic causes.",
+      "Use the linked receipt and analysis-receipt-semantic-diff for replay context.",
+    ],
+  },
+  {
     id: "workspace-overview",
     topic: "workspace-health",
     title: "Workspace overview",

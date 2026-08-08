@@ -53,6 +53,11 @@ import {
   buildAnalyzeDataEligibility,
   type AnalyzeDataDiagnostics,
 } from "./analyze-data-diagnostics";
+import {
+  persistAnalysisReceipt,
+  recordAggregateHydratedReplyReconciliation,
+  type PublicAnalysisReceipt,
+} from "./analysis-receipts";
 import { CLAIM_CLASSES, type ClaimClass } from "./analysis-eligibility";
 import { buildActiveDataState } from "./active-data-state";
 import { buildQueryRecipeResponse, QUERY_RECIPE_TOPICS } from "./query-recipes";
@@ -175,6 +180,7 @@ function analyzeDataFailurePayload(
   options: {
     hint?: string;
     privacyGuard?: AnalyzeDataPrivacyGuardReport;
+    analysisReceipt?: PublicAnalysisReceipt | null;
   } = {},
 ) {
   return {
@@ -191,6 +197,7 @@ function analyzeDataFailurePayload(
     ),
     diagnostics,
     ...(options.privacyGuard ? { privacy_guard: options.privacyGuard } : {}),
+    ...(options.analysisReceipt ? { analysis_receipt: options.analysisReceipt } : {}),
   };
 }
 
@@ -1224,13 +1231,78 @@ server.registerTool(
             "campaign-evidence-coverage-audit",
             "campaign-daily-health-trend",
             "campaign-funnel-quality",
+            "metric-reconciliation-audit",
           ]
           : [
             "reply-hydration-coverage",
             "campaign-evidence-coverage-audit",
             "campaign-daily-health-trend",
             "campaign-funnel-quality",
+            "metric-reconciliation-audit",
           ];
+
+      let analysisReceipt: PublicAnalysisReceipt | null = null;
+      try {
+        analysisReceipt = await persistAnalysisReceipt({
+          db,
+          workspaceId,
+          question: "prepare_campaign_analysis reply coverage reporting",
+          rationale: "Prepare one campaign for replayable reply coverage analysis.",
+          questionFamily: "reporting",
+          recipeId: "prepare_campaign_analysis",
+          resultRows: [{
+            aggregate_reply_count: replyCoverageSummary.aggregate_reply_count,
+            fetched_reply_count: replyCoverageSummary.fetched_reply_count,
+            stored_reply_count: replyCoverageSummary.stored_reply_count,
+            hydrated_reply_count: replyCoverageSummary.hydrated_reply_count,
+            coverage_gap_count: replyCoverageSummary.coverage_gap_count,
+            coverage_state: replyCoverageSummary.coverage_state,
+            all_selected_status_buckets_exhausted:
+              replyCoverageSummary.all_selected_status_buckets_exhausted,
+          }],
+          resultRowCount: 1,
+          resultTruncated: false,
+          status: "ok",
+          sourceProvider: resolved.source_provider,
+          cacheGeneration: readiness.status.lastSuccessAt ?? readiness.status.endedAt ?? null,
+          analysisEligibility: {
+            question_family: "reporting",
+            requested_claim: "observed_pattern",
+            evidence_frame: "observed",
+            source_provider: resolved.source_provider,
+            max_claim_class: "observed_pattern",
+            statistical_claims_allowed: false,
+            referenced_surfaces: [
+              "campaign_overview",
+              "reply_email_context",
+              "reply_email_hydration_state",
+            ],
+          },
+        });
+      } catch {
+        warnings.push(
+          "The analysis completed, but its local replay receipt could not be persisted. Treat this run as non-replayable until the cache is repaired.",
+        );
+      }
+
+      let metricReconciliation: Awaited<ReturnType<typeof recordAggregateHydratedReplyReconciliation>> | null = null;
+      if (analysisReceipt) {
+        const fetchStatus = String(fetchResult.status ?? "").toLowerCase();
+        const statusResults = Array.isArray(fetchResult.status_results)
+          ? fetchResult.status_results
+          : [];
+        const retrievalDefect = /failed|error/.test(fetchStatus)
+          || statusResults.some((row) => /failed|error/.test(String((row as Record<string, unknown>).status ?? "").toLowerCase()));
+        metricReconciliation = await recordAggregateHydratedReplyReconciliation({
+          db,
+          receiptId: analysisReceipt.receipt_id,
+          workspaceId,
+          aggregateReplyCount: replyCoverageSummary.aggregate_reply_count,
+          hydratedReplyCount: replyCoverageSummary.hydrated_reply_count,
+          coverageState: replyCoverageSummary.coverage_state,
+          retrievalDefect,
+        });
+      }
 
       return jsonResponse({
         schema_version: "campaign_analysis_preparation.v1",
@@ -1259,6 +1331,8 @@ server.registerTool(
           hydration_state: hydrationStateRows,
         },
         reply_coverage_summary: replyCoverageSummary,
+        analysis_receipt: analysisReceipt,
+        metric_reconciliation: metricReconciliation,
         context_gap_counts: contextGapCounts,
         campaign_overview: overviewRows[0] ?? null,
         reply_email_context_sample: replyEmailContextSample,
@@ -1788,13 +1862,24 @@ server.registerTool(
         .max(80)
         .optional()
         .describe("Optional canonical question family such as reply_to_copy, icp, copy, deliverability, overlap, experiment, or reporting. Unknown families fail closed."),
+      question: z
+        .string()
+        .max(500)
+        .optional()
+        .describe("Optional natural-language question. It is hashed into the local analysis receipt and is never stored as plain text."),
+      recipe_id: z
+        .string()
+        .trim()
+        .max(120)
+        .optional()
+        .describe("Optional query recipe or analysis procedure identifier to bind into the local receipt metric contract."),
       claim_class: z
         .enum(CLAIM_CLASSES)
         .optional()
         .describe("Optional requested claim strength. Runtime evidence still caps or blocks the claim; this cannot upgrade sampled or reconstructed evidence."),
     },
   },
-  async ({ sql, rationale, question_family, claim_class }) => {
+  async ({ sql, rationale, question_family, question, recipe_id, claim_class }) => {
     const handlerStartedAt = performance.now();
     const readiness = await waitForSessionSnapshot();
     let db: Awaited<ReturnType<typeof getDb>> | null = null;
@@ -1907,21 +1992,54 @@ server.registerTool(
         claimClass: claim_class as ClaimClass | undefined,
       });
 
+      const diagnosticsStatus = analysisEligibility.eligible
+        ? redactedRows.length === 0 ? "zero_rows" : "ok"
+        : "guard_rejected";
+      const diagnostics = buildAnalyzeDataDiagnostics({
+        status: diagnosticsStatus,
+        startedAt: handlerStartedAt,
+        refreshStatus: readiness.status,
+        sql,
+        rowCount: redactedRows.length,
+        resultTruncated,
+        analysisEligibility,
+      });
+      let analysisReceipt: PublicAnalysisReceipt | null = null;
+      try {
+        analysisReceipt = await persistAnalysisReceipt({
+          db,
+          workspaceId,
+          question: question ?? rationale,
+          rationale,
+          questionFamily: analysisEligibility.question_family,
+          recipeId: recipe_id ?? null,
+          sql,
+          resultRows: redactedRows,
+          resultRowCount: redactedRows.length,
+          resultTruncated,
+          status: analysisEligibility.eligible
+            ? redactedRows.length === 0 ? "zero_rows" : "ok"
+            : "analysis_ineligible",
+          sourceProvider: analysisEligibility.source_provider,
+          cacheGeneration: diagnostics.cache_generation,
+          analysisEligibility: {
+            ...analysisEligibility,
+            referenced_surfaces: diagnostics.referenced_surfaces,
+          },
+        });
+      } catch {
+        // Keep the read-only analysis result available if receipt persistence is
+        // unavailable; do not expose storage or private query details in MCP.
+      }
+
       if (!analysisEligibility.eligible) {
         return jsonResponse(analyzeDataFailurePayload(
           "analysis_ineligible",
-          buildAnalyzeDataDiagnostics({
-            status: "guard_rejected",
-            startedAt: handlerStartedAt,
-            refreshStatus: readiness.status,
-            sql,
-            rowCount: 0,
-            resultTruncated: false,
-            analysisEligibility,
-          }),
+          diagnostics,
           {
             hint: analysisEligibility.bounded_evidence_action
               ?? "Use the nearest safe conclusion in diagnostics before making an analytical claim.",
+            analysisReceipt,
           },
         ));
       }
@@ -1941,15 +2059,8 @@ server.registerTool(
             ...(cacheWarnings ?? []),
           ]
           : cacheWarnings,
-        diagnostics: buildAnalyzeDataDiagnostics({
-          status: redactedRows.length === 0 ? "zero_rows" : "ok",
-          startedAt: handlerStartedAt,
-          refreshStatus: readiness.status,
-          sql,
-          rowCount: redactedRows.length,
-          resultTruncated,
-          analysisEligibility,
-        }),
+        analysis_receipt: analysisReceipt,
+        diagnostics,
         rows: redactedRows,
       });
     } catch (err) {
