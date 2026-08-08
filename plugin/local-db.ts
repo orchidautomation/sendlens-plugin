@@ -39,8 +39,9 @@ export const PREVIOUS_SCHEMA_MIGRATION_IDS = [
   "202607230001_recent_campaign_activity",
   "202608050001_lead_list_label_surfaces",
   "202608060001_smartlead_campaign_performance",
+  "202608070001_progressive_sync_frames",
 ] as const;
-export const CURRENT_SCHEMA_MIGRATION_ID = "202608070001_progressive_sync_frames";
+export const CURRENT_SCHEMA_MIGRATION_ID = "202608080001_inference_eligibility_evidence_debt";
 const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
 const cacheProviderModeContext = new AsyncLocalStorage<SourceProviderMode>();
 
@@ -2888,6 +2889,19 @@ async function ensureSchema(conn: DuckDBConnection) {
     )`);
     await run(conn, "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS coverage_mode VARCHAR");
     await run(conn, "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS evidence_lane VARCHAR");
+    await run(conn, `CREATE TABLE IF NOT EXISTS sendlens.evidence_debt (
+      workspace_id VARCHAR NOT NULL,
+      source_provider VARCHAR NOT NULL,
+      blocked_question VARCHAR NOT NULL,
+      blocked_claim VARCHAR,
+      missing_surface VARCHAR,
+      freshness_completeness VARCHAR,
+      decision_impact VARCHAR,
+      nearest_safe_conclusion VARCHAR,
+      bounded_evidence_action VARCHAR,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, source_provider, blocked_question)
+    )`);
     await stampCacheSchemaVersion(conn);
   });
 }

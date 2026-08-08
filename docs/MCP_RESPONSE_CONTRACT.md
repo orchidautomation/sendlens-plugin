@@ -118,6 +118,8 @@ Where relevant, SendLens responses should include:
 - `row_count`, `result_truncated`, and output limits
 - warnings when caps are hit
 - additive privacy-safe `diagnostics` with `schema_version: "analyze_data_diagnostics.v1"`, monotonic `elapsed_ms`, bounded public `referenced_surfaces`, `status` (`ok`, `zero_rows`, `guard_rejected`, `query_error`, `cache_unavailable`, or `unknown`), row/truncation counts, and cache timestamp/generation metadata
+- additive `diagnostics.analysis_eligibility` with `schema_version: "analysis_eligibility.v1"`, the requested claim/family, conservative evidence frame, completeness/cursor state, maximum defensible claim, nearest safe conclusion, bounded evidence action, and evidence debt when the requested analysis is blocked
+- optional `question_family` and `claim_class` inputs are intent hints only; the runtime derives the evidence frame from public surfaces and cached population metadata, never from agent prose alone. Unknown families fail closed, and blocked requests return `code: "analysis_ineligible"` without result rows
 - failure responses include a stable `error`, sanitized `code`, and safe `hint`; they never echo submitted SQL, rewritten SQL, private literals, row previews, or engine detail
 
 `fetch_reply_text`

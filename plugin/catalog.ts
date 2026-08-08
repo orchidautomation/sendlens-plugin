@@ -1,5 +1,6 @@
 import type { DuckDBConnection } from "@duckdb/node-api";
 import { columnSafetyMetadata, type ColumnSafetyMetadata } from "./analysis-safety";
+import { maxClaimClassForFrame, type EvidenceFrame } from "./analysis-eligibility";
 import { CURRENT_SCHEMA_MIGRATION_ID, query, resolveDbPath } from "./local-db";
 import { PUBLIC_TABLES, TABLE_DESCRIPTIONS, type PublicTableName } from "./constants";
 import { getQueryRecipeById, type QueryRecipe } from "./query-recipes";
@@ -40,6 +41,7 @@ export type CatalogStarterSuggestion = {
   reason: string;
   route_cards?: CatalogRecipeRouteCard[];
   correction_path?: CatalogCorrectionPath;
+  eligibility?: { max_claim_class: string; statistical_claims_allowed: boolean };
 };
 
 export type CatalogRecipeRouteCard = {
@@ -56,6 +58,7 @@ export type CatalogRecipeRouteCard = {
   prerequisites: string[];
   safe_adaptations: string[];
   forbidden_adaptations: string[];
+  max_claim_class: string;
 };
 
 export type CatalogCorrectionPath = {
@@ -419,6 +422,12 @@ function addCatalogRouteCardsWithinBudget(
     const candidate = {
       ...suggestions[index],
       ...bundle,
+      eligibility: {
+        max_claim_class: bundle.route_cards[0]?.max_claim_class ?? "anecdote",
+        // Static metadata cannot prove runtime completeness/cursor-exhaustion; the
+        // runtime assessEligibility gate enforces statistical claims. Conservative here.
+        statistical_claims_allowed: false,
+      },
     };
     const candidateSuggestions = [...suggestions];
     candidateSuggestions[index] = candidate;
@@ -463,6 +472,13 @@ function catalogRouteBundle(
   };
 }
 
+function frameForPopulationScope(populationScope: string): EvidenceFrame {
+  const scope = (populationScope ?? "").toLowerCase();
+  if (scope.includes("sampled") || scope.includes("sample ")) return "sampled";
+  if (scope.includes("all cached") || scope.includes("exact") || scope.includes("full") || scope.includes("every")) return "complete";
+  return "observed";
+}
+
 function compactCatalogRouteCard(recipe: QueryRecipe): CatalogRecipeRouteCard {
   const card = recipe.route_card!;
   return {
@@ -479,6 +495,7 @@ function compactCatalogRouteCard(recipe: QueryRecipe): CatalogRecipeRouteCard {
     prerequisites: card.prerequisites.slice(0, 3),
     safe_adaptations: card.safe_adaptations.slice(0, 3),
     forbidden_adaptations: card.forbidden_adaptations.slice(0, 3),
+    max_claim_class: maxClaimClassForFrame(frameForPopulationScope(card.population_scope)),
   };
 }
 
