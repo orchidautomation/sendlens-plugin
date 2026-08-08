@@ -37,7 +37,7 @@ export SENDLENS_INSTANTLY_API_KEY=your_instantly_api_key
 export SENDLENS_SMARTLEAD_API_KEY=your_smartlead_api_key
 ```
 
-One key selects its provider. Both keys select `all` and require `SENDLENS_CLIENT` for a shared named workspace. Set `SENDLENS_PROVIDER` only when you need an explicit `instantly`, `smartlead`, or `all` override. Never paste API keys into chat.
+One key selects its provider. Both keys select `all` and require `SENDLENS_CLIENT` for a shared named workspace. Set `SENDLENS_PROVIDER` only when you need an explicit `instantly`, `smartlead`, or `all` override. Never paste API keys into chat. Provider env resolves from launch-folder env files first, then inherited/global host environment.
 
 Try the workflow without provider credentials by using the local demo command below. Demo rows are synthetic and are not customer evidence.
 
