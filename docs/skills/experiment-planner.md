@@ -26,6 +26,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 4. Use analyst evidence for the selected reply, ICP, or copy lane.
 5. Use the campaign strategist to define the hypothesis, cohort, changed variable, and intended learning.
 6. Use the launch operator to define measurement, guardrails, read window, and stop/iterate/scale rules.
+7. Check `diagnostics.analysis_eligibility` before comparing variants or providers; invalid frames return a bounded evidence action instead of a statistical or winner claim.
 
 ## Output Shape
 

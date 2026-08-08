@@ -371,6 +371,10 @@ for (const term of [
   "singleton-heavy grouped outputs",
   "`row_count`, `result_truncated`, and output limits",
   "warnings when caps are hit",
+  "diagnostics.analysis_eligibility",
+  '`schema_version: "analysis_eligibility.v1"`',
+  "Unknown families fail closed",
+  '`code: "analysis_ineligible"`',
   "failure responses include a stable `error`, sanitized `code`, and safe `hint`",
   '`diagnostics` with `schema_version: "analyze_data_diagnostics.v1"`',
   "`status` (`ok`, `zero_rows`, `guard_rejected`, `query_error`, `cache_unavailable`, or `unknown`)",
@@ -394,6 +398,10 @@ for (const term of [
   "buildAnalyzeDataDiagnostics",
   "AnalyzeDataDiagnostics",
   "workspace_isolation",
+  "buildAnalyzeDataEligibility",
+  "analysis_ineligible",
+  "question_family",
+  "claim_class",
 ]) {
   assertIncludes(source.server, term, "analyze_data runtime");
 }

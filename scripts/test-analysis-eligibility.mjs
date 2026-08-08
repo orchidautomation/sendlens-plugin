@@ -64,6 +64,22 @@ assert.equal(replySampled.eligible, false, "reply_to_copy requires an observed f
 const replyObserved = assessEligibility({ frame: "observed", cursorExhausted: false, completeness: "observed", claim: "observed_pattern", questionFamily: "reply_to_copy" });
 assert.equal(replyObserved.eligible, true);
 
+// Unknown families fail closed instead of bypassing the sufficiency gate.
+const unknownFamily = assessEligibility({ frame: "sampled", cursorExhausted: false, completeness: "sampled", claim: "observed_pattern", questionFamily: "future_family" });
+assert.equal(unknownFamily.eligible, false);
+assert.ok(unknownFamily.evidenceDebt);
+assert.match(unknownFamily.nearestSafeConclusion, /No claim is safe/);
+assert.match(unknownFamily.evidenceDebt.nearest_safe_conclusion, /question family.*normalized/);
+
+// A family blocker must not recommend a claim that the same blocker rejects.
+assert.match(replySampled.nearestSafeConclusion, /No claim is safe/);
+assert.match(replySampled.evidenceDebt.nearest_safe_conclusion, /No claim is safe/);
+
+// Reconstructed copy can remain in the reconstructed-content lane without
+// being upgraded to an observed winner claim.
+const reconstructedCopy = assessEligibility({ frame: "enriched_tail", cursorExhausted: false, completeness: "partial", claim: "reconstructed_content", questionFamily: "copy" });
+assert.equal(reconstructedCopy.eligible, true);
+
 // maxClaimClassForFrame sanity
 assert.equal(maxClaimClassForFrame("complete"), "population_fact");
 assert.equal(maxClaimClassForFrame("sampled"), "observed_pattern");

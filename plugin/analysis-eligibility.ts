@@ -11,6 +11,15 @@ export type ClaimClass =
   | "reconstructed_content"
   | "anecdote";
 
+export const CLAIM_CLASSES = [
+  "population_fact",
+  "finite_frame_estimate",
+  "observed_pattern",
+  "enriched_tail",
+  "reconstructed_content",
+  "anecdote",
+] as const satisfies readonly ClaimClass[];
+
 export type EvidenceFrame =
   | "complete"
   | "observed"
@@ -89,6 +98,8 @@ const FRAME_STRENGTH: Record<EvidenceFrame, number> = {
 };
 
 const FAMILY_MIN_FRAME: Record<string, EvidenceFrame> = {
+  workspace: "observed",
+  campaign_performance: "observed",
   // Reply/copy attribution requires hydrated reply + copy evidence (observed).
   reply: "observed",
   reply_to_copy: "observed",
@@ -107,42 +118,100 @@ const FAMILY_MIN_FRAME: Record<string, EvidenceFrame> = {
   provider_comparison: "observed",
   experiment: "observed",
   reporting: "observed",
+  observed: "observed",
 };
 
 const FAMILY_ALIASES: Record<string, string> = {
+  workspace_health: "workspace",
+  campaign: "campaign_performance",
+  campaigns: "campaign_performance",
+  replies_icp: "reply",
+  reply_rate: "reply",
   replies: "reply",
   reply_quality: "reply",
+  icp_signals: "icp",
   copy_auditor: "copy",
   copy_analysis: "copy",
   rendered_outbound: "copy",
   variants: "variant",
+  step_variant: "variant",
   senders: "deliverability",
   sender: "deliverability",
   sender_domain: "deliverability",
   blast_radius: "deliverability",
-  campaign_performance: "observed",
-  workspace: "observed",
+  deliverability_health: "deliverability",
+  inbox_placement: "deliverability",
+  provider_compare: "provider_comparison",
+  cross_provider_comparison: "provider_comparison",
+  experiments: "experiment",
+  experiment_validity: "experiment",
+  report: "reporting",
+  reporting_reproducibility: "reporting",
 };
 
+type FamilySufficiency = {
+  met: boolean;
+  required: EvidenceFrame | null;
+  recognized: boolean;
+};
+
+function normalizedFamilyKey(raw: string) {
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 function canonicalFamily(raw: string): string {
-  const key = raw.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+  const key = normalizedFamilyKey(raw);
   if (FAMILY_MIN_FRAME[key]) return key;
   if (FAMILY_ALIASES[key]) return FAMILY_ALIASES[key];
   // Substring match for compound family labels.
-  for (const alias of Object.keys(FAMILY_ALIASES)) {
+  for (const alias of Object.keys(FAMILY_ALIASES).sort((a, b) => b.length - a.length)) {
     if (key.includes(alias)) return FAMILY_ALIASES[alias];
   }
   return key;
 }
 
+export function normalizeQuestionFamily(raw: string | null | undefined): string | null {
+  const trimmed = raw?.trim();
+  if (!trimmed) return null;
+  const canonical = canonicalFamily(trimmed);
+  return FAMILY_MIN_FRAME[canonical] ? canonical : null;
+}
+
+function minimumFrameForFamilyClaim(
+  family: string,
+  claim: ClaimClass,
+): EvidenceFrame {
+  // Reconstructed copy can support a reconstructed-content finding without
+  // being upgraded to an observed winner claim. Stronger copy claims still
+  // require one-campaign observed/hydrated evidence.
+  if (
+    (family === "copy" || family === "copy_variant")
+    && (claim === "reconstructed_content" || claim === "enriched_tail")
+  ) {
+    return "enriched_tail";
+  }
+  return FAMILY_MIN_FRAME[family];
+}
+
 export function familySufficiencyMet(
   questionFamily: string | null,
   frame: EvidenceFrame,
-): { met: boolean; required: EvidenceFrame | null } {
-  if (!questionFamily) return { met: true, required: null };
-  const required = FAMILY_MIN_FRAME[canonicalFamily(questionFamily)];
-  if (!required) return { met: true, required: null };
-  return { met: FRAME_STRENGTH[frame] >= FRAME_STRENGTH[required], required };
+  claim: ClaimClass = "observed_pattern",
+): FamilySufficiency {
+  if (!questionFamily?.trim()) return { met: true, required: null, recognized: true };
+  const family = canonicalFamily(questionFamily);
+  if (!FAMILY_MIN_FRAME[family]) {
+    return { met: false, required: null, recognized: false };
+  }
+  const required = minimumFrameForFamilyClaim(family, claim);
+  return {
+    met: FRAME_STRENGTH[frame] >= FRAME_STRENGTH[required],
+    required,
+    recognized: true,
+  };
 }
 
 export function assessEligibility(input: EligibilityInput): EligibilityAssessment {
@@ -154,13 +223,17 @@ export function assessEligibility(input: EligibilityInput): EligibilityAssessmen
   const requiresStat = input.claim === "population_fact" || input.claim === "finite_frame_estimate";
   const statOk = !requiresStat || statAllowed;
   // Per-family minimum-evidence sufficiency.
-  const familyOk = familySufficiencyMet(input.questionFamily ?? null, input.frame);
+  const familyOk = familySufficiencyMet(input.questionFamily ?? null, input.frame, input.claim);
   const eligible = permitted && statOk && familyOk.met;
 
   const blockedReasons: string[] = [];
   if (!permitted) blockedReasons.push(`frame=${input.frame} supports at most ${maxClaim}`);
   if (requiresStat && !statAllowed) blockedReasons.push("statistical/population claim requires a complete, cursor-exhausted frame");
-  if (!familyOk.met) blockedReasons.push(`question family ${input.questionFamily ?? "?"} requires ${familyOk.required}`);
+  if (!familyOk.recognized) {
+    blockedReasons.push(`question family ${safeFamilyLabel(input.questionFamily)} is not recognized; normalize it before claiming sufficiency`);
+  } else if (!familyOk.met) {
+    blockedReasons.push(`question family ${safeFamilyLabel(input.questionFamily)} requires ${familyOk.required}`);
+  }
   // Nearest safe claim = strongest claim that satisfies frame + stat + family gates.
   const claimOrder: ClaimClass[] = ["population_fact", "finite_frame_estimate", "observed_pattern", "enriched_tail", "reconstructed_content", "anecdote"];
   const nearestSafeClaim =
@@ -168,11 +241,16 @@ export function assessEligibility(input: EligibilityInput): EligibilityAssessmen
       const candPermitted = input.frame !== "unsupported" && CLAIM_STRENGTH[candidate] <= CLAIM_STRENGTH[maxClaim];
       const candRequiresStat = candidate === "population_fact" || candidate === "finite_frame_estimate";
       const candStatOk = !candRequiresStat || statAllowed;
-      return candPermitted && candStatOk && familyOk.met;
-    }) ?? "anecdote";
+      const candFamilyOk = familySufficiencyMet(input.questionFamily ?? null, input.frame, candidate);
+      return candPermitted && candStatOk && candFamilyOk.recognized && candFamilyOk.met;
+    }) ?? null;
   const nearestSafeConclusion = eligible
     ? `Claim permitted at ${input.claim} (frame=${input.frame}).`
-    : `Claim ${input.claim} is not supported: ${blockedReasons.join("; ")}. Nearest safe conclusion is ${nearestSafeClaim}.`;
+    : !familyOk.recognized
+      ? `No claim is safe for ${safeFamilyLabel(input.questionFamily)} until the question family is normalized to a supported family.`
+      : !familyOk.met && nearestSafeClaim == null
+        ? `No claim is safe for ${safeFamilyLabel(input.questionFamily)} until the required ${familyOk.required} evidence frame is available.`
+        : `Claim ${input.claim} is not supported: ${blockedReasons.join("; ")}. Nearest safe conclusion is ${nearestSafeClaim ?? "anecdote"}.`;
 
   const boundedEvidenceAction = eligible
     ? null
@@ -181,7 +259,7 @@ export function assessEligibility(input: EligibilityInput): EligibilityAssessmen
   const evidenceDebt: EvidenceDebt | null = eligible
     ? null
     : {
-        blocked_question: input.questionFamily ?? "unspecified",
+        blocked_question: safeFamilyLabel(input.questionFamily),
         blocked_claim: input.claim,
         missing_surface: input.missingSurface ?? missingSurfaceForFrame(input.frame),
         source_provider: input.sourceProvider ?? "unknown",
@@ -199,6 +277,11 @@ export function assessEligibility(input: EligibilityInput): EligibilityAssessmen
     nearestSafeConclusion,
     boundedEvidenceAction,
   };
+}
+
+function safeFamilyLabel(questionFamily: string | null | undefined) {
+  const normalized = questionFamily ? normalizedFamilyKey(questionFamily) : "unspecified";
+  return normalized.slice(0, 80) || "unspecified";
 }
 
 function boundedActionForFrame(frame: EvidenceFrame, missingSurface: string | null): string {

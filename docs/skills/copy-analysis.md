@@ -26,6 +26,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 5. Use `campaign_variants` as the intended template source of truth.
 6. Use raw-detail recipes only for local diagnosis; do not paste raw rendered bodies, template bodies, or recipient fields into external artifacts.
 7. Use `reply_context` and `lead_evidence` to connect reply outcomes back to copy.
+8. Honor `diagnostics.analysis_eligibility`; reconstructed outbound content can support reconstructed-content findings, but copy/variant winner claims require the returned observed/hydrated evidence state.
 
 ## Output Shape
 
