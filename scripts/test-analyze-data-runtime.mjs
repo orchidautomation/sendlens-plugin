@@ -51,6 +51,39 @@ try {
   assert.equal(okPayload.diagnostics?.schema_version, "analyze_data_diagnostics.v1");
   assert.deepEqual(okPayload.diagnostics?.referenced_surfaces, ["campaign_overview"]);
   assert.equal(typeof okPayload.diagnostics?.elapsed_ms, "number");
+  assert.equal(okPayload.diagnostics?.analysis_eligibility?.schema_version, "analysis_eligibility.v1");
+  assert.equal(okPayload.diagnostics?.analysis_eligibility?.evidence_frame, "observed");
+  assert.equal(okPayload.diagnostics?.analysis_eligibility?.eligible, true);
+
+  const sampledFamilyBlocked = await callAnalyzeData(
+    client,
+    "SELECT campaign_id FROM sendlens.lead_evidence LIMIT 1",
+    {
+      rationale: "reply-to-copy attribution from sampled lead evidence",
+      question_family: "reply_to_copy",
+      claim_class: "observed_pattern",
+    },
+  );
+  assert.equal(sampledFamilyBlocked.error, "Query could not be executed safely.");
+  assert.equal(sampledFamilyBlocked.code, "analysis_ineligible");
+  assert.equal(sampledFamilyBlocked.diagnostics?.status, "guard_rejected");
+  assert.equal(sampledFamilyBlocked.diagnostics?.analysis_eligibility?.eligible, false);
+  assert.equal(sampledFamilyBlocked.diagnostics?.analysis_eligibility?.question_family, "reply_to_copy");
+  assert.match(sampledFamilyBlocked.diagnostics?.analysis_eligibility?.nearest_safe_conclusion ?? "", /No claim is safe/);
+  assertNoCanaries(sampledFamilyBlocked);
+
+  const unknownFamilyBlocked = await callAnalyzeData(
+    client,
+    "SELECT campaign_id FROM sendlens.campaign_overview LIMIT 1",
+    {
+      rationale: "unknown family fail-closed contract test",
+      question_family: "future_family",
+    },
+  );
+  assert.equal(unknownFamilyBlocked.code, "analysis_ineligible");
+  assert.equal(unknownFamilyBlocked.diagnostics?.analysis_eligibility?.question_family, "unrecognized");
+  assert.match(unknownFamilyBlocked.diagnostics?.analysis_eligibility?.nearest_safe_conclusion ?? "", /No claim is safe/);
+  assertNoCanaries(unknownFamilyBlocked);
 
   const zeroPayload = await callAnalyzeData(client,
     `SELECT campaign_id FROM sendlens.campaign_overview WHERE campaign_name = '${canaries[1]}'`,
@@ -145,12 +178,14 @@ try {
 }
 assertNoCanariesInText(cacheFailureStderr.join(""), "cache-failure analyze_data stderr");
 
-async function callAnalyzeData(client, sql) {
+async function callAnalyzeData(client, sql, options = {}) {
   const result = await client.callTool({
     name: "analyze_data",
     arguments: {
       sql,
-      rationale: "runtime diagnostics contract test",
+      rationale: options.rationale ?? "runtime diagnostics contract test",
+      ...(options.question_family ? { question_family: options.question_family } : {}),
+      ...(options.claim_class ? { claim_class: options.claim_class } : {}),
     },
   });
   assert.equal(result.content?.[0]?.type, "text");

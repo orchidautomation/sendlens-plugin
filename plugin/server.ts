@@ -50,8 +50,10 @@ import {
 } from "./campaign-analysis-response";
 import {
   buildAnalyzeDataDiagnostics,
+  buildAnalyzeDataEligibility,
   type AnalyzeDataDiagnostics,
 } from "./analyze-data-diagnostics";
+import { CLAIM_CLASSES, type ClaimClass } from "./analysis-eligibility";
 import { buildActiveDataState } from "./active-data-state";
 import { buildQueryRecipeResponse, QUERY_RECIPE_TOPICS } from "./query-recipes";
 import { toReplyTextFetchResult } from "./reply-text-contract";
@@ -166,6 +168,7 @@ function analyzeDataFailurePayload(
     | LocalSqlGuardError["code"]
     | "cache_unavailable"
     | "query_error"
+    | "analysis_ineligible"
     | "workspace_isolation"
     | "privacy_guard",
   diagnostics?: AnalyzeDataDiagnostics,
@@ -182,6 +185,8 @@ function analyzeDataFailurePayload(
         ? "Use refresh_status once to check local cache readiness, then refresh or reload the plugin before retrying. Do not include private literals in retries."
         : code === "privacy_guard"
           ? "Use safe cohort fields or curated analysis_starters recipes instead of raw, high-cardinality, or row-level provider fields."
+          : code === "analysis_ineligible"
+            ? "Use the nearest safe conclusion and bounded evidence action in diagnostics, or collect the named missing evidence before retrying."
         : "Use one focused read-only SELECT/WITH query against sendlens.* public views. Do not include private literals in retries."
     ),
     diagnostics,
@@ -203,6 +208,27 @@ function sqlNumberList(values: number[]) {
 
 function uniqueStrings(values: string[]) {
   return [...new Set(values.filter(Boolean))];
+}
+
+async function readAnalysisEligibilityMetadata(
+  db: Awaited<ReturnType<typeof getDb>>,
+  workspaceId: string,
+) {
+  try {
+    const workspaceSafe = workspaceId.replace(/'/g, "''");
+    return await query(
+      db,
+      `SELECT source_provider, frame, cursor_exhausted, created_at
+       FROM sendlens.population_snapshots
+       WHERE workspace_id = '${workspaceSafe}'
+       ORDER BY created_at DESC
+       LIMIT 25`,
+    );
+  } catch {
+    // Older caches may not have the optional progressive-frame metadata yet.
+    // Keep analyze_data usable and let the eligibility assessment fail closed.
+    return [];
+  }
 }
 
 function numberFromRowValue(value: unknown) {
@@ -1756,9 +1782,19 @@ server.registerTool(
       rationale: z
         .string()
         .describe("One sentence explaining what the query is meant to answer."),
+      question_family: z
+        .string()
+        .trim()
+        .max(80)
+        .optional()
+        .describe("Optional canonical question family such as reply_to_copy, icp, copy, deliverability, overlap, experiment, or reporting. Unknown families fail closed."),
+      claim_class: z
+        .enum(CLAIM_CLASSES)
+        .optional()
+        .describe("Optional requested claim strength. Runtime evidence still caps or blocks the claim; this cannot upgrade sampled or reconstructed evidence."),
     },
   },
-  async ({ sql, rationale }) => {
+  async ({ sql, rationale, question_family, claim_class }) => {
     const handlerStartedAt = performance.now();
     const readiness = await waitForSessionSnapshot();
     let db: Awaited<ReturnType<typeof getDb>> | null = null;
@@ -1779,6 +1815,7 @@ server.registerTool(
           }),
         });
       }
+      const eligibilityMetadataRows = await readAnalysisEligibilityMetadata(db, workspaceId);
       try {
         enforceAnalyzeDataPrivacy(sql);
       } catch (err) {
@@ -1860,6 +1897,34 @@ server.registerTool(
         ));
       }
       const redactedRows = redactAnalyzeDataRows(returnedRows);
+      const analysisEligibility = buildAnalyzeDataEligibility({
+        sql,
+        rationale,
+        rows: returnedRows,
+        metadataRows: eligibilityMetadataRows,
+        resultTruncated,
+        questionFamily: question_family,
+        claimClass: claim_class as ClaimClass | undefined,
+      });
+
+      if (!analysisEligibility.eligible) {
+        return jsonResponse(analyzeDataFailurePayload(
+          "analysis_ineligible",
+          buildAnalyzeDataDiagnostics({
+            status: "guard_rejected",
+            startedAt: handlerStartedAt,
+            refreshStatus: readiness.status,
+            sql,
+            rowCount: 0,
+            resultTruncated: false,
+            analysisEligibility,
+          }),
+          {
+            hint: analysisEligibility.bounded_evidence_action
+              ?? "Use the nearest safe conclusion in diagnostics before making an analytical claim.",
+          },
+        ));
+      }
 
       return jsonResponse({
         rationale,
@@ -1883,6 +1948,7 @@ server.registerTool(
           sql,
           rowCount: redactedRows.length,
           resultTruncated,
+          analysisEligibility,
         }),
         rows: redactedRows,
       });

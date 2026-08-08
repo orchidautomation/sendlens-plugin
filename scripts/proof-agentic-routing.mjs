@@ -60,7 +60,7 @@ const { buildWorkspaceSummary } = require("../build/plugin/summary.js");
 
 const ANALYZE_DATA_ROW_LIMIT = 1_000;
 const ANALYZE_DATA_SAFE_ERROR = "Query could not be executed safely.";
-const REQUIRED_CATALOG_ROUTE_CARD_FIELDS = Object.freeze([
+const CATALOG_ROUTE_CARD_STRING_FIELDS = Object.freeze([
   "recipe_id",
   "intent",
   "grain",
@@ -71,9 +71,16 @@ const REQUIRED_CATALOG_ROUTE_CARD_FIELDS = Object.freeze([
   "tag_role",
   "cost_class",
   "privacy_class",
+  "max_claim_class",
+]);
+const CATALOG_ROUTE_CARD_ARRAY_FIELDS = Object.freeze([
   "prerequisites",
   "safe_adaptations",
   "forbidden_adaptations",
+]);
+const REQUIRED_CATALOG_ROUTE_CARD_FIELDS = Object.freeze([
+  ...CATALOG_ROUTE_CARD_STRING_FIELDS,
+  ...CATALOG_ROUTE_CARD_ARRAY_FIELDS,
 ]);
 const REVIEWED_BASELINE_RECIPE_IDS = Object.freeze([
   "account-health",
@@ -456,11 +463,11 @@ function assertCatalogRouteCardContract(payload, hostText) {
       [...REQUIRED_CATALOG_ROUTE_CARD_FIELDS].sort(),
       `${card.recipe_id} must preserve the compact route-card field set through MCP serialization`,
     );
-    for (const field of REQUIRED_CATALOG_ROUTE_CARD_FIELDS.slice(0, 10)) {
+    for (const field of CATALOG_ROUTE_CARD_STRING_FIELDS) {
       assert.equal(typeof card[field], "string", `${card.recipe_id}.${field} must be a string`);
       assert.ok(card[field].trim().length > 0, `${card.recipe_id}.${field} must be non-empty`);
     }
-    for (const field of REQUIRED_CATALOG_ROUTE_CARD_FIELDS.slice(10)) {
+    for (const field of CATALOG_ROUTE_CARD_ARRAY_FIELDS) {
       assert.ok(
         Array.isArray(card[field]) && card[field].length > 0,
         `${card.recipe_id}.${field} must be a non-empty array`,

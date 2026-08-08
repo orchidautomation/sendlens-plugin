@@ -75,6 +75,7 @@ export const PUBLIC_TABLES = [
   "sync_runs",
   "sync_partitions",
   "population_snapshots",
+  "evidence_debt",
   "provider_capabilities",
   "campaign_overview",
   "lead_evidence",
@@ -187,6 +188,8 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Resumable per-partition cursor and exhaustion state so deep crawls can resume across rate limits, retries, and process restarts without duplicates.",
   population_snapshots:
     "Truthful sampling-frame snapshots distinguishing complete/observed/sampled/enriched-tail/unsupported frames with inclusion reason, algorithm/version, population fingerprint, cumulative coverage, and selection probability.",
+  evidence_debt:
+    "Blocked-question evidence-debt records naming the missing surface, provider, freshness/completeness state, decision impact, nearest safe conclusion, and bounded evidence action so insufficient evidence cannot be upgraded by agent prose.",
   provider_capabilities:
     "Provider capability status by local workspace, including unsupported or partial surfaces such as Smartlead inbox placement.",
   campaign_overview:
