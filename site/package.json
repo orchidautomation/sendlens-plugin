@@ -21,7 +21,7 @@
     "react-dom": "^19.2.7"
   },
   "overrides": {
-    "nanoid": "3.3.17",
+    "nanoid": "3.3.18",
     "undici": "6.28.0",
     "postcss": "8.5.23",
     "sharp": "0.35.3",
