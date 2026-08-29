@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { cp, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1065,6 +1065,179 @@ async function assertSessionStartProviderContract() {
   }
 }
 
+async function assertCodexHookManifestReachability() {
+  // SENDOSS-174 / PLUXX-345: the generated Codex SessionStart descriptor must
+  // not depend on CODEX_PLUGIN_ROOT (Codex Desktop does not expose that name
+  // to the hook command environment, so any reference collapses to literal
+  // `/hooks/...` and exits 1 before SendLens can run its safe startup
+  // refresh). The Pluxx 0.1.41 compiler fix routes through PLUGIN_ROOT
+  // (which Codex Desktop injects) and the wrapper derives its plugin root
+  // from its own location as a last-resort fallback.
+  const manifestPaths = [
+    "dist/codex/hooks/hooks.json",
+    "dist/codex/.codex/hooks.generated.json",
+  ];
+
+  for (const manifestPath of manifestPaths) {
+    const manifest = await readJson(manifestPath);
+    const sessionEntries = manifest.hooks?.SessionStart ?? [];
+    assert(
+      Array.isArray(sessionEntries) && sessionEntries.length > 0,
+      `${manifestPath}: expected SessionStart descriptor entry`,
+    );
+    const commandTexts = [];
+    for (const entry of sessionEntries) {
+      const commandHooks = Array.isArray(entry?.hooks) ? entry.hooks : [];
+      for (const hook of commandHooks) {
+        if (typeof hook?.command === "string") commandTexts.push(hook.command);
+      }
+    }
+    assert(
+      commandTexts.length === 1,
+      `${manifestPath}: expected exactly one SessionStart command hook, found ${commandTexts.length}`,
+    );
+    const commandText = commandTexts[0];
+    assert(
+      !/\$\{CODEX_PLUGIN_ROOT\}/.test(commandText),
+      `${manifestPath}: SessionStart must not reference \${CODEX_PLUGIN_ROOT} (Codex Desktop does not pass it through): ${commandText}`,
+    );
+    assert(
+      /\$\{PLUGIN_ROOT\}/.test(commandText),
+      `${manifestPath}: SessionStart must reference \${PLUGIN_ROOT} so Codex Desktop can resolve the wrapper: ${commandText}`,
+    );
+    // The Pluxx 0.1.41 generator emits the wrapper under \${PLUGIN_ROOT}/hooks,
+    // so the relative path component is allowed. The bug pattern we forbid is a
+    // bare absolute /hooks/... destination with no plugin-root placeholder at
+    // all (the original PLUXX-345 collapse before this fix landed).
+    assert(
+      /\$\{[^}]+\}\/hooks\//.test(commandText),
+      `${manifestPath}: SessionStart must route through a plugin-rooted path (PLUXX-345 regression guard): ${commandText}`,
+    );
+  }
+
+  const installedManifest = await readJson("dist/codex/hooks/hooks.json");
+  const installedCommand = installedManifest.hooks.SessionStart[0].hooks[0].command;
+
+  const harnessRoot = await mkdtemp(path.join(os.tmpdir(), "sendlens-codex-hook-reachability-"));
+  try {
+    const bundleRoot = path.join(harnessRoot, "installed-codex-bundle");
+    await cp(path.join(root, "dist", "codex"), bundleRoot, {
+      recursive: true,
+      verbatimSymlinks: true,
+    });
+    await rm(path.join(bundleRoot, "node_modules"), { recursive: true, force: true });
+
+    const launchWorkspace = path.join(harnessRoot, "user-launch-workspace");
+    await mkdir(launchWorkspace, { recursive: true });
+    await writeFile(
+      path.join(launchWorkspace, ".gitkeep"),
+      "user launch folder unrelated to the plugin install\n",
+    );
+
+    const codexEnv = {
+      PATH: process.env.PATH ?? "",
+      HOME: path.join(harnessRoot, "home"),
+    };
+
+    const scenarios = [
+      {
+        label: "pluxx_aware_host_sets_plugin_root",
+        describe:
+          "Codex Desktop-equivalent env: PLUGIN_ROOT set, CODEX_PLUGIN_ROOT absent",
+        env: {
+          ...codexEnv,
+          PLUGIN_ROOT: bundleRoot,
+          SENDLENS_INSTANTLY_API_KEY: "",
+          SENDLENS_SMARTLEAD_API_KEY: "",
+          SENDLENS_PROVIDER: "instantly",
+          SENDLENS_CLIENT: "",
+          SENDLENS_DEMO_MODE: "",
+        },
+      },
+      {
+        label: "no_plugin_root_env_uses_wrapper_discovery",
+        describe:
+          "Host that does not export PLUGIN_ROOT; wrapper derives root from its on-disk location",
+        env: {
+          ...codexEnv,
+          SENDLENS_INSTANTLY_API_KEY: "",
+          SENDLENS_SMARTLEAD_API_KEY: "",
+          SENDLENS_PROVIDER: "instantly",
+          SENDLENS_CLIENT: "",
+          SENDLENS_DEMO_MODE: "",
+        },
+      },
+    ];
+
+    const replacedCommand = installedCommand.replace(/\$\{PLUGIN_ROOT\}/g, bundleRoot);
+
+    for (const scenario of scenarios) {
+      const result = spawnSync("bash", ["-lc", replacedCommand], {
+        cwd: launchWorkspace,
+        encoding: "utf8",
+        env: scenario.env,
+      });
+      const output = `${result.stdout}${result.stderr}`;
+      assert(
+        result.status === 0,
+        `dist/codex/hooks/hooks.json (${scenario.label}): \${scenario.describe}\n command=${installedCommand}\nexit=${result.status}\n${output}`,
+      );
+      assert(
+        /SENDLENS_INSTANTLY_API_KEY is not set/i.test(output) ||
+          /Run \/sendlens-setup/i.test(output),
+        `dist/codex/hooks/hooks.json (${scenario.label}): credential-free startup must surface the existing safe-skip / setup guidance\n${output}`,
+      );
+      assert(
+        !/CODEX_PLUGIN_ROOT/.test(output),
+        `dist/codex/hooks/hooks.json (${scenario.label}): wrapper output must not require Codex-only env\n${output}`,
+      );
+      assert(
+        !/instly_[A-Za-z0-9_-]{12,}|sk_[A-Za-z0-9_-]{12,}/.test(output),
+        `dist/codex/hooks/hooks.json (${scenario.label}): startup output must not surface credentials\n${output}`,
+      );
+    }
+
+    const demoModeProbes = [{ value: "1" }, { value: "true" }];
+    for (const probe of demoModeProbes) {
+      const demoLogPath = path.join(harnessRoot, `demo-${probe.value.replace(/[^a-z0-9]/gi, "")}.log`);
+      const demoStateDir = path.join(harnessRoot, `demo-state-${probe.value.replace(/[^a-z0-9]/gi, "")}`);
+      const demoWrapperCommand = [
+        `export PLUGIN_ROOT='${bundleRoot}';`,
+        `export SENDLENS_DEMO_MODE='${probe.value}';`,
+        `export SENDLENS_STATE_DIR='${demoStateDir}';`,
+        `export SENDLENS_DB_PATH='${path.join(demoStateDir, "workspace-cache.duckdb")}';`,
+        `node '${bundleRoot}/hooks/pluxx-hook-command-1.mjs';`,
+      ].join(" ");
+      const demoResult = spawnSync("bash", ["-lc", demoWrapperCommand], {
+        cwd: launchWorkspace,
+        encoding: "utf8",
+        env: {
+          PATH: process.env.PATH ?? "",
+          HOME: path.join(harnessRoot, "demo-home"),
+        },
+      });
+      const demoWrapperOutput = `${demoResult.stdout}${demoResult.stderr}`;
+      const demoLogContent = await readFile(demoLogPath, "utf8").catch(() => "");
+      await writeFile(demoLogPath, `${demoLogContent}\n${demoWrapperOutput}\n`);
+      assert(
+        demoResult.status === 0,
+        `dist/codex/hooks/hooks.json: demo-mode bootstrap (SENDLENS_DEMO_MODE=${probe.value}) must exit 0 without CODEX_PLUGIN_ROOT\nexit=${demoResult.status}\nwrapper-log=${demoLogPath}\nlast-output=${demoWrapperOutput}`,
+      );
+      assert(
+        /Demo mode loaded synthetic workspace/i.test(`${demoLogContent}\n${demoWrapperOutput}`),
+        `dist/codex/hooks/hooks.json: demo-mode bootstrap (SENDLENS_DEMO_MODE=${probe.value}) must surface the SendLens demo bootstrap message\nwrapper-log=${demoLogPath}\nlast-output=${demoWrapperOutput}`,
+      );
+      try {
+        await stat(path.join(demoStateDir, "workspace-cache.duckdb"));
+      } catch {
+        assert(false, `dist/codex/hooks/hooks.json: demo-mode bootstrap (SENDLENS_DEMO_MODE=${probe.value}) did not materialize the synthetic DuckDB workspace\nwrapper-log=${demoLogPath}\nlast-output=${demoWrapperOutput}`);
+      }
+    }
+  } finally {
+    await rm(harnessRoot, { recursive: true, force: true });
+  }
+}
+
 async function assertFreshGeneratedBundleBootstrap() {
   const harnessRoot = await mkdtemp(path.join(os.tmpdir(), "sendlens-fresh-bundle-"));
   try {
@@ -1181,6 +1354,7 @@ await assertInstallerFirstRefreshContract();
 await assertSharedRuntimeContract();
 await assertAutomaticRefreshFallback();
 await assertSessionStartProviderContract();
+await assertCodexHookManifestReachability();
 await assertFreshGeneratedBundleBootstrap();
 
 if (failures.length > 0) {
