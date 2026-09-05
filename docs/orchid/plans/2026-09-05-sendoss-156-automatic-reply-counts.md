@@ -27,7 +27,7 @@ classification, or hydration. Work directly in Codex; no workers or deployment.
    replies, missing aggregates, and colliding provider-native IDs. Exercise
    broad and filtered MCP snapshots for active and active_or_recent scopes.
 6. Document nullable fields and inventory versus active totals in
-   `docs/MCP_RESPONSE_CONTRACT.md`. Advance root/site versions together to 0.1.89.
+   `docs/MCP_RESPONSE_CONTRACT.md`. Advance the root package manifest and lockfile together to 0.1.89.
 
 ## Ordered implementation and proof
 
