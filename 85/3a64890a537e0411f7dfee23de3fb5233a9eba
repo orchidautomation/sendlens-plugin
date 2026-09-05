@@ -1,0 +1,25 @@
+scripts/test-snapshot-reply-counts.mjs
+  s_a322b40bf97ec4::t_f579a57bd9bf6d 13,32
+  s_a322b40bf97ec4::t_718323108af5f1 1-12,14-31,33-38,42-90
+  s_a322b40bf97ec4::t_4f4f1f03fa59ec 39-41
+docs/MCP_RESPONSE_CONTRACT.md
+  s_a322b40bf97ec4::t_d1ead2b0748e12 51-53
+plugin/reply-aggregates.ts
+  s_a322b40bf97ec4::t_08889a8bfbe1fd 1-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "853a64890a537e0411f7dfee23de3fb5233a9eba",
+  "prompts": {},
+  "sessions": {
+    "s_a322b40bf97ec4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a071af-00f4-75b1-b1b1-f79ae8b5e2b5",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Brandon Guerrero <brandon@orchidautomation.com>"
+    }
+  }
+}
