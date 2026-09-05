@@ -1,0 +1,25 @@
+docs/orchid/plans/2026-09-05-sendoss-156-automatic-reply-counts.md
+  s_a322b40bf97ec4::t_fd20b9344bf7f4 16-17,38-39,53-56
+docs/MCP_RESPONSE_CONTRACT.md
+  s_a322b40bf97ec4::t_e1c6bb3a92ee83 54
+plugin/local-db.ts
+  s_a322b40bf97ec4::t_fd20b9344bf7f4 46,48
+scripts/test-snapshot-reply-counts.mjs
+  s_a322b40bf97ec4::t_9e47af6a318eb0 7,14,34-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "e804150df5be5c76cdd7e6b05abfc9e1399f7448",
+  "prompts": {},
+  "sessions": {
+    "s_a322b40bf97ec4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a071af-00f4-75b1-b1b1-f79ae8b5e2b5",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Brandon Guerrero <brandon@orchidautomation.com>"
+    }
+  }
+}
