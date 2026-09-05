@@ -43,8 +43,9 @@ export const PREVIOUS_SCHEMA_MIGRATION_IDS = [
   "202608080001_inference_eligibility_evidence_debt",
   "202608080002_sender_domain_lineage",
   "202608080003_experiment_validity",
+  "202608080004_analysis_receipts",
 ] as const;
-export const CURRENT_SCHEMA_MIGRATION_ID = "202608080004_analysis_receipts";
+export const CURRENT_SCHEMA_MIGRATION_ID = "202609050001_snapshot_reply_aggregates";
 const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
 const cacheProviderModeContext = new AsyncLocalStorage<SourceProviderMode>();
 

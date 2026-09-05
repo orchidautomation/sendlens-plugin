@@ -4,13 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { DuckDBInstance } from "@duckdb/node-api";
 
 const dir = await fs.mkdtemp(path.join(os.tmpdir(), "sendlens-snapshot-replies-"));
 process.env.SENDLENS_DB_PATH = path.join(dir, "fixture.duckdb");
 process.env.SENDLENS_STATE_DIR = dir;
 process.env.SENDLENS_DEMO_MODE = "0";
 process.env.SENDLENS_SOURCE_PROVIDER = "all";
-const { getDb, run, setActiveWorkspaceId, closeDb, resetDbConnectionForTests } = await import("../build/plugin/local-db.js");
+const { getDb, run, query, setActiveWorkspaceId, closeDb, resetDbConnectionForTests } = await import("../build/plugin/local-db.js");
 const { createSendLensServer } = await import("../build/plugin/server.js");
 const server = createSendLensServer();
 const client = new Client({ name: "snapshot-reply-counts", version: "1.0.0" });
@@ -30,6 +31,33 @@ try {
            ('synthetic', 'paused', 'instantly', 20, 0, 0, 7, 5),
            ('synthetic', 'smartlead:paused', 'smartlead', 50, NULL, NULL, NULL, NULL)`);
   closeDb(db);
+  // Model an already-current v0.1.88 cache: opening it must upgrade the view,
+  // without discarding campaign data or requiring a provider refresh.
+  const historicalInstance = await DuckDBInstance.create(process.env.SENDLENS_DB_PATH);
+  const historical = await historicalInstance.connect();
+  try {
+    await historical.run(`DELETE FROM sendlens.schema_migrations
+      WHERE migration_id > '202608080004_analysis_receipts'`);
+    await historical.run(`INSERT OR IGNORE INTO sendlens.schema_migrations
+      (migration_id, applied_at) VALUES ('202608080004_analysis_receipts', CURRENT_TIMESTAMP)`);
+    await historical.run(`CREATE OR REPLACE VIEW sendlens.campaign_overview AS
+      SELECT workspace_id, id AS campaign_id, name AS campaign_name,
+             0 AS reply_count_unique, 0 AS reply_count_automatic
+      FROM sendlens.campaigns`);
+  } finally {
+    historical.closeSync();
+    historicalInstance.closeSync();
+  }
+  const upgraded = await getDb();
+  try {
+    const rows = await query(upgraded, `SELECT reply_count, reply_count_unique,
+      reply_count_automatic, reply_count_automatic_unique
+      FROM sendlens.campaign_overview WHERE campaign_id = 'paused'`);
+    assert.deepEqual(rows, [{ reply_count: 0, reply_count_unique: 0,
+      reply_count_automatic: 7, reply_count_automatic_unique: 5 }]);
+  } finally {
+    closeDb(upgraded);
+  }
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   await client.connect(clientTransport);

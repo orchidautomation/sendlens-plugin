@@ -13,7 +13,8 @@ classification, or hydration. Work directly in Codex; no workers or deployment.
 ## Scope and acceptance mapping
 
 1. Preserve all four nullable counts in `campaign_overview`; preserve unknown
-   unique reply rates. No table migration or provider API calls are required.
+   unique reply rates. Advance the existing migration ledger so previously
+   current caches rebuild the view; no table shape changes or provider calls.
 2. Share count aggregation/formatting between both snapshot paths. Campaign rows
    expose event, unique non-automatic, automatic event, and unique automatic
    counts. Null means unavailable; zero is confirmed zero.
@@ -34,6 +35,8 @@ classification, or hydration. Work directly in Codex; no workers or deployment.
 Add a focused snapshot regression script using the existing local DB and MCP
 in-memory transport test patterns; demonstrate failure against current code.
 Repair the view, shared reply helpers, broad summary and scoped snapshot.
+Reproduce the old-cache missing-column failure and prove ledger-based upgrade
+preserves synthetic campaign data. Preserve migration rollback failure checks.
 Wire the regression into the fast test tier. Run focused tests, full
 `test:plugin`, `validate:plugin`, `lint:plugin`, host bundle checks, Orchid repo
 preflight and `git diff --check`. Review the diff before one PR linking
@@ -47,8 +50,10 @@ fabricated as zero become null when unknown; consumers must handle null.
 Historical ingestion that already discarded availability cannot be recovered
 by this view change. Do not infer provider classification beyond cached fields.
 New totals are null if any contributing campaign lacks that field, including
-mixed-provider snapshots. Roll back the PR to restore prior view/response
-behavior; no destructive data migration is involved. Release remains the
+mixed-provider snapshots. The ledger revision rebuilds views using the existing
+transactional migration mechanism. An older binary rejects the newer migration;
+rollback must restore a pre-upgrade cache backup or use a separate cache path
+and refresh it. Do not delete migration records in a real cache. Release remains the
 normal reviewed PR pipeline and merge is Brandon-owned.
 
 ## Readiness
