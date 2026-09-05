@@ -1,3 +1,12 @@
+import {
+  campaignReplySummary,
+  formatReplyRate,
+  nullableCount,
+  nullableReplyRate,
+  replyAggregateMetrics,
+  replyAggregateSql,
+  replyAggregateSummary,
+} from "./reply-aggregates";
 import type { DuckDBConnection } from "@duckdb/node-api";
 import { buildActiveDataState } from "./active-data-state";
 import { getActiveWorkspaceId, getPluginState, query } from "./local-db";
@@ -186,8 +195,7 @@ export async function buildWorkspaceSummary(
     `SELECT
        COUNT(*) AS active_campaign_count,
        COALESCE(SUM(ca.emails_sent_count), 0) AS total_sent,
-       COALESCE(SUM(ca.reply_count_unique), 0) AS total_unique_replies,
-       COALESCE(SUM(ca.reply_count_automatic), 0) AS total_auto_replies,
+       ${replyAggregateSql("ca")},
        COALESCE(SUM(ca.bounced_count), 0) AS total_bounces,
        COALESCE(SUM(ca.total_opportunities), 0) AS total_opportunities
      FROM sendlens.campaigns c
@@ -221,6 +229,12 @@ export async function buildWorkspaceSummary(
        AND ${campaignInventoryFilter}`,
   );
   const inventoryMetrics = inventoryMetricsRows[0] ?? {};
+  const inventoryReplyRows = await query(conn, `SELECT ${replyAggregateSql("co")}
+    FROM sendlens.campaign_overview co
+    WHERE co.workspace_id = '${workspace}'
+      AND ${campaignInventoryScopeWhere("co", campaignInventoryScope)}
+      AND ${providerScopeWhere("co", providerScope)}`);
+  const inventoryReplies = inventoryReplyRows[0] ?? {};
 
   const providerBreakdown = await query(
     conn,
@@ -228,9 +242,10 @@ export async function buildWorkspaceSummary(
        COALESCE(c.source_provider, 'instantly') AS source_provider,
        COUNT(*) AS active_campaign_count,
        COALESCE(SUM(ca.emails_sent_count), 0) AS total_sent,
-       COALESCE(SUM(ca.reply_count_unique), 0) AS total_unique_replies,
+       ${replyAggregateSql("ca")},
        COALESCE(SUM(ca.bounced_count), 0) AS total_bounces,
        CASE
+         WHEN COUNT(*) <> COUNT(ca.reply_count_unique) THEN NULL
          WHEN COALESCE(SUM(ca.emails_sent_count), 0) = 0 THEN 0
          ELSE ROUND(100.0 * COALESCE(SUM(ca.reply_count_unique), 0) / SUM(ca.emails_sent_count), 2)
        END AS unique_reply_rate_pct,
@@ -270,7 +285,10 @@ export async function buildWorkspaceSummary(
        recent_activity_evaluated_at,
        recent_activity_source,
        leads_count,
+       reply_count,
        reply_count_unique,
+       reply_count_automatic,
+       reply_count_automatic_unique,
        emails_sent_count,
        bounced_count,
        total_opportunities,
@@ -412,9 +430,9 @@ export async function buildWorkspaceSummary(
   );
 
   const totalSent = num(metrics.total_sent);
-  const totalUniqueReplies = num(metrics.total_unique_replies);
+  const totalUniqueReplies = nullableCount(metrics.total_unique_replies);
   const totalBounces = num(metrics.total_bounces);
-  const replyRate = pct(totalUniqueReplies, totalSent);
+  const replyRate = nullableReplyRate(totalUniqueReplies, totalSent);
   const bounceRate = pct(totalBounces, totalSent);
   const activeCampaignCount = num(metrics.active_campaign_count);
   const campaignRowsTruncated = bestCampaignRows.length > WORKSPACE_CAMPAIGN_LIMIT;
@@ -434,7 +452,7 @@ export async function buildWorkspaceSummary(
     warnings.unshift(activeDataState.analysis_notice);
   }
 
-  if (activeCampaignCount > 0 && totalSent > 0 && replyRate < 1) {
+  if (activeCampaignCount > 0 && totalSent > 0 && replyRate != null && replyRate < 1) {
     warnings.push("Workspace unique reply rate is below 1%, so copy and targeting need attention.");
   }
 
@@ -483,7 +501,7 @@ export async function buildWorkspaceSummary(
   const smartDeliveryEvidenceCount = num(smartDeliveryEvidenceRows[0]?.count);
   const lastRefreshedAt = await getPluginState(conn, "last_refresh_at");
   const bestCampaignLine = bestCampaign
-    ? `${String(bestCampaign.name)} leads with ${pct(num(bestCampaign.reply_count_unique), num(bestCampaign.emails_sent_count)).toFixed(2)}% unique reply rate.`
+    ? `${String(bestCampaign.name)} leads with ${formatReplyRate(bestCampaign.unique_reply_rate_pct)} unique reply rate.`
     : "No campaign performance row is available yet.";
 
   return {
@@ -497,8 +515,9 @@ export async function buildWorkspaceSummary(
         : null,
       `Workspace ${activeWorkspaceId} has ${num(metrics.active_campaign_count)} active campaigns in the current SendLens snapshot for ${providerScopeLabel(providerScope)}.`,
       `Campaign inventory scope "${campaignInventoryScope}" returns ${num(inventoryMetrics.campaign_count)} ${campaignInventoryScopeLabel(campaignInventoryScope)}; active KPI totals below remain active-only.`,
-      `Exact totals: ${totalSent} sends, ${totalUniqueReplies} unique human replies, ${num(metrics.total_auto_replies)} auto-replies, ${num(metrics.total_opportunities)} opportunities.`,
-      `Exact headline rates: ${replyRate.toFixed(2)}% unique reply rate and ${bounceRate.toFixed(2)}% bounce rate.`,
+      `Exact totals: ${totalSent} sends, ${replyAggregateSummary(metrics)}, ${num(metrics.total_opportunities)} opportunities.`,
+      `Inventory reply totals: ${replyAggregateSummary(inventoryReplies)}. Reply-body coverage is separate.`,
+      `Exact headline rates: ${formatReplyRate(replyRate)} unique reply rate and ${bounceRate.toFixed(2)}% bounce rate.`,
       `Best campaign: ${bestCampaignLine}`,
       bestCampaign
         ? `Coverage on the current leader: ${num(bestCampaign.reply_lead_rows)} reply-signal leads found during bounded lead scan, ${num(bestCampaign.nonreply_rows_sampled)} sampled non-reply leads, ${num(bestCampaign.reply_outbound_rows)} locally reconstructed reply-copy rows.`
@@ -516,11 +535,13 @@ export async function buildWorkspaceSummary(
       active_campaign_count: activeCampaignCount,
       campaign_count: activeCampaignCount,
       total_sent: totalSent,
+      total_replies: nullableCount(metrics.total_replies),
       total_unique_replies: totalUniqueReplies,
-      total_auto_replies: num(metrics.total_auto_replies),
+      total_auto_replies: nullableCount(metrics.total_auto_replies),
+      total_unique_auto_replies: nullableCount(metrics.total_unique_auto_replies),
       total_bounces: totalBounces,
       total_opportunities: num(metrics.total_opportunities),
-      unique_reply_rate_pct: Number(replyRate.toFixed(2)),
+      unique_reply_rate_pct: replyRate,
       bounce_rate_pct: Number(bounceRate.toFixed(2)),
       inbox_placement_test_count: inboxPlacementTestCount,
       inbox_placement_analytics_rows: inboxPlacementAnalyticsCount,
@@ -530,6 +551,7 @@ export async function buildWorkspaceSummary(
     source_provider_scope: providerScope,
     campaign_inventory_scope: campaignInventoryScope,
     inventory_metrics: {
+      ...replyAggregateMetrics(inventoryReplies),
       campaign_count: num(inventoryMetrics.campaign_count),
       active_campaign_count: num(inventoryMetrics.active_campaign_count),
       recent_campaign_count: num(inventoryMetrics.recent_campaign_count),
@@ -542,9 +564,9 @@ export async function buildWorkspaceSummary(
       source_provider: row.source_provider ?? "instantly",
       active_campaign_count: num(row.active_campaign_count),
       total_sent: num(row.total_sent),
-      total_unique_replies: num(row.total_unique_replies),
+      ...replyAggregateMetrics(row),
       total_bounces: num(row.total_bounces),
-      unique_reply_rate_pct: num(row.unique_reply_rate_pct),
+      unique_reply_rate_pct: nullableCount(row.unique_reply_rate_pct),
       bounce_rate_pct: num(row.bounce_rate_pct),
     })),
     provider_capabilities: providerCapabilities,
@@ -573,11 +595,15 @@ export async function buildWorkspaceSummary(
       recent_activity_source: row.recent_activity_source,
       leads_count: num(row.leads_count),
       emails_sent_count: num(row.emails_sent_count),
-      reply_count_unique: num(row.reply_count_unique),
+      reply_count: nullableCount(row.reply_count),
+      reply_count_unique: nullableCount(row.reply_count_unique),
+      reply_count_automatic: nullableCount(row.reply_count_automatic),
+      reply_count_automatic_unique: nullableCount(row.reply_count_automatic_unique),
+      reply_summary: campaignReplySummary(row),
       bounced_count: num(row.bounced_count),
       total_opportunities: num(row.total_opportunities),
       total_opportunity_value: num(row.total_opportunity_value),
-      unique_reply_rate_pct: num(row.unique_reply_rate_pct),
+      unique_reply_rate_pct: nullableCount(row.unique_reply_rate_pct),
       bounce_rate_pct: num(row.bounce_rate_pct),
       tracking_status: row.tracking_status,
       deliverability_settings_status: row.deliverability_settings_status,

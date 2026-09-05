@@ -48,6 +48,9 @@ Where relevant, SendLens responses should include:
 - `campaign_inventory_scope` and `inventory_metrics`; `exact_metrics` remain active-only even when inactive recent campaigns are visible
 - bounded `campaigns` rows from `campaign_overview` for ranking and campaign selection
 - campaign rows include `detail_selection_reason`, recent-activity coverage/window/timezone fields, and `recent_sent_count` when the provider exposes bounded recency evidence
+- campaign rows preserve nullable provider aggregates: `reply_count` (non-automatic events), `reply_count_unique` (unique human/non-automatic replies), `reply_count_automatic` (automatic events), and `reply_count_automatic_unique` (unique automatic replies). `reply_summary` explains these aggregates independently of reply-body coverage; zero human replies with automatic replies does not imply missing human-reply hydration.
+- `exact_metrics` and `provider_breakdown` expose active-only `total_replies`, `total_unique_replies`, `total_auto_replies`, and `total_unique_auto_replies`. `inventory_metrics` exposes the same reply totals across the full requested inventory/filter, including recently sending paused campaigns, before campaign-row limits.
+- Missing reply fields remain `null`, including associated unique reply rates. A reply total is `null` if any contributing campaign lacks that field; confirmed zeros and empty scope totals are zero. Cross-provider totals preserve unknown availability rather than presenting a partial sum as exact. Existing cache values already stored as zero cannot recover prior provider availability without new evidence.
 - bounded campaign coverage rows
 - `rate_caveats` when cross-provider rates are recomputed from normalized counts
 - optional scope metadata for tag or campaign-name filters

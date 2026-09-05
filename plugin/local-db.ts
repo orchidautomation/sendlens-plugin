@@ -2385,8 +2385,10 @@ async function ensureSchema(conn: DuckDBConnection) {
         COALESCE(ca.contacted_count, 0) AS contacted_count,
         COALESCE(ca.new_leads_contacted_count, 0) AS new_leads_contacted_count,
         COALESCE(ca.emails_sent_count, 0) AS emails_sent_count,
-        COALESCE(ca.reply_count_unique, 0) AS reply_count_unique,
-        COALESCE(ca.reply_count_automatic, 0) AS reply_count_automatic,
+        ca.reply_count,
+        ca.reply_count_unique,
+        ca.reply_count_automatic,
+        ca.reply_count_automatic_unique,
         COALESCE(ca.bounced_count, 0) AS bounced_count,
         COALESCE(ca.unsubscribed_count, 0) AS unsubscribed_count,
         COALESCE(ca.completed_count, 0) AS completed_count,
@@ -2408,8 +2410,9 @@ async function ensureSchema(conn: DuckDBConnection) {
         sr.population_fingerprint,
         COALESCE(sr.provenance_status, 'unknown') AS provenance_status,
         CASE
+          WHEN ca.reply_count_unique IS NULL THEN NULL
           WHEN COALESCE(ca.emails_sent_count, 0) = 0 THEN 0
-          ELSE ROUND(100.0 * COALESCE(ca.reply_count_unique, 0) / ca.emails_sent_count, 2)
+          ELSE ROUND(100.0 * ca.reply_count_unique / ca.emails_sent_count, 2)
         END AS unique_reply_rate_pct,
         CASE
           WHEN COALESCE(ca.emails_sent_count, 0) = 0 THEN 0
