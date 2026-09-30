@@ -1,5 +1,9 @@
 # SendLens Agent Instructions
 
+## Orchid Routing
+
+- Linear team: SENDOSS
+
 ## Product Context
 
 - SendLens is a local-first, read-only outbound analytics plugin for AI hosts.

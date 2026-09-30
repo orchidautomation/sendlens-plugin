@@ -1,3 +1,12 @@
+import {
+  campaignReplySummary,
+  formatReplyRate,
+  nullableCount,
+  nullableReplyRate,
+  replyAggregateMetrics,
+  replyAggregateSql,
+  replyAggregateSummary,
+} from "./reply-aggregates";
 import * as z from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -2338,7 +2347,10 @@ async function buildScopedWorkspaceSnapshot(
        co.recent_activity_source,
        co.daily_limit,
        co.emails_sent_count,
+       co.reply_count,
        co.reply_count_unique,
+       co.reply_count_automatic,
+       co.reply_count_automatic_unique,
        co.unique_reply_rate_pct,
        co.bounced_count,
 	       co.bounce_rate_pct,
@@ -2379,9 +2391,10 @@ async function buildScopedWorkspaceSnapshot(
        co.source_provider,
        COUNT(*) AS active_campaign_count,
        COALESCE(SUM(co.emails_sent_count), 0) AS total_sent,
-       COALESCE(SUM(co.reply_count_unique), 0) AS total_unique_replies,
+       ${replyAggregateSql("co")},
        COALESCE(SUM(co.bounced_count), 0) AS total_bounces,
        CASE
+         WHEN COUNT(*) <> COUNT(co.reply_count_unique) THEN NULL
          WHEN COALESCE(SUM(co.emails_sent_count), 0) = 0 THEN 0
          ELSE ROUND(100.0 * COALESCE(SUM(co.reply_count_unique), 0) / SUM(co.emails_sent_count), 2)
        END AS unique_reply_rate_pct,
@@ -2458,7 +2471,7 @@ async function buildScopedWorkspaceSnapshot(
        SUM(CASE WHEN co.status = 'active' THEN 1 ELSE 0 END) AS active_campaign_count,
        COALESCE(SUM(co.daily_limit), 0) AS configured_daily_limit_total,
        COALESCE(SUM(co.emails_sent_count), 0) AS total_sent,
-       COALESCE(SUM(co.reply_count_unique), 0) AS total_unique_replies,
+       ${replyAggregateSql("co")},
        COALESCE(SUM(co.bounced_count), 0) AS total_bounces,
        COALESCE(SUM(co.total_opportunities), 0) AS total_opportunities,
        COALESCE(SUM(co.total_opportunity_value), 0) AS total_pipeline
@@ -2469,6 +2482,7 @@ async function buildScopedWorkspaceSnapshot(
   const inventoryMetricsRows = await query(
     db,
     `SELECT
+       ${replyAggregateSql("co")},
        COUNT(*) AS campaign_count,
        SUM(CASE WHEN co.status = 'active' THEN 1 ELSE 0 END) AS active_campaign_count,
        SUM(CASE WHEN ${recentCampaignEvidenceWhere("co")} THEN 1 ELSE 0 END) AS recent_campaign_count,
@@ -2487,11 +2501,11 @@ async function buildScopedWorkspaceSnapshot(
   const inventoryMetrics = inventoryMetricsRows[0] ?? {};
   const totalSent = Number(metrics.total_sent ?? 0) || 0;
   const configuredDailyLimitTotal = Number(metrics.configured_daily_limit_total ?? 0) || 0;
-  const totalUniqueReplies = Number(metrics.total_unique_replies ?? 0) || 0;
+  const totalUniqueReplies = nullableCount(metrics.total_unique_replies);
   const totalBounces = Number(metrics.total_bounces ?? 0) || 0;
   const totalOpportunities = Number(metrics.total_opportunities ?? 0) || 0;
   const totalPipeline = Number(metrics.total_pipeline ?? 0) || 0;
-  const replyRate = totalSent ? (totalUniqueReplies / totalSent) * 100 : 0;
+  const replyRate = nullableReplyRate(totalUniqueReplies, totalSent);
   const bounceRate = totalSent ? (totalBounces / totalSent) * 100 : 0;
   const campaignRowsTruncated = campaignRows.length > SCOPED_SNAPSHOT_CAMPAIGN_LIMIT;
   const visibleCampaignRows = campaignRows.slice(0, SCOPED_SNAPSHOT_CAMPAIGN_LIMIT);
@@ -2506,7 +2520,7 @@ async function buildScopedWorkspaceSnapshot(
   if (bounceRate > 2) {
     warnings.push("Scoped bounce rate is above 2%, which deserves list-quality review.");
   }
-  if (totalSent > 0 && replyRate < 1) {
+  if (totalSent > 0 && replyRate != null && replyRate < 1) {
     warnings.push("Scoped unique reply rate is below 1%, so copy and targeting need attention.");
   }
   if (
@@ -2560,11 +2574,12 @@ async function buildScopedWorkspaceSnapshot(
         ? activeDataState.message
         : null,
       `Scoped cached snapshot for ${scopeNotes.join(" and ")}.`,
-      `${Number(inventoryMetrics.campaign_count ?? 0) || 0} campaigns in inventory scope; active-only totals are ${Number(metrics.campaign_count ?? 0)} active campaigns, ${totalSent} sends, ${totalUniqueReplies} unique human replies, ${totalBounces} bounces, ${totalOpportunities} opportunities, and $${totalPipeline} pipeline.`,
+      `${Number(inventoryMetrics.campaign_count ?? 0) || 0} campaigns in inventory scope; active-only totals are ${Number(metrics.campaign_count ?? 0)} active campaigns, ${totalSent} sends, ${replyAggregateSummary(metrics)}, ${totalBounces} bounces, ${totalOpportunities} opportunities, and $${totalPipeline} pipeline.`,
+      `Inventory reply totals: ${replyAggregateSummary(inventoryMetrics)}. Reply-body coverage is separate.`,
       `Configured campaign daily limit in scope: ${configuredDailyLimitTotal} emails/day.`,
-      `Exact scoped headline rates: ${replyRate.toFixed(2)}% unique reply rate and ${bounceRate.toFixed(2)}% bounce rate.`,
+      `Exact scoped headline rates: ${formatReplyRate(replyRate)} unique reply rate and ${bounceRate.toFixed(2)}% bounce rate.`,
       leader
-        ? `Largest campaign in scope: ${String(leader.campaign_name)} with ${Number(leader.emails_sent_count ?? 0)} sends and ${Number(leader.unique_reply_rate_pct ?? 0).toFixed(2)}% unique reply rate.`
+        ? `Largest campaign in scope: ${String(leader.campaign_name)} with ${Number(leader.emails_sent_count ?? 0)} sends and ${formatReplyRate(leader.unique_reply_rate_pct)} unique reply rate.`
         : "No leading campaign available.",
       "This read comes from the current local cache and does not trigger another workspace refresh.",
       campaignScope === "active"
@@ -2578,16 +2593,20 @@ async function buildScopedWorkspaceSnapshot(
       active_campaign_count: Number(metrics.active_campaign_count ?? 0) || 0,
       configured_daily_limit_total: configuredDailyLimitTotal,
       total_sent: totalSent,
+      total_replies: nullableCount(metrics.total_replies),
       total_unique_replies: totalUniqueReplies,
+      total_auto_replies: nullableCount(metrics.total_auto_replies),
+      total_unique_auto_replies: nullableCount(metrics.total_unique_auto_replies),
       total_bounces: totalBounces,
       total_opportunities: totalOpportunities,
       total_pipeline: totalPipeline,
-      unique_reply_rate_pct: Number(replyRate.toFixed(2)),
+      unique_reply_rate_pct: replyRate,
       bounce_rate_pct: Number(bounceRate.toFixed(2)),
     },
     source_provider_scope: providerScope,
     campaign_inventory_scope: campaignScope,
     inventory_metrics: {
+      ...replyAggregateMetrics(inventoryMetrics),
       campaign_count: Number(inventoryMetrics.campaign_count ?? 0) || 0,
       active_campaign_count: Number(inventoryMetrics.active_campaign_count ?? 0) || 0,
       recent_campaign_count: Number(inventoryMetrics.recent_campaign_count ?? 0) || 0,
@@ -2600,9 +2619,9 @@ async function buildScopedWorkspaceSnapshot(
       source_provider: row.source_provider ?? "instantly",
       active_campaign_count: Number(row.active_campaign_count ?? 0) || 0,
       total_sent: Number(row.total_sent ?? 0) || 0,
-      total_unique_replies: Number(row.total_unique_replies ?? 0) || 0,
+      ...replyAggregateMetrics(row),
       total_bounces: Number(row.total_bounces ?? 0) || 0,
-      unique_reply_rate_pct: Number(row.unique_reply_rate_pct ?? 0) || 0,
+      unique_reply_rate_pct: nullableCount(row.unique_reply_rate_pct),
       bounce_rate_pct: Number(row.bounce_rate_pct ?? 0) || 0,
     })),
     provider_capabilities: providerCapabilities,
@@ -2638,7 +2657,7 @@ async function buildScopedWorkspaceSnapshot(
       population_fingerprint: row.population_fingerprint ?? null,
       provenance_status: row.provenance_status ?? "unknown",
     })),
-    campaigns: visibleCampaignRows,
+    campaigns: visibleCampaignRows.map((row) => ({ ...row, reply_summary: campaignReplySummary(row) })),
     warnings,
     last_refreshed_at: status.lastSuccessAt ?? null,
     refresh_status: status.status,
