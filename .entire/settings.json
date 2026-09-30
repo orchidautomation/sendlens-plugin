@@ -1,8 +1,23 @@
 {
   "enabled": true,
+  "strategy_options": {
+    "checkpoint_remote": {
+      "provider": "github",
+      "repo": "orchidautomation/sendlens-plugin-checkpoints"
+    }
+  },
+  "telemetry": false,
+  "redaction": {
+    "pii": {
+      "enabled": true,
+      "email": true,
+      "phone": true,
+      "address": false
+    }
+  },
   "checkpoints": {
     "primary": {
-      "type": "git-refs"
+      "type": "git-branch"
     }
   }
 }
