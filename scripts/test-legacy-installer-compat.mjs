@@ -18,6 +18,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { inspectPublicInstaller } from "./verify-public-installer-contract.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -458,6 +460,41 @@ async function executeInstalledOpenCodeWrapper(paths, runRoot) {
     mcp.command?.[1],
     path.join(pluginRoot, "runtime", "pluxx-mcp-env.mjs"),
   );
+  assert.equal(mcp.command?.at(-1), "${PLUGIN_ROOT}/scripts/start-mcp.sh");
+
+  const transport = new StdioClientTransport({
+    command: mcp.command[0],
+    args: mcp.command.slice(1),
+    cwd: workspaceRoot,
+    env: {
+      PATH: process.env.PATH ?? "",
+      HOME: path.join(runRoot, "home"),
+      ...mcp.environment,
+      SENDLENS_PROVIDER: "instantly",
+      SENDLENS_DEMO_MODE: "1",
+      SENDLENS_INSTANTLY_API_KEY: "",
+      SENDLENS_SMARTLEAD_API_KEY: "",
+      SENDLENS_DB_PATH: path.join(runRoot, "demo-workspace.duckdb"),
+    },
+    stderr: "pipe",
+  });
+  const client = new Client({ name: "sendlens-installed-opencode-test", version: "1.0.0" });
+  let handshakeTimer;
+  try {
+    await Promise.race([
+      client.connect(transport),
+      new Promise((_, reject) => {
+        handshakeTimer = setTimeout(() => reject(new Error("installed OpenCode MCP handshake timed out")), 20000);
+      }),
+    ]);
+    const registered = await client.listTools();
+    assert.ok(registered.tools.some((tool) => tool.name === "setup_doctor"), "installed OpenCode MCP must expose setup_doctor");
+    const doctor = await client.callTool({ name: "setup_doctor", arguments: {} });
+    assert.notEqual(doctor.isError, true, "installed OpenCode setup_doctor should answer in credential-free demo mode");
+  } finally {
+    clearTimeout(handshakeTimer);
+    await transport.close();
+  }
 
   await plugin.event({ event: { type: "session.created" } });
   assert.ok(

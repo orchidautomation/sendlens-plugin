@@ -70,6 +70,8 @@ If skills and tools work but a SendLens specialist is missing on another host:
 - Cursor: rerun the installer, run `pluxx verify-install --target cursor`, then use **Developer: Reload Window** or restart Cursor. Cursor discovers the bundle's root `agents/` directory natively.
 - OpenCode: rerun the installer, run `pluxx verify-install --target opencode`, and restart OpenCode. The generated plugin registers agents through its `config` hook; try `@campaign-strategist` after restart.
 
+On OpenCode 2.0.20, the current generated SendLens plugin does not load at all: startup reports a missing default plugin definition with `id` and `setup` or `effect`, and `opencode mcp list` shows no SendLens server. This is a host/plugin API mismatch before credentials or MCP startup. Use another supported host until the generator is updated; reinstalling the same bundle or adding API keys cannot fix it. A separate MCP runtime module-boundary repair is tracked in SENDOSS-161.
+
 Do not manually scatter copied SendLens agent files across host config directories. The Pluxx installer owns the host-specific registration and verification path.
 
 Expected core tools:
