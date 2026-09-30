@@ -19,6 +19,7 @@ const files = {
   catalog: "plugin/catalog.ts",
   analysisSafety: "plugin/analysis-safety.ts",
   analyzeDataDiagnostics: "plugin/analyze-data-diagnostics.ts",
+  analysisReceipts: "plugin/analysis-receipts.ts",
   constants: "plugin/constants.ts",
   replyTextContract: "plugin/reply-text-contract.ts",
   campaignAnalysisResponse: "plugin/campaign-analysis-response.ts",
@@ -337,7 +338,7 @@ for (const term of [
   "`prefer_derived_field` and `recommended_cohort_field`",
   "`search_terms` and `suggested_narrower_terms`",
   "`analysis_starter_suggestions`",
-  "workflow concepts such as runway, scale, refill, deliverability, sender accounts, rendered outbound, reply body, payload, and tags",
+  "workflow concepts such as runway, scale, refill, deliverability, sender accounts, sender/domain lineage and quarantine, rendered outbound, reply body, payload, and tags",
   "hydrates public columns in one bounded pass and reuses warm public-column context",
   "`guidance` that points to relevant `analysis_starters` topics",
 ]) {
@@ -371,10 +372,17 @@ for (const term of [
   "singleton-heavy grouped outputs",
   "`row_count`, `result_truncated`, and output limits",
   "warnings when caps are hit",
+  "diagnostics.analysis_eligibility",
+  '`schema_version: "analysis_eligibility.v1"`',
+  "Unknown families fail closed",
+  '`code: "analysis_ineligible"`',
   "failure responses include a stable `error`, sanitized `code`, and safe `hint`",
   '`diagnostics` with `schema_version: "analyze_data_diagnostics.v1"`',
   "`status` (`ok`, `zero_rows`, `guard_rejected`, `query_error`, `cache_unavailable`, or `unknown`)",
   "never echo submitted SQL, rewritten SQL, private literals, row previews, or engine detail",
+  "hash-only local receipt",
+  "`analysis_receipt`",
+  "`metric_reconciliation`",
 ]) {
   assertIncludes(source.docs, term, "analyze_data docs");
 }
@@ -394,6 +402,13 @@ for (const term of [
   "buildAnalyzeDataDiagnostics",
   "AnalyzeDataDiagnostics",
   "workspace_isolation",
+  "buildAnalyzeDataEligibility",
+  "analysis_ineligible",
+  "question_family",
+  "claim_class",
+  "persistAnalysisReceipt",
+  "analysis_receipt",
+  "recipe_id",
 ]) {
   assertIncludes(source.server, term, "analyze_data runtime");
 }
@@ -449,13 +464,33 @@ assertPattern(
 );
 assertPattern(
   source.server,
-  /status: redactedRows\.length === 0 \? "zero_rows" : "ok"/,
+  /const diagnosticsStatus = analysisEligibility\.eligible[\s\S]*?status: diagnosticsStatus/,
   "analyze_data success diagnostics distinguish zero-row results",
 );
 assert(
   !/sql:\s*rewritten\s*\?\?\s*sql/.test(source.server),
   "analyze_data failures must not echo submitted or rewritten SQL",
 );
+
+for (const term of [
+  "ANALYSIS_RECEIPT_SCHEMA_VERSION",
+  "METRIC_RECONCILIATION_SCHEMA_VERSION",
+  "question_hash",
+  "recipe_hash",
+  "sql_hash",
+  "metric_contract_hash",
+  "provider_capability_snapshot_hash",
+  "source_freshness_hash",
+  "sampling_fingerprint_hash",
+  "dependency_set_hash",
+  "result_hash",
+  "report_dependencies",
+  "metric_reconciliations",
+  "expected_scope_difference",
+  "retrieval_defect",
+]) {
+  assertIncludes(source.analysisReceipts, term, "analysis receipt runtime");
+}
 
 for (const term of [
   "resolves exactly one campaign",
@@ -505,6 +540,9 @@ for (const term of [
   "full reply bodies and raw email addresses require explicit opt-in",
   "recommended next recipes",
   "warnings, and output limits",
+  "hash-only receipt",
+  "metric reconciliation",
+  "analysis-receipt-semantic-diff",
 ]) {
   assertIncludes(source.docs, term, "prepare_campaign_analysis docs");
 }
@@ -534,6 +572,9 @@ for (const term of [
   "recommendedNextAnalysisRecipes",
   "reply-hydration-coverage",
   "reply-email-context-feed",
+  "analysis_receipt",
+  "metric_reconciliation",
+  "metric-reconciliation-audit",
 ]) {
   assertIncludes(
     `${source.server}\n${source.recipes}\n${source.campaignAnalysisResponse}\n${source.campaignAnalysisResponseTest}`,

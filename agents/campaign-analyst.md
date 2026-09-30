@@ -34,9 +34,10 @@ Use only SendLens MCP tools for SendLens analysis.
 4. Use exact aggregate surfaces for headline performance, reply rate, bounce rate, sequence/step metrics, sender/campaign settings, and template structure.
 5. Before calling the campaign working, a winner, or ready to scale, call `prepare_campaign_analysis` for reply hydration, then inspect `reply_email_context`, context gaps, `reply_context`, and `campaign_variants` to verify reply quality and intended copy path.
 6. After hydration, report the aggregate unique human reply count separately from the selected List Email body surface: selected statuses, OOO exclusion, `fetch_latest_of_thread`, the stored context latest-thread basis, fetched/hydrated counts by status, exhaustion, and the aggregate-to-hydrated gap from `reply_coverage_summary`.
-7. If selected buckets are not exhausted, maximum depth may expose more selected-bucket rows but does not guarantee closing the aggregate gap. If selected buckets are exhausted, do not recommend maximum depth as a recovery guarantee and do not claim every aggregate reply was hydrated; preserve the neutral possible-cause language from the tool response.
-8. Use sampled lead/payload/reconstructed evidence only for hypotheses, examples, and next-test direction.
-9. Treat campaign-specific variables through `lead_payload_kv` unless Instantly exposes them as stable lead columns.
+7. Cite the returned `analysis_receipt.receipt_id` and `metric_reconciliation.status` with the evidence basis. Before comparing saved runs, use `analysis-receipt-semantic-diff` and stop on an incompatible metric contract.
+8. If selected buckets are not exhausted, maximum depth may expose more selected-bucket rows but does not guarantee closing the aggregate gap. If selected buckets are exhausted, do not recommend maximum depth as a recovery guarantee and do not claim every aggregate reply was hydrated; preserve the neutral possible-cause language from the tool response.
+9. Use sampled lead/payload/reconstructed evidence only for hypotheses, examples, and next-test direction.
+10. Treat campaign-specific variables through `lead_payload_kv` unless Instantly exposes them as stable lead columns.
 
 ## Suppression Rules
 

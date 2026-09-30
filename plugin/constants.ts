@@ -33,6 +33,12 @@ export const PUBLIC_TABLES = [
   "campaign_variants",
   "campaign_account_assignments",
   "campaign_accounts",
+  "sender_assets",
+  "sender_domain_assets",
+  "campaign_asset_edges",
+  "sender_domain_lineage",
+  "asset_health_events",
+  "campaign_blast_radius",
   "accounts",
   "account_daily_metrics",
   "custom_tags",
@@ -69,14 +75,20 @@ export const PUBLIC_TABLES = [
   "sync_runs",
   "sync_partitions",
   "population_snapshots",
+  "evidence_debt",
   "provider_capabilities",
   "campaign_overview",
   "lead_evidence",
   "lead_payload_kv",
   "provider_overlap_risk",
   "provider_overlap_risk_details",
+  "cross_provider_lead_overlap_effective",
   "reply_context",
   "rendered_outbound_context",
+  "experiment_validity_checks",
+  "analysis_receipts",
+  "report_dependencies",
+  "metric_reconciliations",
 ] as const;
 
 export type PublicTableName = (typeof PUBLIC_TABLES)[number];
@@ -96,6 +108,18 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Exact campaign sender assignment settings from campaign details, including direct account emails and account-tag IDs.",
   campaign_accounts:
     "Resolved campaign sender inventory that expands direct campaign accounts and tag-based account assignments, joined to account health when available; tag_label is the legacy assignment-account tag and assignment_account_tag_label is its explicit alias.",
+  sender_assets:
+    "Provider-qualified sender-account assets with derived sender domain, configured capacity, measured cached volume, health evidence, and provider-specific semantics.",
+  sender_domain_assets:
+    "Provider-qualified sender-domain rollups with sender counts, health state, configured/measured capacity evidence, and effective snapshot bounds.",
+  campaign_asset_edges:
+    "Effective-dated campaign-to-sender assignment edges preserving direct/tag source, provider qualification, health evidence, and unresolved tag edges.",
+  sender_domain_lineage:
+    "Effective-dated sender/domain lineage across campaigns, including shared-sender counts, degraded/disconnected state, unknown edges, and provider-specific health semantics.",
+  asset_health_events:
+    "Sender health events from account snapshots and provider-specific deliverability evidence with bounded effective windows; measured sender metrics remain non-campaign-attributed.",
+  campaign_blast_radius:
+    "Read-only sender/domain quarantine simulation showing affected active campaigns, stop/degrade/retain-redundancy outcomes, capacity evidence, and attribution bounds.",
   accounts:
     "Exact sending-account snapshot with warmup metadata and recent performance rollups.",
   account_daily_metrics:
@@ -168,6 +192,8 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Resumable per-partition cursor and exhaustion state so deep crawls can resume across rate limits, retries, and process restarts without duplicates.",
   population_snapshots:
     "Truthful sampling-frame snapshots distinguishing complete/observed/sampled/enriched-tail/unsupported frames with inclusion reason, algorithm/version, population fingerprint, cumulative coverage, and selection probability.",
+  evidence_debt:
+    "Blocked-question evidence-debt records naming the missing surface, provider, freshness/completeness state, decision impact, nearest safe conclusion, and bounded evidence action so insufficient evidence cannot be upgraded by agent prose.",
   provider_capabilities:
     "Provider capability status by local workspace, including unsupported or partial surfaces such as Smartlead inbox placement.",
   campaign_overview:
@@ -180,8 +206,18 @@ export const TABLE_DESCRIPTIONS: Record<PublicTableName, string> = {
     "Sampled cross-provider overlap-risk rollup for the same normalized email, domain, company domain, or company name, scored by closest provider-event contact window when timing is available.",
   provider_overlap_risk_details:
     "Contributing sampled lead rows behind provider_overlap_risk, preserving provider-qualified campaign IDs and timing evidence for each overlap.",
+  cross_provider_lead_overlap_effective:
+    "Effective-window projection of sampled cross-provider overlap evidence; historical assignment continuity remains unsupported unless separately observed.",
   reply_context:
     "Reply outcome view with one row per replied lead/fetched reply email at the available lead-email grain. Template joins collapse to a single unambiguous step/variant match instead of multiplying rows.",
   rendered_outbound_context:
     "Rendered outbound analysis view that joins reconstructed lead-level copy to campaign names and intended templates.",
+  experiment_validity_checks:
+    "Provider-qualified campaign-step-variant validity checks covering variant mapping, shared sender/domain spillover, evidence-frame completeness, hydration balance, denominator compatibility, and bounded minimum-detectable-effect labeling.",
+  analysis_receipts:
+    "Local bounded replay receipts storing hashes, metric-contract metadata, provider-capability and freshness snapshots, sampling fingerprints, dependency-set hashes, result hashes, truncation, and claim limits without storing SQL, contacts, or message bodies.",
+  report_dependencies:
+    "Local hash-based dependency rows for each public surface referenced by an analysis receipt, preserving freshness and evidence-frame metadata without raw report data.",
+  metric_reconciliations:
+    "Explicit semantic reconciliation records that preserve compatible-contract status, authoritative/decomposed values, residuals, severity, expected scope causes, and unsupported reasons.",
 };

@@ -1,3 +1,12 @@
+import {
+  campaignReplySummary,
+  formatReplyRate,
+  nullableCount,
+  nullableReplyRate,
+  replyAggregateMetrics,
+  replyAggregateSql,
+  replyAggregateSummary,
+} from "./reply-aggregates";
 import * as z from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -50,8 +59,15 @@ import {
 } from "./campaign-analysis-response";
 import {
   buildAnalyzeDataDiagnostics,
+  buildAnalyzeDataEligibility,
   type AnalyzeDataDiagnostics,
 } from "./analyze-data-diagnostics";
+import {
+  persistAnalysisReceipt,
+  recordAggregateHydratedReplyReconciliation,
+  type PublicAnalysisReceipt,
+} from "./analysis-receipts";
+import { CLAIM_CLASSES, type ClaimClass } from "./analysis-eligibility";
 import { buildActiveDataState } from "./active-data-state";
 import { buildQueryRecipeResponse, QUERY_RECIPE_TOPICS } from "./query-recipes";
 import { toReplyTextFetchResult } from "./reply-text-contract";
@@ -166,12 +182,14 @@ function analyzeDataFailurePayload(
     | LocalSqlGuardError["code"]
     | "cache_unavailable"
     | "query_error"
+    | "analysis_ineligible"
     | "workspace_isolation"
     | "privacy_guard",
   diagnostics?: AnalyzeDataDiagnostics,
   options: {
     hint?: string;
     privacyGuard?: AnalyzeDataPrivacyGuardReport;
+    analysisReceipt?: PublicAnalysisReceipt | null;
   } = {},
 ) {
   return {
@@ -182,10 +200,13 @@ function analyzeDataFailurePayload(
         ? "Use refresh_status once to check local cache readiness, then refresh or reload the plugin before retrying. Do not include private literals in retries."
         : code === "privacy_guard"
           ? "Use safe cohort fields or curated analysis_starters recipes instead of raw, high-cardinality, or row-level provider fields."
+          : code === "analysis_ineligible"
+            ? "Use the nearest safe conclusion and bounded evidence action in diagnostics, or collect the named missing evidence before retrying."
         : "Use one focused read-only SELECT/WITH query against sendlens.* public views. Do not include private literals in retries."
     ),
     diagnostics,
     ...(options.privacyGuard ? { privacy_guard: options.privacyGuard } : {}),
+    ...(options.analysisReceipt ? { analysis_receipt: options.analysisReceipt } : {}),
   };
 }
 
@@ -203,6 +224,27 @@ function sqlNumberList(values: number[]) {
 
 function uniqueStrings(values: string[]) {
   return [...new Set(values.filter(Boolean))];
+}
+
+async function readAnalysisEligibilityMetadata(
+  db: Awaited<ReturnType<typeof getDb>>,
+  workspaceId: string,
+) {
+  try {
+    const workspaceSafe = workspaceId.replace(/'/g, "''");
+    return await query(
+      db,
+      `SELECT source_provider, frame, cursor_exhausted, created_at
+       FROM sendlens.population_snapshots
+       WHERE workspace_id = '${workspaceSafe}'
+       ORDER BY created_at DESC
+       LIMIT 25`,
+    );
+  } catch {
+    // Older caches may not have the optional progressive-frame metadata yet.
+    // Keep analyze_data usable and let the eligibility assessment fail closed.
+    return [];
+  }
 }
 
 function numberFromRowValue(value: unknown) {
@@ -1198,13 +1240,78 @@ server.registerTool(
             "campaign-evidence-coverage-audit",
             "campaign-daily-health-trend",
             "campaign-funnel-quality",
+            "metric-reconciliation-audit",
           ]
           : [
             "reply-hydration-coverage",
             "campaign-evidence-coverage-audit",
             "campaign-daily-health-trend",
             "campaign-funnel-quality",
+            "metric-reconciliation-audit",
           ];
+
+      let analysisReceipt: PublicAnalysisReceipt | null = null;
+      try {
+        analysisReceipt = await persistAnalysisReceipt({
+          db,
+          workspaceId,
+          question: "prepare_campaign_analysis reply coverage reporting",
+          rationale: "Prepare one campaign for replayable reply coverage analysis.",
+          questionFamily: "reporting",
+          recipeId: "prepare_campaign_analysis",
+          resultRows: [{
+            aggregate_reply_count: replyCoverageSummary.aggregate_reply_count,
+            fetched_reply_count: replyCoverageSummary.fetched_reply_count,
+            stored_reply_count: replyCoverageSummary.stored_reply_count,
+            hydrated_reply_count: replyCoverageSummary.hydrated_reply_count,
+            coverage_gap_count: replyCoverageSummary.coverage_gap_count,
+            coverage_state: replyCoverageSummary.coverage_state,
+            all_selected_status_buckets_exhausted:
+              replyCoverageSummary.all_selected_status_buckets_exhausted,
+          }],
+          resultRowCount: 1,
+          resultTruncated: false,
+          status: "ok",
+          sourceProvider: resolved.source_provider,
+          cacheGeneration: readiness.status.lastSuccessAt ?? readiness.status.endedAt ?? null,
+          analysisEligibility: {
+            question_family: "reporting",
+            requested_claim: "observed_pattern",
+            evidence_frame: "observed",
+            source_provider: resolved.source_provider,
+            max_claim_class: "observed_pattern",
+            statistical_claims_allowed: false,
+            referenced_surfaces: [
+              "campaign_overview",
+              "reply_email_context",
+              "reply_email_hydration_state",
+            ],
+          },
+        });
+      } catch {
+        warnings.push(
+          "The analysis completed, but its local replay receipt could not be persisted. Treat this run as non-replayable until the cache is repaired.",
+        );
+      }
+
+      let metricReconciliation: Awaited<ReturnType<typeof recordAggregateHydratedReplyReconciliation>> | null = null;
+      if (analysisReceipt) {
+        const fetchStatus = String(fetchResult.status ?? "").toLowerCase();
+        const statusResults = Array.isArray(fetchResult.status_results)
+          ? fetchResult.status_results
+          : [];
+        const retrievalDefect = /failed|error/.test(fetchStatus)
+          || statusResults.some((row) => /failed|error/.test(String((row as Record<string, unknown>).status ?? "").toLowerCase()));
+        metricReconciliation = await recordAggregateHydratedReplyReconciliation({
+          db,
+          receiptId: analysisReceipt.receipt_id,
+          workspaceId,
+          aggregateReplyCount: replyCoverageSummary.aggregate_reply_count,
+          hydratedReplyCount: replyCoverageSummary.hydrated_reply_count,
+          coverageState: replyCoverageSummary.coverage_state,
+          retrievalDefect,
+        });
+      }
 
       return jsonResponse({
         schema_version: "campaign_analysis_preparation.v1",
@@ -1233,6 +1340,8 @@ server.registerTool(
           hydration_state: hydrationStateRows,
         },
         reply_coverage_summary: replyCoverageSummary,
+        analysis_receipt: analysisReceipt,
+        metric_reconciliation: metricReconciliation,
         context_gap_counts: contextGapCounts,
         campaign_overview: overviewRows[0] ?? null,
         reply_email_context_sample: replyEmailContextSample,
@@ -1756,9 +1865,30 @@ server.registerTool(
       rationale: z
         .string()
         .describe("One sentence explaining what the query is meant to answer."),
+      question_family: z
+        .string()
+        .trim()
+        .max(80)
+        .optional()
+        .describe("Optional canonical question family such as reply_to_copy, icp, copy, deliverability, overlap, experiment, or reporting. Unknown families fail closed."),
+      question: z
+        .string()
+        .max(500)
+        .optional()
+        .describe("Optional natural-language question. It is hashed into the local analysis receipt and is never stored as plain text."),
+      recipe_id: z
+        .string()
+        .trim()
+        .max(120)
+        .optional()
+        .describe("Optional query recipe or analysis procedure identifier to bind into the local receipt metric contract."),
+      claim_class: z
+        .enum(CLAIM_CLASSES)
+        .optional()
+        .describe("Optional requested claim strength. Runtime evidence still caps or blocks the claim; this cannot upgrade sampled or reconstructed evidence."),
     },
   },
-  async ({ sql, rationale }) => {
+  async ({ sql, rationale, question_family, question, recipe_id, claim_class }) => {
     const handlerStartedAt = performance.now();
     const readiness = await waitForSessionSnapshot();
     let db: Awaited<ReturnType<typeof getDb>> | null = null;
@@ -1779,6 +1909,7 @@ server.registerTool(
           }),
         });
       }
+      const eligibilityMetadataRows = await readAnalysisEligibilityMetadata(db, workspaceId);
       try {
         enforceAnalyzeDataPrivacy(sql);
       } catch (err) {
@@ -1860,6 +1991,67 @@ server.registerTool(
         ));
       }
       const redactedRows = redactAnalyzeDataRows(returnedRows);
+      const analysisEligibility = buildAnalyzeDataEligibility({
+        sql,
+        rationale,
+        rows: returnedRows,
+        metadataRows: eligibilityMetadataRows,
+        resultTruncated,
+        questionFamily: question_family,
+        claimClass: claim_class as ClaimClass | undefined,
+      });
+
+      const diagnosticsStatus = analysisEligibility.eligible
+        ? redactedRows.length === 0 ? "zero_rows" : "ok"
+        : "guard_rejected";
+      const diagnostics = buildAnalyzeDataDiagnostics({
+        status: diagnosticsStatus,
+        startedAt: handlerStartedAt,
+        refreshStatus: readiness.status,
+        sql,
+        rowCount: redactedRows.length,
+        resultTruncated,
+        analysisEligibility,
+      });
+      let analysisReceipt: PublicAnalysisReceipt | null = null;
+      try {
+        analysisReceipt = await persistAnalysisReceipt({
+          db,
+          workspaceId,
+          question: question ?? rationale,
+          rationale,
+          questionFamily: analysisEligibility.question_family,
+          recipeId: recipe_id ?? null,
+          sql,
+          resultRows: redactedRows,
+          resultRowCount: redactedRows.length,
+          resultTruncated,
+          status: analysisEligibility.eligible
+            ? redactedRows.length === 0 ? "zero_rows" : "ok"
+            : "analysis_ineligible",
+          sourceProvider: analysisEligibility.source_provider,
+          cacheGeneration: diagnostics.cache_generation,
+          analysisEligibility: {
+            ...analysisEligibility,
+            referenced_surfaces: diagnostics.referenced_surfaces,
+          },
+        });
+      } catch {
+        // Keep the read-only analysis result available if receipt persistence is
+        // unavailable; do not expose storage or private query details in MCP.
+      }
+
+      if (!analysisEligibility.eligible) {
+        return jsonResponse(analyzeDataFailurePayload(
+          "analysis_ineligible",
+          diagnostics,
+          {
+            hint: analysisEligibility.bounded_evidence_action
+              ?? "Use the nearest safe conclusion in diagnostics before making an analytical claim.",
+            analysisReceipt,
+          },
+        ));
+      }
 
       return jsonResponse({
         rationale,
@@ -1876,14 +2068,8 @@ server.registerTool(
             ...(cacheWarnings ?? []),
           ]
           : cacheWarnings,
-        diagnostics: buildAnalyzeDataDiagnostics({
-          status: redactedRows.length === 0 ? "zero_rows" : "ok",
-          startedAt: handlerStartedAt,
-          refreshStatus: readiness.status,
-          sql,
-          rowCount: redactedRows.length,
-          resultTruncated,
-        }),
+        analysis_receipt: analysisReceipt,
+        diagnostics,
         rows: redactedRows,
       });
     } catch (err) {
@@ -2161,7 +2347,10 @@ async function buildScopedWorkspaceSnapshot(
        co.recent_activity_source,
        co.daily_limit,
        co.emails_sent_count,
+       co.reply_count,
        co.reply_count_unique,
+       co.reply_count_automatic,
+       co.reply_count_automatic_unique,
        co.unique_reply_rate_pct,
        co.bounced_count,
 	       co.bounce_rate_pct,
@@ -2202,9 +2391,10 @@ async function buildScopedWorkspaceSnapshot(
        co.source_provider,
        COUNT(*) AS active_campaign_count,
        COALESCE(SUM(co.emails_sent_count), 0) AS total_sent,
-       COALESCE(SUM(co.reply_count_unique), 0) AS total_unique_replies,
+       ${replyAggregateSql("co")},
        COALESCE(SUM(co.bounced_count), 0) AS total_bounces,
        CASE
+         WHEN COUNT(*) <> COUNT(co.reply_count_unique) THEN NULL
          WHEN COALESCE(SUM(co.emails_sent_count), 0) = 0 THEN 0
          ELSE ROUND(100.0 * COALESCE(SUM(co.reply_count_unique), 0) / SUM(co.emails_sent_count), 2)
        END AS unique_reply_rate_pct,
@@ -2281,7 +2471,7 @@ async function buildScopedWorkspaceSnapshot(
        SUM(CASE WHEN co.status = 'active' THEN 1 ELSE 0 END) AS active_campaign_count,
        COALESCE(SUM(co.daily_limit), 0) AS configured_daily_limit_total,
        COALESCE(SUM(co.emails_sent_count), 0) AS total_sent,
-       COALESCE(SUM(co.reply_count_unique), 0) AS total_unique_replies,
+       ${replyAggregateSql("co")},
        COALESCE(SUM(co.bounced_count), 0) AS total_bounces,
        COALESCE(SUM(co.total_opportunities), 0) AS total_opportunities,
        COALESCE(SUM(co.total_opportunity_value), 0) AS total_pipeline
@@ -2292,6 +2482,7 @@ async function buildScopedWorkspaceSnapshot(
   const inventoryMetricsRows = await query(
     db,
     `SELECT
+       ${replyAggregateSql("co")},
        COUNT(*) AS campaign_count,
        SUM(CASE WHEN co.status = 'active' THEN 1 ELSE 0 END) AS active_campaign_count,
        SUM(CASE WHEN ${recentCampaignEvidenceWhere("co")} THEN 1 ELSE 0 END) AS recent_campaign_count,
@@ -2310,11 +2501,11 @@ async function buildScopedWorkspaceSnapshot(
   const inventoryMetrics = inventoryMetricsRows[0] ?? {};
   const totalSent = Number(metrics.total_sent ?? 0) || 0;
   const configuredDailyLimitTotal = Number(metrics.configured_daily_limit_total ?? 0) || 0;
-  const totalUniqueReplies = Number(metrics.total_unique_replies ?? 0) || 0;
+  const totalUniqueReplies = nullableCount(metrics.total_unique_replies);
   const totalBounces = Number(metrics.total_bounces ?? 0) || 0;
   const totalOpportunities = Number(metrics.total_opportunities ?? 0) || 0;
   const totalPipeline = Number(metrics.total_pipeline ?? 0) || 0;
-  const replyRate = totalSent ? (totalUniqueReplies / totalSent) * 100 : 0;
+  const replyRate = nullableReplyRate(totalUniqueReplies, totalSent);
   const bounceRate = totalSent ? (totalBounces / totalSent) * 100 : 0;
   const campaignRowsTruncated = campaignRows.length > SCOPED_SNAPSHOT_CAMPAIGN_LIMIT;
   const visibleCampaignRows = campaignRows.slice(0, SCOPED_SNAPSHOT_CAMPAIGN_LIMIT);
@@ -2329,7 +2520,7 @@ async function buildScopedWorkspaceSnapshot(
   if (bounceRate > 2) {
     warnings.push("Scoped bounce rate is above 2%, which deserves list-quality review.");
   }
-  if (totalSent > 0 && replyRate < 1) {
+  if (totalSent > 0 && replyRate != null && replyRate < 1) {
     warnings.push("Scoped unique reply rate is below 1%, so copy and targeting need attention.");
   }
   if (
@@ -2383,11 +2574,12 @@ async function buildScopedWorkspaceSnapshot(
         ? activeDataState.message
         : null,
       `Scoped cached snapshot for ${scopeNotes.join(" and ")}.`,
-      `${Number(inventoryMetrics.campaign_count ?? 0) || 0} campaigns in inventory scope; active-only totals are ${Number(metrics.campaign_count ?? 0)} active campaigns, ${totalSent} sends, ${totalUniqueReplies} unique human replies, ${totalBounces} bounces, ${totalOpportunities} opportunities, and $${totalPipeline} pipeline.`,
+      `${Number(inventoryMetrics.campaign_count ?? 0) || 0} campaigns in inventory scope; active-only totals are ${Number(metrics.campaign_count ?? 0)} active campaigns, ${totalSent} sends, ${replyAggregateSummary(metrics)}, ${totalBounces} bounces, ${totalOpportunities} opportunities, and $${totalPipeline} pipeline.`,
+      `Inventory reply totals: ${replyAggregateSummary(inventoryMetrics)}. Reply-body coverage is separate.`,
       `Configured campaign daily limit in scope: ${configuredDailyLimitTotal} emails/day.`,
-      `Exact scoped headline rates: ${replyRate.toFixed(2)}% unique reply rate and ${bounceRate.toFixed(2)}% bounce rate.`,
+      `Exact scoped headline rates: ${formatReplyRate(replyRate)} unique reply rate and ${bounceRate.toFixed(2)}% bounce rate.`,
       leader
-        ? `Largest campaign in scope: ${String(leader.campaign_name)} with ${Number(leader.emails_sent_count ?? 0)} sends and ${Number(leader.unique_reply_rate_pct ?? 0).toFixed(2)}% unique reply rate.`
+        ? `Largest campaign in scope: ${String(leader.campaign_name)} with ${Number(leader.emails_sent_count ?? 0)} sends and ${formatReplyRate(leader.unique_reply_rate_pct)} unique reply rate.`
         : "No leading campaign available.",
       "This read comes from the current local cache and does not trigger another workspace refresh.",
       campaignScope === "active"
@@ -2401,16 +2593,20 @@ async function buildScopedWorkspaceSnapshot(
       active_campaign_count: Number(metrics.active_campaign_count ?? 0) || 0,
       configured_daily_limit_total: configuredDailyLimitTotal,
       total_sent: totalSent,
+      total_replies: nullableCount(metrics.total_replies),
       total_unique_replies: totalUniqueReplies,
+      total_auto_replies: nullableCount(metrics.total_auto_replies),
+      total_unique_auto_replies: nullableCount(metrics.total_unique_auto_replies),
       total_bounces: totalBounces,
       total_opportunities: totalOpportunities,
       total_pipeline: totalPipeline,
-      unique_reply_rate_pct: Number(replyRate.toFixed(2)),
+      unique_reply_rate_pct: replyRate,
       bounce_rate_pct: Number(bounceRate.toFixed(2)),
     },
     source_provider_scope: providerScope,
     campaign_inventory_scope: campaignScope,
     inventory_metrics: {
+      ...replyAggregateMetrics(inventoryMetrics),
       campaign_count: Number(inventoryMetrics.campaign_count ?? 0) || 0,
       active_campaign_count: Number(inventoryMetrics.active_campaign_count ?? 0) || 0,
       recent_campaign_count: Number(inventoryMetrics.recent_campaign_count ?? 0) || 0,
@@ -2423,9 +2619,9 @@ async function buildScopedWorkspaceSnapshot(
       source_provider: row.source_provider ?? "instantly",
       active_campaign_count: Number(row.active_campaign_count ?? 0) || 0,
       total_sent: Number(row.total_sent ?? 0) || 0,
-      total_unique_replies: Number(row.total_unique_replies ?? 0) || 0,
+      ...replyAggregateMetrics(row),
       total_bounces: Number(row.total_bounces ?? 0) || 0,
-      unique_reply_rate_pct: Number(row.unique_reply_rate_pct ?? 0) || 0,
+      unique_reply_rate_pct: nullableCount(row.unique_reply_rate_pct),
       bounce_rate_pct: Number(row.bounce_rate_pct ?? 0) || 0,
     })),
     provider_capabilities: providerCapabilities,
@@ -2461,7 +2657,7 @@ async function buildScopedWorkspaceSnapshot(
       population_fingerprint: row.population_fingerprint ?? null,
       provenance_status: row.provenance_status ?? "unknown",
     })),
-    campaigns: visibleCampaignRows,
+    campaigns: visibleCampaignRows.map((row) => ({ ...row, reply_summary: campaignReplySummary(row) })),
     warnings,
     last_refreshed_at: status.lastSuccessAt ?? null,
     refresh_status: status.status,

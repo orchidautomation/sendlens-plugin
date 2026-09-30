@@ -19,7 +19,7 @@ Use only SendLens MCP tools for SendLens analysis.
 
 Resolve one campaign or proposed campaign package. Check sender assignment, lead-supply evidence, schedule, templates, tracking, deliverability guardrails, personalization, and the evidence required for a scale or stop decision.
 
-For an existing campaign, call `load_campaign_data` before a readiness or scale decision and use `prepare_campaign_analysis` when reply quality could change the verdict. Treat Smartlead Smart Delivery as support-gated: use authorized evidence when present, record missing access as unsupported without breaking core analysis, and never interpret missing or empty placement rows as healthy.
+For an existing campaign, call `load_campaign_data` before a readiness or scale decision and use `prepare_campaign_analysis` when reply quality could change the verdict. Preserve the returned `analysis_receipt.receipt_id` and `metric_reconciliation.status` in the learning handoff; use `analysis-receipt-semantic-diff` before interpreting a rerun. Treat Smartlead Smart Delivery as support-gated: use authorized evidence when present, record missing access as unsupported without breaking core analysis, and never interpret missing or empty placement rows as healthy.
 
 Classify every required check exactly once under blockers, warnings, or `passed_checks`. For each item record evidence class, source, scope, freshness, and material coverage limit. Record every numeric decision threshold under `threshold_provenance` with its value, source, evidence scope, and rationale; never present an invented benchmark as observed evidence.
 

@@ -39,8 +39,13 @@ export const PREVIOUS_SCHEMA_MIGRATION_IDS = [
   "202607230001_recent_campaign_activity",
   "202608050001_lead_list_label_surfaces",
   "202608060001_smartlead_campaign_performance",
+  "202608070001_progressive_sync_frames",
+  "202608080001_inference_eligibility_evidence_debt",
+  "202608080002_sender_domain_lineage",
+  "202608080003_experiment_validity",
+  "202608080004_analysis_receipts",
 ] as const;
-export const CURRENT_SCHEMA_MIGRATION_ID = "202608070001_progressive_sync_frames";
+export const CURRENT_SCHEMA_MIGRATION_ID = "202609050001_snapshot_reply_aggregates";
 const connectionInstances = new WeakMap<DuckDBConnection, DuckDBInstance>();
 const cacheProviderModeContext = new AsyncLocalStorage<SourceProviderMode>();
 
@@ -626,6 +631,8 @@ async function runSchemaMigration(
 
 function isCurrentSchemaMigrationStatement(statement: string) {
   if (/\bCREATE\s+OR\s+REPLACE\s+VIEW\b/i.test(statement)) return true;
+  if (/\bCREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+sendlens\.(analysis_receipts|report_dependencies|metric_reconciliations)\b/i.test(statement)) return true;
+  if (/\bALTER\s+TABLE\s+sendlens\.analysis_receipts\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+recipe_hash\b/i.test(statement)) return true;
   return /\bALTER\s+TABLE\s+sendlens\.campaigns\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+(detail_selection_reason|recent_activity_coverage|recent_activity_window_start|recent_activity_window_end|recent_activity_timezone|recent_activity_timezone_source|recent_sent_count|recent_activity_evaluated_at|recent_activity_source)\b/i
     .test(statement);
 }
@@ -647,6 +654,66 @@ async function ensureSchema(conn: DuckDBConnection) {
       value VARCHAR,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.analysis_receipts (
+      receipt_id VARCHAR PRIMARY KEY,
+      workspace_id VARCHAR NOT NULL,
+      schema_version VARCHAR NOT NULL,
+      status VARCHAR NOT NULL,
+      question_hash VARCHAR NOT NULL,
+      rationale_hash VARCHAR,
+      question_family VARCHAR,
+      recipe_id VARCHAR,
+      recipe_hash VARCHAR,
+      sql_hash VARCHAR,
+      metric_contract_hash VARCHAR NOT NULL,
+      metric_contract_json VARCHAR NOT NULL,
+      provider_capability_snapshot_hash VARCHAR NOT NULL,
+      provider_capability_snapshot_json VARCHAR NOT NULL,
+      source_freshness_hash VARCHAR NOT NULL,
+      source_freshness_json VARCHAR NOT NULL,
+      sampling_fingerprint_hash VARCHAR NOT NULL,
+      sampling_fingerprint_json VARCHAR NOT NULL,
+      dependency_set_hash VARCHAR NOT NULL,
+      result_hash VARCHAR NOT NULL,
+      result_row_count INTEGER NOT NULL,
+      result_truncated BOOLEAN NOT NULL,
+      evidence_frame VARCHAR,
+      source_provider VARCHAR,
+      max_claim_class VARCHAR,
+      statistical_claims_allowed BOOLEAN NOT NULL,
+      cache_generation VARCHAR,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.report_dependencies (
+      receipt_id VARCHAR NOT NULL,
+      workspace_id VARCHAR NOT NULL,
+      dependency_key VARCHAR NOT NULL,
+      dependency_type VARCHAR NOT NULL,
+      dependency_hash VARCHAR NOT NULL,
+      source_freshness_at TIMESTAMP,
+      evidence_frame VARCHAR,
+      source_provider VARCHAR,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (receipt_id, dependency_key)
+    )`,
+    `CREATE TABLE IF NOT EXISTS sendlens.metric_reconciliations (
+      reconciliation_id VARCHAR PRIMARY KEY,
+      receipt_id VARCHAR NOT NULL,
+      workspace_id VARCHAR NOT NULL,
+      metric_key VARCHAR NOT NULL,
+      authoritative_surface VARCHAR NOT NULL,
+      decomposition_surface VARCHAR NOT NULL,
+      compatibility_contract_hash VARCHAR NOT NULL,
+      authoritative_value DOUBLE,
+      decomposed_value DOUBLE,
+      residual DOUBLE,
+      status VARCHAR NOT NULL,
+      severity VARCHAR NOT NULL,
+      expected_semantic_causes VARCHAR NOT NULL,
+      unsupported_reason VARCHAR,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    "ALTER TABLE sendlens.analysis_receipts ADD COLUMN IF NOT EXISTS recipe_hash VARCHAR",
     `CREATE TABLE IF NOT EXISTS sendlens.campaigns (
       id VARCHAR,
       workspace_id VARCHAR NOT NULL,
@@ -1598,6 +1665,678 @@ async function ensureSchema(conn: DuckDBConnection) {
         'ip_analytics',
         'spam_filter'
       )`,
+    `CREATE OR REPLACE VIEW sendlens.asset_health_events AS
+      WITH account_events AS (
+        SELECT
+          workspace_id,
+          COALESCE(source_provider, 'instantly') AS source_provider,
+          'sender' AS asset_type,
+          lower(trim(email)) AS asset_key,
+          lower(trim(email)) AS sender_email,
+          regexp_extract(lower(trim(email)), '@(.+)$', 1) AS sender_domain,
+          'account_snapshot' AS health_source,
+          CASE
+            WHEN lower(trim(COALESCE(status, ''))) IN ('disconnected', 'disabled', 'inactive', 'error', '-1', '-2', '-3') THEN 'disconnected'
+            WHEN lower(trim(COALESCE(status, ''))) IN ('paused', 'warming', 'warmup', 'degraded') THEN 'degraded'
+            WHEN lower(trim(COALESCE(status, ''))) IN ('active', 'connected', 'healthy', 'running') THEN 'healthy'
+            ELSE 'unknown'
+          END AS health_status,
+          CASE WHEN status IS NULL OR trim(status) = '' THEN 'unknown' ELSE 'configured' END AS health_evidence,
+          'account status: ' || COALESCE(NULLIF(trim(status), ''), 'unknown') AS health_reason,
+          synced_at AS effective_from,
+          CAST(NULL AS TIMESTAMP) AS effective_to
+        FROM sendlens.accounts
+        WHERE email IS NOT NULL
+          AND trim(email) <> ''
+      ),
+      instantly_events AS (
+        SELECT
+          workspace_id,
+          'instantly' AS source_provider,
+          'sender' AS asset_type,
+          lower(trim(sender_email)) AS asset_key,
+          lower(trim(sender_email)) AS sender_email,
+          regexp_extract(lower(trim(sender_email)), '@(.+)$', 1) AS sender_domain,
+          'instantly_inbox_placement' AS health_source,
+          CASE
+            WHEN COALESCE(spam_rate_pct, 0) >= 20 OR COALESCE(primary_inbox_rate_pct, 100) < 50 THEN 'degraded'
+            ELSE 'healthy'
+          END AS health_status,
+          'measured' AS health_evidence,
+          'Instantly inbox-placement measurement; sender metrics are not campaign-attributed' AS health_reason,
+          first_seen_at AS effective_from,
+          last_seen_at AS effective_to
+        FROM sendlens.sender_deliverability_health
+        WHERE sender_email IS NOT NULL
+          AND trim(sender_email) <> ''
+      ),
+      smartlead_events AS (
+        SELECT
+          workspace_id,
+          'smartlead' AS source_provider,
+          'sender' AS asset_type,
+          lower(trim(sender_email)) AS asset_key,
+          lower(trim(sender_email)) AS sender_email,
+          regexp_extract(lower(trim(sender_email)), '@(.+)$', 1) AS sender_domain,
+          'smartlead_smart_delivery' AS health_source,
+          CASE
+            WHEN COALESCE(spam_rate_pct, 0) >= 20
+              OR COALESCE(bounce_rate_pct, 0) >= 10
+              OR COALESCE(reputation_score, 100) < 50 THEN 'degraded'
+            ELSE 'healthy'
+          END AS health_status,
+          'measured' AS health_evidence,
+          'Smartlead Smart Delivery provider-reported sender measurement; no Instantly placement semantics applied' AS health_reason,
+          observed_at AS effective_from,
+          observed_at AS effective_to
+        FROM sendlens.smartlead_sender_delivery_health
+        WHERE sender_email IS NOT NULL
+          AND trim(sender_email) <> ''
+      )
+      SELECT * FROM account_events
+      UNION ALL
+      SELECT * FROM instantly_events
+      UNION ALL
+      SELECT * FROM smartlead_events`,
+    `CREATE OR REPLACE VIEW sendlens.sender_assets AS
+      WITH assigned_senders AS (
+        SELECT
+          workspace_id,
+          COALESCE(source_provider, 'instantly') AS source_provider,
+          lower(trim(account_email)) AS sender_email
+        FROM sendlens.campaign_account_assignments
+        WHERE account_email IS NOT NULL
+          AND trim(account_email) <> ''
+        UNION
+        SELECT
+          workspace_id,
+          COALESCE(source_provider, 'instantly') AS source_provider,
+          lower(trim(account_email)) AS sender_email
+        FROM sendlens.account_tags
+        WHERE account_email IS NOT NULL
+          AND trim(account_email) <> ''
+      ),
+      sender_keys AS (
+        SELECT
+          workspace_id,
+          COALESCE(source_provider, 'instantly') AS source_provider,
+          lower(trim(email)) AS sender_email
+        FROM sendlens.accounts
+        WHERE email IS NOT NULL
+          AND trim(email) <> ''
+        UNION
+        SELECT workspace_id, source_provider, sender_email
+        FROM assigned_senders
+      ),
+      metric_rollup AS (
+        SELECT
+          workspace_id,
+          COALESCE(source_provider, 'instantly') AS source_provider,
+          lower(trim(email)) AS sender_email,
+          COUNT(*) AS measured_metric_days,
+          SUM(COALESCE(sent, 0)) AS measured_sent_30d,
+          SUM(COALESCE(unique_replies, 0)) AS measured_replies_30d,
+          SUM(COALESCE(bounced, 0)) AS measured_bounces_30d,
+          MIN(date) AS measured_window_start,
+          MAX(date) AS measured_window_end
+        FROM sendlens.account_daily_metrics
+        WHERE email IS NOT NULL
+          AND trim(email) <> ''
+        GROUP BY 1, 2, 3
+      ),
+      health_scored AS (
+        SELECT
+          workspace_id,
+          source_provider,
+          sender_email,
+          health_status,
+          health_evidence,
+          health_source,
+          effective_from,
+          effective_to,
+          CASE health_status
+            WHEN 'disconnected' THEN 3
+            WHEN 'degraded' THEN 2
+            WHEN 'healthy' THEN 1
+            ELSE 0
+          END AS health_score
+        FROM sendlens.asset_health_events
+      ),
+      health_rollup AS (
+        SELECT
+          workspace_id,
+          source_provider,
+          sender_email,
+          CASE
+            WHEN MAX(health_score) = 3 THEN 'disconnected'
+            WHEN MAX(health_score) = 2 THEN 'degraded'
+            WHEN MAX(health_score) = 1 THEN 'healthy'
+            ELSE 'unknown'
+          END AS health_status,
+          CASE
+            WHEN MAX(CASE WHEN health_evidence = 'measured' THEN 1 ELSE 0 END) = 1 THEN 'measured'
+            WHEN MAX(CASE WHEN health_evidence = 'configured' THEN 1 ELSE 0 END) = 1 THEN 'configured'
+            ELSE 'unknown'
+          END AS health_evidence,
+          string_agg(DISTINCT health_source, ', ' ORDER BY health_source) AS health_sources,
+          MIN(effective_from) AS health_effective_from,
+          MAX(effective_to) AS health_effective_to
+        FROM health_scored
+        GROUP BY 1, 2, 3
+      )
+      SELECT
+        sk.workspace_id,
+        sk.source_provider,
+        sk.sender_email,
+        regexp_extract(sk.sender_email, '@(.+)$', 1) AS sender_domain,
+        a.provider_account_id,
+        a.account_source_id,
+        a.status AS account_status,
+        a.warmup_status,
+        a.warmup_score,
+        a.provider,
+        a.daily_limit AS configured_daily_capacity,
+        COALESCE(m.measured_sent_30d, 0) AS measured_sent_30d,
+        COALESCE(m.measured_replies_30d, 0) AS measured_replies_30d,
+        COALESCE(m.measured_bounces_30d, 0) AS measured_bounces_30d,
+        m.measured_window_start,
+        m.measured_window_end,
+        COALESCE(h.health_status, 'unknown') AS health_status,
+        COALESCE(h.health_evidence, 'unknown') AS health_evidence,
+        h.health_sources,
+        h.health_effective_from,
+        h.health_effective_to,
+        CASE
+          WHEN a.daily_limit IS NOT NULL THEN 'configured'
+          WHEN COALESCE(m.measured_metric_days, 0) > 0 THEN 'measured'
+          ELSE 'unknown'
+        END AS capacity_evidence,
+        CASE
+          WHEN sk.source_provider = 'smartlead' THEN 'Smartlead account status plus Smart Delivery sender evidence when available'
+          WHEN sk.source_provider = 'instantly' THEN 'Instantly account status plus inbox-placement sender evidence when available'
+          ELSE 'provider-specific sender evidence unavailable'
+        END AS provider_health_semantics
+      FROM sender_keys sk
+      LEFT JOIN sendlens.accounts a
+        ON sk.workspace_id = a.workspace_id
+       AND sk.source_provider = COALESCE(a.source_provider, 'instantly')
+       AND sk.sender_email = lower(trim(a.email))
+      LEFT JOIN metric_rollup m
+        ON sk.workspace_id = m.workspace_id
+       AND sk.source_provider = m.source_provider
+       AND sk.sender_email = m.sender_email
+      LEFT JOIN health_rollup h
+        ON sk.workspace_id = h.workspace_id
+       AND sk.source_provider = h.source_provider
+       AND sk.sender_email = h.sender_email`,
+    `CREATE OR REPLACE VIEW sendlens.sender_domain_assets AS
+      WITH domain_rollup AS (
+        SELECT
+          workspace_id,
+          source_provider,
+          sender_domain,
+          COUNT(DISTINCT sender_email) AS sender_count,
+          COUNT(DISTINCT CASE WHEN health_status = 'healthy' THEN sender_email END) AS healthy_sender_count,
+          COUNT(DISTINCT CASE WHEN health_status = 'degraded' THEN sender_email END) AS degraded_sender_count,
+          COUNT(DISTINCT CASE WHEN health_status = 'disconnected' THEN sender_email END) AS disconnected_sender_count,
+          COUNT(DISTINCT CASE WHEN health_status = 'unknown' THEN sender_email END) AS unknown_sender_count,
+          SUM(COALESCE(configured_daily_capacity, 0)) AS configured_daily_capacity,
+          SUM(COALESCE(measured_sent_30d, 0)) AS measured_sent_30d,
+          SUM(COALESCE(measured_replies_30d, 0)) AS measured_replies_30d,
+          SUM(COALESCE(measured_bounces_30d, 0)) AS measured_bounces_30d,
+          MIN(health_effective_from) AS effective_from,
+          MAX(health_effective_to) AS effective_to,
+          string_agg(DISTINCT health_evidence, ', ' ORDER BY health_evidence) AS health_evidence_values
+        FROM sendlens.sender_assets
+        WHERE sender_domain IS NOT NULL
+          AND trim(sender_domain) <> ''
+        GROUP BY 1, 2, 3
+      )
+      SELECT
+        workspace_id,
+        source_provider,
+        sender_domain,
+        sender_count,
+        healthy_sender_count,
+        degraded_sender_count,
+        disconnected_sender_count,
+        unknown_sender_count,
+        configured_daily_capacity,
+        measured_sent_30d,
+        measured_replies_30d,
+        measured_bounces_30d,
+        CASE
+          WHEN disconnected_sender_count > 0
+            AND healthy_sender_count = 0
+            AND degraded_sender_count = 0
+            AND unknown_sender_count = 0 THEN 'disconnected'
+          WHEN disconnected_sender_count > 0 OR degraded_sender_count > 0 THEN 'degraded'
+          WHEN healthy_sender_count > 0 AND unknown_sender_count = 0 THEN 'healthy'
+          ELSE 'unknown'
+        END AS domain_health_status,
+        CASE
+          WHEN contains(health_evidence_values, 'measured') THEN 'measured'
+          WHEN contains(health_evidence_values, 'configured') THEN 'configured'
+          ELSE 'unknown'
+        END AS health_evidence,
+        CASE
+          WHEN configured_daily_capacity > 0 THEN 'configured'
+          WHEN measured_sent_30d > 0 THEN 'measured'
+          ELSE 'unknown'
+        END AS capacity_evidence,
+        effective_from,
+        effective_to,
+        CASE
+          WHEN source_provider = 'smartlead' THEN 'Smartlead account status plus Smart Delivery sender evidence when available'
+          WHEN source_provider = 'instantly' THEN 'Instantly account status plus inbox-placement sender evidence when available'
+          ELSE 'provider-specific sender evidence unavailable'
+        END AS provider_health_semantics
+      FROM domain_rollup`,
+    `CREATE OR REPLACE VIEW sendlens.campaign_asset_edges AS
+      WITH base_assignments AS (
+        SELECT
+          ca.workspace_id,
+          COALESCE(ca.source_provider, 'instantly') AS source_provider,
+          ca.campaign_id,
+          COALESCE(
+            ca.campaign_source_id,
+            c.campaign_source_id,
+            COALESCE(c.source_provider, ca.source_provider, 'instantly') || ':' || COALESCE(c.provider_campaign_id, ca.provider_campaign_id, ca.campaign_id)
+          ) AS campaign_source_id,
+          c.name AS campaign_name,
+          c.status AS campaign_status,
+          ca.assignment_type,
+          ca.assignment_key,
+          ca.account_email,
+          ca.provider_account_id,
+          ca.tag_id,
+          ca.synced_at
+        FROM sendlens.campaign_account_assignments ca
+        LEFT JOIN sendlens.campaigns c
+          ON ca.workspace_id = c.workspace_id
+         AND ca.campaign_id = c.id
+         AND COALESCE(ca.source_provider, 'instantly') = COALESCE(c.source_provider, 'instantly')
+      ),
+      edge_rows AS (
+        SELECT
+          b.*,
+          'direct' AS assignment_source,
+          CAST(NULL AS VARCHAR) AS assignment_account_tag_label,
+          lower(trim(b.account_email)) AS sender_email,
+          'known' AS edge_status,
+          CAST(NULL AS VARCHAR) AS unknown_reason
+        FROM base_assignments b
+        WHERE b.assignment_type = 'email'
+          AND b.account_email IS NOT NULL
+          AND trim(b.account_email) <> ''
+        UNION ALL
+        SELECT
+          b.*,
+          'tag' AS assignment_source,
+          acct_tag.tag_label AS assignment_account_tag_label,
+          lower(trim(acct_tag.account_email)) AS sender_email,
+          'known' AS edge_status,
+          CAST(NULL AS VARCHAR) AS unknown_reason
+        FROM base_assignments b
+        JOIN sendlens.account_tags acct_tag
+          ON b.workspace_id = acct_tag.workspace_id
+         AND b.source_provider = acct_tag.source_provider
+         AND b.tag_id = acct_tag.tag_id
+        WHERE b.assignment_type = 'tag'
+          AND b.tag_id IS NOT NULL
+          AND acct_tag.account_email IS NOT NULL
+          AND trim(acct_tag.account_email) <> ''
+        UNION ALL
+        SELECT
+          b.*,
+          'tag' AS assignment_source,
+          CAST(NULL AS VARCHAR) AS assignment_account_tag_label,
+          CAST(NULL AS VARCHAR) AS sender_email,
+          'unknown' AS edge_status,
+          'account_tag_not_resolved' AS unknown_reason
+        FROM base_assignments b
+        LEFT JOIN sendlens.account_tags acct_tag
+          ON b.workspace_id = acct_tag.workspace_id
+         AND b.source_provider = acct_tag.source_provider
+         AND b.tag_id = acct_tag.tag_id
+        WHERE b.assignment_type = 'tag'
+          AND b.tag_id IS NOT NULL
+          AND acct_tag.account_email IS NULL
+      )
+      SELECT
+        e.workspace_id,
+        e.source_provider,
+        e.campaign_id,
+        e.campaign_source_id,
+        e.campaign_name,
+        e.campaign_status,
+        e.assignment_type,
+        e.assignment_key,
+        e.assignment_source,
+        e.assignment_account_tag_label,
+        e.tag_id,
+        e.sender_email,
+        COALESCE(sa.sender_domain, regexp_extract(e.sender_email, '@(.+)$', 1)) AS sender_domain,
+        COALESCE(e.provider_account_id, sa.provider_account_id) AS provider_account_id,
+        e.edge_status,
+        e.unknown_reason,
+        COALESCE(sa.health_status, 'unknown') AS health_status,
+        COALESCE(sa.health_evidence, 'unknown') AS health_evidence,
+        sa.configured_daily_capacity,
+        COALESCE(sa.measured_sent_30d, 0) AS measured_sent_30d,
+        COALESCE(sa.measured_replies_30d, 0) AS measured_replies_30d,
+        COALESCE(sa.measured_bounces_30d, 0) AS measured_bounces_30d,
+        e.synced_at AS effective_from,
+        CAST(NULL AS TIMESTAMP) AS effective_to,
+        'current_snapshot' AS effective_window_status
+      FROM edge_rows e
+      LEFT JOIN sendlens.sender_assets sa
+        ON e.workspace_id = sa.workspace_id
+       AND e.source_provider = sa.source_provider
+       AND e.sender_email = sa.sender_email`,
+    `CREATE OR REPLACE VIEW sendlens.sender_domain_lineage AS
+      WITH domain_edges AS (
+        SELECT
+          workspace_id,
+          source_provider,
+          sender_domain,
+          campaign_source_id,
+          campaign_status,
+          sender_email,
+          health_status,
+          assignment_source,
+          effective_from,
+          edge_status
+        FROM sendlens.campaign_asset_edges
+        WHERE sender_domain IS NOT NULL
+          AND trim(sender_domain) <> ''
+      ),
+      domain_rollup AS (
+        SELECT
+          workspace_id,
+          source_provider,
+          sender_domain,
+          COUNT(DISTINCT sender_email) AS sender_count,
+          COUNT(DISTINCT campaign_source_id) AS campaign_count,
+          COUNT(DISTINCT CASE WHEN lower(COALESCE(campaign_status, '')) = 'active' THEN campaign_source_id END) AS active_campaign_count,
+          COUNT(DISTINCT CASE WHEN health_status = 'healthy' THEN sender_email END) AS healthy_sender_count,
+          COUNT(DISTINCT CASE WHEN health_status = 'degraded' THEN sender_email END) AS degraded_sender_count,
+          COUNT(DISTINCT CASE WHEN health_status = 'disconnected' THEN sender_email END) AS disconnected_sender_count,
+          COUNT(DISTINCT CASE WHEN health_status = 'unknown' THEN sender_email END) AS unknown_sender_count,
+          COUNT(*) FILTER (WHERE edge_status = 'unknown') AS unknown_edge_count,
+          string_agg(DISTINCT assignment_source, ', ' ORDER BY assignment_source) AS assignment_sources,
+          MIN(effective_from) AS effective_from
+        FROM domain_edges
+        GROUP BY 1, 2, 3
+      )
+      SELECT
+        d.workspace_id,
+        d.source_provider,
+        d.sender_domain,
+        d.sender_count,
+        d.campaign_count,
+        d.active_campaign_count,
+        d.healthy_sender_count,
+        d.degraded_sender_count,
+        d.disconnected_sender_count,
+        d.unknown_sender_count,
+        d.unknown_edge_count,
+        d.assignment_sources,
+        CASE
+          WHEN d.disconnected_sender_count > 0
+            AND d.healthy_sender_count = 0
+            AND d.degraded_sender_count = 0
+            AND d.unknown_sender_count = 0 THEN 'disconnected'
+          WHEN d.disconnected_sender_count > 0 OR d.degraded_sender_count > 0 THEN 'degraded'
+          WHEN d.healthy_sender_count > 0 AND d.unknown_sender_count = 0 THEN 'healthy'
+          ELSE 'unknown'
+        END AS domain_health_status,
+        sda.health_evidence,
+        sda.capacity_evidence,
+        d.effective_from,
+        CAST(NULL AS TIMESTAMP) AS effective_to,
+        'current_snapshot' AS effective_window_status,
+        CASE
+          WHEN d.source_provider = 'smartlead' THEN 'Smartlead account status plus Smart Delivery sender evidence when available'
+          WHEN d.source_provider = 'instantly' THEN 'Instantly account status plus inbox-placement sender evidence when available'
+          ELSE 'provider-specific sender evidence unavailable'
+        END AS provider_health_semantics
+      FROM domain_rollup d
+      LEFT JOIN sendlens.sender_domain_assets sda
+        ON d.workspace_id = sda.workspace_id
+       AND d.source_provider = sda.source_provider
+       AND d.sender_domain = sda.sender_domain`,
+    `CREATE OR REPLACE VIEW sendlens.campaign_blast_radius AS
+      WITH known_edges AS (
+        SELECT DISTINCT
+          workspace_id,
+          source_provider,
+          campaign_id,
+          campaign_source_id,
+          campaign_name,
+          campaign_status,
+          sender_email,
+          sender_domain,
+          health_status,
+          configured_daily_capacity,
+          measured_sent_30d,
+          effective_from
+        FROM sendlens.campaign_asset_edges
+        WHERE edge_status = 'known'
+          AND sender_email IS NOT NULL
+      ),
+      campaign_senders AS (
+        SELECT
+          workspace_id,
+          source_provider,
+          campaign_id,
+          campaign_source_id,
+          campaign_name,
+          campaign_status,
+          sender_email,
+          sender_domain,
+          CASE
+            WHEN MAX(CASE WHEN health_status = 'disconnected' THEN 1 ELSE 0 END) = 1 THEN 'disconnected'
+            WHEN MAX(CASE WHEN health_status = 'degraded' THEN 1 ELSE 0 END) = 1 THEN 'degraded'
+            WHEN MAX(CASE WHEN health_status = 'healthy' THEN 1 ELSE 0 END) = 1 THEN 'healthy'
+            ELSE 'unknown'
+          END AS health_status,
+          MAX(COALESCE(configured_daily_capacity, 0)) AS configured_daily_capacity,
+          MAX(COALESCE(measured_sent_30d, 0)) AS measured_sent_30d,
+          MIN(effective_from) AS effective_from
+        FROM known_edges
+        GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
+      ),
+      unknown_campaign_edges AS (
+        SELECT
+          workspace_id,
+          source_provider,
+          campaign_id,
+          COUNT(*) AS unknown_edge_count
+        FROM sendlens.campaign_asset_edges
+        WHERE edge_status = 'unknown'
+        GROUP BY 1, 2, 3
+      ),
+      asset_targets AS (
+        SELECT DISTINCT
+          workspace_id,
+          source_provider,
+          'sender' AS asset_type,
+          sender_email AS asset_key,
+          sender_domain
+        FROM campaign_senders
+        WHERE lower(COALESCE(campaign_status, '')) = 'active'
+        UNION
+        SELECT DISTINCT
+          workspace_id,
+          source_provider,
+          'domain' AS asset_type,
+          sender_domain AS asset_key,
+          sender_domain
+        FROM campaign_senders
+        WHERE lower(COALESCE(campaign_status, '')) = 'active'
+          AND sender_domain IS NOT NULL
+          AND trim(sender_domain) <> ''
+      ),
+      target_campaigns AS (
+        SELECT DISTINCT
+          t.workspace_id,
+          t.source_provider,
+          t.asset_type,
+          t.asset_key,
+          t.sender_domain AS target_sender_domain,
+          cs.campaign_id,
+          cs.campaign_source_id,
+          cs.campaign_name,
+          cs.campaign_status
+        FROM asset_targets t
+        JOIN campaign_senders cs
+          ON t.workspace_id = cs.workspace_id
+         AND t.source_provider = cs.source_provider
+         AND lower(COALESCE(cs.campaign_status, '')) = 'active'
+         AND (
+           (t.asset_type = 'sender' AND cs.sender_email = t.asset_key)
+           OR (t.asset_type = 'domain' AND cs.sender_domain = t.asset_key)
+         )
+      ),
+      active_asset_usage AS (
+        SELECT
+          workspace_id,
+          source_provider,
+          'sender' AS asset_type,
+          sender_email AS asset_key,
+          COUNT(DISTINCT campaign_source_id) AS active_campaigns_using_asset
+        FROM campaign_senders
+        WHERE lower(COALESCE(campaign_status, '')) = 'active'
+        GROUP BY 1, 2, 3, 4
+        UNION ALL
+        SELECT
+          workspace_id,
+          source_provider,
+          'domain' AS asset_type,
+          sender_domain AS asset_key,
+          COUNT(DISTINCT campaign_source_id) AS active_campaigns_using_asset
+        FROM campaign_senders
+        WHERE lower(COALESCE(campaign_status, '')) = 'active'
+          AND sender_domain IS NOT NULL
+        GROUP BY 1, 2, 3, 4
+      ),
+      impact AS (
+        SELECT
+          tc.workspace_id,
+          tc.source_provider,
+          tc.asset_type,
+          tc.asset_key,
+          tc.target_sender_domain,
+          tc.campaign_id,
+          tc.campaign_source_id,
+          tc.campaign_name,
+          tc.campaign_status,
+          COUNT(DISTINCT cs.sender_email) AS assigned_sender_count,
+          COUNT(DISTINCT CASE
+            WHEN cs.health_status = 'healthy'
+              AND NOT (
+                (tc.asset_type = 'sender' AND cs.sender_email = tc.asset_key)
+                OR (tc.asset_type = 'domain' AND cs.sender_domain = tc.asset_key)
+              )
+            THEN cs.sender_email
+          END) AS remaining_healthy_sender_count,
+          COUNT(DISTINCT CASE WHEN cs.health_status = 'healthy' THEN cs.sender_email END) AS current_healthy_sender_count,
+          SUM(CASE
+            WHEN (
+              (tc.asset_type = 'sender' AND cs.sender_email = tc.asset_key)
+              OR (tc.asset_type = 'domain' AND cs.sender_domain = tc.asset_key)
+            ) THEN COALESCE(cs.configured_daily_capacity, 0)
+            ELSE 0
+          END) AS configured_daily_capacity_at_risk,
+          SUM(CASE
+            WHEN (
+              (tc.asset_type = 'sender' AND cs.sender_email = tc.asset_key)
+              OR (tc.asset_type = 'domain' AND cs.sender_domain = tc.asset_key)
+            ) THEN COALESCE(cs.measured_sent_30d, 0)
+            ELSE 0
+          END) AS measured_sent_30d_at_risk,
+          MIN(cs.effective_from) AS effective_from
+        FROM target_campaigns tc
+        JOIN campaign_senders cs
+          ON tc.workspace_id = cs.workspace_id
+         AND tc.source_provider = cs.source_provider
+         AND tc.campaign_id = cs.campaign_id
+         AND tc.campaign_source_id = cs.campaign_source_id
+        GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
+      )
+      SELECT
+        i.workspace_id,
+        i.source_provider,
+        i.asset_type,
+        i.asset_key,
+        i.target_sender_domain AS sender_domain,
+        i.campaign_id,
+        i.campaign_source_id,
+        i.campaign_name,
+        i.campaign_status,
+        CASE
+          WHEN i.asset_type = 'sender' THEN sa.health_status
+          ELSE sda.domain_health_status
+        END AS current_asset_status,
+        COALESCE(u.active_campaigns_using_asset, 0) AS active_campaigns_using_asset,
+        i.assigned_sender_count,
+        i.current_healthy_sender_count,
+        i.remaining_healthy_sender_count,
+        COALESCE(ue.unknown_edge_count, 0) AS unknown_edge_count,
+        CASE
+          WHEN COALESCE(ue.unknown_edge_count, 0) > 0 THEN 'unknown'
+          WHEN i.remaining_healthy_sender_count = 0 THEN 'stop'
+          WHEN i.remaining_healthy_sender_count = 1 THEN 'degrade'
+          ELSE 'retain_redundancy'
+        END AS quarantine_outcome,
+        i.configured_daily_capacity_at_risk,
+        i.measured_sent_30d_at_risk,
+        CASE
+          WHEN i.configured_daily_capacity_at_risk > 0 THEN 'configured'
+          WHEN i.measured_sent_30d_at_risk > 0 THEN 'measured'
+          ELSE 'unknown'
+        END AS capacity_evidence,
+        CASE
+          WHEN i.asset_type = 'sender' AND COALESCE(u.active_campaigns_using_asset, 0) > 1 THEN 'unsupported_shared_sender'
+          WHEN i.asset_type = 'domain' AND COALESCE(u.active_campaigns_using_asset, 0) > 1 THEN 'unsupported_shared_domain'
+          ELSE 'campaign_edge_only'
+        END AS attribution_status,
+        CASE
+          WHEN i.asset_type = 'sender' AND COALESCE(u.active_campaigns_using_asset, 0) > 1
+            THEN 'Sender volume is shared across active campaigns; use this as a quarantine bound, never as campaign-attributed volume.'
+          WHEN i.asset_type = 'domain' AND COALESCE(u.active_campaigns_using_asset, 0) > 1
+            THEN 'Domain volume is shared across active campaigns; use this as a quarantine bound, never as campaign-attributed volume.'
+          ELSE 'Assignment edge is known, but measured sender volume remains sender-scoped.'
+        END AS attribution_bounds,
+        i.effective_from,
+        CAST(NULL AS TIMESTAMP) AS effective_to,
+        'current_snapshot' AS effective_window_status,
+        CASE
+          WHEN i.source_provider = 'smartlead' THEN 'Smartlead account status plus Smart Delivery sender evidence when available'
+          WHEN i.source_provider = 'instantly' THEN 'Instantly account status plus inbox-placement sender evidence when available'
+          ELSE 'provider-specific sender evidence unavailable'
+        END AS provider_health_semantics
+      FROM impact i
+      LEFT JOIN unknown_campaign_edges ue
+        ON i.workspace_id = ue.workspace_id
+       AND i.source_provider = ue.source_provider
+       AND i.campaign_id = ue.campaign_id
+      LEFT JOIN active_asset_usage u
+        ON i.workspace_id = u.workspace_id
+       AND i.source_provider = u.source_provider
+       AND i.asset_type = u.asset_type
+       AND i.asset_key = u.asset_key
+      LEFT JOIN sendlens.sender_assets sa
+        ON i.asset_type = 'sender'
+       AND i.workspace_id = sa.workspace_id
+       AND i.source_provider = sa.source_provider
+       AND i.asset_key = sa.sender_email
+      LEFT JOIN sendlens.sender_domain_assets sda
+        ON i.asset_type = 'domain'
+       AND i.workspace_id = sda.workspace_id
+       AND i.source_provider = sda.source_provider
+       AND i.asset_key = sda.sender_domain`,
     `CREATE OR REPLACE VIEW sendlens.campaign_overview AS
       SELECT
         c.workspace_id,
@@ -1647,8 +2386,10 @@ async function ensureSchema(conn: DuckDBConnection) {
         COALESCE(ca.contacted_count, 0) AS contacted_count,
         COALESCE(ca.new_leads_contacted_count, 0) AS new_leads_contacted_count,
         COALESCE(ca.emails_sent_count, 0) AS emails_sent_count,
-        COALESCE(ca.reply_count_unique, 0) AS reply_count_unique,
-        COALESCE(ca.reply_count_automatic, 0) AS reply_count_automatic,
+        ca.reply_count,
+        ca.reply_count_unique,
+        ca.reply_count_automatic,
+        ca.reply_count_automatic_unique,
         COALESCE(ca.bounced_count, 0) AS bounced_count,
         COALESCE(ca.unsubscribed_count, 0) AS unsubscribed_count,
         COALESCE(ca.completed_count, 0) AS completed_count,
@@ -1670,8 +2411,9 @@ async function ensureSchema(conn: DuckDBConnection) {
         sr.population_fingerprint,
         COALESCE(sr.provenance_status, 'unknown') AS provenance_status,
         CASE
+          WHEN ca.reply_count_unique IS NULL THEN NULL
           WHEN COALESCE(ca.emails_sent_count, 0) = 0 THEN 0
-          ELSE ROUND(100.0 * COALESCE(ca.reply_count_unique, 0) / ca.emails_sent_count, 2)
+          ELSE ROUND(100.0 * ca.reply_count_unique / ca.emails_sent_count, 2)
         END AS unique_reply_rate_pct,
         CASE
           WHEN COALESCE(ca.emails_sent_count, 0) = 0 THEN 0
@@ -2472,6 +3214,18 @@ async function ensureSchema(conn: DuckDBConnection) {
         ON i.workspace_id = r.workspace_id
        AND i.overlap_type = r.overlap_type
        AND i.overlap_key = r.overlap_key`,
+    `CREATE OR REPLACE VIEW sendlens.cross_provider_lead_overlap_effective AS
+      SELECT
+        d.*,
+        COALESCE(d.evidence_sampled_at, d.evidence_observed_at, d.exposure_at) AS effective_from,
+        CAST(NULL AS TIMESTAMP) AS effective_to,
+        CASE
+          WHEN COALESCE(d.evidence_sampled_at, d.evidence_observed_at, d.exposure_at) IS NULL THEN 'unknown'
+          ELSE 'observed_snapshot'
+        END AS effective_window_status,
+        'sampled' AS evidence_frame,
+        'provider-qualified sampled lead identity; current cache does not prove historical assignment continuity' AS lineage_basis
+      FROM sendlens.provider_overlap_risk_details d`,
     `CREATE OR REPLACE VIEW sendlens.reply_context AS
       WITH campaign_variant_context AS (
         SELECT
@@ -2770,6 +3524,255 @@ async function ensureSchema(conn: DuckDBConnection) {
        AND COALESCE(so.source_provider, 'instantly') = cv.source_provider
        AND CAST(cv.step AS VARCHAR) = so.step_resolved
        AND CAST(cv.variant AS VARCHAR) = so.variant_resolved`,
+    `CREATE OR REPLACE VIEW sendlens.experiment_validity_checks AS
+      WITH variant_definitions AS (
+        SELECT
+          workspace_id,
+          campaign_id,
+          COALESCE(source_provider, 'instantly') AS source_provider,
+          step,
+          variant,
+          COUNT(*) AS definition_count
+        FROM sendlens.campaign_variants
+        GROUP BY 1, 2, 3, 4, 5
+      ),
+      variant_metrics AS (
+        SELECT
+          sa.workspace_id,
+          COALESCE(sa.source_provider, c.source_provider, 'instantly') AS source_provider,
+          sa.campaign_id,
+          COALESCE(
+            sa.campaign_source_id,
+            c.campaign_source_id,
+            COALESCE(sa.source_provider, c.source_provider, 'instantly') || ':' || COALESCE(sa.provider_campaign_id, c.provider_campaign_id, sa.campaign_id)
+          ) AS campaign_source_id,
+          c.name AS campaign_name,
+          c.status AS campaign_status,
+          sa.step,
+          sa.variant,
+          COALESCE(sa.sent, 0) AS sent,
+          COALESCE(sa.unique_replies, 0) AS unique_replies,
+          COALESCE(sa.replies, 0) AS replies,
+          COALESCE(sa.bounces, 0) AS bounces,
+          vd.definition_count,
+          CASE WHEN COALESCE(vd.definition_count, 0) = 1 THEN 'resolved' ELSE 'unresolved' END AS variant_mapping_status
+        FROM sendlens.step_analytics sa
+        LEFT JOIN sendlens.campaigns c
+          ON sa.workspace_id = c.workspace_id
+         AND sa.campaign_id = c.id
+         AND COALESCE(sa.source_provider, 'instantly') = COALESCE(c.source_provider, 'instantly')
+        LEFT JOIN variant_definitions vd
+          ON sa.workspace_id = vd.workspace_id
+         AND sa.campaign_id = vd.campaign_id
+         AND COALESCE(sa.source_provider, 'instantly') = vd.source_provider
+         AND sa.step = vd.step
+         AND sa.variant = vd.variant
+      ),
+      comparison_groups AS (
+        SELECT
+          workspace_id,
+          source_provider,
+          campaign_id,
+          campaign_source_id,
+          step,
+          COUNT(DISTINCT variant) AS variant_count,
+          SUM(sent) AS group_sent,
+          SUM(unique_replies) AS group_unique_replies,
+          SUM(CASE WHEN variant_mapping_status = 'unresolved' THEN 1 ELSE 0 END) AS unresolved_variant_count
+        FROM variant_metrics
+        GROUP BY 1, 2, 3, 4, 5
+      ),
+      frame_rollup AS (
+        SELECT
+          workspace_id,
+          campaign_id,
+          COALESCE(source_provider, 'instantly') AS source_provider,
+          CASE
+            WHEN lead_cursor_exhausted = TRUE
+              AND lower(COALESCE(provenance_status, '')) IN ('complete', 'exact') THEN 'complete'
+            WHEN lead_cursor_exhausted = FALSE THEN 'partial'
+            WHEN lower(COALESCE(provenance_status, '')) IN ('sampled', 'enriched_tail')
+              OR lower(COALESCE(ingest_mode, '')) LIKE '%sample%' THEN 'sampled'
+            WHEN lower(COALESCE(provenance_status, '')) IN ('partial', 'unknown', '') THEN 'partial'
+            ELSE 'observed'
+          END AS frame_status,
+          COALESCE(provenance_status, 'unknown') AS provenance_status,
+          COALESCE(lead_cursor_exhausted, FALSE) AS lead_cursor_exhausted,
+          effective_population_size,
+          selected_record_count,
+          total_leads,
+          reply_rows,
+          reply_lead_rows,
+          reply_outbound_rows,
+          coverage_note,
+          population_fingerprint,
+          CASE
+            WHEN COALESCE(reply_lead_rows, 0) = 0 THEN 'not_available'
+            WHEN COALESCE(reply_outbound_rows, 0) = 0 THEN 'missing'
+            WHEN reply_outbound_rows < reply_lead_rows THEN 'unequal'
+            ELSE 'balanced'
+          END AS hydration_status
+        FROM sendlens.sampling_runs
+      ),
+      known_edges AS (
+        SELECT DISTINCT
+          workspace_id,
+          source_provider,
+          campaign_source_id,
+          sender_email,
+          sender_domain
+        FROM sendlens.campaign_asset_edges
+        WHERE edge_status = 'known'
+      ),
+      sender_usage AS (
+        SELECT
+          workspace_id,
+          source_provider,
+          sender_email,
+          COUNT(DISTINCT campaign_source_id) AS campaign_count
+        FROM known_edges
+        WHERE sender_email IS NOT NULL
+        GROUP BY 1, 2, 3
+      ),
+      domain_usage AS (
+        SELECT
+          workspace_id,
+          source_provider,
+          sender_domain,
+          COUNT(DISTINCT campaign_source_id) AS campaign_count
+        FROM known_edges
+        WHERE sender_domain IS NOT NULL
+        GROUP BY 1, 2, 3
+      ),
+      campaign_asset_rollup AS (
+        SELECT
+          e.workspace_id,
+          e.source_provider,
+          e.campaign_source_id,
+          COUNT(DISTINCT CASE WHEN su.campaign_count > 1 THEN e.sender_email END) AS shared_sender_count,
+          COUNT(DISTINCT CASE WHEN du.campaign_count > 1 THEN e.sender_domain END) AS shared_domain_count
+        FROM known_edges e
+        LEFT JOIN sender_usage su
+          ON e.workspace_id = su.workspace_id
+         AND e.source_provider = su.source_provider
+         AND e.sender_email = su.sender_email
+        LEFT JOIN domain_usage du
+          ON e.workspace_id = du.workspace_id
+         AND e.source_provider = du.source_provider
+         AND e.sender_domain = du.sender_domain
+        GROUP BY 1, 2, 3
+      ),
+      overlap_rollup AS (
+        SELECT
+          workspace_id,
+          source_provider,
+          campaign_source_id,
+          COUNT(DISTINCT overlap_key) AS sampled_overlap_count
+        FROM sendlens.provider_overlap_risk_details
+        GROUP BY 1, 2, 3
+      )
+      SELECT
+        vm.workspace_id,
+        vm.source_provider,
+        vm.campaign_id,
+        vm.campaign_source_id,
+        vm.campaign_name,
+        vm.campaign_status,
+        vm.step,
+        vm.variant,
+        'campaign_step_variant' AS comparison_grain,
+        cg.variant_count,
+        vm.variant_mapping_status,
+        cg.unresolved_variant_count,
+        vm.sent,
+        vm.unique_replies,
+        vm.replies,
+        vm.bounces,
+        cg.group_sent,
+        cg.group_unique_replies,
+        cg.group_sent - vm.sent AS comparison_sent,
+        cg.group_unique_replies - vm.unique_replies AS comparison_unique_replies,
+        ROUND(100.0 * vm.unique_replies / NULLIF(vm.sent, 0), 2) AS observed_reply_rate_pct,
+        ROUND(100.0 * (cg.group_unique_replies - vm.unique_replies) / NULLIF(cg.group_sent - vm.sent, 0), 2) AS comparison_reply_rate_pct,
+        COALESCE(fr.frame_status, 'unsupported') AS frame_status,
+        COALESCE(fr.provenance_status, 'unknown') AS provenance_status,
+        COALESCE(fr.lead_cursor_exhausted, FALSE) AS lead_cursor_exhausted,
+        fr.effective_population_size,
+        fr.selected_record_count,
+        fr.total_leads,
+        fr.reply_rows,
+        fr.reply_lead_rows,
+        fr.reply_outbound_rows,
+        COALESCE(fr.hydration_status, 'not_available') AS hydration_status,
+        fr.coverage_note,
+        fr.population_fingerprint,
+        COALESCE(ar.shared_sender_count, 0) AS shared_sender_count,
+        COALESCE(ar.shared_domain_count, 0) AS shared_domain_count,
+        COALESCE(orx.sampled_overlap_count, 0) AS sampled_overlap_count,
+        CASE
+          WHEN vm.variant_mapping_status = 'unresolved' OR cg.variant_count < 2 OR vm.sent <= 0 OR cg.group_sent - vm.sent <= 0 THEN 'non_comparable'
+          WHEN COALESCE(ar.shared_sender_count, 0) > 0
+            OR COALESCE(ar.shared_domain_count, 0) > 0
+            OR COALESCE(orx.sampled_overlap_count, 0) > 0 THEN 'spillover_risk'
+          WHEN COALESCE(fr.frame_status, 'unsupported') IN ('partial', 'sampled', 'unsupported')
+            OR COALESCE(fr.hydration_status, 'not_available') IN ('missing', 'unequal') THEN 'measurement_gap'
+          ELSE 'decision_eligible'
+        END AS comparison_state,
+        CASE
+          WHEN vm.variant_mapping_status = 'unresolved' THEN 'Resolve the step/variant mapping before comparing variants.'
+          WHEN cg.variant_count < 2 THEN 'Collect at least two resolved variants in the same campaign step.'
+          WHEN vm.sent <= 0 OR cg.group_sent - vm.sent <= 0 THEN 'Use a compatible non-zero sent denominator for both comparison arms.'
+          WHEN COALESCE(ar.shared_sender_count, 0) > 0 OR COALESCE(ar.shared_domain_count, 0) > 0 THEN 'Separate shared sender/domain infrastructure or report the result as spillover risk.'
+          WHEN COALESCE(orx.sampled_overlap_count, 0) > 0 THEN 'Review sampled cross-provider overlap before interpreting the comparison.'
+          WHEN COALESCE(fr.frame_status, 'unsupported') IN ('partial', 'sampled', 'unsupported') THEN 'Complete the evidence frame or keep the result directional and non-population.'
+          WHEN COALESCE(fr.hydration_status, 'not_available') IN ('missing', 'unequal') THEN 'Balance reply/outbound hydration across the comparison before interpreting reply yield.'
+          ELSE 'Directional comparison is eligible; statistical confidence remains unavailable unless the frame and denominator contract support it.'
+        END AS evidence_action,
+        CASE
+          WHEN COALESCE(fr.frame_status, 'unsupported') = 'complete'
+            AND COALESCE(fr.lead_cursor_exhausted, FALSE) = TRUE
+            AND vm.sent > 0
+            AND cg.group_sent - vm.sent > 0 THEN 'available'
+          ELSE 'not_available'
+        END AS minimum_detectable_effect_status,
+        CASE
+          WHEN COALESCE(fr.frame_status, 'unsupported') = 'complete'
+            AND COALESCE(fr.lead_cursor_exhausted, FALSE) = TRUE
+            AND vm.sent > 0
+            AND cg.group_sent - vm.sent > 0 THEN ROUND(
+            100.0 * 1.96 * sqrt(
+              ((cg.group_unique_replies * 1.0) / NULLIF(cg.group_sent, 0))
+              * (1.0 - ((cg.group_unique_replies * 1.0) / NULLIF(cg.group_sent, 0)))
+              * (1.0 / vm.sent + 1.0 / (cg.group_sent - vm.sent))
+            ),
+            2
+          )
+          ELSE NULL
+        END AS minimum_detectable_effect_pct,
+        CASE
+          WHEN vm.source_provider = 'smartlead' THEN 'Smartlead campaign/step metrics and Smart Delivery evidence remain provider-specific.'
+          WHEN vm.source_provider = 'instantly' THEN 'Instantly campaign/step metrics and inbox-placement evidence remain provider-specific.'
+          ELSE 'Provider-specific experiment semantics unavailable.'
+        END AS provider_experiment_semantics
+      FROM variant_metrics vm
+      JOIN comparison_groups cg
+        ON vm.workspace_id = cg.workspace_id
+       AND vm.source_provider = cg.source_provider
+       AND vm.campaign_id = cg.campaign_id
+       AND vm.campaign_source_id = cg.campaign_source_id
+       AND vm.step = cg.step
+      LEFT JOIN frame_rollup fr
+        ON vm.workspace_id = fr.workspace_id
+       AND vm.source_provider = fr.source_provider
+       AND vm.campaign_id = fr.campaign_id
+      LEFT JOIN campaign_asset_rollup ar
+        ON vm.workspace_id = ar.workspace_id
+       AND vm.source_provider = ar.source_provider
+       AND vm.campaign_source_id = ar.campaign_source_id
+      LEFT JOIN overlap_rollup orx
+        ON vm.workspace_id = orx.workspace_id
+       AND vm.source_provider = orx.source_provider
+       AND vm.campaign_source_id = orx.campaign_source_id`,
   ];
 
   if (!appliedIds.includes(BASELINE_SCHEMA_MIGRATION_ID)) {
@@ -2888,6 +3891,19 @@ async function ensureSchema(conn: DuckDBConnection) {
     )`);
     await run(conn, "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS coverage_mode VARCHAR");
     await run(conn, "ALTER TABLE sendlens.sampled_leads ADD COLUMN IF NOT EXISTS evidence_lane VARCHAR");
+    await run(conn, `CREATE TABLE IF NOT EXISTS sendlens.evidence_debt (
+      workspace_id VARCHAR NOT NULL,
+      source_provider VARCHAR NOT NULL,
+      blocked_question VARCHAR NOT NULL,
+      blocked_claim VARCHAR,
+      missing_surface VARCHAR,
+      freshness_completeness VARCHAR,
+      decision_impact VARCHAR,
+      nearest_safe_conclusion VARCHAR,
+      bounded_evidence_action VARCHAR,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_id, source_provider, blocked_question)
+    )`);
     await stampCacheSchemaVersion(conn);
   });
 }

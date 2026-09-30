@@ -235,6 +235,14 @@ async function seedTagsAndAccounts(db: Awaited<ReturnType<typeof getDb>>) {
   );
   await run(
     db,
+    `INSERT OR REPLACE INTO sendlens.evidence_debt
+     (workspace_id, source_provider, blocked_question, blocked_claim, missing_surface, freshness_completeness, decision_impact, nearest_safe_conclusion, bounded_evidence_action, created_at)
+     VALUES
+     ('${DEMO_WORKSPACE_ID}', 'instantly', 'reply_rate_population', 'population_fact', 'full-population lead/message evidence', 'sampled|cursor_exhausted=false', 'prevents population-level percentage/winner claims', 'nearest safe conclusion is observed_pattern', 'label as observed/sample; do not generalize to the population', CURRENT_TIMESTAMP),
+     ('${DEMO_WORKSPACE_ID}', 'smartlead', 'inbox_placement_population', 'population_fact', 'provider surface', 'unsupported|cursor_exhausted=false', 'prevents population-level placement claims', 'record the surface as unsupported; route to a corrective recipe', 'record the surface as unsupported; route to a corrective recipe', CURRENT_TIMESTAMP)`,
+  );
+  await run(
+    db,
     `INSERT OR REPLACE INTO sendlens.accounts
      (workspace_id, email, organization_id, status, warmup_status, warmup_score, provider, daily_limit, sending_gap, first_name, last_name, total_sent_30d, total_replies_30d, total_bounces_30d, synced_at)
      VALUES

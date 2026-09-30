@@ -686,7 +686,15 @@ async function testTopLevelInstallerContract(releaseDir) {
 }
 
 try {
-  assert.equal(packageJson.devDependencies?.["@orchid-labs/pluxx"], "0.1.38");
+  // SENDOSS-174 pins the verified Pluxx 0.1.41 release that fixed Codex hook
+  // packaging (PLUXX-345). Update this floor only when the next Pluxx compiler
+  // release ships and is verified.
+  const pinnedPluxx = packageJson.devDependencies?.["@orchid-labs/pluxx"];
+  assert.ok(
+    pinnedPluxx &&
+      /^(?:\^|>=?)?0\.1\.(?:4[1-9]|[5-9]\d|\d{3,})$/.test(pinnedPluxx),
+    `package.json: expected Pluxx 0.1.41+ for SENDOSS-174 Codex hook reachability, got ${pinnedPluxx}`,
+  );
 
   assertRun(run("npm", ["run", "--silent", "build:plugin"]), "build:plugin");
   assertRun(run("npm", ["run", "--silent", "build:hosts"]), "build:hosts");

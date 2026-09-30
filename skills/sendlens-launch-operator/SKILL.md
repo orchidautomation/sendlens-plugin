@@ -13,6 +13,7 @@ Turn a validated campaign strategy and copy package into a read-only launch or s
 - Resolve exactly one campaign or one proposed campaign package.
 - Use a `sendlens-campaign-strategist` and `sendlens-copywriter` handoff when the request concerns a new campaign.
 - For an existing campaign, call `load_campaign_data` before readiness or scale decisions and use `prepare_campaign_analysis` when reply quality could change the verdict.
+- Preserve the `analysis_receipt.receipt_id` and `metric_reconciliation.status` from each preparation run in the learning handoff. Use `analysis-receipt-semantic-diff` for reruns and keep incompatible contracts or expected scope differences from becoming scale claims.
 - Use SendLens MCP tools only and keep provider operations read-only. Return recommended settings and actions; never mutate provider resources.
 
 Read the shared [evidence and metric contract](../sendlens-analyst/references/evidence-and-metrics.md). Read [references/launch-operations.md](references/launch-operations.md) for launch gates, measurement, scale/stop rules, and handoffs.

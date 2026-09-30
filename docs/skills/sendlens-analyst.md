@@ -17,6 +17,8 @@
 5. Return validated findings, the primary constraint, the eligible opportunity, and material unknowns.
 6. For broad requests, continue automatically through strategist → copywriter → launch operator.
 
+For every `analyze_data` result, honor `diagnostics.analysis_eligibility` before making a claim. Unknown question families and insufficient frames are blocked; use the returned nearest safe conclusion and bounded evidence action rather than upgrading sampled, reconstructed, or partial evidence in prose.
+
 ## Boundaries
 
 - Provider operations remain read-only.

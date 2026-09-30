@@ -9,6 +9,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 - The user asks what is working or not working in an Instantly workspace.
 - Reply rate, bounce rate, active campaign count, account health, or sender risk needs a first pass.
 - The user wants a tag-scoped or campaign-name-scoped triage.
+- The user asks which sender/domain outage, disconnection, or quarantine would affect active campaigns.
 - The team needs to choose which campaign deserves deeper analysis next.
 
 ## Primary Surfaces
@@ -22,12 +23,13 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 
 1. Start with `workspace_snapshot` only for broad or ambiguous workspace-health questions, optionally scoped by provider tag or campaign-name fragment. Treat tag support as provider-specific evidence.
 2. For exact campaign-tag sender-risk, inbox-assignment, or tag-scoped deliverability questions, bypass broad triage: pull `analysis_starters(recipe_id="campaign-sender-inventory-by-tag", mode="full")`, execute it once with `analyze_data`, and only then decide whether placement or daily-volume follow-up is needed.
-3. Pull `analysis_starters(topic="workspace-health")` before custom SQL when no exact recipe ID already fits.
-4. Keep broad reads active-only unless the user asks for inactive or historical campaigns.
-5. For deliverability questions, combine account health and inbox-placement evidence before blaming copy or targeting.
-6. Use `inbox_placement_analytics_labeled` when provider, recipient geography, or recipient type labels matter.
-7. Do not hydrate replies broadly during workspace triage; choose one campaign and hand off to `prepare_campaign_analysis` when depth is needed.
-8. End with specific actions ordered by likely impact.
+3. For sender/domain outage, shared-infrastructure, or quarantine questions, pull `analysis_starters(recipe_id="sender-domain-lineage", mode="full")`, then use `campaign-blast-radius` for the bounded simulation.
+4. Pull `analysis_starters(topic="workspace-health")` before custom SQL when no exact recipe ID already fits.
+5. Keep broad reads active-only unless the user asks for inactive or historical campaigns.
+6. For deliverability questions, combine account health and provider-specific placement/Smart Delivery evidence before blaming copy or targeting.
+7. Use `inbox_placement_analytics_labeled` when provider, recipient geography, or recipient type labels matter.
+8. Do not hydrate replies broadly during workspace triage; choose one campaign and hand off to `prepare_campaign_analysis` when depth is needed.
+9. End with specific actions ordered by likely impact.
 
 ## Output Shape
 
@@ -40,3 +42,5 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 ## Evidence Boundaries
 
 Campaign/account headline metrics are exact only when they come from exact aggregate surfaces. Inbox-placement rows are exact test evidence when available, but missing inbox-placement data means no local test evidence was available. It does not prove sender health is clean.
+
+Sender/domain assignment edges are exact for the cached effective snapshot, while health and volume may be configured, measured, or unknown. Shared-sender/domain blast radius is a quarantine bound, not campaign-attributed sending volume. Unknown tag edges must remain unresolved; they cannot be counted as redundant capacity or used to claim a safe stop.

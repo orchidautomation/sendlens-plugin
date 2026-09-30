@@ -14,6 +14,7 @@ It defines:
 - why startup avoids Instantly List Email and keeps email bodies out of the fast path
 - why aggregate winners need campaign-level reply quality and copy-path validation before scale or client-safe claims
 - how to label exact, sampled, reconstructed, hydrated, inferred, and unsupported evidence
+- how to honor `diagnostics.analysis_eligibility`: unknown question families fail closed, sampled/reconstructed evidence cannot be upgraded, and blocked responses provide the nearest safe conclusion plus one bounded evidence action
 - why shell, raw DuckDB, cached JSON, repo inspection, and setup scripts are not SendLens-analysis fallbacks
 
 Cross-platform and cross-agent startup delivery belongs in Pluxx. The five portable public skills define SendLens product behavior and focused trigger boundaries.

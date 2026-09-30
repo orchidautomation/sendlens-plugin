@@ -10,7 +10,7 @@ const {
   buildQueryRecipeResponse,
 } = require("../build/plugin/query-recipes.js");
 
-const REQUIRED_CARD_FIELDS = [
+const STRING_CARD_FIELDS = [
   "recipe_id",
   "intent",
   "grain",
@@ -21,10 +21,14 @@ const REQUIRED_CARD_FIELDS = [
   "tag_role",
   "cost_class",
   "privacy_class",
+  "max_claim_class",
+];
+const ARRAY_CARD_FIELDS = [
   "prerequisites",
   "safe_adaptations",
   "forbidden_adaptations",
 ];
+const REQUIRED_CARD_FIELDS = [...STRING_CARD_FIELDS, ...ARRAY_CARD_FIELDS];
 const FORBIDDEN_SUMMARY_FRAGMENTS = [
   "demo_workspace",
   "Priority Demo",
@@ -89,11 +93,11 @@ for (const query of [
 
 for (const card of senderRiskSuggestion.route_cards) {
   assert.deepEqual(Object.keys(card).sort(), [...REQUIRED_CARD_FIELDS].sort());
-  for (const field of REQUIRED_CARD_FIELDS.slice(0, 10)) {
+  for (const field of STRING_CARD_FIELDS) {
     assert.equal(typeof card[field], "string", `${card.recipe_id}.${field} must be a string`);
     assert.ok(card[field].trim().length > 0, `${card.recipe_id}.${field} must be non-empty`);
   }
-  for (const field of REQUIRED_CARD_FIELDS.slice(10)) {
+  for (const field of ARRAY_CARD_FIELDS) {
     assert.ok(Array.isArray(card[field]) && card[field].length > 0, `${card.recipe_id}.${field} must be non-empty`);
     assert.ok(card[field].length <= 3, `${card.recipe_id}.${field} must stay compact`);
     assert.ok(card[field].every((value) => value.length <= 180), `${card.recipe_id}.${field} entries must stay short`);
@@ -143,6 +147,66 @@ assert.deepEqual(
   novelGuidance.analysis_starter_suggestions.flatMap((suggestion) => suggestion.route_cards ?? []),
   [],
   "novel supported questions must retain the bounded custom-SQL escalation path",
+);
+
+const lineageGuidance = buildCatalogSearchGuidance(
+  "which disconnected sender domains have blast radius if quarantined",
+  [],
+);
+const lineageSuggestion = lineageGuidance.analysis_starter_suggestions.find(
+  (suggestion) => suggestion.concept === "sender/domain lineage",
+);
+assert.ok(lineageSuggestion);
+assert.deepEqual(lineageSuggestion.recipe_ids, ["sender-domain-lineage", "campaign-blast-radius"]);
+assert.deepEqual(
+  lineageSuggestion.route_cards?.map((card) => card.recipe_id),
+  ["sender-domain-lineage", "campaign-blast-radius"],
+);
+assert.match(lineageSuggestion.route_cards[1].forbidden_adaptations.join(" "), /campaign sends|attribution/i);
+
+const experimentGuidance = buildCatalogSearchGuidance(
+  "can we compare experiment variants and minimum detectable effect",
+  [],
+);
+const experimentSuggestion = experimentGuidance.analysis_starter_suggestions.find(
+  (suggestion) => suggestion.concept === "experiment validity",
+);
+assert.ok(experimentSuggestion);
+assert.deepEqual(
+  experimentSuggestion.recipe_ids.slice(0, 2),
+  ["experiment-validity-audit", "decision-risk-evidence-gaps"],
+);
+assert.deepEqual(
+  experimentSuggestion.route_cards?.map((card) => card.recipe_id),
+  ["experiment-validity-audit", "decision-risk-evidence-gaps"],
+  "experiment questions must expose the validity audit and bounded remediation card first",
+);
+assert.match(
+  experimentSuggestion.route_cards[0].forbidden_adaptations.join(" "),
+  /winner|statistical confidence|population prevalence/i,
+);
+assert.equal(experimentSuggestion.eligibility?.statistical_claims_allowed, false);
+
+const replayGuidance = buildCatalogSearchGuidance(
+  "can we replay a report and explain a semantic diff",
+  [],
+);
+const replaySuggestion = replayGuidance.analysis_starter_suggestions.find(
+  (suggestion) => suggestion.concept === "report reproducibility",
+);
+assert.ok(replaySuggestion);
+assert.deepEqual(
+  replaySuggestion.recipe_ids,
+  ["analysis-receipt-semantic-diff", "metric-reconciliation-audit"],
+);
+assert.deepEqual(
+  replaySuggestion.route_cards?.map((card) => card.recipe_id),
+  ["analysis-receipt-semantic-diff", "metric-reconciliation-audit"],
+);
+assert.equal(replaySuggestion.eligibility?.statistical_claims_allowed, false);
+assert.match(
+  replaySuggestion.route_cards[0].forbidden_adaptations.join(" "),
+  /result hash|freshness|SQL/i,
 );
 
 const exactLookup = buildQueryRecipeResponse({

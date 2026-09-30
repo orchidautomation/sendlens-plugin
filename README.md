@@ -62,6 +62,8 @@ export SENDLENS_SMARTLEAD_API_KEY=your_smartlead_api_key
 
 Runtime launchers read provider settings from launch-folder env files first, then from the inherited/global host environment. When both providers are configured, set `SENDLENS_CLIENT` to keep them in one named local workspace. SendLens infers the provider mode from the available keys; `SENDLENS_PROVIDER` can override it with `instantly`, `smartlead`, or `all`. Smartlead Smart Delivery is support-gated; missing placement rows are reported as unsupported, not as healthy placement. Never paste API keys into chat.
 
+Smartlead response-shape validation currently uses synthetic fixtures and mocked responses; live validation with an authorized account remains pending.
+
 ## Privacy in plain English
 
 - The default stdio setup keeps the cache on the machine running your AI host.

@@ -60,7 +60,7 @@ const { buildWorkspaceSummary } = require("../build/plugin/summary.js");
 
 const ANALYZE_DATA_ROW_LIMIT = 1_000;
 const ANALYZE_DATA_SAFE_ERROR = "Query could not be executed safely.";
-const REQUIRED_CATALOG_ROUTE_CARD_FIELDS = Object.freeze([
+const CATALOG_ROUTE_CARD_STRING_FIELDS = Object.freeze([
   "recipe_id",
   "intent",
   "grain",
@@ -71,13 +71,22 @@ const REQUIRED_CATALOG_ROUTE_CARD_FIELDS = Object.freeze([
   "tag_role",
   "cost_class",
   "privacy_class",
+  "max_claim_class",
+]);
+const CATALOG_ROUTE_CARD_ARRAY_FIELDS = Object.freeze([
   "prerequisites",
   "safe_adaptations",
   "forbidden_adaptations",
 ]);
+const REQUIRED_CATALOG_ROUTE_CARD_FIELDS = Object.freeze([
+  ...CATALOG_ROUTE_CARD_STRING_FIELDS,
+  ...CATALOG_ROUTE_CARD_ARRAY_FIELDS,
+]);
 const REVIEWED_BASELINE_RECIPE_IDS = Object.freeze([
   "account-health",
   "account-manager-client-brief",
+  "analysis-receipt-semantic-diff",
+  "campaign-blast-radius",
   "campaign-daily-health-trend",
   "campaign-evidence-coverage-audit",
   "campaign-funnel-quality",
@@ -104,14 +113,22 @@ const REVIEWED_BASELINE_RECIPE_IDS = Object.freeze([
   "campaigns-by-tag",
   "company-domain-quality",
   "copy-template-review",
+  "cross-provider-overlap-effective",
   "cross-provider-overlap-risk",
+  "decision-risk-evidence-gaps",
   "duplicate-contact-company-exposure",
   "experiment-planner-candidates",
+  "experiment-validity-audit",
   "fetched-reply-text-by-campaign",
   "fetched-reply-text-raw-detail-by-campaign",
+  "first-reply-step",
+  "follow-up-yield",
   "inbox-placement-auth-failures",
   "inbox-placement-test-overview",
+  "list-freshness-decay",
   "lead-list-source-quality",
+  "matched-provider-cohort-comparison",
+  "metric-reconciliation-audit",
   "negative-unsubscribe-concentration",
   "personalization-leak-audit",
   "personalization-leak-raw-detail",
@@ -122,9 +139,13 @@ const REVIEWED_BASELINE_RECIPE_IDS = Object.freeze([
   "reply-feed",
   "reply-feed-raw-detail",
   "reply-hydration-coverage",
+  "reply-objection-cohorts",
   "reply-patterns-by-variant",
+  "relative-sender-quality",
   "sampled-leads-by-tag",
+  "sequence-marginal-yield",
   "sender-deliverability-health",
+  "sender-domain-lineage",
   "sender-load-balance-by-campaign-tag",
   "smartlead-delivery-authentication-health",
   "smartlead-delivery-test-overview",
@@ -453,11 +474,11 @@ function assertCatalogRouteCardContract(payload, hostText) {
       [...REQUIRED_CATALOG_ROUTE_CARD_FIELDS].sort(),
       `${card.recipe_id} must preserve the compact route-card field set through MCP serialization`,
     );
-    for (const field of REQUIRED_CATALOG_ROUTE_CARD_FIELDS.slice(0, 10)) {
+    for (const field of CATALOG_ROUTE_CARD_STRING_FIELDS) {
       assert.equal(typeof card[field], "string", `${card.recipe_id}.${field} must be a string`);
       assert.ok(card[field].trim().length > 0, `${card.recipe_id}.${field} must be non-empty`);
     }
-    for (const field of REQUIRED_CATALOG_ROUTE_CARD_FIELDS.slice(10)) {
+    for (const field of CATALOG_ROUTE_CARD_ARRAY_FIELDS) {
       assert.ok(
         Array.isArray(card[field]) && card[field].length > 0,
         `${card.recipe_id}.${field} must be a non-empty array`,
@@ -781,9 +802,9 @@ function assertReviewedRecipeRegistry() {
   assert.deepEqual(
     recipeIds,
     [...REVIEWED_BASELINE_RECIPE_IDS].sort(),
-    "getQueryRecipes() registry drifted from the reviewed v0.1.72 baseline; update this harness only with a reviewed recipe change",
+    "getQueryRecipes() registry drifted from the reviewed v0.1.86 baseline; update this harness only with a reviewed recipe change",
   );
-  assert.equal(recipeIds.length, 59, "reviewed v0.1.72 recipe baseline is 59");
+  assert.equal(recipeIds.length, 73, "reviewed v0.1.86 recipe baseline is 73");
   return recipeIds;
 }
 

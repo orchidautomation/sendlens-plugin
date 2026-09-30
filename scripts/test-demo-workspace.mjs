@@ -58,6 +58,9 @@ try {
   const optionalDemoEmptySurfaces = new Set([
     "provider_overlap_risk",
     "provider_overlap_risk_details",
+    "analysis_receipts",
+    "report_dependencies",
+    "metric_reconciliations",
   ]);
   for (const tableName of PUBLIC_TABLES) {
     const countRows = await query(

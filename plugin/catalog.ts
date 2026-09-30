@@ -1,5 +1,6 @@
 import type { DuckDBConnection } from "@duckdb/node-api";
 import { columnSafetyMetadata, type ColumnSafetyMetadata } from "./analysis-safety";
+import { maxClaimClassForFrame, type EvidenceFrame } from "./analysis-eligibility";
 import { CURRENT_SCHEMA_MIGRATION_ID, query, resolveDbPath } from "./local-db";
 import { PUBLIC_TABLES, TABLE_DESCRIPTIONS, type PublicTableName } from "./constants";
 import { getQueryRecipeById, type QueryRecipe } from "./query-recipes";
@@ -40,6 +41,7 @@ export type CatalogStarterSuggestion = {
   reason: string;
   route_cards?: CatalogRecipeRouteCard[];
   correction_path?: CatalogCorrectionPath;
+  eligibility?: { max_claim_class: string; statistical_claims_allowed: boolean };
 };
 
 export type CatalogRecipeRouteCard = {
@@ -56,6 +58,7 @@ export type CatalogRecipeRouteCard = {
   prerequisites: string[];
   safe_adaptations: string[];
   forbidden_adaptations: string[];
+  max_claim_class: string;
 };
 
 export type CatalogCorrectionPath = {
@@ -94,6 +97,9 @@ export const CATALOG_ROUTE_CARD_RESPONSE_BUDGET_BYTES = 8_192;
 
 const CATALOG_PRIMARY_ROUTE_CARD_IDS_BY_CONCEPT = new Map<string, string[]>([
   ["campaign-tag sender risk", ["campaign-sender-inventory-by-tag"]],
+  ["sender/domain lineage", ["sender-domain-lineage", "campaign-blast-radius"]],
+  ["experiment validity", ["experiment-validity-audit", "decision-risk-evidence-gaps"]],
+  ["report reproducibility", ["analysis-receipt-semantic-diff", "metric-reconciliation-audit"]],
   ["tag", ["tag-scope-audit"]],
 ]);
 
@@ -146,12 +152,61 @@ const CONCEPT_HINTS: ConceptHint[] = [
     reason: "Scale decisions need campaign performance, sender capacity, launch readiness, and deliverability context.",
   },
   {
+    concept: "experiment validity",
+    triggers: [
+      "experiment validity",
+      "variant comparison",
+      "variant comparisons",
+      "minimum detectable effect",
+      "spillover risk",
+      "follow-up yield",
+      "first reply step",
+      "objection cohort",
+      "list freshness",
+      "list decay",
+      "matched provider",
+      "experiment",
+    ],
+    searchTerms: ["experiment_validity_checks", "step_analytics", "campaign_variants", "sampling_runs", "spillover", "hydration", "denominator"],
+    topics: ["experiment-planner", "reply-patterns", "icp-signals"],
+    recipeIds: [
+      "experiment-validity-audit",
+      "decision-risk-evidence-gaps",
+      "relative-sender-quality",
+      "sequence-marginal-yield",
+      "first-reply-step",
+      "follow-up-yield",
+      "reply-objection-cohorts",
+      "list-freshness-decay",
+      "matched-provider-cohort-comparison",
+    ],
+    reason: "Experiment questions start with validity and evidence-gap checks before any winner, lift, sequence, objection, list, sender, or cross-provider interpretation.",
+  },
+  {
     concept: "refill",
     triggers: ["refill", "lead refill", "more leads", "lead supply"],
     searchTerms: ["campaign_overview", "lead_evidence", "sampled_leads", "campaign_daily_metrics"],
     topics: ["campaign-performance", "account-manager-brief"],
     recipeIds: ["campaign-tag-runway-inputs", "account-manager-client-brief"],
     reason: "Refill questions are usually lead-supply or runway questions, not a single schema column.",
+  },
+  {
+    concept: "report reproducibility",
+    triggers: [
+      "replay a report",
+      "replay report",
+      "report reproducibility",
+      "reproduce report",
+      "report run",
+      "semantic diff",
+      "analysis receipt",
+      "analysis receipts",
+      "report receipt",
+    ],
+    searchTerms: ["analysis_receipts", "report_dependencies", "metric_reconciliations", "result_hash", "dependency_set_hash", "semantic diff"],
+    topics: ["account-manager-brief", "workspace-health"],
+    recipeIds: ["analysis-receipt-semantic-diff", "metric-reconciliation-audit"],
+    reason: "Replay questions should compare local receipt contracts and hashes first, then inspect explicit reconciliation status without re-running unbounded SQL or treating incompatible surfaces as equivalent.",
   },
   {
     concept: "deliverability",
@@ -175,6 +230,23 @@ const CONCEPT_HINTS: ConceptHint[] = [
     topics: ["workspace-health"],
     recipeIds: ["campaign-sender-inventory-by-tag", "campaign-tag-sender-coverage", "sender-deliverability-health"],
     reason: "Exact campaign-tag sender-risk questions should use campaign-sender-inventory-by-tag first; placement and daily-volume routes are follow-ons only after the sender inventory is known.",
+  },
+  {
+    concept: "sender/domain lineage",
+    triggers: [
+      "sender/domain lineage",
+      "sender lineage",
+      "domain lineage",
+      "blast radius",
+      "quarantine",
+      "disconnected account",
+      "domain outage",
+      "sender outage",
+    ],
+    searchTerms: ["sender_domain_lineage", "campaign_blast_radius", "campaign_asset_edges", "sender_domain_assets", "quarantine"],
+    topics: ["workspace-health"],
+    recipeIds: ["sender-domain-lineage", "campaign-blast-radius"],
+    reason: "Lineage and quarantine questions should preserve direct/tag assignment paths, effective windows, provider scope, unknown edges, and sender/domain attribution bounds.",
   },
   {
     concept: "sender",
@@ -419,6 +491,12 @@ function addCatalogRouteCardsWithinBudget(
     const candidate = {
       ...suggestions[index],
       ...bundle,
+      eligibility: {
+        max_claim_class: bundle.route_cards[0]?.max_claim_class ?? "anecdote",
+        // Static metadata cannot prove runtime completeness/cursor-exhaustion; the
+        // runtime assessEligibility gate enforces statistical claims. Conservative here.
+        statistical_claims_allowed: false,
+      },
     };
     const candidateSuggestions = [...suggestions];
     candidateSuggestions[index] = candidate;
@@ -463,6 +541,13 @@ function catalogRouteBundle(
   };
 }
 
+function frameForPopulationScope(populationScope: string): EvidenceFrame {
+  const scope = (populationScope ?? "").toLowerCase();
+  if (scope.includes("sampled") || scope.includes("sample ")) return "sampled";
+  if (scope.includes("all cached") || scope.includes("exact") || scope.includes("full") || scope.includes("every")) return "complete";
+  return "observed";
+}
+
 function compactCatalogRouteCard(recipe: QueryRecipe): CatalogRecipeRouteCard {
   const card = recipe.route_card!;
   return {
@@ -479,6 +564,7 @@ function compactCatalogRouteCard(recipe: QueryRecipe): CatalogRecipeRouteCard {
     prerequisites: card.prerequisites.slice(0, 3),
     safe_adaptations: card.safe_adaptations.slice(0, 3),
     forbidden_adaptations: card.forbidden_adaptations.slice(0, 3),
+    max_claim_class: maxClaimClassForFrame(frameForPopulationScope(card.population_scope)),
   };
 }
 
