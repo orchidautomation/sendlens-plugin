@@ -14,9 +14,11 @@ const {
 const {
   buildQueryRecipeResponse,
   getQueryRecipes,
+  summarizeQueryRecipe,
   QUERY_RECIPE_TOPICS,
 } = require("../build/plugin/query-recipes.js");
 const { enforceLocalWorkspaceScope } = require("../build/plugin/sql-guard.js");
+const { enforceAnalyzeDataPrivacy } = require("../build/plugin/analysis-safety.js");
 
 const WORKSPACE_ID = "demo_workspace";
 const PLACEHOLDER_FIXTURES = new Map([
@@ -176,12 +178,39 @@ try {
   assert.ok(fullLookup.recipes[0].sql.includes("campaign_tag_label"));
   assert.ok(fullLookup.recipes[0].route_card);
 
+  const unsupportedLookup = buildQueryRecipeResponse({ recipe_id: "reply-email-context-raw-detail" });
+  assert.equal(unsupportedLookup.recipes[0].execution_route, "unsupported_by_analyze_data");
+  assert.match(unsupportedLookup.guidance, /not executable through analyze_data/);
+  assert.equal(
+    summarizeQueryRecipe(unsupportedLookup.recipes[0]).execution_route,
+    "unsupported_by_analyze_data",
+  );
+
   const failures = [];
   for (const recipe of recipes) {
     try {
       const renderedSql = renderRecipeSql(recipe);
-      const guardedSql = enforceLocalWorkspaceScope(renderedSql, WORKSPACE_ID);
-      await query(db, guardedSql);
+      let guardedSql;
+      let privacyError;
+      let sqlGuardError;
+      try {
+        enforceAnalyzeDataPrivacy(renderedSql);
+      } catch (err) {
+        privacyError = err;
+      }
+      try {
+        guardedSql = enforceLocalWorkspaceScope(renderedSql, WORKSPACE_ID);
+      } catch (err) {
+        sqlGuardError = err;
+      }
+      assert.equal(
+        recipe.execution_route,
+        privacyError || sqlGuardError ? "unsupported_by_analyze_data" : "analyze_data",
+        `${recipe.id} execution route must match the production SQL and privacy guards`,
+      );
+      // Existing recipe SQL remains checked against the local demo schema even when
+      // the MCP privacy boundary does not permit execution through analyze_data.
+      if (guardedSql) await query(db, guardedSql);
     } catch (err) {
       failures.push(`${recipe.id}: ${(err).message}`);
     }

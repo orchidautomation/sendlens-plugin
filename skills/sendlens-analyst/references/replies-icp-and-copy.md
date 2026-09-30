@@ -52,7 +52,7 @@ Keep rendering integrity, visitor-source provenance, and copy strategy separate:
 - `campaign_variants` is the source of truth for intended templates.
 - `rendered_outbound_context` is sampled local reconstruction, not delivered text.
 - Use reply outcomes and hydrated bodies to connect message choices to response quality.
-- Run safe-summary personalization and rendered-copy recipes before opening raw detail.
+- Check `execution_route` before using personalization or rendered-copy recipes. The current `personalization-leak-audit` and `rendered-outbound-sample` SQL are unsupported by `analyze_data`; use supported aggregates and explicit one-campaign detail tools instead.
 - Treat unresolved account-signature tokens as reconstruction caveats. Investigate unresolved payload tokens as possible personalization failures.
 - If replies discuss a different product, industry, compliance domain, or topic than the intended template, make setup/template-resolution risk the headline.
 
