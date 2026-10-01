@@ -128,6 +128,8 @@ curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/d
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-all.sh | bash
 ```
 
+OpenCode 2.0.20 does not load the current generated SendLens plugin: its plugin API requires a different entrypoint, so `opencode mcp list` shows no SendLens server even after the installer succeeds. Use Claude Code, Cursor, or Codex for now; adding provider credentials or rerunning the OpenCode installer will not repair this host-version mismatch.
+
 The Codex installer checks whether plugin-bundled hooks are enabled and prompts to add `[features].hooks = true` when needed, so session-start refreshes can run after Codex is restarted. The top-level `install.sh -y` path handles that noninteractively through Pluxx-owned installer behavior.
 
 Direct downloads:

@@ -195,6 +195,7 @@ async function assertHostFiles({ skills, commands, agents }) {
     ".pluxx-runtime.json",
     "scripts/runtime-dependencies.cjs",
     "scripts/runtime-dependencies.lock.json",
+    "build/plugin/package.json",
   ];
 
   const requiredByHost = {
@@ -339,6 +340,13 @@ async function assertHostSkillReferences() {
 }
 
 async function assertManifestMetadata() {
+  const runtimeBoundary = await readJson("build/plugin/package.json");
+  assert(runtimeBoundary.type === "commonjs", "built MCP runtime must retain its CommonJS module boundary");
+  for (const host of ["claude-code", "cursor", "codex", "opencode"]) {
+    const bundledBoundary = await readJson(`dist/${host}/build/plugin/package.json`);
+    assert(bundledBoundary.type === "commonjs", `dist/${host}: MCP runtime must be CommonJS under the host package`);
+  }
+
   const manifests = [
     ["dist/claude-code/.claude-plugin/plugin.json", "sendlens"],
     ["dist/cursor/.cursor-plugin/plugin.json", "sendlens"],

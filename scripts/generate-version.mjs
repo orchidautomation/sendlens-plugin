@@ -7,6 +7,8 @@ const repoRoot = resolve(__dirname, "..");
 const packageJsonPath = resolve(repoRoot, "package.json");
 const generatedDir = resolve(repoRoot, "plugin", "_generated");
 const generatedFile = resolve(generatedDir, "version.generated.ts");
+const runtimePackageDir = resolve(repoRoot, "build", "plugin");
+const runtimePackageFile = resolve(runtimePackageDir, "package.json");
 
 function readVersion() {
   const raw = readFileSync(packageJsonPath, "utf8");
@@ -27,6 +29,14 @@ function writeVersionModule(version) {
   writeFileSync(generatedFile, body, "utf8");
 }
 
+function writeRuntimeModuleBoundary() {
+  mkdirSync(runtimePackageDir, { recursive: true });
+  // OpenCode's host package is ESM, while tsc emits CommonJS for the MCP runtime.
+  // This nested manifest keeps Node's module interpretation stable after bundling.
+  writeFileSync(runtimePackageFile, '{"type":"commonjs"}\n', "utf8");
+}
+
 const version = readVersion();
 writeVersionModule(version);
+writeRuntimeModuleBoundary();
 console.log(`[generate-version] wrote ${generatedFile} (version=${version})`);
