@@ -22,7 +22,7 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 ## Expected Flow
 
 1. Start with `workspace_snapshot` only for broad or ambiguous workspace-health questions, optionally scoped by provider tag or campaign-name fragment. Treat tag support as provider-specific evidence.
-2. For exact campaign-tag sender-risk, inbox-assignment, or tag-scoped deliverability questions, bypass broad triage: pull `analysis_starters(recipe_id="campaign-sender-inventory-by-tag", mode="full")`, execute it once with `analyze_data`, and only then decide whether placement or daily-volume follow-up is needed.
+2. For exact campaign-tag sender-risk, inbox-assignment, or tag-scoped deliverability questions, bypass broad triage: pull `analysis_starters(recipe_id="campaign-sender-inventory-by-tag", mode="full")` and check `execution_route`. This recipe currently reports `unsupported_by_analyze_data`; use a supported aggregate route and state that sender-level detail is unavailable through `analyze_data`. Do not execute its SQL through shell or raw DuckDB.
 3. For sender/domain outage, shared-infrastructure, or quarantine questions, pull `analysis_starters(recipe_id="sender-domain-lineage", mode="full")`, then use `campaign-blast-radius` for the bounded simulation.
 4. Pull `analysis_starters(topic="workspace-health")` before custom SQL when no exact recipe ID already fits.
 5. Keep broad reads active-only unless the user asks for inactive or historical campaigns.

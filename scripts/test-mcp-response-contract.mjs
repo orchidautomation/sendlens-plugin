@@ -318,6 +318,8 @@ for (const term of [
   "recipes",
   "sql_available",
   "route_card",
+  "execution_route",
+  "unsupported_by_analyze_data",
   "rankRecipesForResponse",
   "preferred_intent",
   "forbidden_adaptations",

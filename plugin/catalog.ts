@@ -46,6 +46,7 @@ export type CatalogStarterSuggestion = {
 
 export type CatalogRecipeRouteCard = {
   recipe_id: string;
+  execution_route: QueryRecipe["execution_route"];
   intent: string;
   grain: string;
   time_basis: string;
@@ -552,6 +553,7 @@ function compactCatalogRouteCard(recipe: QueryRecipe): CatalogRecipeRouteCard {
   const card = recipe.route_card!;
   return {
     recipe_id: recipe.id,
+    execution_route: recipe.execution_route,
     intent: card.preferred_intent,
     grain: card.grain,
     time_basis: card.time_basis,

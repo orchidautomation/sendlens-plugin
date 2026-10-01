@@ -1728,7 +1728,7 @@ server.registerTool(
       [
         "Return curated SendLens SQL recipes for common workspace-health, campaign-performance, copy, reply-pattern, ICP-signal, and tag questions.",
         "Use this before writing custom SQL when the user's question matches a known analysis path.",
-        "Do not run recipe SQL blindly; replace placeholders like campaign_id, tag_name, or payload_key and preserve the recipe exactness notes in the final answer.",
+        "Check execution_route before running recipe SQL. Only analyze_data recipes may be executed there after replacing placeholders; unsupported recipes need a supported aggregate or explicit detail flow. Preserve exactness notes in the final answer.",
         "By default returns a compact recipe index without SQL; pass recipe_id for one full recipe or mode='full' with page/page_size for a bounded SQL page.",
         "Returns recipe metadata, route cards for common/high-risk routes, exact/sample/hybrid classification, output-shape metadata, and SQL on demand; it does not query the database.",
       ].join(" "),

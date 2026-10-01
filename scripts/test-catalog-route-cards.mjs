@@ -12,6 +12,7 @@ const {
 
 const STRING_CARD_FIELDS = [
   "recipe_id",
+  "execution_route",
   "intent",
   "grain",
   "time_basis",
@@ -105,6 +106,8 @@ for (const card of senderRiskSuggestion.route_cards) {
 }
 
 assert.match(senderRiskSuggestion.route_cards[0].provider_scope, /source_provider/);
+assert.equal(senderRiskSuggestion.route_cards[0].execution_route, "unsupported_by_analyze_data");
+assert.equal(senderRiskSuggestion.route_cards[1].execution_route, "analyze_data");
 assert.match(senderRiskSuggestion.route_cards[0].provider_scope, /campaign_source_id/);
 assert.match(senderRiskSuggestion.route_cards[0].population_scope, /active tagged campaigns/);
 assert.match(senderRiskSuggestion.route_cards[0].tag_role, /campaign_tag_label/);

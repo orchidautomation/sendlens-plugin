@@ -62,6 +62,7 @@ const ANALYZE_DATA_ROW_LIMIT = 1_000;
 const ANALYZE_DATA_SAFE_ERROR = "Query could not be executed safely.";
 const CATALOG_ROUTE_CARD_STRING_FIELDS = Object.freeze([
   "recipe_id",
+  "execution_route",
   "intent",
   "grain",
   "time_basis",
@@ -898,7 +899,7 @@ function buildReport({ setupReceipts, caseResults, recipeCatalogCount }) {
     },
     proof_limits: {
       does_prove: [
-        "demo/CI prompt handles route to the expected tool sequence",
+        "demo/CI prompt handles route to the expected tool sequence in the SQL-only simulator",
         "registered stdio search_catalog route cards are host-visible, bounded, and privacy-safe",
         "setup calls and account-only correction semantics are excluded from per-case user-analysis budgets",
         "exact and equivalent campaign-tag sender-risk handles use the canonical recipe before execution",
@@ -910,6 +911,7 @@ function buildReport({ setupReceipts, caseResults, recipeCatalogCount }) {
       does_not_prove: [
         "installed-host latency or host UI behavior unless optional local installed mode is run separately",
         "runtime enforcement of natural-language route intent",
+        "production analyze_data privacy-guard acceptance of recipe SQL; the exhaustive query-recipe contract checks that boundary separately",
         "query interruption, compute limits, exact column lineage, or persisted telemetry",
         "provider network behavior or provider mutations",
       ],
