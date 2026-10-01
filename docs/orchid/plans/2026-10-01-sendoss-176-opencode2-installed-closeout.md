@@ -2,7 +2,7 @@
 
 ## Goal and dependency
 
-Complete the installed OpenCode acceptance left open by SENDOSS-161. Released SendLens 0.1.93 still uses `@orchid-labs/pluxx@0.1.41`. Pluxx 0.1.46 now ships the merged OpenCode 2 generator and installer repairs. Its immutable `v0.1.46` tag points to trusted main `80f67d2486e437e82839b06f2b7b9f9589b82b91`; recovery run [36939945059](https://github.com/orchidautomation/pluxx/actions/runs/36939945059) passed after npm's initial processing delay. npm and GitHub release tarballs are byte-identical at SHA-256 `33df432d9fed01d0ece0e51faa1d8902a0f8f9f2f01917225cb57023be6f9bea`.
+Complete the installed OpenCode acceptance left open by SENDOSS-161. The SendLens source fix is merged, but released SendLens 0.1.93 still uses `@orchid-labs/pluxx@0.1.41`. Pluxx PR #509 prepares 0.1.46 with the merged OpenCode 2 generator and installer repairs. Do not change the SendLens dependency or claim an installed pass until 0.1.46 exists on npm and the matching GitHub release is verified.
 
 ## Work sequence
 
@@ -13,10 +13,6 @@ Complete the installed OpenCode acceptance left open by SENDOSS-161. Released Se
 5. Commit, push, and open a SendLens PR linked to SENDOSS-176 and SENDOSS-161. Preserve the existing MCP, Instantly, demo, and privacy contracts. Review and required PR checks gate merge. Release only from verified `main` after merge.
 6. Install the released SendLens OpenCode artifact in a clean, credential-free OpenCode 2 profile. Record sanitized plugin discovery, `opencode mcp list`, and a mounted `setup_doctor` call. Confirm the launcher resolves the runtime and workspace without private provider data. If startup fails, identify the first failing boundary and repair the owning layer on a new issue branch.
 7. Update SENDOSS-176 and PLUXX-341 with exact release and installed evidence. Close the delivery gate only when the installed MCP and doctor criteria pass. Keep SENDOSS-161's source completion distinct from this rollout proof.
-
-## Candidate checkpoint
-
-The 0.1.94 candidate pins the exact published Pluxx 0.1.46 package. Its isolated OpenCode 2.0.20 profile discovers the V2 plugin, reports `sendlens connected`, and completes a mounted `setup_doctor` call in demo mode. See [candidate QA](../qa/2026-10-01-sendoss-176-opencode2-candidate.md). This candidate check does not replace step 6: reinstall and repeat the host proof from the published SendLens 0.1.94 release after merge.
 
 ## Rollback and limits
 
