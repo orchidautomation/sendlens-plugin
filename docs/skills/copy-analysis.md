@@ -22,9 +22,9 @@ Related: [catalog](../CATALOG.md), [trust and privacy](../TRUST_AND_PRIVACY.md),
 1. Scope to one campaign before deep copy analysis.
 2. Pull `analysis_starters(topic="copy-analysis")`.
 3. Load the campaign when rendered copy or campaign-specific reply evidence is needed.
-4. Start with the safe-summary `rendered-outbound-sample` and `personalization-leak-audit` recipes for aggregate coverage and previews.
+4. Check `execution_route` for `rendered-outbound-sample` and `personalization-leak-audit`; both currently fail the `analyze_data` privacy guard. Use supported aggregate recipes and `prepare_campaign_analysis` for explicit one-campaign detail when applicable.
 5. Use `campaign_variants` as the intended template source of truth.
-6. Use raw-detail recipes only for local diagnosis; do not paste raw rendered bodies, template bodies, or recipient fields into external artifacts.
+6. Raw-detail recipe SQL is reference material, not an `analyze_data` or shell path. Do not paste raw rendered bodies, template bodies, or recipient fields into external artifacts.
 7. Use `reply_context` and `lead_evidence` to connect reply outcomes back to copy.
 8. Honor `diagnostics.analysis_eligibility`; reconstructed outbound content can support reconstructed-content findings, but copy/variant winner claims require the returned observed/hydrated evidence state.
 

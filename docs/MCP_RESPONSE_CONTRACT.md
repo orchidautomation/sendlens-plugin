@@ -94,6 +94,7 @@ Where relevant, SendLens responses should include:
 
 - recipe metadata
 - recipe `exactness`: `exact`, `sampled`, or `hybrid`
+- recipe `execution_route`: `analyze_data` only when the published SQL passes the production SQL and privacy guards; `unsupported_by_analyze_data` means the SQL is reference material and must not be executed through `analyze_data`, shell, or raw DuckDB. Use a supported aggregate recipe or an explicit `prepare_campaign_analysis` detail flow when applicable.
 - optional `route_card` metadata for high-risk/common recipes: preferred intent, grain, time basis, attribution, provider/population scope, tag role, prerequisites, cost, privacy, safe adaptations, and forbidden adaptations
 - compact recipe index by default with `output_shape`, `returned_count`, `page`, `page_size`, `has_more`, and `next_page`
 - `recipe_id` exact lookup for one full recipe
@@ -107,7 +108,7 @@ Where relevant, SendLens responses should include:
 - returns `search_terms` and `suggested_narrower_terms` so operators can retry with schema-specific language
 - returns `analysis_starter_suggestions` for workflow concepts such as runway, scale, refill, deliverability, sender accounts, sender/domain lineage and quarantine, rendered outbound, reply body, payload, and tags
 - exact campaign-tag sender/account deliverability or bounce intent ranks `campaign-sender-inventory-by-tag` first and names `tag-scope-audit` as its zero-row correction
-- proof-corpus suggestions may include `route_cards` containing only recipe ID, intent, grain, time basis, attribution, provider/population scope, tag role, cost class, privacy class, prerequisites, and short safe/forbidden adaptations; linked correction recipes may also receive a card
+- proof-corpus suggestions may include `route_cards` containing only recipe ID, execution route, intent, grain, time basis, attribution, provider/population scope, tag role, cost class, privacy class, prerequisites, and short safe/forbidden adaptations; linked correction recipes may also receive a card
 - `correction_path` is bounded metadata: zero rows lead to one named correction recipe and then stop, without scope broadening; `max_follow_up_calls: 4` begins at `primary_recipe_lookup`, and `catalog_discovery_included: false` keeps prior catalog discovery outside the four-call follow-up budget
 - catalog route cards are deterministic, deduplicated, omit SQL/notes/rows/private values, and keep the full `analysis_starter_suggestions` envelope within an 8 KiB response budget
 - returns routing and public-schema metadata only; it reads no campaign evidence rows

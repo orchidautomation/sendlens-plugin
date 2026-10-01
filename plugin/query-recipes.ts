@@ -18,6 +18,7 @@ export type QueryRecipe = {
   title: string;
   question: string;
   exactness: "exact" | "sampled" | "hybrid";
+  execution_route: "analyze_data" | "unsupported_by_analyze_data";
   rationale: string;
   route_card?: QueryRecipeRouteCard;
   zero_row_fallback?: QueryRecipeZeroRowFallback;
@@ -67,7 +68,45 @@ export type QueryRecipeResponseOptions = {
 const DEFAULT_RECIPE_PAGE_SIZE = 10;
 const MAX_RECIPE_PAGE_SIZE = 25;
 
-const QUERY_RECIPES: QueryRecipe[] = [
+// These published SQL recipes fail the production analyze_data SQL or privacy guard.
+// Keep them discoverable for context, but never present them as executable MCP SQL.
+// The exhaustive recipe contract verifies this list against both guards.
+const UNSUPPORTED_ANALYZE_DATA_RECIPE_IDS = new Set([
+  "account-health",
+  "sender-load-balance-by-campaign-tag",
+  "campaign-sender-inventory-by-tag",
+  "sender-deliverability-health",
+  "inbox-placement-auth-failures",
+  "smartlead-sender-delivery-health",
+  "smartlead-delivery-authentication-health",
+  "campaign-tag-daily-volume",
+  "campaign-tag-daily-volume-deduped",
+  "campaign-tag-daily-volume-utilization",
+  "campaign-tag-daily-volume-trend",
+  "campaign-tag-account-tag-capacity-runway",
+  "step-fatigue-by-campaign",
+  "campaign-launch-qa-checklist",
+  "relative-sender-quality",
+  "sequence-marginal-yield",
+  "copy-template-review",
+  "rendered-outbound-sample",
+  "rendered-outbound-raw-detail",
+  "personalization-leak-audit",
+  "personalization-leak-raw-detail",
+  "reply-objection-cohorts",
+  "reply-email-context-raw-detail",
+  "reply-feed",
+  "reply-feed-raw-detail",
+  "fetched-reply-text-by-campaign",
+  "fetched-reply-text-raw-detail-by-campaign",
+  "duplicate-contact-company-exposure",
+  "campaign-metadata-coverage",
+  "campaign-payload-key-inventory",
+  "campaign-payload-key-signals",
+  "campaign-payload-sample",
+]);
+
+const QUERY_RECIPE_DEFINITIONS: Omit<QueryRecipe, "execution_route">[] = [
   {
     id: "experiment-validity-audit",
     topic: "experiment-planner",
@@ -4861,6 +4900,13 @@ ORDER BY co.unique_reply_rate_pct DESC NULLS LAST, co.emails_sent_count DESC;`,
   },
 ];
 
+const QUERY_RECIPES: QueryRecipe[] = QUERY_RECIPE_DEFINITIONS.map((recipe) => ({
+  ...recipe,
+  execution_route: UNSUPPORTED_ANALYZE_DATA_RECIPE_IDS.has(recipe.id)
+    ? "unsupported_by_analyze_data"
+    : "analyze_data",
+}));
+
 export function getQueryRecipes(topic?: string): QueryRecipe[] {
   if (!topic) {
     return QUERY_RECIPES;
@@ -4877,6 +4923,7 @@ export function summarizeQueryRecipe(recipe: QueryRecipe): QueryRecipeSummary {
     title: recipe.title,
     question: recipe.question,
     exactness: recipe.exactness,
+    execution_route: recipe.execution_route,
     rationale: recipe.rationale,
     route_card: recipe.route_card,
     sql_available: true,
@@ -4910,8 +4957,9 @@ export function buildQueryRecipeResponse(options: QueryRecipeResponseOptions = {
       has_more: false,
       next_page: null,
       recipes: recipe ? [recipe] : [],
-      guidance:
-        "Exact recipe lookup returns full SQL. Replace placeholders before calling analyze_data.",
+      guidance: recipe?.execution_route === "unsupported_by_analyze_data"
+        ? "This recipe is not executable through analyze_data. Do not run its SQL through shell or raw DuckDB. Use a supported aggregate recipe or the explicit prepare_campaign_analysis detail flow when applicable."
+        : "Exact recipe lookup returns full SQL. Replace placeholders before calling analyze_data.",
     };
   }
 
@@ -4933,8 +4981,8 @@ export function buildQueryRecipeResponse(options: QueryRecipeResponseOptions = {
     recipes: mode === "full" ? pagedRecipes : pagedRecipes.map(summarizeQueryRecipe),
     guidance:
       mode === "full"
-        ? "Full SQL is included for this bounded page. Replace placeholders before calling analyze_data."
-        : "Compact summaries omit SQL. Route-card recipes are listed first because they expose bounded intent, scope, cost, privacy, and adaptation guidance; this is not prompt-specific matching. Pass recipe_id for one full recipe, mode='full' for a bounded SQL page, or next_page to continue.",
+        ? "Full SQL is included for this bounded page. Only execution_route='analyze_data' recipes may be sent to analyze_data after replacing placeholders. Unsupported recipes require a supported aggregate or explicit detail flow; never use shell or raw DuckDB as a fallback."
+        : "Compact summaries omit SQL. Route-card recipes are listed first because they expose bounded intent, scope, cost, privacy, and adaptation guidance; this is not prompt-specific matching. Check execution_route before using SQL. Pass recipe_id for one full recipe, mode='full' for a bounded SQL page, or next_page to continue.",
   };
 }
 

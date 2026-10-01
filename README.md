@@ -32,13 +32,15 @@ Use the strongest validated evidence to recommend the next campaign experiment.
 
 ## Install
 
-Install all supported hosts:
+Install host bundles:
 
 ```bash
 bash <(curl -fsSL https://sendlens.app/install.sh) --agents -y
 ```
 
 For a single host, raw bundles, local development, and troubleshooting, see the [install guide](./docs/INSTALL.md). The [latest release](https://github.com/orchidautomation/sendlens-plugin/releases/latest) includes direct host installers and bundles.
+
+OpenCode 2.0.20 does not load the current generated SendLens plugin, even when installation succeeds. Check `opencode mcp list`; if SendLens is absent, use Claude Code, Cursor, or Codex until the OpenCode 2 entrypoint repair ships. Adding provider credentials or reinstalling the same bundle will not resolve that mismatch.
 
 ## First run
 

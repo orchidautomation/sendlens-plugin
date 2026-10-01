@@ -226,7 +226,7 @@ export default definePlugin({
     sendlens: {
       transport: "stdio",
       command: "bash",
-      args: ["./scripts/start-mcp.sh"],
+      args: ["${PLUGIN_ROOT}/scripts/start-mcp.sh"],
       env: {
         SENDLENS_PROVIDER: "${SENDLENS_PROVIDER}",
         SENDLENS_INSTANTLY_API_KEY: "${SENDLENS_INSTANTLY_API_KEY}",

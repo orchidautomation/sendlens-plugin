@@ -66,12 +66,12 @@
       "id": "exact-campaign-tag-sender-risk-fast-path",
       "prompt": "Show sender deliverability risk for the exact Priority Demo campaign tag.",
       "input": "Synthetic exact scope: provider is Instantly, campaign tag is Priority Demo, and assigned sender aggregates are sender-a@example.test at 1.0% bounce and sender-b@example.test at 6.4% bounce over the stored 30-day sender window. Do not broaden the provider or tag.",
-      "expected_output": "A bounded exact-tag sender inventory that retrieves campaign-sender-inventory-by-tag first, executes it once, and answers from provider-qualified campaign assignments plus stored account 30-day aggregates.",
+      "expected_output": "A bounded exact-tag sender-risk response that retrieves campaign-sender-inventory-by-tag first, checks execution_route, and explains that sender-level detail is unavailable through analyze_data while using a supported aggregate route when one fits.",
       "assertions": [
         "The first tool call is analysis_starters with recipe_id campaign-sender-inventory-by-tag",
-        "The second tool call executes that recipe with analyze_data after safely escaping the tag literal",
-        "workspace_snapshot, list_tables, list_columns, search_catalog, placement recipes, and account_daily_metrics are not used before the exact recipe result",
-        "The successful fast path uses at most two tool calls and does not silently broaden the campaign tag or provider scope",
+        "The unsupported_by_analyze_data recipe SQL is not executed through analyze_data, shell, or raw DuckDB",
+        "workspace_snapshot, list_tables, list_columns, search_catalog, placement recipes, and account_daily_metrics are not used before the exact recipe lookup",
+        "Any supported aggregate follow-up keeps the exact campaign tag and provider scope",
         "Campaign tags are distinguished from assignment account tags and stored 30-day account aggregates are described as sender-scoped"
       ],
       "objective_checks": [
@@ -86,9 +86,9 @@
           "pattern": "Instantly.{0,120}Priority Demo|Priority Demo.{0,120}Instantly"
         },
         {
-          "id": "describes-sender-window",
-          "description": "Describes the aggregate as sender scoped and tied to the stored 30-day window.",
-          "pattern": "(?:sender[- ]scoped|assigned sender).{0,120}(?:30[- ]day|stored)|(?:30[- ]day|stored).{0,120}(?:sender[- ]scoped|assigned sender)"
+          "id": "states-execution-boundary",
+          "description": "States that the published sender-detail SQL cannot be run through analyze_data.",
+          "pattern": "(?:unsupported_by_analyze_data|cannot.{0,80}analyze_data|unavailable.{0,80}analyze_data)"
         }
       ],
       "host_case": false
