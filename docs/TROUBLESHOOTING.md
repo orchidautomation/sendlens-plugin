@@ -68,9 +68,9 @@ If skills and tools work but a SendLens specialist is missing on another host:
 
 - Claude Code: rerun the installer, run `pluxx verify-install --target claude-code`, run `/reload-plugins`, then check `/agents`. Claude discovers the bundle's root `agents/` directory natively.
 - Cursor: rerun the installer, run `pluxx verify-install --target cursor`, then use **Developer: Reload Window** or restart Cursor. Cursor discovers the bundle's root `agents/` directory natively.
-- OpenCode: rerun the installer, run `pluxx verify-install --target opencode`, and restart OpenCode. The generated plugin registers agents through its `config` hook; try `@campaign-strategist` after restart.
+- OpenCode: rerun the installer, run `pluxx verify-install --target opencode`, and restart OpenCode. Confirm `sendlens` appears in `opencode plugin list` and is connected in `opencode mcp list`. OpenCode 2 does not support native registration of the bundled specialist agents; use the SendLens commands and skills.
 
-On OpenCode 2.0.20, the current generated SendLens plugin does not load at all: startup reports a missing default plugin definition with `id` and `setup` or `effect`, and `opencode mcp list` shows no SendLens server. This is a host/plugin API mismatch before credentials or MCP startup. Use another supported host until the generator is updated; reinstalling the same bundle or adding API keys cannot fix it. A separate MCP runtime module-boundary repair is tracked in SENDOSS-161.
+SendLens 0.1.94 requires the rebuilt OpenCode 2 bundle. If `sendlens` is missing after installation, verify the installed version and restart OpenCode before investigating MCP startup. Call `setup_doctor` in demo mode to separate runtime readiness from missing provider credentials.
 
 Do not manually scatter copied SendLens agent files across host config directories. The Pluxx installer owns the host-specific registration and verification path.
 

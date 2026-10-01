@@ -40,7 +40,7 @@ bash <(curl -fsSL https://sendlens.app/install.sh) --agents -y
 
 For a single host, raw bundles, local development, and troubleshooting, see the [install guide](./docs/INSTALL.md). The [latest release](https://github.com/orchidautomation/sendlens-plugin/releases/latest) includes direct host installers and bundles.
 
-OpenCode 2.0.20 does not load the current generated SendLens plugin, even when installation succeeds. Check `opencode mcp list`; if SendLens is absent, use Claude Code, Cursor, or Codex until the OpenCode 2 entrypoint repair ships. Adding provider credentials or reinstalling the same bundle will not resolve that mismatch.
+SendLens 0.1.94 uses the OpenCode 2 plugin entrypoint. After installing or upgrading, restart OpenCode and run `opencode plugin list` and `opencode mcp list`; expect `sendlens` to be discovered and connected. Run `setup_doctor` to check setup without adding provider credentials. OpenCode 2 cannot register the bundled specialist agents natively, so use the SendLens commands and skills there.
 
 ## First run
 

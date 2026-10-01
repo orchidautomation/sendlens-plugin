@@ -418,10 +418,11 @@ async function executeInstalledOpenCodeWrapper(paths, runRoot) {
     paths.env.PLUXX_OPENCODE_ENTRY_PATH,
     runRoot,
   );
-  const pluginFactory = Object.values(entryModule).find(
-    (value) => typeof value === "function",
-  );
-  assert.ok(pluginFactory, "installed OpenCode wrapper should export a plugin function");
+  const pluginDefinition = entryModule.default;
+  assert.equal(pluginDefinition?.id, pluginName, "installed OpenCode wrapper should expose its V2 identity");
+  assert.equal(typeof pluginDefinition.setup, "function", "installed OpenCode wrapper should expose V2 setup");
+  const pluginFactory = pluginDefinition.server;
+  assert.equal(typeof pluginFactory, "function", "installed OpenCode wrapper should retain its server adapter");
 
   const shellCommands = [];
   const shell = (strings, ...values) => {
@@ -451,6 +452,28 @@ async function executeInstalledOpenCodeWrapper(paths, runRoot) {
   const pluginRoot = await realpath(paths.pluginInstallDir);
   const mcp = config.mcp?.sendlens;
   assert.ok(mcp, "installed OpenCode wrapper should preserve SendLens MCP routing");
+  const v2Servers = new Map();
+  const registration = { dispose: async () => {} };
+  const disposeV2 = await pluginDefinition.setup({
+    location: { directory: workspaceRoot },
+    mcp: { transform: async (transform) => {
+      transform({ set: (name, definition) => v2Servers.set(name, definition) });
+      return registration;
+    } },
+    command: { transform: async (transform) => {
+      transform({ add: () => {} });
+      return registration;
+    } },
+    tool: { hook: async () => registration },
+    shell: { hook: async () => registration },
+    session: { hook: async () => registration },
+    event: { subscribe: async function* () {} },
+  });
+  assert.deepEqual(v2Servers.get("sendlens"), {
+    ...mcp,
+    disabled: false,
+  }, "installed OpenCode V2 setup should register the same SendLens MCP");
+  await disposeV2();
   assert.equal(mcp.environment?.PLUXX_PLUGIN_ROOT, pluginRoot);
   assert.equal(mcp.environment?.OPENCODE_PLUGIN_ROOT, pluginRoot);
   assert.equal(mcp.environment?.PLUXX_WORKSPACE_ROOT, workspaceRoot);
@@ -532,6 +555,24 @@ function installerEnv(platform, runRoot, releaseDir, paths, homeDir) {
   };
 }
 
+async function prepareEmptyCodexInventory(runRoot) {
+  const fakeBin = path.join(runRoot, "bin");
+  await mkdir(fakeBin, { recursive: true });
+  const codexPath = path.join(fakeBin, "codex");
+  await writeFile(
+    codexPath,
+    `#!/usr/bin/env bash
+if [[ "$#" -eq 3 && "$1" == "plugin" && "$2" == "list" && "$3" == "--json" ]]; then
+  printf '{"installed":[]}\\n'
+  exit 0
+fi
+exit 64
+`,
+  );
+  await chmod(codexPath, 0o755);
+  return fakeBin;
+}
+
 async function runInstaller(
   platform,
   releaseDir,
@@ -542,6 +583,7 @@ async function runInstaller(
   await mkdir(homeDir, { recursive: true });
   await mkdir(path.join(runRoot, "tmp"), { recursive: true });
   const paths = installPaths(platform, runRoot);
+  const codexBin = platform === "codex" ? await prepareEmptyCodexInventory(runRoot) : undefined;
 
   await prepareLegacyInstall(platform, paths, { mismatch });
   let openCodeSkill;
@@ -557,7 +599,10 @@ async function runInstaller(
 
   const scriptName = platform === "claude-code" ? "install-claude-code.sh" : `install-${platform}.sh`;
   const result = run("bash", [path.join(releaseDir, scriptName)], {
-    env: installerEnv(platform, runRoot, releaseDir, paths, homeDir),
+    env: {
+      ...installerEnv(platform, runRoot, releaseDir, paths, homeDir),
+      ...(codexBin ? { PATH: `${codexBin}:${process.env.PATH}` } : {}),
+    },
   });
 
   return { result, runRoot, homeDir, paths, openCodeSkill };
@@ -589,7 +634,8 @@ async function testTrustedLegacyUpgrades(releaseDir) {
 
     if (platform === "opencode") {
       const entry = await readFile(paths.env.PLUXX_OPENCODE_ENTRY_PATH, "utf8");
-      assert.match(entry, /OpenCode auto-loads plugin files/);
+      assert.match(entry, /One discovered entry; supporting files live outside plugins/);
+      assert.match(entry, /export \{ default \} from "\.\/sendlens\/index\.ts"/);
       assert.ok(openCodeSkill, "OpenCode skill should be prepared");
       const skill = await readFile(path.join(openCodeSkill.skillDir, "SKILL.md"), "utf8");
       assert.match(skill, new RegExp(`name: ${pluginName}/${openCodeSkill.skillName}`));
@@ -657,6 +703,7 @@ async function runTopLevelCodexInstaller(releaseDir, label, runtimeFixture) {
   await mkdir(homeDir, { recursive: true });
   await mkdir(path.join(runRoot, "tmp"), { recursive: true });
   await mkdir(fakeBin, { recursive: true });
+  await prepareEmptyCodexInventory(runRoot);
   const pluxxPath = path.join(fakeBin, "pluxx");
   await writeFile(
     pluxxPath,
