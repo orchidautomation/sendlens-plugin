@@ -563,9 +563,13 @@ async function prepareEmptyCodexInventory(runRoot) {
     codexPath,
     `#!/usr/bin/env bash
 if [[ "$#" -eq 3 && "$1" == "plugin" && "$2" == "list" && "$3" == "--json" ]]; then
+  printf 'called\\n' >> "$PLUXX_CODEX_INVENTORY_MARKER"
   printf '{"installed":[]}\\n'
   exit 0
 fi
+printf 'codex stub: unhandled argv (%s args):' "$#" >&2
+printf ' %q' "$@" >&2
+printf '\\n' >&2
 exit 64
 `,
   );
@@ -601,7 +605,12 @@ async function runInstaller(
   const result = run("bash", [path.join(releaseDir, scriptName)], {
     env: {
       ...installerEnv(platform, runRoot, releaseDir, paths, homeDir),
-      ...(codexBin ? { PATH: `${codexBin}:${process.env.PATH}` } : {}),
+      ...(codexBin
+        ? {
+            PATH: `${codexBin}:${process.env.PATH}`,
+            PLUXX_CODEX_INVENTORY_MARKER: path.join(runRoot, "codex-inventory-called"),
+          }
+        : {}),
     },
   });
 
@@ -616,6 +625,12 @@ async function testTrustedLegacyUpgrades(releaseDir) {
       homeDir: sharedHomeDir,
     });
     assertRun(result, `${platform} trusted legacy upgrade`);
+    if (platform === "codex") {
+      assert.ok(
+        await pathExists(path.join(runRoot, "codex-inventory-called")),
+        "Codex installer should query the isolated native plugin inventory",
+      );
+    }
 
     assert.equal(
       await pathExists(path.join(paths.pluginInstallDir, "legacy-pre-ownership.txt")),
@@ -728,12 +743,13 @@ cp -R "$SENDLENS_TEST_NODE_MODULES/." "$PWD/node_modules/"
       env: {
         ...installerEnv("codex", runRoot, releaseDir, paths, homeDir),
         PATH: `${fakeBin}:${process.env.PATH}`,
+        PLUXX_CODEX_INVENTORY_MARKER: path.join(runRoot, "codex-inventory-called"),
         PLUXX_TEST_MARKER: marker,
         SENDLENS_TEST_NODE_MODULES: runtimeFixture,
       },
     },
   );
-  return { result, marker, paths };
+  return { result, marker, inventoryMarker: path.join(runRoot, "codex-inventory-called"), paths };
 }
 
 async function testTopLevelInstallerContract(releaseDir) {
@@ -755,6 +771,7 @@ async function testTopLevelInstallerContract(releaseDir) {
 
   const successful = await runTopLevelCodexInstaller(releaseDir, "success", runtimeFixture);
   assertRun(successful.result, "top-level Codex installer without global Pluxx");
+  assert.ok(await pathExists(successful.inventoryMarker), "top-level Codex installer should query native plugin inventory");
   assert.equal(await pathExists(successful.marker), false, "top-level installer must not execute global Pluxx");
   assert.ok(await pathExists(successful.paths.pluginInstallDir), "top-level installer should install the Codex bundle");
 

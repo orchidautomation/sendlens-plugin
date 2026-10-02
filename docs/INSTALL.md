@@ -213,7 +213,7 @@ SendLens specialist discovery is host-native:
 - Claude Code discovers plugin-root `agents/`. After `/reload-plugins`, use `/agents` to confirm the SendLens specialists are available; they can be selected explicitly with `--agent` or delegated by Claude.
 - Cursor discovers plugin-root `agents/`. After **Developer: Reload Window**, invoke a focused specialist such as `/campaign-strategist`, or use a broad SendLens prompt and let Cursor delegate.
 - Codex uses install-managed registration under the active Codex home because agent TOML is a project/user surface rather than a plugin-native registration surface.
-- OpenCode receives the same definitions from the generated plugin's `config` hook. After restart, invoke a specialist such as `@campaign-strategist`, or use a broad prompt and let OpenCode delegate.
+- OpenCode 2 retains the specialist definitions in the bundle but does not register them as native agents. After restart, use the SendLens commands and skills for the same workflows.
 
 The bundled specialists are `workspace-triager`, `campaign-analyst`, `reply-auditor`, `icp-auditor`, `copy-auditor`, `campaign-strategist`, `campaign-copywriter`, `launch-operator`, and `synthesis-reviewer`. They are focused execution roles inside the five public SendLens skills, not nine separate products or services.
 
