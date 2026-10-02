@@ -82,8 +82,27 @@ jobs:
         run: |
           npx pluxx doctor --consumer ./dist/claude-code
           npx pluxx doctor --consumer ./dist/cursor
-          npx pluxx doctor --consumer ./dist/codex
           npx pluxx doctor --consumer ./dist/opencode
+
+      - name: Diagnose Codex bundle with empty CI inventory
+        env:
+          SENDLENS_INSTANTLY_API_KEY: ci-placeholder
+        run: |
+          # CI has no Codex installation; this exercises the empty-inventory path only.
+          mkdir -p "$RUNNER_TEMP/sendlens-ci-bin"
+          cat > "$RUNNER_TEMP/sendlens-ci-bin/codex" <<'EOF'
+          #!/usr/bin/env bash
+          if [[ "$#" -eq 3 && "$1" == "plugin" && "$2" == "list" && "$3" == "--json" ]]; then
+            printf '{"installed":[]}\n'
+            exit 0
+          fi
+          printf 'codex stub: unhandled argv (%s args):' "$#" >&2
+          printf ' %q' "$@" >&2
+          printf '\n' >&2
+          exit 64
+          EOF
+          chmod +x "$RUNNER_TEMP/sendlens-ci-bin/codex"
+          PATH="$RUNNER_TEMP/sendlens-ci-bin:$PATH" npx pluxx doctor --consumer ./dist/codex
 
       - name: Upload built bundles
         uses: actions/upload-artifact@v4
