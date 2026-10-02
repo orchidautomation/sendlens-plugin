@@ -60,7 +60,7 @@ curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/d
 curl -fsSL https://github.com/orchidautomation/sendlens-plugin/releases/latest/download/install-all.sh | bash
 ```
 
-SendLens 0.1.94 and later use the OpenCode 2 plugin entrypoint. After installing, restart OpenCode, run `opencode plugin list` to confirm discovery, and run `opencode mcp list` to confirm `sendlens` is connected. Call `setup_doctor` to inspect runtime and provider readiness; it works in demo mode without provider credentials. OpenCode 2 retains the bundled specialist agents but cannot register them natively, so use the SendLens commands and skills there.
+SendLens 0.1.95 and later use the OpenCode 2 plugin entrypoint. After installing, restart OpenCode, run `opencode plugin list` to confirm discovery, and run `opencode mcp list` to confirm `sendlens` is connected. Call `setup_doctor` to inspect runtime and provider readiness; it works in demo mode without provider credentials. OpenCode 2 retains the bundled specialist agents but cannot register them natively, so use the SendLens commands and skills there.
 
 The Codex installer checks for plugin-bundled hooks and prompts to enable `[features].hooks = true` when needed. The top-level `install.sh -y` path handles that noninteractively through Pluxx-owned installer behavior.
 
