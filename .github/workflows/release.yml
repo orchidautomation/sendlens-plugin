@@ -82,8 +82,12 @@ jobs:
         run: |
           npx pluxx doctor --consumer ./dist/claude-code
           npx pluxx doctor --consumer ./dist/cursor
-          npx pluxx doctor --consumer ./dist/codex
           npx pluxx doctor --consumer ./dist/opencode
+
+      - name: Diagnose Codex bundle with empty CI inventory
+        env:
+          SENDLENS_INSTANTLY_API_KEY: ci-placeholder
+        run: bash scripts/ci-codex-inventory.sh npx pluxx doctor --consumer ./dist/codex
 
       - name: Dry-run GitHub release assets with Pluxx
         env:

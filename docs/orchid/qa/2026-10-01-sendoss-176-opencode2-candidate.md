@@ -26,4 +26,4 @@ OpenCode 2 reported that it cannot register bundled specialist agents natively. 
 
 ## Remaining boundary
 
-This is a locally installed **candidate**, not the published SendLens artifact. After PR review, merge, release, and reinstall of 0.1.94, repeat plugin discovery, `opencode mcp list`, and the mounted `setup_doctor` call. Keep SENDOSS-176 open until that exact released-artifact proof is recorded.
+This is a locally installed **candidate**, not the published SendLens artifact. PR #112 merged, but the 0.1.94 release failed its Codex inventory diagnostic before tag creation. SENDOSS-177 repairs that release gate and advances the public target to 0.1.95. After that release, reinstall the exact public artifact and repeat plugin discovery, `opencode mcp list`, and the mounted `setup_doctor` call. Keep SENDOSS-176 open until that released-artifact proof is recorded.

@@ -70,7 +70,7 @@ If skills and tools work but a SendLens specialist is missing on another host:
 - Cursor: rerun the installer, run `pluxx verify-install --target cursor`, then use **Developer: Reload Window** or restart Cursor. Cursor discovers the bundle's root `agents/` directory natively.
 - OpenCode: rerun the installer, run `pluxx verify-install --target opencode`, and restart OpenCode. Confirm `sendlens` appears in `opencode plugin list` and is connected in `opencode mcp list`. OpenCode 2 does not support native registration of the bundled specialist agents; use the SendLens commands and skills.
 
-SendLens 0.1.94 requires the rebuilt OpenCode 2 bundle. If `sendlens` is missing after installation, verify the installed version and restart OpenCode before investigating MCP startup. Call `setup_doctor` in demo mode to separate runtime readiness from missing provider credentials.
+SendLens 0.1.95 requires the rebuilt OpenCode 2 bundle. If `sendlens` is missing after installation, verify the installed version and restart OpenCode before investigating MCP startup. Call `setup_doctor` in demo mode to separate runtime readiness from missing provider credentials.
 
 Do not manually scatter copied SendLens agent files across host config directories. The Pluxx installer owns the host-specific registration and verification path.
 
